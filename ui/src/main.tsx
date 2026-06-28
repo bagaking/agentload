@@ -1177,16 +1177,44 @@ function ProcessLedger({ t, snapshot, setSelection }: { t: (key: string) => stri
         <span>{t("processes")}</span>
         <span>{t("tools")}</span>
         <span>{t("mapped")}</span>
+        <span>{t("sessions")}</span>
+        <span>{t("command")}</span>
         <span>{t("host")}</span>
       </div>
       {rows.map((process) => (
-        <button className="process-row" role="row" type="button" key={process.pid ?? process.command} onClick={() => setSelection({ type: "process", id: String(process.pid ?? "") })}>
-          <span><Server size={13} /> {t("pid")} {process.pid ?? t("unavailable")}</span>
-          <span><ToolIcon tool={process.tool || "unknown"} />{toolDisplayName(process.tool)}</span>
-          <span>{process.mapped_sessions ?? 0}</span>
-          <span>{process.host_app?.name || t("unavailable")}</span>
-        </button>
+        <ProcessLedgerRow t={t} process={process} setSelection={setSelection} key={process.pid ?? process.command} />
       ))}
+    </div>
+  );
+}
+
+function ProcessLedgerRow({ t, process, setSelection }: { t: (key: string) => string; process: LiveProcess; setSelection: (value: Selection) => void }) {
+  const processID = String(process.pid ?? "");
+  const sessions = process.session_ids ?? [];
+  const host = process.host_app;
+  return (
+    <div className="process-row process-detail-row" role="row">
+      <span className="process-cell process-main-cell" role="cell">
+        <button className="process-main" type="button" onClick={() => setSelection({ type: "process", id: processID })}>
+          <Server size={13} />
+          <span>{t("pid")} {process.pid ?? t("unavailable")}</span>
+        </button>
+      </span>
+      <span className="process-cell tool-cell" role="cell"><ToolIcon tool={process.tool || "unknown"} />{toolDisplayName(process.tool)}</span>
+      <span className={`process-map ${(process.mapped_sessions ?? 0) > 0 ? "mapped" : "unmapped"}`} role="cell">{process.mapped_sessions ?? 0}</span>
+      <div className="process-session-preview" role="cell" aria-label={t("sessions")}>
+        {sessions.length ? sessions.slice(0, 3).map((sessionID) => (
+          <button className="session-chip" type="button" key={sessionID} onClick={() => setSelection({ type: "session", id: safeID(sessionID) })}>
+            {shortID(sessionID)}
+          </button>
+        )) : <span className="muted-inline">{t("unavailable")}</span>}
+        {sessions.length > 3 ? <span className="session-chip more">+{sessions.length - 3}</span> : null}
+      </div>
+      <code className="process-command" role="cell" title={process.command || ""}>{compactCommand(process.command) || t("unavailable")}</code>
+      <span className="process-host-cell" role="cell">
+        {host ? <HostAppButton t={t} host={host} /> : null}
+        <span>{host?.name || t("unavailable")}</span>
+      </span>
     </div>
   );
 }
@@ -1969,6 +1997,7 @@ function ProcessEvidencePanel({ t, process }: { t: (key: string) => string; proc
       </div>
       <div className="entity-grid">
         <Readout label={t("metricMatched")} value={String(process.mapped_sessions ?? 0)} />
+        <Readout label={t("sessions")} value={sessionIDsText(t, process.session_ids)} />
         <Readout label={t("host")} value={process.host_app?.name || t("unavailable")} />
         <Readout label={t("command")} value={process.command || t("unavailable")} />
       </div>
@@ -2393,6 +2422,18 @@ function toolIconName(toolName?: string): string {
 function toolBadgeLabel(toolName?: string): string {
   const raw = String(toolName || "?").trim();
   return (raw.slice(0, 2) || "?").toUpperCase();
+}
+
+function compactCommand(value?: string): string {
+  const text = String(value || "").trim();
+  if (text.length <= 96) return text;
+  return `${text.slice(0, 92)}...`;
+}
+
+function sessionIDsText(t: (key: string) => string, ids?: string[]): string {
+  if (!ids?.length) return t("unavailable");
+  const preview = ids.slice(0, 3).map((id) => shortID(id)).join(", ");
+  return ids.length > 3 ? `${preview}, +${ids.length - 3}` : preview;
 }
 
 async function openHostApp(host: HostApp) {

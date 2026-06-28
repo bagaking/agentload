@@ -1663,7 +1663,7 @@ kbd {
 
 .process-row {
   display: grid;
-  grid-template-columns: minmax(120px, 1.1fr) minmax(100px, .8fr) 80px minmax(100px, .9fr);
+  grid-template-columns: minmax(108px, .85fr) minmax(88px, .6fr) 58px minmax(130px, 1fr) minmax(170px, 1.35fr) minmax(106px, .8fr);
   align-items: center;
   gap: 8px;
   width: 100%;
@@ -1676,11 +1676,7 @@ kbd {
   text-align: left;
 }
 
-button.process-row {
-  cursor: pointer;
-}
-
-button.process-row:hover {
+.process-detail-row:hover {
   color: var(--fg);
   background: color-mix(in srgb, var(--surface-2) 72%, transparent);
 }
@@ -1693,7 +1689,9 @@ button.process-row:hover {
   border-bottom: 1px solid var(--border-soft);
 }
 
-.process-row span {
+.process-row.head span,
+.process-cell,
+.process-host-cell {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1701,6 +1699,109 @@ button.process-row:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.process-cell,
+.process-main {
+  color: inherit;
+}
+
+.process-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  overflow: hidden;
+}
+
+.process-main:hover span {
+  color: var(--fg);
+}
+
+.process-map {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 22px;
+  border-radius: var(--r-pill);
+  color: var(--fg-faint);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.process-map.mapped {
+  color: var(--ok);
+  background: var(--ok-dim);
+}
+
+.process-map.unmapped {
+  color: var(--bad);
+  background: var(--bad-dim);
+}
+
+.process-session-preview {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.session-chip {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 88px;
+  min-height: 22px;
+  padding: 0 7px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-soft);
+  color: var(--fg-muted);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-chip:hover {
+  color: var(--fg);
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--border));
+}
+
+.session-chip.more {
+  cursor: default;
+  color: var(--fg-faint);
+}
+
+.process-command {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.process-host-cell .host-app {
+  flex: none;
+}
+
+.process-host-cell span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .dash-nav-band {
