@@ -179,11 +179,17 @@ func (a *trayApp) handleOpenHostAppAPI(w http.ResponseWriter, r *http.Request) {
 
 func (a *trayApp) snapshotForClient(ctx context.Context) Snapshot {
 	if snapshot, ok := a.cachedSnapshot(); ok {
+		if snapshot.RefreshSlotID == "" {
+			snapshot.RefreshSlotID = a.refreshSlotID(time.Now())
+		}
 		return snapshot
 	}
 	ctx, cancel := context.WithTimeout(ctx, maxDuration(45*time.Second, a.cfg.Lookback/10))
 	defer cancel()
 	snapshot := a.observer.Snapshot(ctx)
+	if snapshot.RefreshSlotID == "" {
+		snapshot.RefreshSlotID = a.refreshSlotID(time.Now())
+	}
 	return a.rememberSnapshot(snapshot)
 }
 

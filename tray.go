@@ -365,22 +365,28 @@ func (a *trayApp) applySnapshot(snapshot Snapshot) {
 		))
 	}
 	if a.mMeta != nil {
-		cacheState := "fresh scan"
-		if snapshot.TranscriptStats.Cached {
-			cacheState = "cache hit"
-		}
-		a.mMeta.SetTitle(fmt.Sprintf(
-			"Updated %s · %s · %d/%d transcripts",
-			formatTimestamp(snapshot.GeneratedAt),
-			cacheState,
-			snapshot.TranscriptStats.ParsedFiles,
-			snapshot.TranscriptStats.ScannedFiles,
-		))
+		a.mMeta.SetTitle(formatTrayMetaTitle(snapshot))
 	}
 	if a.mRefreshNow != nil {
 		a.mRefreshNow.SetTitle("Refresh Now")
 		a.mRefreshNow.Enable()
 	}
+}
+
+func formatTrayMetaTitle(snapshot Snapshot) string {
+	cacheState := "fresh scan"
+	if snapshot.TranscriptStats.Cached {
+		cacheState = "cache hit"
+	}
+	return fmt.Sprintf(
+		"Updated %s · %s · %d/%d transcripts · %d deferred · %d tail",
+		formatTimestamp(snapshot.GeneratedAt),
+		cacheState,
+		snapshot.TranscriptStats.ParsedFiles,
+		snapshot.TranscriptStats.ScannedFiles,
+		snapshot.TranscriptStats.DeferredFiles,
+		snapshot.TranscriptStats.TailParsedFiles,
+	)
 }
 
 func (a *trayApp) togglePopover() {

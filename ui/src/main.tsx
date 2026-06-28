@@ -7,11 +7,15 @@ const BRAND_NAME = "Agent Load";
 const ACTIVE = new Set(["active", "running", "queued"]);
 const REFRESH_INTERVALS_MS = [30_000, 60_000, 120_000, 300_000, 0] as const;
 const REFRESH_INTERVAL_STORAGE_KEY = "agentload.refreshIntervalMs.v4";
+const TREND_RANGES: TrendRange[] = ["1D", "3D", "7D", "15D", "30D"];
 
 type Lang = "en" | "zh" | "ja";
 type Theme = "dark" | "light";
 type RailTab = "projects" | "sessions" | "processes";
 type LogTab = "summary" | "evidence" | "trend";
+type PopoverView = "online" | "trend";
+type TrendRange = "1D" | "3D" | "7D" | "15D" | "30D";
+type TrendLane = "history" | "runtime";
 type Selection =
   | { type: "overview"; id: "overview" }
   | { type: "project"; id: string }
@@ -33,6 +37,7 @@ type Snapshot = {
   transcript_stats?: TranscriptStats;
   project_focus?: ProjectSnapshot[];
   candidate_workitems?: CandidateWorkitem[];
+  age_buckets?: AgeBucketSnapshot[];
   live_processes?: LiveProcess[];
   live_sessions?: LiveSession[];
   notes?: string[];
@@ -116,12 +121,23 @@ type ProjectSnapshot = {
   stale_session_count?: number;
   recent_session_count?: number;
   confidence?: string;
+  confidence_breakdown?: ConfidenceCount[];
   confidence_reasons?: string[];
   project_attribution_confidence?: string;
   project_attribution_reasons?: string[];
   last_event_age_seconds?: number;
   last_event_at?: string;
   tools?: ProjectTool[];
+};
+
+type ConfidenceCount = {
+  level?: string;
+  count?: number;
+};
+
+type AgeBucketSnapshot = {
+  label?: string;
+  count?: number;
 };
 
 type ProjectTool = {
@@ -181,6 +197,7 @@ type CandidateWorkitem = {
   session_count?: number;
   process_count?: number;
   confidence?: string;
+  confidence_reasons?: string[];
 };
 
 type RailItem = {
@@ -260,6 +277,33 @@ const copy: Record<Lang, Record<string, string>> = {
     linkedSubagents: "Linked subagents",
     unlinkedSubagents: "Unlinked subagents",
     scanWindow: "Foreground window",
+    online: "Online",
+    runtimeField: "Runtime field",
+    activityCounts: "Activity counts",
+    localSource: "Local source",
+    evidenceColumn: "Evidence",
+    projectSessionTree: "Project / Sessions",
+    liveLedger: "Live ledger",
+    calibration: "Calibration",
+    sessionAge: "Session age",
+    evidenceConfidence: "Confidence",
+    toolSplit: "Tool split",
+    processLedger: "Processes",
+    trendSuite: "Trend suite",
+    historyLane: "Transcript lane",
+    runtimeLane: "Process lane",
+    sampledBucket: "Sampled bucket",
+    meaning: "Meaning",
+    whyTrust: "Why trust it",
+    currentMeaning: "Current meaning",
+    currentMeaningCopy: "Active bursts are recent transcript movement, sessions are live or recently active work, and processes are visible local tool pids.",
+    mapped: "mapped",
+    unmatched: "unmatched",
+    noTrend: "No trend samples yet",
+    view: "View",
+    confidence: "Confidence",
+    age: "Age",
+    coverage: "Coverage",
   },
   zh: {
     sub: "本地 Agent 控制台",
@@ -314,6 +358,33 @@ const copy: Record<Lang, Record<string, string>> = {
     linkedSubagents: "已关联子会话",
     unlinkedSubagents: "未关联子会话",
     scanWindow: "前台窗口",
+    online: "在线",
+    runtimeField: "运行现场",
+    activityCounts: "活动计数",
+    localSource: "本地来源",
+    evidenceColumn: "证据",
+    projectSessionTree: "项目 / 会话",
+    liveLedger: "现场账本",
+    calibration: "校准",
+    sessionAge: "会话年龄",
+    evidenceConfidence: "置信度",
+    toolSplit: "工具分布",
+    processLedger: "进程",
+    trendSuite: "趋势组",
+    historyLane: "记录趋势",
+    runtimeLane: "进程趋势",
+    sampledBucket: "采样桶",
+    meaning: "含义",
+    whyTrust: "可信依据",
+    currentMeaning: "当前口径",
+    currentMeaningCopy: "活跃突发来自最近活动记录，session 表示仍在或刚活跃的工作，process 是本地可见工具进程。",
+    mapped: "已映射",
+    unmatched: "未匹配",
+    noTrend: "暂无趋势采样",
+    view: "视图",
+    confidence: "置信度",
+    age: "年龄",
+    coverage: "覆盖",
   },
   ja: {
     sub: "ローカル Agent コンソール",
@@ -368,6 +439,33 @@ const copy: Record<Lang, Record<string, string>> = {
     linkedSubagents: "Linked subagents",
     unlinkedSubagents: "Unlinked subagents",
     scanWindow: "Foreground window",
+    online: "Online",
+    runtimeField: "Runtime field",
+    activityCounts: "Activity counts",
+    localSource: "Local source",
+    evidenceColumn: "Evidence",
+    projectSessionTree: "Project / Sessions",
+    liveLedger: "Live ledger",
+    calibration: "Calibration",
+    sessionAge: "Session age",
+    evidenceConfidence: "Confidence",
+    toolSplit: "Tool split",
+    processLedger: "Processes",
+    trendSuite: "Trend suite",
+    historyLane: "Transcript lane",
+    runtimeLane: "Process lane",
+    sampledBucket: "Sampled bucket",
+    meaning: "Meaning",
+    whyTrust: "Why trust it",
+    currentMeaning: "Current meaning",
+    currentMeaningCopy: "Active bursts are recent transcript movement, sessions are live or recently active work, and processes are visible local tool pids.",
+    mapped: "mapped",
+    unmatched: "unmatched",
+    noTrend: "No trend samples yet",
+    view: "View",
+    confidence: "Confidence",
+    age: "Age",
+    coverage: "Coverage",
   },
 };
 
@@ -382,6 +480,9 @@ function App() {
   const [query, setQuery] = useState("");
   const [selection, setSelection] = useState<Selection>({ type: "overview", id: "overview" });
   const [logTab, setLogTab] = useState<LogTab>("summary");
+  const [popoverView, setPopoverView] = useState<PopoverView>("online");
+  const [trendRange, setTrendRange] = useState<TrendRange>("1D");
+  const [trendSelection, setTrendSelection] = useState<Record<TrendLane, string | undefined>>({ history: undefined, runtime: undefined });
   const [refreshInterval, setRefreshInterval] = useState<number>(() => initialRefreshInterval());
   const shellRef = useRef<HTMLDivElement | null>(null);
   const lastRenderTokenRef = useRef("");
@@ -427,6 +528,9 @@ function App() {
     window.localStorage.setItem("agentload.theme", theme);
   }, [theme]);
   useEffect(() => {
+    document.body.dataset.view = view;
+  }, [view]);
+  useEffect(() => {
     document.documentElement.lang = lang;
     window.localStorage.setItem("agentload.lang", lang);
   }, [lang]);
@@ -448,7 +552,6 @@ function App() {
     };
   }, [snapshot, selection, railTab, logTab, view]);
 
-  const railItems = useMemo(() => buildRailItems(snapshot, railTab, query), [snapshot, railTab, query]);
   const selected = useMemo(() => resolveSelection(snapshot, selection), [snapshot, selection]);
   const compact = view === "popover";
   const running = refreshing;
@@ -461,7 +564,7 @@ function App() {
   };
 
   return (
-    <div className="app" ref={shellRef}>
+    <div className={`app app-${view}`} ref={shellRef}>
       <Topbar
         t={t}
         lang={lang}
@@ -475,8 +578,167 @@ function App() {
         refreshInterval={refreshInterval}
         cycleRefreshInterval={cycleRefreshInterval}
       />
-      <div className="layout">
-        <Rail
+      {view === "popover" ? (
+        <PopoverSurface
+          t={t}
+          snapshot={snapshot}
+          selection={selection}
+          setSelection={setSelection}
+          popoverView={popoverView}
+          setPopoverView={setPopoverView}
+          trendRange={trendRange}
+          setTrendRange={setTrendRange}
+          trendSelection={trendSelection}
+          setTrendSelection={setTrendSelection}
+        />
+      ) : (
+        <DashboardSurface
+          t={t}
+          snapshot={snapshot}
+          selected={selected}
+          selection={selection}
+          setSelection={setSelection}
+          railTab={railTab}
+          setRailTab={setRailTab}
+          query={query}
+          setQuery={setQuery}
+          logTab={logTab}
+          setLogTab={setLogTab}
+          refreshSnapshot={refreshSnapshot}
+          trendRange={trendRange}
+          setTrendRange={setTrendRange}
+          trendSelection={trendSelection}
+          setTrendSelection={setTrendSelection}
+        />
+      )}
+    </div>
+  );
+}
+
+function PopoverSurface({
+  t,
+  snapshot,
+  selection,
+  setSelection,
+  popoverView,
+  setPopoverView,
+  trendRange,
+  setTrendRange,
+  trendSelection,
+  setTrendSelection,
+}: {
+  t: (key: string) => string;
+  snapshot: Snapshot | null;
+  selection: Selection;
+  setSelection: (value: Selection) => void;
+  popoverView: PopoverView;
+  setPopoverView: (value: PopoverView) => void;
+  trendRange: TrendRange;
+  setTrendRange: (value: TrendRange) => void;
+  trendSelection: Record<TrendLane, string | undefined>;
+  setTrendSelection: React.Dispatch<React.SetStateAction<Record<TrendLane, string | undefined>>>;
+}) {
+  if (!snapshot) return <EmptySurface t={t} compact />;
+  return (
+    <main className="popover-surface">
+      <div className="popover-view-switch" role="tablist" aria-label={t("view")}>
+        {(["online", "trend"] as PopoverView[]).map((view) => (
+          <button key={view} className={popoverView === view ? "is-active" : ""} type="button" role="tab" aria-selected={popoverView === view} onClick={() => setPopoverView(view)}>
+            {view === "online" ? <Activity size={14} /> : <Gauge size={14} />}
+            {view === "online" ? t("online") : t("trend")}
+          </button>
+        ))}
+      </div>
+      {popoverView === "online" ? (
+        <section className="popover-panel">
+          <FieldIndex t={t} snapshot={snapshot} compact />
+          <CurrentMeaningStrip t={t} snapshot={snapshot} compact />
+          <ScanBoundary t={t} snapshot={snapshot} compact />
+          <ProjectAtlas t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} compact limit={5} defaultExpandedCount={0} />
+        </section>
+      ) : (
+        <TrendSuite
+          t={t}
+          snapshot={snapshot}
+          compact
+          range={trendRange}
+          setRange={setTrendRange}
+          trendSelection={trendSelection}
+          setTrendSelection={setTrendSelection}
+        />
+      )}
+    </main>
+  );
+}
+
+function DashboardSurface({
+  t,
+  snapshot,
+  selected,
+  selection,
+  setSelection,
+  railTab,
+  setRailTab,
+  query,
+  setQuery,
+  logTab,
+  setLogTab,
+  refreshSnapshot,
+  trendRange,
+  setTrendRange,
+  trendSelection,
+  setTrendSelection,
+}: {
+  t: (key: string) => string;
+  snapshot: Snapshot | null;
+  selected: SelectedView;
+  selection: Selection;
+  setSelection: (value: Selection) => void;
+  railTab: RailTab;
+  setRailTab: (tab: RailTab) => void;
+  query: string;
+  setQuery: (value: string) => void;
+  logTab: LogTab;
+  setLogTab: (value: LogTab) => void;
+  refreshSnapshot: () => void;
+  trendRange: TrendRange;
+  setTrendRange: (value: TrendRange) => void;
+  trendSelection: Record<TrendLane, string | undefined>;
+  setTrendSelection: React.Dispatch<React.SetStateAction<Record<TrendLane, string | undefined>>>;
+}) {
+  if (!snapshot) return <EmptySurface t={t} />;
+  const railItems = buildRailItems(snapshot, railTab, query);
+  return (
+    <main className="dashboard-surface">
+      <section className="dash-front-band">
+        <div className="dash-front-main">
+          <div className="dash-status-row">
+            <span className={`field-status ${statusTone(snapshot)}`}>{metricState(snapshot, t)}</span>
+            <span className="issue-stamp">{coordinationPostureLabel(snapshot, t)}</span>
+          </div>
+          <FieldIndex t={t} snapshot={snapshot} />
+          <CurrentMeaningStrip t={t} snapshot={snapshot} compact />
+        </div>
+        <DashboardEvidenceColumn t={t} snapshot={snapshot} />
+      </section>
+
+      <section className="dash-atlas-band">
+        <BandHead kicker={t("liveLedger")} title={t("projectSessionTree")} meta={`${snapshot.live_sessions?.length ?? 0} ${t("sessions")}`} />
+        <div className="dash-atlas-grid">
+          <div className="dash-atlas-main">
+            <ProjectAtlas t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} limit={10} defaultExpandedCount={2} />
+          </div>
+          <DashboardSideRails t={t} snapshot={snapshot} />
+        </div>
+      </section>
+
+      <section className="dash-ledger-band">
+        <BandHead kicker={t("liveLedger")} title={t("processLedger")} meta={`${snapshot.live_processes?.length ?? 0} ${t("processes")}`} />
+        <ProcessLedger t={t} snapshot={snapshot} setSelection={setSelection} />
+      </section>
+
+      <section className="dash-nav-band">
+        <LedgerNavigation
           t={t}
           activeTab={railTab}
           setActiveTab={setRailTab}
@@ -485,7 +747,6 @@ function App() {
           items={railItems}
           selection={selection}
           setSelection={setSelection}
-          compact={compact}
         />
         <Pane
           t={t}
@@ -496,9 +757,469 @@ function App() {
           logTab={logTab}
           setLogTab={setLogTab}
           refreshSnapshot={refreshSnapshot}
-          compact={compact}
+          compact={false}
         />
+      </section>
+
+      <TrendSuite
+        t={t}
+        snapshot={snapshot}
+        range={trendRange}
+        setRange={setTrendRange}
+        trendSelection={trendSelection}
+        setTrendSelection={setTrendSelection}
+      />
+    </main>
+  );
+}
+
+function EmptySurface({ t, compact = false }: { t: (key: string) => string; compact?: boolean }) {
+  return (
+    <main className={compact ? "popover-surface" : "dashboard-surface"}>
+      <section className="empty-pane">
+        <div className="empty-glyph"><Terminal size={34} /></div>
+        <p className="empty-title">{t("noData")}</p>
+        <p className="empty-sub">{t("emptySub")}</p>
+      </section>
+    </main>
+  );
+}
+
+function BandHead({ kicker, title, meta }: { kicker: string; title: string; meta?: string }) {
+  return (
+    <div className="band-head">
+      <div>
+        <span>{kicker}</span>
+        <h2>{title}</h2>
       </div>
+      {meta ? <em>{meta}</em> : null}
+    </div>
+  );
+}
+
+function FieldIndex({ t, snapshot, compact = false }: { t: (key: string) => string; snapshot: Snapshot; compact?: boolean }) {
+  const current = snapshot.current ?? {};
+  const summary = snapshot.summary ?? {};
+  const scale = currentPeerScale(current);
+  const items = [
+    { key: "burst", label: t("metricFresh"), value: current.active_burst_concurrency ?? 0, detail: t("active"), tone: "burst", pct: pctPart(current.active_burst_concurrency, scale) },
+    { key: "sessions", label: t("metricSessions"), value: current.session_concurrency ?? 0, detail: `${summary.active_sessions ?? 0} ${t("active")} · ${summary.idle_sessions ?? 0} ${t("idle")}`, tone: "session", pct: pctPart(current.session_concurrency, scale) },
+    { key: "pids", label: t("metricProcesses"), value: current.pid_concurrency ?? 0, detail: `${summary.mapped_processes ?? 0} ${t("mapped")} · ${summary.unmapped_processes ?? 0} ${t("unmatched")}`, tone: "pid", pct: pctPart(current.pid_concurrency, scale) },
+  ];
+  return (
+    <section className={`field-index ${compact ? "compact" : ""}`}>
+      <BandHead kicker={t("runtimeField")} title={t("activityCounts")} meta={`${formatPct(summary.mapping_coverage_pct)} ${t("coverage")}`} />
+      <div className="field-grid">
+        {items.map((item) => (
+          <article className={`field-cell ${item.tone}`} key={item.key}>
+            <span>{item.label}</span>
+            <strong>{item.value}</strong>
+            <em>{item.detail}</em>
+            <i aria-hidden="true"><b style={{ width: `${clampPct(item.pct, 4)}%` }} /></i>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function CurrentMeaningStrip({ t, snapshot, compact = false }: { t: (key: string) => string; snapshot: Snapshot; compact?: boolean }) {
+  const risk = snapshot.coordination_risk ?? {};
+  const signals = risk.signals ?? [];
+  const lead = signals[0]?.evidence || t("currentMeaningCopy");
+  return (
+    <section className={`meaning-strip ${compact ? "compact" : ""}`}>
+      <div>
+        <Activity size={15} />
+        <strong>{t("currentMeaning")}</strong>
+      </div>
+      <p>{lead}</p>
+    </section>
+  );
+}
+
+function DashboardEvidenceColumn({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot }) {
+  const stats = snapshot.transcript_stats ?? {};
+  const summary = snapshot.summary ?? {};
+  return (
+    <aside className="dash-evidence-column">
+      <BandHead kicker={t("evidenceColumn")} title={t("runtimeField")} meta={stats.cached ? t("cached") : t("fresh")} />
+      <div className="evidence-grid">
+        <Readout label={t("scan")} value={`${stats.parsed_files ?? 0}/${stats.scanned_files ?? 0}`} />
+        <Readout label={t("deferred")} value={String(stats.deferred_files ?? 0)} />
+        <Readout label={t("tail")} value={String(stats.tail_parsed_files ?? 0)} />
+        <Readout label={t("metricMatched")} value={formatPct(summary.mapping_coverage_pct)} />
+      </div>
+      <div className="tool-split">
+        <div className="dash-mini-head">
+          <h3>{t("toolSplit")}</h3>
+          <span>{t("tools")}</span>
+        </div>
+        <ToolMix snapshot={snapshot} />
+      </div>
+    </aside>
+  );
+}
+
+function ProjectAtlas({
+  t,
+  snapshot,
+  selection,
+  setSelection,
+  compact = false,
+  limit,
+  defaultExpandedCount,
+}: {
+  t: (key: string) => string;
+  snapshot: Snapshot;
+  selection: Selection;
+  setSelection: (value: Selection) => void;
+  compact?: boolean;
+  limit?: number;
+  defaultExpandedCount: number;
+}) {
+  const projects = orderedProjects(snapshot).slice(0, limit ?? Number.POSITIVE_INFINITY);
+  const initialOpen = useMemo(() => new Set(projects.slice(0, defaultExpandedCount).map((project) => safeID(project.project))), [defaultExpandedCount, projects]);
+  const [openProjects, setOpenProjects] = useState<Set<string>>(initialOpen);
+  useEffect(() => {
+    setOpenProjects((current) => {
+      if (current.size) return current;
+      return initialOpen;
+    });
+  }, [initialOpen]);
+  const toggleProject = (id: string) => {
+    setOpenProjects((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  return (
+    <section className={`project-atlas ${compact ? "compact" : ""}`}>
+      {!compact ? <BandHead kicker={t("projects")} title={t("projectSessionTree")} meta={`${projects.length} ${t("projects")}`} /> : null}
+      <div className="project-tree-list">
+        {projects.length ? projects.map((project) => {
+          const projectId = safeID(project.project);
+          return (
+            <ProjectTreeRow
+              key={projectId}
+              t={t}
+              snapshot={snapshot}
+              project={project}
+              setSelection={setSelection}
+              compact={compact}
+              expanded={openProjects.has(projectId) || selection.id === projectId}
+              onToggle={() => toggleProject(projectId)}
+            />
+          );
+        }) : (
+          <section className="empty-inline">
+            <Layers size={18} />
+            <span>{t("noData")}</span>
+          </section>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function DashboardSideRails({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot }) {
+  const current = snapshot.current ?? {};
+  const scale = currentPeerScale(current);
+  return (
+    <aside className="dash-atlas-side">
+      <section className="dash-side-module">
+        <div className="dash-mini-head"><h3>{t("calibration")}</h3><span>{t("currentMeaning")}</span></div>
+        <CalibrationRail current={current} scale={scale} />
+      </section>
+      <section className="dash-side-module">
+        <div className="dash-mini-head"><h3>{t("sessionAge")}</h3><span>{t("age")}</span></div>
+        <AgeRail buckets={snapshot.age_buckets ?? []} />
+      </section>
+      <section className="dash-side-module">
+        <div className="dash-mini-head"><h3>{t("evidenceConfidence")}</h3><span>{t("confidence")}</span></div>
+        <ConfidenceGrid snapshot={snapshot} />
+      </section>
+    </aside>
+  );
+}
+
+function CalibrationRail({ current, scale }: { current: CurrentMetrics; scale: number }) {
+  const rows = [
+    ["Active", current.active_burst_concurrency ?? 0],
+    ["Sessions", current.session_concurrency ?? 0],
+    ["Processes", current.pid_concurrency ?? 0],
+  ] as const;
+  return (
+    <div className="calibration-rail">
+      {rows.map(([label, value]) => (
+        <div className="calibration-row" key={label}>
+          <span>{label}</span>
+          <i><b style={{ width: `${clampPct(pctPart(value, scale), 4)}%` }} /></i>
+          <strong>{value}</strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AgeRail({ buckets }: { buckets: AgeBucketSnapshot[] }) {
+  const max = Math.max(1, ...buckets.map((bucket) => bucket.count ?? 0));
+  return (
+    <div className="age-rail">
+      {buckets.length ? buckets.map((bucket) => (
+        <div className="age-row" key={bucket.label || "bucket"}>
+          <span>{bucket.label || "n/a"}</span>
+          <i><b style={{ width: `${clampPct(((bucket.count ?? 0) / max) * 100, 3)}%` }} /></i>
+          <strong>{bucket.count ?? 0}</strong>
+        </div>
+      )) : <span className="muted-inline">n/a</span>}
+    </div>
+  );
+}
+
+function ConfidenceGrid({ snapshot }: { snapshot: Snapshot }) {
+  const fromProjects = (snapshot.project_focus ?? []).flatMap((project) => project.confidence_breakdown ?? []);
+  const counts = new Map<string, number>();
+  fromProjects.forEach((item) => counts.set(item.level || "unknown", (counts.get(item.level || "unknown") ?? 0) + (item.count ?? 0)));
+  if (!counts.size) {
+    (snapshot.live_sessions ?? []).forEach((session) => counts.set(session.confidence || "unknown", (counts.get(session.confidence || "unknown") ?? 0) + 1));
+  }
+  return (
+    <div className="confidence-grid">
+      {Array.from(counts.entries()).map(([level, count]) => (
+        <span key={level}><b>{level}</b><strong>{count}</strong></span>
+      ))}
+    </div>
+  );
+}
+
+function ProcessLedger({ t, snapshot, setSelection }: { t: (key: string) => string; snapshot: Snapshot; setSelection: (value: Selection) => void }) {
+  const rows = [...(snapshot.live_processes ?? [])].sort((a, b) => (b.mapped_sessions ?? 0) - (a.mapped_sessions ?? 0)).slice(0, 14);
+  return (
+    <div className="process-ledger" role="table" aria-label={t("processLedger")}>
+      <div className="process-row head" role="row">
+        <span>{t("processes")}</span>
+        <span>{t("tools")}</span>
+        <span>{t("metricMatched")}</span>
+        <span>{t("host")}</span>
+      </div>
+      {rows.map((process) => (
+        <button className="process-row" role="row" type="button" key={process.pid ?? process.command} onClick={() => setSelection({ type: "process", id: String(process.pid ?? "") })}>
+          <span><Server size={13} /> pid {process.pid ?? "n/a"}</span>
+          <span><ToolIcon tool={process.tool || "unknown"} />{toolDisplayName(process.tool)}</span>
+          <span>{process.mapped_sessions ?? 0}</span>
+          <span>{process.host_app?.name || "n/a"}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ToolMix({ snapshot }: { snapshot: Snapshot }) {
+  const tools = Object.entries(snapshot.current_by_tool ?? {}).sort((a, b) => (b[1].session_concurrency ?? 0) - (a[1].session_concurrency ?? 0));
+  return (
+    <div className="tool-mix">
+      {tools.length ? tools.slice(0, 4).map(([tool, metrics]) => (
+        <span className="tool-mix-item" key={tool}>
+          <ToolIcon tool={tool} />
+          <strong>{toolDisplayName(tool)}</strong>
+          <em>{metrics.active_burst_concurrency ?? 0}/{metrics.session_concurrency ?? 0}</em>
+        </span>
+      )) : <span className="muted-inline">n/a</span>}
+    </div>
+  );
+}
+
+function LedgerNavigation({
+  t,
+  activeTab,
+  setActiveTab,
+  query,
+  setQuery,
+  items,
+  selection,
+  setSelection,
+}: {
+  t: (key: string) => string;
+  activeTab: RailTab;
+  setActiveTab: (tab: RailTab) => void;
+  query: string;
+  setQuery: (value: string) => void;
+  items: RailItem[];
+  selection: Selection;
+  setSelection: (value: Selection) => void;
+}) {
+  return (
+    <section className="ledger-nav">
+      <div className="ledger-nav-head">
+        <div className="rail-tabs" role="tablist">
+          {(["projects", "sessions", "processes"] as RailTab[]).map((tab) => (
+            <button key={tab} className={`rail-tab ${activeTab === tab ? "is-active" : ""}`} type="button" role="tab" onClick={() => setActiveTab(tab)}>
+              {tab === "projects" ? <GitBranch size={14} /> : tab === "sessions" ? <Bot size={14} /> : <Server size={14} />}
+              {t(tab)}
+            </button>
+          ))}
+        </div>
+        <div className="rail-search">
+          <Search size={15} />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("search")} autoComplete="off" spellCheck={false} />
+        </div>
+      </div>
+      <div className="ledger-nav-list">
+        {items.slice(0, 8).map((item) => (
+          <button
+            className={`ledger-chip ${selection.id === item.id && selection.type === item.type ? "is-selected" : ""}`}
+            type="button"
+            key={`${item.type}-${item.id}`}
+            onClick={() => setSelection({ type: item.type, id: item.id } as Selection)}
+          >
+            <span>{item.title}</span>
+            <em>{item.value}</em>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function TrendSuite({
+  t,
+  snapshot,
+  compact = false,
+  range,
+  setRange,
+  trendSelection,
+  setTrendSelection,
+}: {
+  t: (key: string) => string;
+  snapshot: Snapshot;
+  compact?: boolean;
+  range: TrendRange;
+  setRange: (value: TrendRange) => void;
+  trendSelection: Record<TrendLane, string | undefined>;
+  setTrendSelection: React.Dispatch<React.SetStateAction<Record<TrendLane, string | undefined>>>;
+}) {
+  const activeRanges = activeTrendRanges(snapshot);
+  const effectiveRange = activeRanges.includes(range) ? range : activeRanges[0] ?? range;
+  const history = trendWindowForRange(snapshot.trends, effectiveRange);
+  const runtime = trendWindowForRange(snapshot.realtime_trends, effectiveRange);
+  return (
+    <section className={`trend-suite ${compact ? "compact" : "dashboard"}`}>
+      <div className="trend-suite-head">
+        <div className="trend-suite-copy">
+          <h2>{t("trendSuite")}</h2>
+          <span>{effectiveRange} · {formatTrendWindow(history ?? runtime)}</span>
+        </div>
+        <div className="trend-range-switch" role="group" aria-label={t("trend")}>
+          {TREND_RANGES.map((item) => (
+            <button key={item} type="button" disabled={!activeRanges.includes(item)} aria-pressed={item === effectiveRange} onClick={() => setRange(item)}>
+              {item}
+            </button>
+          ))}
+        </div>
+      </div>
+      {history || runtime ? (
+        <div className="trend-duo">
+          <TrendLaneView t={t} lane="history" title={t("historyLane")} trendWindow={history} compact={compact} selectedAt={trendSelection.history} setTrendSelection={setTrendSelection} />
+          <TrendLaneView t={t} lane="runtime" title={t("runtimeLane")} trendWindow={runtime} compact={compact} selectedAt={trendSelection.runtime} setTrendSelection={setTrendSelection} />
+        </div>
+      ) : (
+        <section className="empty-inline"><Gauge size={18} /><span>{t("noTrend")}</span></section>
+      )}
+    </section>
+  );
+}
+
+function TrendLaneView({
+  t,
+  lane,
+  title,
+  trendWindow,
+  compact,
+  selectedAt,
+  setTrendSelection,
+}: {
+  t: (key: string) => string;
+  lane: TrendLane;
+  title: string;
+  trendWindow?: TrendWindow;
+  compact: boolean;
+  selectedAt?: string;
+  setTrendSelection: React.Dispatch<React.SetStateAction<Record<TrendLane, string | undefined>>>;
+}) {
+  const sampleKey = lane === "history" ? "transcript_sampled" : "runtime_sampled";
+  const points = sampledPoints(trendWindow, sampleKey);
+  const selected = points.find((point) => point.at === selectedAt) ?? points[points.length - 1];
+  const chart = trendChart(points, lane);
+  return (
+    <article className={`trend-lane ${lane}`}>
+      <div className="trend-lane-head">
+        <div>
+          <span className="trend-kicker">{title}</span>
+          <small>{trendWindow?.range || "n/a"}</small>
+        </div>
+        <em>{points.length} {t("samples")}</em>
+      </div>
+      {points.length ? (
+        <>
+          <div className="trend-chart">
+            <svg viewBox="0 0 320 104" role="img" aria-label={title}>
+              <path className="grid" d="M8 12H312M8 52H312M8 92H312" />
+              <path className="series primary" d={chart.primaryPath} />
+              <path className="series secondary" d={chart.secondaryPath} />
+              {chart.points.map((item) => (
+                <button key={`${lane}-${item.at}`} type="button" className="trend-hit" aria-label={`${title} ${formatDateTime(item.at)}`} onClick={() => setTrendSelection((current) => ({ ...current, [lane]: item.at }))}>
+                  <circle className={selected?.at === item.at ? "is-selected" : ""} cx={item.x} cy={item.y} r="5" />
+                </button>
+              ))}
+            </svg>
+          </div>
+          {selected ? <TrendDetail t={t} lane={lane} point={selected} compact={compact} /> : null}
+        </>
+      ) : (
+        <section className="empty-inline"><Gauge size={18} /><span>{t("noTrend")}</span></section>
+      )}
+    </article>
+  );
+}
+
+function TrendDetail({ t, lane, point, compact }: { t: (key: string) => string; lane: TrendLane; point: TrendPoint; compact: boolean }) {
+  const metrics = lane === "history"
+    ? [
+        [t("metricFresh"), point.active_burst_concurrency],
+        [t("metricSessions"), point.session_concurrency],
+      ]
+    : [
+        [t("metricProcesses"), point.pid_concurrency],
+        [t("metricMatched"), formatPct(point.mapping_coverage_pct)],
+      ];
+  return (
+    <div className={`trend-detail ${compact ? "compact" : ""}`}>
+      <div className="trend-detail-strip">
+        <div className="trend-detail-stamp">
+          <em>{t("sampledBucket")}</em>
+          <strong>{point.at ? formatDateTime(point.at) : "n/a"}</strong>
+        </div>
+        <div className="trend-selected-readout">
+          <span>{t("meaning")}</span>
+          <strong>{lane === "history" ? `${point.active_burst_concurrency ?? 0} / ${point.session_concurrency ?? 0}` : `${point.pid_concurrency ?? 0} / ${formatPct(point.mapping_coverage_pct)}`}</strong>
+        </div>
+      </div>
+      <div className="trend-detail-grid">
+        {metrics.map(([label, value]) => (
+          <span className="trend-detail-metric" key={label}>
+            <b>{label}</b>
+            <strong>{value ?? "n/a"}</strong>
+          </span>
+        ))}
+      </div>
+      {!compact ? (
+        <div className="trend-detail-sections">
+          <section><span>{t("whyTrust")}</span><p>{lane === "history" ? "Transcript samples preserve the recorded activity bucket." : "Runtime samples are visible local process observations."}</p></section>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -870,6 +1591,7 @@ function ProjectTreeRow({
   setSelection,
   compact,
   expanded,
+  onToggle,
 }: {
   t: (key: string) => string;
   snapshot: Snapshot;
@@ -877,6 +1599,7 @@ function ProjectTreeRow({
   setSelection: (value: Selection) => void;
   compact: boolean;
   expanded: boolean;
+  onToggle?: () => void;
 }) {
   const sessions = sessionsForProject(snapshot, project);
   const counts = projectRoleCounts(project, sessions);
@@ -885,10 +1608,13 @@ function ProjectTreeRow({
   return (
     <article className={`project-tree-row ${expanded ? "expanded" : ""}`}>
       <div className="project-tree-head">
-        <button className="project-select" type="button" onClick={() => setSelection({ type: "project", id: projectId })}>
+        <button className="project-select" type="button" onClick={onToggle ?? (() => setSelection({ type: "project", id: projectId }))} aria-expanded={expanded}>
           <ChevronDown size={15} aria-hidden="true" />
           <span>{title}</span>
           <small>{formatAge(project.last_event_age_seconds)}</small>
+        </button>
+        <button className="project-pin" type="button" onClick={() => setSelection({ type: "project", id: projectId })}>
+          {t("inspect")}
         </button>
         <ProjectMetricMatrix t={t} counts={counts} processCount={project.process_count ?? 0} />
         <ToolStrip t={t} tools={project.tools ?? []} />
@@ -950,23 +1676,35 @@ function SessionTree({
   setSelection: (value: Selection) => void;
   compact: boolean;
 }) {
-  const grouped = groupSessionsByTool(sessions);
+  const branches = buildSessionBranches(sessions);
   if (!sessions.length) {
     return <div className="session-tree empty">{t("empty")}</div>;
   }
   return (
     <div className="session-tree">
-      {grouped.map((group) => (
-        <section className="session-group" key={group.tool}>
+      {branches.linked.map((branch) => (
+        <section className="session-branch" key={sessionIdentity(branch.parent)}>
           <div className="session-group-head">
-            <span><ToolIcon tool={group.tool} />{toolDisplayName(group.tool)}</span>
-            <strong>{group.sessions.length}</strong>
+            <span><ToolIcon tool={branch.parent.tool} />{branch.parent.agent_nickname || shortID(branch.parent.session_id) || t("main")}</span>
+            <strong>{branch.children.length}</strong>
           </div>
-          {group.sessions.slice(0, compact ? 5 : 12).map((session) => (
-            <SessionLine key={sessionIdentity(session)} t={t} session={session} setSelection={setSelection} compact={compact} />
+          <SessionLine t={t} session={branch.parent} setSelection={setSelection} compact={compact} />
+          {branch.children.slice(0, compact ? 3 : 10).map((session) => (
+            <SessionLine key={sessionIdentity(session)} t={t} session={session} setSelection={setSelection} compact={compact} child />
           ))}
         </section>
       ))}
+      {branches.unlinked.length ? (
+        <section className="session-branch unlinked">
+          <div className="session-group-head">
+            <span><GitBranch size={14} />{t("unlinkedSubagents")}</span>
+            <strong>{branches.unlinked.length}</strong>
+          </div>
+          {branches.unlinked.slice(0, compact ? 4 : 12).map((session) => (
+            <SessionLine key={sessionIdentity(session)} t={t} session={session} setSelection={setSelection} compact={compact} />
+          ))}
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -976,22 +1714,24 @@ function SessionLine({
   session,
   setSelection,
   compact,
+  child = false,
 }: {
   t: (key: string) => string;
   session: LiveSession;
   setSelection: (value: Selection) => void;
   compact: boolean;
+  child?: boolean;
 }) {
   const role = normalizedRole(session.session_role);
   const sid = session.session_id || "";
   const host = session.host_apps?.[0];
   return (
-    <div className={`session-line role-${role} ${session.active_burst ? "is-active" : ""}`}>
+    <div className={`session-line role-${role} ${session.active_burst ? "is-active" : ""} ${child ? "is-child" : ""}`}>
       <button className="session-main" type="button" onClick={() => setSelection({ type: "session", id: safeID(sid) })}>
         <span className="role-glyph" title={roleLabel(t, role)}>{roleGlyph(role)}</span>
         <span className="session-title">
           <strong>{session.agent_nickname || shortID(sid) || "session"}</strong>
-          <small>{formatAge(session.last_event_age_seconds)} · {session.process_count ?? 0} pid</small>
+          <small>{formatAge(session.last_event_age_seconds)} · {session.process_count ?? 0} pid · {session.confidence || "n/a"}</small>
         </span>
       </button>
       <span className="session-tool-pair">
@@ -1315,6 +2055,54 @@ function groupSessionsByTool(sessions: LiveSession[]): Array<{ tool: string; ses
     });
 }
 
+function buildSessionBranches(sessions: LiveSession[]): { linked: Array<{ parent: LiveSession; children: LiveSession[] }>; unlinked: LiveSession[] } {
+  const byID = new Map<string, LiveSession>();
+  sessions.forEach((session) => {
+    if (session.session_id) byID.set(session.session_id, session);
+  });
+  const childrenByParent = new Map<string, LiveSession[]>();
+  const unlinked: LiveSession[] = [];
+  const parents: LiveSession[] = [];
+  sessions.forEach((session) => {
+    const role = normalizedRole(session.session_role);
+    if (role === "subagent" && session.parent_thread_id) {
+      childrenByParent.set(session.parent_thread_id, [...(childrenByParent.get(session.parent_thread_id) ?? []), session]);
+      return;
+    }
+    if (role === "subagent") {
+      unlinked.push(session);
+      return;
+    }
+    parents.push(session);
+  });
+  childrenByParent.forEach((children, parentID) => {
+    if (!byID.has(parentID)) {
+      unlinked.push(...children);
+    }
+  });
+  const linked = parents.map((parent) => ({
+    parent,
+    children: (childrenByParent.get(parent.session_id || "") ?? []).sort(compareSessionsByFreshness),
+  }));
+  childrenByParent.forEach((children, parentID) => {
+    if (parents.some((parent) => parent.session_id === parentID)) return;
+    const parent = byID.get(parentID);
+    if (parent) linked.push({ parent, children: children.sort(compareSessionsByFreshness) });
+  });
+  return {
+    linked: linked.sort((a, b) => compareSessionsByFreshness(a.parent, b.parent)),
+    unlinked: unlinked.sort(compareSessionsByFreshness),
+  };
+}
+
+function compareSessionsByFreshness(a: LiveSession, b: LiveSession): number {
+  if (Number(Boolean(a.active_burst)) !== Number(Boolean(b.active_burst))) return Number(Boolean(b.active_burst)) - Number(Boolean(a.active_burst));
+  const ageA = typeof a.last_event_age_seconds === "number" ? a.last_event_age_seconds : Number.MAX_SAFE_INTEGER;
+  const ageB = typeof b.last_event_age_seconds === "number" ? b.last_event_age_seconds : Number.MAX_SAFE_INTEGER;
+  if (ageA !== ageB) return ageA - ageB;
+  return sessionIdentity(a).localeCompare(sessionIdentity(b));
+}
+
 function normalizedRole(role?: string): "main" | "subagent" | "unknown" {
   const value = String(role || "").trim().toLowerCase();
   if (value === "main" || value === "main_agent" || value === "user") return "main";
@@ -1433,6 +2221,89 @@ function mergeTrendPoints(history: TrendPoint[], runtime: TrendPoint[]): TrendPo
     byAt.set(key, { ...(byAt.get(key) ?? {}), ...point, at: key });
   });
   return Array.from(byAt.values()).sort((a, b) => String(a.at).localeCompare(String(b.at)));
+}
+
+function activeTrendRanges(snapshot: Snapshot): TrendRange[] {
+  return TREND_RANGES.filter((range) => Boolean(trendWindowForRange(snapshot.trends, range) || trendWindowForRange(snapshot.realtime_trends, range)));
+}
+
+function trendWindowForRange(set: TrendSet | undefined, range: TrendRange): TrendWindow | undefined {
+  return set?.windows?.find((window) => window.range === range);
+}
+
+function sampledPoints(window: TrendWindow | undefined, sampledKey: "transcript_sampled" | "runtime_sampled"): TrendPoint[] {
+  return [...(window?.points ?? [])].filter((point) => point[sampledKey] || point.at).sort((a, b) => String(a.at).localeCompare(String(b.at)));
+}
+
+function formatTrendWindow(window: TrendWindow | undefined): string {
+  const points = window?.points ?? [];
+  if (!points.length) return "n/a";
+  const firstAt = points[0]?.at;
+  const lastAt = points[points.length - 1]?.at;
+  const first = firstAt ? formatDateTime(firstAt) : "";
+  const last = lastAt ? formatDateTime(lastAt) : "";
+  return first && last ? `${first} -> ${last}` : window?.range || "n/a";
+}
+
+function trendChart(points: TrendPoint[], lane: TrendLane): { primaryPath: string; secondaryPath: string; points: Array<{ at: string; x: number; y: number }> } {
+  const primaryKey = lane === "history" ? "active_burst_concurrency" : "pid_concurrency";
+  const secondaryKey = lane === "history" ? "session_concurrency" : "mapping_coverage_pct";
+  const max = Math.max(
+    1,
+    ...points.map((point) => Number(point[primaryKey] ?? 0)),
+    ...points.map((point) => lane === "runtime" && secondaryKey === "mapping_coverage_pct" ? 100 : Number(point[secondaryKey] ?? 0)),
+  );
+  const coordinates = (key: keyof TrendPoint, fixedMax = max) => points.map((point, index) => {
+    const x = points.length <= 1 ? 160 : 8 + (index / (points.length - 1)) * 304;
+    const value = Number(point[key] ?? 0);
+    const y = 92 - Math.max(0, Math.min(1, value / fixedMax)) * 80;
+    return { at: point.at || String(index), x, y };
+  });
+  const primary = coordinates(primaryKey);
+  const secondary = coordinates(secondaryKey, lane === "runtime" && secondaryKey === "mapping_coverage_pct" ? 100 : max);
+  return {
+    primaryPath: linePath(primary),
+    secondaryPath: linePath(secondary),
+    points: primary,
+  };
+}
+
+function linePath(points: Array<{ x: number; y: number }>): string {
+  if (!points.length) return "";
+  return points.map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join("");
+}
+
+function currentPeerScale(current: CurrentMetrics): number {
+  return Math.max(1, current.active_burst_concurrency ?? 0, current.session_concurrency ?? 0, current.pid_concurrency ?? 0);
+}
+
+function pctPart(value: number | undefined, total: number): number {
+  if (!value || total <= 0) return 0;
+  return (value / total) * 100;
+}
+
+function clampPct(value: number, min = 0): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(100, value));
+}
+
+function statusTone(snapshot: Snapshot): "active" | "idle" | "warn" {
+  if ((snapshot.current?.active_burst_concurrency ?? 0) > 0) return "active";
+  if ((snapshot.transcript_stats?.errors?.length ?? 0) > 0) return "warn";
+  return "idle";
+}
+
+function metricState(snapshot: Snapshot, t: (key: string) => string): string {
+  if ((snapshot.current?.active_burst_concurrency ?? 0) > 0) return t("active");
+  return t("idle");
+}
+
+function coordinationPostureLabel(snapshot: Snapshot, t: (key: string) => string): string {
+  const risk = snapshot.coordination_risk ?? {};
+  const signals = risk.signals?.length ?? 0;
+  if (signals > 0) return `${signals} signals`;
+  if ((risk.low_confidence_session_count ?? 0) > 0) return `${risk.low_confidence_session_count} low confidence`;
+  return t("fresh");
 }
 
 function formatPct(value?: number): string {

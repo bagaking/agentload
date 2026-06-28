@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -153,6 +154,37 @@ func TestParseCodexTraceCapturesUserThreadSource(t *testing.T) {
 	}
 	if !trace.IndependentlyRun {
 		t.Fatalf("expected user codex trace to remain independently run")
+	}
+}
+
+func TestParseTranscriptFileTailKeepsHeadMetadata(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+	head := `{"timestamp":"2026-06-28T10:00:00Z","type":"session_meta","payload":{"id":"codex-session","cwd":"workspace/agentload","thread_source":"subagent","parent_thread_id":"parent-session","agent_nickname":"Review lane","agent_role":"worker"}}` + "\n"
+	padding := `{"timestamp":"2026-06-28T10:01:00Z","payload":{"id":"padding","text":"` + strings.Repeat("x", 700*1024) + `"}}` + "\n"
+	tail := `{"timestamp":"2026-06-28T12:00:00Z","payload":{"id":"codex-session"}}` + "\n"
+	if err := os.WriteFile(path, []byte(head+padding+tail), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+
+	trace, err := parseTranscriptFileTail(TranscriptFile{Tool: "codex", Path: path})
+	if err != nil {
+		t.Fatalf("parseTranscriptFileTail: %v", err)
+	}
+	if trace == nil {
+		t.Fatalf("expected trace")
+	}
+	if trace.SessionID != "codex-session" || trace.Project != "agentload" {
+		t.Fatalf("expected head metadata to survive tail parse, session=%q project=%q", trace.SessionID, trace.Project)
+	}
+	if trace.ThreadSource != "subagent" || trace.ParentThreadID != "parent-session" {
+		t.Fatalf("expected role metadata from head, source=%q parent=%q", trace.ThreadSource, trace.ParentThreadID)
+	}
+	if trace.AgentNickname != "Review lane" || trace.AgentRole != "worker" {
+		t.Fatalf("expected agent metadata from head, nickname=%q role=%q", trace.AgentNickname, trace.AgentRole)
+	}
+	if trace.LastEvent.IsZero() || !trace.LastEvent.Equal(time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)) {
+		t.Fatalf("expected tail event to be included, got last=%s", trace.LastEvent)
 	}
 }
 

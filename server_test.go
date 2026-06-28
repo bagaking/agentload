@@ -138,6 +138,51 @@ func TestHandleSnapshotAPIReturnsCompactJSONAndRefreshSlotHeader(t *testing.T) {
 	}
 }
 
+func TestHandleSnapshotAPIFillsRefreshSlotForCachedSnapshot(t *testing.T) {
+	app := &trayApp{cfg: Config{RefreshInterval: 5 * time.Minute}}
+	app.lastSnapshot = Snapshot{GeneratedAt: "2026-06-28T12:00:00Z"}
+	app.haveSnapshot = true
+	handler := app.handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/snapshot", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d with body %q", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		RefreshSlotID string `json:"refresh_slot_id"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode snapshot response: %v", err)
+	}
+	if got.RefreshSlotID == "" {
+		t.Fatalf("expected cached snapshot response to include refresh_slot_id, body=%q", rec.Body.String())
+	}
+	if header := rec.Header().Get("X-Refresh-Slot-ID"); header != got.RefreshSlotID {
+		t.Fatalf("expected refresh slot header %q, got %q", got.RefreshSlotID, header)
+	}
+}
+
+func TestFormatTrayMetaTitleIncludesScanCoverage(t *testing.T) {
+	got := formatTrayMetaTitle(Snapshot{
+		GeneratedAt: "2026-06-28T12:00:00Z",
+		TranscriptStats: TranscriptStats{
+			ScannedFiles:    19,
+			ParsedFiles:     11,
+			DeferredFiles:   4,
+			TailParsedFiles: 3,
+			Cached:          true,
+		},
+	})
+	for _, want := range []string{"cache hit", "11/19 transcripts", "4 deferred", "3 tail"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected tray metadata %q to contain %q", got, want)
+		}
+	}
+}
+
 func TestNormalizeToolIconNameAllowlist(t *testing.T) {
 	tests := map[string]string{
 		"codex":            "codex",

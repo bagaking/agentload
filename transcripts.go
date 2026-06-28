@@ -604,7 +604,7 @@ func forEachRecentJSONLTailLine(path string, fn func([]byte) bool) error {
 	if err != nil {
 		return err
 	}
-	return forEachJSONLTailLine(path, info.Size(), 512*1024, fn)
+	return forEachJSONLHeadTailLine(path, info.Size(), 128*1024, 512*1024, fn)
 }
 
 func forEachJSONLTailLine(path string, size, maxTailBytes int64, fn func([]byte) bool) error {
@@ -640,6 +640,64 @@ func forEachJSONLTailLine(path string, size, maxTailBytes int64, fn func([]byte)
 		}
 	}
 	for _, line := range bytes.Split(buf, []byte{'\n'}) {
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			continue
+		}
+		if !fn(line) {
+			return nil
+		}
+	}
+	return nil
+}
+
+func forEachJSONLHeadTailLine(path string, size, maxHeadBytes, maxTailBytes int64, fn func([]byte) bool) error {
+	if size <= 0 {
+		return nil
+	}
+	if maxHeadBytes <= 0 {
+		maxHeadBytes = 64 * 1024
+	}
+	if maxTailBytes <= 0 {
+		maxTailBytes = 256 * 1024
+	}
+	if size <= maxHeadBytes+maxTailBytes {
+		return forEachJSONLTailLine(path, size, size, fn)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	head := make([]byte, maxHeadBytes)
+	headN, err := io.ReadFull(f, head)
+	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
+		return err
+	}
+	for _, line := range bytes.Split(head[:headN], []byte{'\n'}) {
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			continue
+		}
+		if !fn(line) {
+			return nil
+		}
+	}
+
+	if _, err := f.Seek(size-maxTailBytes, io.SeekStart); err != nil {
+		return err
+	}
+	tail, err := io.ReadAll(f)
+	if err != nil {
+		return err
+	}
+	if newline := bytes.IndexByte(tail, '\n'); newline >= 0 {
+		tail = tail[newline+1:]
+	} else {
+		return nil
+	}
+	for _, line := range bytes.Split(tail, []byte{'\n'}) {
 		line = bytes.TrimSpace(line)
 		if len(line) == 0 {
 			continue

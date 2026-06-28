@@ -1,8 +1,8 @@
 ---
 title: Agent Load UI Design System
 sop:
-  - When changing `ui/src`, preserve the operator-console structure unless the product workflow changes materially.
-  - Keep visual tokens aligned with the console design language: dark material surfaces, blue primary accent, green/yellow/red semantic states, compact rails, and dense result panes.
+  - When changing `ui/src`, preserve the popover/dashboard split and keep Project / Sessions / Processes available as navigation, not as the only visual shell.
+  - Keep visual tokens aligned with the console design language: dark material surfaces, blue primary accent, green/yellow/red semantic states, compact bands, and dense evidence panes.
   - Before committing UI changes, run `npm --prefix ui run build` and `go test ./...`.
 ---
 
@@ -16,18 +16,21 @@ agent evidence.
 
 - top bar with brand, loopback/no-upload status, live state, refresh, language,
   and theme controls
-- left rail for selecting observation groups
-- dense rail rows with kind color, status dot, short description, evidence path,
-  and compact tags
-- main pane with result-style header, status badge, command/evidence path,
-  timeline, metric strip, and log-like detail body
-- popover uses the same visual language in a tighter responsive layout
+- popover surface with an online/trend switch, current meaning strip, scan
+  boundary, compact project/session atlas, and trend suite
+- dashboard surface with front status, evidence column, project/session atlas,
+  calibration rail, age rail, confidence grid, process ledger, and trend suite
+- Project / Sessions / Processes navigation remains available as a dense
+  inspector band for focused lookup
+- main/detail panes may show result-style headers and evidence text, but should
+  not dominate the first dashboard viewport
 
 ## Visual Rules
 
 - Prefer flat material surfaces over nested card stacks.
 - Keep padding tight enough for repeated operational use.
-- Use thin separators and depth changes; avoid heavy line-box scaffolding.
+- Use thin separators and depth changes; avoid heavy line-box scaffolding and
+  oversized framed logs.
 - Use icons for tabs, commands, status, and metrics where they reduce text load.
 - Use the token family in `ui/src/styles.css` as the source of truth:
   - primary accent: blue
