@@ -1,0 +1,9 @@
+version = 1
+
+[paths]
+shared_root = "docs"
+system_root = "docs"
+generated_root = ".bagakit/living-knowledge/.generated"
+researcher_root = ".bagakit/researcher"
+selector_root = ".bagakit/skill-selector"
+evolver_root = ".bagakit/evolver"

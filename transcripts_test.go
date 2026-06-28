@@ -1,0 +1,215 @@
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+func TestJSONStringField(t *testing.T) {
+	line := []byte(`{"type":"assistant","timestamp":"2026-06-27T12:00:00Z","message":{"cwd":"/tmp/project"},"cwd":"/tmp/root","sessionId":"abc-123"}`)
+
+	if got := jsonStringField(line, "timestamp"); got != "2026-06-27T12:00:00Z" {
+		t.Fatalf("unexpected timestamp: %q", got)
+	}
+	if got := jsonStringField(line, "sessionId"); got != "abc-123" {
+		t.Fatalf("unexpected session id: %q", got)
+	}
+	if got := jsonNestedStringField(line, "message", "cwd"); got != "/tmp/project" {
+		t.Fatalf("unexpected nested cwd: %q", got)
+	}
+}
+
+func TestJSONStringFieldEscaped(t *testing.T) {
+	line := []byte(`{"cwd":"/tmp/project \"quoted\"","timestamp":"2026-06-27T12:00:00Z"}`)
+
+	if got := jsonStringField(line, "cwd"); got != `/tmp/project "quoted"` {
+		t.Fatalf("unexpected escaped string: %q", got)
+	}
+}
+
+func TestParseCodexTraceCapturesProjectSourceFromCWD(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+	if err := os.WriteFile(path, []byte("{\"timestamp\":\"2026-06-27T12:00:00Z\",\"payload\":{\"id\":\"codex-session\",\"cwd\":\"/tmp/agentload\"}}\n"), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+
+	trace, err := parseCodexTrace(path)
+	if err != nil {
+		t.Fatalf("parseCodexTrace: %v", err)
+	}
+	if trace == nil {
+		t.Fatalf("expected trace")
+	}
+	if trace.Project != "agentload" {
+		t.Fatalf("expected cwd-derived project agentload, got %q", trace.Project)
+	}
+	if trace.ProjectSource != "transcript_cwd" {
+		t.Fatalf("expected transcript_cwd source, got %q", trace.ProjectSource)
+	}
+}
+
+func TestParseCodexTraceCapturesExplicitProjectSource(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+	if err := os.WriteFile(path, []byte("{\"timestamp\":\"2026-06-27T12:00:00Z\",\"payload\":{\"id\":\"codex-session\",\"project\":\"agentload-explicit\"}}\n"), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+
+	trace, err := parseCodexTrace(path)
+	if err != nil {
+		t.Fatalf("parseCodexTrace: %v", err)
+	}
+	if trace == nil {
+		t.Fatalf("expected trace")
+	}
+	if trace.Project != "agentload-explicit" {
+		t.Fatalf("expected explicit project agentload-explicit, got %q", trace.Project)
+	}
+	if trace.ProjectSource != "transcript_project" {
+		t.Fatalf("expected transcript_project source, got %q", trace.ProjectSource)
+	}
+}
+
+func TestParseCodexLaneTraceFallsBackToConfigRootParent(t *testing.T) {
+	root := t.TempDir()
+	eventsPath := filepath.Join(root, "agentload", ".codex", ".codexl", "asagent", "lane-1", "events.jsonl")
+	if err := os.MkdirAll(filepath.Dir(eventsPath), 0o755); err != nil {
+		t.Fatalf("mkdir events dir: %v", err)
+	}
+	if err := os.WriteFile(eventsPath, []byte("{\"thread_id\":\"lane-1\"}\n"), 0o644); err != nil {
+		t.Fatalf("write events: %v", err)
+	}
+
+	trace, err := parseCodexLaneTrace(eventsPath)
+	if err != nil {
+		t.Fatalf("parseCodexLaneTrace: %v", err)
+	}
+	if trace == nil {
+		t.Fatalf("expected trace")
+	}
+	if trace.Project != "agentload" {
+		t.Fatalf("expected config-root fallback project agentload, got %q", trace.Project)
+	}
+	if trace.ProjectSource != "config_root_parent" {
+		t.Fatalf("expected config_root_parent source, got %q", trace.ProjectSource)
+	}
+}
+
+func TestParseTraeTraceCapturesSessionRoleAndProject(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+	body := `{"timestamp":"2026-06-27T12:00:00Z","type":"session_meta","payload":{"id":"trae-session","cwd":"/tmp/agentload","thread_source":"subagent","source":{"subagent":{"thread_spawn":{"parent_thread_id":"parent-session","agent_nickname":"Review lane","agent_role":"worker"}}},"agent_nickname":"Review lane","agent_role":"worker"}}` + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+
+	trace, err := parseTraeTrace(path)
+	if err != nil {
+		t.Fatalf("parseTraeTrace: %v", err)
+	}
+	if trace == nil {
+		t.Fatalf("expected trace")
+	}
+	if trace.SessionID != "trae-session" {
+		t.Fatalf("expected parsed session id, got %q", trace.SessionID)
+	}
+	if trace.Project != "agentload" {
+		t.Fatalf("expected cwd-derived project agentload, got %q", trace.Project)
+	}
+	if trace.ThreadSource != "subagent" {
+		t.Fatalf("expected thread_source=subagent, got %q", trace.ThreadSource)
+	}
+	if trace.ParentThreadID != "parent-session" {
+		t.Fatalf("expected parent thread id, got %q", trace.ParentThreadID)
+	}
+	if trace.AgentNickname != "Review lane" || trace.AgentRole != "worker" {
+		t.Fatalf("expected agent metadata, got nickname=%q role=%q", trace.AgentNickname, trace.AgentRole)
+	}
+	if trace.IndependentlyRun {
+		t.Fatalf("expected subagent trace not to be marked independently run")
+	}
+}
+
+func TestParseCodexTraceCapturesUserThreadSource(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+	body := `{"timestamp":"2026-06-27T12:00:00Z","type":"session_meta","payload":{"id":"codex-session","cwd":"/tmp/agentload","thread_source":"user"}}` + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+
+	trace, err := parseCodexTrace(path)
+	if err != nil {
+		t.Fatalf("parseCodexTrace: %v", err)
+	}
+	if trace == nil {
+		t.Fatalf("expected trace")
+	}
+	if trace.ThreadSource != "user" {
+		t.Fatalf("expected thread_source=user, got %q", trace.ThreadSource)
+	}
+	if !trace.IndependentlyRun {
+		t.Fatalf("expected user codex trace to remain independently run")
+	}
+}
+
+func TestFileMayContainEventsAfterCutoffUsesTailTimestamp(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "old-tail.jsonl")
+	body := `{"timestamp":"2026-06-20T12:00:00Z","payload":{"id":"old-session"}}` + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+	futureMTime := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(path, futureMTime, futureMTime); err != nil {
+		t.Fatalf("set transcript mtime: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat transcript: %v", err)
+	}
+
+	cutoff := time.Date(2026, 6, 27, 0, 0, 0, 0, time.UTC)
+	if fileMayContainEventsAfterCutoff(path, info, cutoff) {
+		t.Fatalf("expected old tail timestamp to allow skipping mtime-new transcript")
+	}
+}
+
+func TestFileMayContainEventsAfterCutoffKeepsUnknownTail(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "unknown-tail.jsonl")
+	body := `{"payload":{"id":"no-timestamp"}}` + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat transcript: %v", err)
+	}
+
+	cutoff := time.Date(2026, 6, 27, 0, 0, 0, 0, time.UTC)
+	if !fileMayContainEventsAfterCutoff(path, info, cutoff) {
+		t.Fatalf("expected unknown tail timestamp to stay eligible")
+	}
+}
+
+func TestFileMayContainEventsAfterCutoffKeepsRecentTail(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "recent-tail.jsonl")
+	body := `{"timestamp":"2026-06-28T12:00:00Z","payload":{"id":"recent-session"}}` + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat transcript: %v", err)
+	}
+
+	cutoff := time.Date(2026, 6, 27, 0, 0, 0, 0, time.UTC)
+	if !fileMayContainEventsAfterCutoff(path, info, cutoff) {
+		t.Fatalf("expected recent tail timestamp to stay eligible")
+	}
+}
