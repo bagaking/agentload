@@ -1761,10 +1761,8 @@ button.process-row:hover {
 .trend-chart .series.secondary { stroke: var(--accent); opacity: .78; }
 
 .trend-hit {
-  border: 0;
-  padding: 0;
-  background: transparent;
   cursor: pointer;
+  outline: none;
 }
 
 .trend-hit circle {
@@ -1776,6 +1774,11 @@ button.process-row:hover {
 .trend-hit circle.is-selected {
   fill: var(--run);
   stroke: var(--fg);
+}
+
+.trend-hit:focus-visible circle {
+  stroke: var(--accent-hi);
+  stroke-width: 2.4;
 }
 
 .trend-detail {

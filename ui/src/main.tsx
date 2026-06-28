@@ -227,6 +227,7 @@ const copy: Record<Lang, Record<string, string>> = {
   en: {
     sub: "Local Agent Console",
     loopback: "127.0.0.1 · no upload",
+    loopbackShort: "127.0.0.1",
     idle: "idle",
     running: "refreshing",
     failed: "snapshot failed",
@@ -304,10 +305,19 @@ const copy: Record<Lang, Record<string, string>> = {
     confidence: "Confidence",
     age: "Age",
     coverage: "Coverage",
+    pid: "pid",
+    unavailable: "n/a",
+    sessionID: "Session ID",
+    trendHistoryTrust: "Transcript samples preserve the recorded activity bucket.",
+    trendRuntimeTrust: "Runtime samples are visible local process observations.",
+    autoRefresh: "Auto refresh",
+    auto: "auto",
+    toggleTheme: "Toggle theme",
   },
   zh: {
     sub: "本地 Agent 控制台",
     loopback: "127.0.0.1 · 不上传",
+    loopbackShort: "127.0.0.1",
     idle: "空闲",
     running: "刷新中",
     failed: "快照失败",
@@ -385,10 +395,19 @@ const copy: Record<Lang, Record<string, string>> = {
     confidence: "置信度",
     age: "年龄",
     coverage: "覆盖",
+    pid: "pid",
+    unavailable: "无",
+    sessionID: "会话 ID",
+    trendHistoryTrust: "活动记录采样保留了对应时间桶里的真实活动。",
+    trendRuntimeTrust: "进程采样来自本地可见的运行时观测。",
+    autoRefresh: "自动刷新",
+    auto: "自动",
+    toggleTheme: "切换主题",
   },
   ja: {
     sub: "ローカル Agent コンソール",
     loopback: "127.0.0.1 · アップロードなし",
+    loopbackShort: "127.0.0.1",
     idle: "待機",
     running: "更新中",
     failed: "取得失敗",
@@ -466,6 +485,14 @@ const copy: Record<Lang, Record<string, string>> = {
     confidence: "Confidence",
     age: "Age",
     coverage: "Coverage",
+    pid: "pid",
+    unavailable: "n/a",
+    sessionID: "Session ID",
+    trendHistoryTrust: "Transcript samples preserve the recorded activity bucket.",
+    trendRuntimeTrust: "Runtime samples are visible local process observations.",
+    autoRefresh: "Auto refresh",
+    auto: "auto",
+    toggleTheme: "Toggle theme",
   },
 };
 
@@ -726,7 +753,7 @@ function DashboardSurface({
         <BandHead kicker={t("liveLedger")} title={t("projectSessionTree")} meta={`${snapshot.live_sessions?.length ?? 0} ${t("sessions")}`} />
         <div className="dash-atlas-grid">
           <div className="dash-atlas-main">
-            <ProjectAtlas t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} limit={10} defaultExpandedCount={2} />
+            <ProjectAtlas t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} limit={10} defaultExpandedCount={2} showHead={false} />
           </div>
           <DashboardSideRails t={t} snapshot={snapshot} />
         </div>
@@ -855,7 +882,7 @@ function DashboardEvidenceColumn({ t, snapshot }: { t: (key: string) => string; 
           <h3>{t("toolSplit")}</h3>
           <span>{t("tools")}</span>
         </div>
-        <ToolMix snapshot={snapshot} />
+        <ToolMix t={t} snapshot={snapshot} />
       </div>
     </aside>
   );
@@ -869,6 +896,7 @@ function ProjectAtlas({
   compact = false,
   limit,
   defaultExpandedCount,
+  showHead = true,
 }: {
   t: (key: string) => string;
   snapshot: Snapshot;
@@ -877,6 +905,7 @@ function ProjectAtlas({
   compact?: boolean;
   limit?: number;
   defaultExpandedCount: number;
+  showHead?: boolean;
 }) {
   const projects = orderedProjects(snapshot).slice(0, limit ?? Number.POSITIVE_INFINITY);
   const initialOpen = useMemo(() => new Set(projects.slice(0, defaultExpandedCount).map((project) => safeID(project.project))), [defaultExpandedCount, projects]);
@@ -897,7 +926,7 @@ function ProjectAtlas({
   };
   return (
     <section className={`project-atlas ${compact ? "compact" : ""}`}>
-      {!compact ? <BandHead kicker={t("projects")} title={t("projectSessionTree")} meta={`${projects.length} ${t("projects")}`} /> : null}
+      {showHead ? <BandHead kicker={compact ? t("liveLedger") : t("projects")} title={t("projectSessionTree")} meta={`${projects.length} ${t("projects")}`} /> : null}
       <div className="project-tree-list">
         {projects.length ? projects.map((project) => {
           const projectId = safeID(project.project);
@@ -931,25 +960,25 @@ function DashboardSideRails({ t, snapshot }: { t: (key: string) => string; snaps
     <aside className="dash-atlas-side">
       <section className="dash-side-module">
         <div className="dash-mini-head"><h3>{t("calibration")}</h3><span>{t("currentMeaning")}</span></div>
-        <CalibrationRail current={current} scale={scale} />
+        <CalibrationRail t={t} current={current} scale={scale} />
       </section>
       <section className="dash-side-module">
         <div className="dash-mini-head"><h3>{t("sessionAge")}</h3><span>{t("age")}</span></div>
-        <AgeRail buckets={snapshot.age_buckets ?? []} />
+        <AgeRail t={t} buckets={snapshot.age_buckets ?? []} />
       </section>
       <section className="dash-side-module">
         <div className="dash-mini-head"><h3>{t("evidenceConfidence")}</h3><span>{t("confidence")}</span></div>
-        <ConfidenceGrid snapshot={snapshot} />
+        <ConfidenceGrid t={t} snapshot={snapshot} />
       </section>
     </aside>
   );
 }
 
-function CalibrationRail({ current, scale }: { current: CurrentMetrics; scale: number }) {
+function CalibrationRail({ t, current, scale }: { t: (key: string) => string; current: CurrentMetrics; scale: number }) {
   const rows = [
-    ["Active", current.active_burst_concurrency ?? 0],
-    ["Sessions", current.session_concurrency ?? 0],
-    ["Processes", current.pid_concurrency ?? 0],
+    [t("active"), current.active_burst_concurrency ?? 0],
+    [t("sessions"), current.session_concurrency ?? 0],
+    [t("processes"), current.pid_concurrency ?? 0],
   ] as const;
   return (
     <div className="calibration-rail">
@@ -964,27 +993,33 @@ function CalibrationRail({ current, scale }: { current: CurrentMetrics; scale: n
   );
 }
 
-function AgeRail({ buckets }: { buckets: AgeBucketSnapshot[] }) {
+function AgeRail({ t, buckets }: { t: (key: string) => string; buckets: AgeBucketSnapshot[] }) {
   const max = Math.max(1, ...buckets.map((bucket) => bucket.count ?? 0));
   return (
     <div className="age-rail">
       {buckets.length ? buckets.map((bucket) => (
         <div className="age-row" key={bucket.label || "bucket"}>
-          <span>{bucket.label || "n/a"}</span>
+          <span>{bucket.label || t("unavailable")}</span>
           <i><b style={{ width: `${clampPct(((bucket.count ?? 0) / max) * 100, 3)}%` }} /></i>
           <strong>{bucket.count ?? 0}</strong>
         </div>
-      )) : <span className="muted-inline">n/a</span>}
+      )) : <span className="muted-inline">{t("unavailable")}</span>}
     </div>
   );
 }
 
-function ConfidenceGrid({ snapshot }: { snapshot: Snapshot }) {
+function ConfidenceGrid({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot }) {
   const fromProjects = (snapshot.project_focus ?? []).flatMap((project) => project.confidence_breakdown ?? []);
   const counts = new Map<string, number>();
-  fromProjects.forEach((item) => counts.set(item.level || "unknown", (counts.get(item.level || "unknown") ?? 0) + (item.count ?? 0)));
+  fromProjects.forEach((item) => {
+    const level = item.level || t("unknown");
+    counts.set(level, (counts.get(level) ?? 0) + (item.count ?? 0));
+  });
   if (!counts.size) {
-    (snapshot.live_sessions ?? []).forEach((session) => counts.set(session.confidence || "unknown", (counts.get(session.confidence || "unknown") ?? 0) + 1));
+    (snapshot.live_sessions ?? []).forEach((session) => {
+      const level = session.confidence || t("unknown");
+      counts.set(level, (counts.get(level) ?? 0) + 1);
+    });
   }
   return (
     <div className="confidence-grid">
@@ -1002,22 +1037,22 @@ function ProcessLedger({ t, snapshot, setSelection }: { t: (key: string) => stri
       <div className="process-row head" role="row">
         <span>{t("processes")}</span>
         <span>{t("tools")}</span>
-        <span>{t("metricMatched")}</span>
+        <span>{t("mapped")}</span>
         <span>{t("host")}</span>
       </div>
       {rows.map((process) => (
         <button className="process-row" role="row" type="button" key={process.pid ?? process.command} onClick={() => setSelection({ type: "process", id: String(process.pid ?? "") })}>
-          <span><Server size={13} /> pid {process.pid ?? "n/a"}</span>
+          <span><Server size={13} /> {t("pid")} {process.pid ?? t("unavailable")}</span>
           <span><ToolIcon tool={process.tool || "unknown"} />{toolDisplayName(process.tool)}</span>
           <span>{process.mapped_sessions ?? 0}</span>
-          <span>{process.host_app?.name || "n/a"}</span>
+          <span>{process.host_app?.name || t("unavailable")}</span>
         </button>
       ))}
     </div>
   );
 }
 
-function ToolMix({ snapshot }: { snapshot: Snapshot }) {
+function ToolMix({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot }) {
   const tools = Object.entries(snapshot.current_by_tool ?? {}).sort((a, b) => (b[1].session_concurrency ?? 0) - (a[1].session_concurrency ?? 0));
   return (
     <div className="tool-mix">
@@ -1027,7 +1062,7 @@ function ToolMix({ snapshot }: { snapshot: Snapshot }) {
           <strong>{toolDisplayName(tool)}</strong>
           <em>{metrics.active_burst_concurrency ?? 0}/{metrics.session_concurrency ?? 0}</em>
         </span>
-      )) : <span className="muted-inline">n/a</span>}
+      )) : <span className="muted-inline">{t("unavailable")}</span>}
     </div>
   );
 }
@@ -1158,7 +1193,7 @@ function TrendLaneView({
       <div className="trend-lane-head">
         <div>
           <span className="trend-kicker">{title}</span>
-          <small>{trendWindow?.range || "n/a"}</small>
+          <small>{trendWindow?.range || t("unavailable")}</small>
         </div>
         <em>{points.length} {t("samples")}</em>
       </div>
@@ -1170,9 +1205,22 @@ function TrendLaneView({
               <path className="series primary" d={chart.primaryPath} />
               <path className="series secondary" d={chart.secondaryPath} />
               {chart.points.map((item) => (
-                <button key={`${lane}-${item.at}`} type="button" className="trend-hit" aria-label={`${title} ${formatDateTime(item.at)}`} onClick={() => setTrendSelection((current) => ({ ...current, [lane]: item.at }))}>
+                <g
+                  key={`${lane}-${item.at}`}
+                  className="trend-hit"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`${title} ${formatDateTime(item.at)}`}
+                  onClick={() => setTrendSelection((current) => ({ ...current, [lane]: item.at }))}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setTrendSelection((current) => ({ ...current, [lane]: item.at }));
+                    }
+                  }}
+                >
                   <circle className={selected?.at === item.at ? "is-selected" : ""} cx={item.x} cy={item.y} r="5" />
-                </button>
+                </g>
               ))}
             </svg>
           </div>
@@ -1200,7 +1248,7 @@ function TrendDetail({ t, lane, point, compact }: { t: (key: string) => string; 
       <div className="trend-detail-strip">
         <div className="trend-detail-stamp">
           <em>{t("sampledBucket")}</em>
-          <strong>{point.at ? formatDateTime(point.at) : "n/a"}</strong>
+          <strong>{point.at ? formatDateTime(point.at) : t("unavailable")}</strong>
         </div>
         <div className="trend-selected-readout">
           <span>{t("meaning")}</span>
@@ -1211,13 +1259,13 @@ function TrendDetail({ t, lane, point, compact }: { t: (key: string) => string; 
         {metrics.map(([label, value]) => (
           <span className="trend-detail-metric" key={label}>
             <b>{label}</b>
-            <strong>{value ?? "n/a"}</strong>
+            <strong>{value ?? t("unavailable")}</strong>
           </span>
         ))}
       </div>
       {!compact ? (
         <div className="trend-detail-sections">
-          <section><span>{t("whyTrust")}</span><p>{lane === "history" ? "Transcript samples preserve the recorded activity bucket." : "Runtime samples are visible local process observations."}</p></section>
+          <section><span>{t("whyTrust")}</span><p>{lane === "history" ? t("trendHistoryTrust") : t("trendRuntimeTrust")}</p></section>
         </div>
       ) : null}
     </div>
@@ -1263,18 +1311,18 @@ function Topbar({
         </div>
       </div>
       <div className="topbar-meta">
-        {!compact ? <Pill tone="safe">{t("loopback")}</Pill> : null}
+        <Pill tone="safe">{compact ? t("loopbackShort") : t("loopback")}</Pill>
         <Pill tone={error ? "bad" : running ? "running" : "idle"}>{error ? t("failed") : running ? t("running") : t("idle")}</Pill>
         {!compact ? (
-          <button className="kbd-hint" type="button" onClick={cycleRefreshInterval} title="Auto refresh">
-            <kbd>{formatRefreshInterval(refreshInterval, t)}</kbd> auto
+          <button className="kbd-hint" type="button" onClick={cycleRefreshInterval} title={t("autoRefresh")}>
+            <kbd>{formatRefreshInterval(refreshInterval, t)}</kbd> {t("auto")}
           </button>
         ) : null}
         <button className="icon-btn" type="button" onClick={refreshSnapshot} title={t("refresh")} aria-label={t("refresh")}>
           <RefreshCw size={16} className={running ? "spin" : ""} />
         </button>
         <LanguageControl lang={lang} setLang={setLang} />
-        <button className="icon-btn" type="button" onClick={() => setTheme(theme === "light" ? "dark" : "light")} title="Toggle theme" aria-label="Toggle theme">
+        <button className="icon-btn" type="button" onClick={() => setTheme(theme === "light" ? "dark" : "light")} title={t("toggleTheme")} aria-label={t("toggleTheme")}>
           {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
         </button>
         {compact ? (
@@ -1731,7 +1779,7 @@ function SessionLine({
         <span className="role-glyph" title={roleLabel(t, role)}>{roleGlyph(role)}</span>
         <span className="session-title">
           <strong>{session.agent_nickname || shortID(sid) || "session"}</strong>
-          <small>{formatAge(session.last_event_age_seconds)} · {session.process_count ?? 0} pid · {session.confidence || "n/a"}</small>
+          <small>{formatAge(session.last_event_age_seconds)} · {session.process_count ?? 0} {t("pid")} · {session.confidence || t("unavailable")}</small>
         </span>
       </button>
       <span className="session-tool-pair">
@@ -1754,10 +1802,10 @@ function SessionEvidencePanel({ t, session }: { t: (key: string) => string; sess
         <span>{roleLabel(t, normalizedRole(session.session_role))}</span>
       </div>
       <div className="entity-grid">
-        <Readout label="ID" value={session.session_id || "n/a"} />
+        <Readout label={t("sessionID")} value={session.session_id || t("unavailable")} />
         <Readout label={t("tools")} value={toolDisplayName(session.tool)} />
-        <Readout label={t("host")} value={(session.host_apps ?? []).map((app) => app.name).join(", ") || "n/a"} />
-        <Readout label={t("command")} value={session.path || "n/a"} />
+        <Readout label={t("host")} value={(session.host_apps ?? []).map((app) => app.name).join(", ") || t("unavailable")} />
+        <Readout label={t("command")} value={session.path || t("unavailable")} />
       </div>
     </section>
   );
@@ -1769,12 +1817,12 @@ function ProcessEvidencePanel({ t, process }: { t: (key: string) => string; proc
       <div className="entity-title">
         <Server size={17} />
         <strong>{toolDisplayName(process.tool)}</strong>
-        <span>pid {process.pid ?? "n/a"}</span>
+        <span>{t("pid")} {process.pid ?? t("unavailable")}</span>
       </div>
       <div className="entity-grid">
         <Readout label={t("metricMatched")} value={String(process.mapped_sessions ?? 0)} />
-        <Readout label={t("host")} value={process.host_app?.name || "n/a"} />
-        <Readout label={t("command")} value={process.command || "n/a"} />
+        <Readout label={t("host")} value={process.host_app?.name || t("unavailable")} />
+        <Readout label={t("command")} value={process.command || t("unavailable")} />
       </div>
     </section>
   );
@@ -1784,7 +1832,7 @@ function Readout({ label, value }: { label: string; value?: string }) {
   return (
     <span className="readout">
       <b>{label}</b>
-      <strong>{value || "n/a"}</strong>
+      <strong>{value || ""}</strong>
     </span>
   );
 }
