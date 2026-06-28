@@ -310,6 +310,17 @@ const copy: Record<Lang, Record<string, string>> = {
     sessionID: "Session ID",
     trendHistoryTrust: "Transcript samples preserve the recorded activity bucket.",
     trendRuntimeTrust: "Runtime samples are visible local process observations.",
+    trendExactBucket: "Exact bucket",
+    trendWhatClicked: "What you clicked",
+    trendWhatMeans: "What it means",
+    trendHowUse: "How to use it",
+    trendHistoryMeaning: "Fresh movement shows recent transcript activity; sessions show the wider live work set.",
+    trendRuntimeMeaning: "Process count shows visible tool pids; matched share shows how much runtime evidence is connected to sessions.",
+    trendHistoryUse: "Use this lane to tell whether work just moved or only remains open.",
+    trendRuntimeUse: "Use this lane to spot orphan processes and weak process-to-session coverage.",
+    selectedValues: "Selected values",
+    mappedProcesses: "Mapped",
+    unmappedProcesses: "Unmatched",
     autoRefresh: "Auto refresh",
     auto: "auto",
     toggleTheme: "Toggle theme",
@@ -400,6 +411,17 @@ const copy: Record<Lang, Record<string, string>> = {
     sessionID: "会话 ID",
     trendHistoryTrust: "活动记录采样保留了对应时间桶里的真实活动。",
     trendRuntimeTrust: "进程采样来自本地可见的运行时观测。",
+    trendExactBucket: "精确时间桶",
+    trendWhatClicked: "点击对象",
+    trendWhatMeans: "含义",
+    trendHowUse: "使用方式",
+    trendHistoryMeaning: "最近动作表示活动记录在该时间桶内有新活动；会话表示更宽的现场工作集合。",
+    trendRuntimeMeaning: "进程数表示本地可见工具 pid；匹配占比表示运行时证据有多少已连接到会话。",
+    trendHistoryUse: "用这一轨判断工作是否刚刚移动，还是只是保持打开。",
+    trendRuntimeUse: "用这一轨发现孤立进程和进程到会话覆盖不足的问题。",
+    selectedValues: "选中读数",
+    mappedProcesses: "已映射",
+    unmappedProcesses: "未匹配",
     autoRefresh: "自动刷新",
     auto: "自动",
     toggleTheme: "切换主题",
@@ -490,6 +512,17 @@ const copy: Record<Lang, Record<string, string>> = {
     sessionID: "Session ID",
     trendHistoryTrust: "Transcript samples preserve the recorded activity bucket.",
     trendRuntimeTrust: "Runtime samples are visible local process observations.",
+    trendExactBucket: "Exact bucket",
+    trendWhatClicked: "What you clicked",
+    trendWhatMeans: "What it means",
+    trendHowUse: "How to use it",
+    trendHistoryMeaning: "Fresh movement shows recent transcript activity; sessions show the wider live work set.",
+    trendRuntimeMeaning: "Process count shows visible tool pids; matched share shows how much runtime evidence is connected to sessions.",
+    trendHistoryUse: "Use this lane to tell whether work just moved or only remains open.",
+    trendRuntimeUse: "Use this lane to spot orphan processes and weak process-to-session coverage.",
+    selectedValues: "Selected values",
+    mappedProcesses: "Mapped",
+    unmappedProcesses: "Unmatched",
     autoRefresh: "Auto refresh",
     auto: "auto",
     toggleTheme: "Toggle theme",
@@ -1188,6 +1221,9 @@ function TrendLaneView({
   const points = sampledPoints(trendWindow, sampleKey);
   const selected = points.find((point) => point.at === selectedAt) ?? points[points.length - 1];
   const chart = trendChart(points, lane);
+  const selectedPlot = selected ? chart.points.find((point) => point.at === selected.at) : undefined;
+  const calloutX = selectedPlot ? clampNumber(selectedPlot.x > 214 ? selectedPlot.x - 104 : selectedPlot.x + 8, 10, 214) : 0;
+  const selectedReadout = selected ? trendSelectedReadout(t, lane, selected) : "";
   return (
     <article className={`trend-lane ${lane}`}>
       <div className="trend-lane-head">
@@ -1204,6 +1240,16 @@ function TrendLaneView({
               <path className="grid" d="M8 12H312M8 52H312M8 92H312" />
               <path className="series primary" d={chart.primaryPath} />
               <path className="series secondary" d={chart.secondaryPath} />
+              {selectedPlot ? (
+                <g className="trend-selection-guide" aria-hidden="true">
+                  <line x1={selectedPlot.x} y1="10" x2={selectedPlot.x} y2="94" />
+                  <g className="trend-callout" transform={`translate(${calloutX.toFixed(1)} 14)`}>
+                    <rect width="96" height="34" rx="5" />
+                    <text x="7" y="13">{t("selectedValues")}</text>
+                    <text className="value" x="7" y="27">{selectedReadout}</text>
+                  </g>
+                </g>
+              ) : null}
               {chart.points.map((item) => (
                 <g
                   key={`${lane}-${item.at}`}
@@ -1234,40 +1280,36 @@ function TrendLaneView({
 }
 
 function TrendDetail({ t, lane, point, compact }: { t: (key: string) => string; lane: TrendLane; point: TrendPoint; compact: boolean }) {
-  const metrics = lane === "history"
-    ? [
-        [t("metricFresh"), point.active_burst_concurrency],
-        [t("metricSessions"), point.session_concurrency],
-      ]
-    : [
-        [t("metricProcesses"), point.pid_concurrency],
-        [t("metricMatched"), formatPct(point.mapping_coverage_pct)],
-      ];
+  const metrics = trendDetailMetrics(t, lane, point);
+  const sections = trendExplanationSections(t, lane, point);
   return (
     <div className={`trend-detail ${compact ? "compact" : ""}`}>
       <div className="trend-detail-strip">
         <div className="trend-detail-stamp">
-          <em>{t("sampledBucket")}</em>
+          <em>{t("trendExactBucket")}</em>
           <strong>{point.at ? formatDateTime(point.at) : t("unavailable")}</strong>
         </div>
         <div className="trend-selected-readout">
-          <span>{t("meaning")}</span>
-          <strong>{lane === "history" ? `${point.active_burst_concurrency ?? 0} / ${point.session_concurrency ?? 0}` : `${point.pid_concurrency ?? 0} / ${formatPct(point.mapping_coverage_pct)}`}</strong>
+          <span>{t("selectedValues")}</span>
+          <strong>{trendSelectedReadout(t, lane, point)}</strong>
         </div>
       </div>
       <div className="trend-detail-grid">
-        {metrics.map(([label, value]) => (
-          <span className="trend-detail-metric" key={label}>
-            <b>{label}</b>
-            <strong>{value ?? t("unavailable")}</strong>
+        {metrics.map((metric) => (
+          <span className="trend-detail-metric" key={metric.label}>
+            <b>{metric.label}</b>
+            <strong>{metric.value}</strong>
           </span>
         ))}
       </div>
-      {!compact ? (
-        <div className="trend-detail-sections">
-          <section><span>{t("whyTrust")}</span><p>{lane === "history" ? t("trendHistoryTrust") : t("trendRuntimeTrust")}</p></section>
-        </div>
-      ) : null}
+      <div className="trend-detail-sections">
+        {sections.map((section) => (
+          <section key={section.label}>
+            <span>{section.label}</span>
+            <p>{section.text}</p>
+          </section>
+        ))}
+      </div>
     </div>
   );
 }
@@ -2283,6 +2325,42 @@ function sampledPoints(window: TrendWindow | undefined, sampledKey: "transcript_
   return [...(window?.points ?? [])].filter((point) => point[sampledKey] || point.at).sort((a, b) => String(a.at).localeCompare(String(b.at)));
 }
 
+function trendDetailMetrics(t: (key: string) => string, lane: TrendLane, point: TrendPoint): Array<{ label: string; value: string }> {
+  if (lane === "history") {
+    return [
+      { label: t("metricFresh"), value: trendMetricValue(t, point.active_burst_concurrency) },
+      { label: t("metricSessions"), value: trendMetricValue(t, point.session_concurrency) },
+    ];
+  }
+  return [
+    { label: t("metricProcesses"), value: trendMetricValue(t, point.pid_concurrency) },
+    { label: t("metricMatched"), value: typeof point.mapping_coverage_pct === "number" ? formatPct(point.mapping_coverage_pct) : t("unavailable") },
+    { label: t("mappedProcesses"), value: trendMetricValue(t, point.mapped_processes) },
+    { label: t("unmappedProcesses"), value: trendMetricValue(t, point.unmapped_processes) },
+  ];
+}
+
+function trendMetricValue(t: (key: string) => string, value?: number): string {
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : t("unavailable");
+}
+
+function trendSelectedReadout(t: (key: string) => string, lane: TrendLane, point: TrendPoint): string {
+  if (lane === "history") {
+    return `${trendMetricValue(t, point.active_burst_concurrency)} / ${trendMetricValue(t, point.session_concurrency)}`;
+  }
+  return `${trendMetricValue(t, point.pid_concurrency)} / ${typeof point.mapping_coverage_pct === "number" ? formatPct(point.mapping_coverage_pct) : t("unavailable")}`;
+}
+
+function trendExplanationSections(t: (key: string) => string, lane: TrendLane, point: TrendPoint): Array<{ label: string; text: string }> {
+  const clicked = `${t("sampledBucket")} ${point.at ? formatDateTime(point.at) : t("unavailable")} · ${trendSelectedReadout(t, lane, point)}`;
+  return [
+    { label: t("trendWhatClicked"), text: clicked },
+    { label: t("trendWhatMeans"), text: lane === "history" ? t("trendHistoryMeaning") : t("trendRuntimeMeaning") },
+    { label: t("whyTrust"), text: lane === "history" ? t("trendHistoryTrust") : t("trendRuntimeTrust") },
+    { label: t("trendHowUse"), text: lane === "history" ? t("trendHistoryUse") : t("trendRuntimeUse") },
+  ];
+}
+
 function formatTrendWindow(window: TrendWindow | undefined): string {
   const points = window?.points ?? [];
   if (!points.length) return "n/a";
@@ -2333,6 +2411,11 @@ function pctPart(value: number | undefined, total: number): number {
 function clampPct(value: number, min = 0): number {
   if (!Number.isFinite(value)) return min;
   return Math.max(min, Math.min(100, value));
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(max, value));
 }
 
 function statusTone(snapshot: Snapshot): "active" | "idle" | "warn" {

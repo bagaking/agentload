@@ -1760,6 +1760,31 @@ button.process-row:hover {
 .trend-chart .series.primary { stroke: var(--ok); }
 .trend-chart .series.secondary { stroke: var(--accent); opacity: .78; }
 
+.trend-selection-guide line {
+  stroke: color-mix(in srgb, var(--run) 72%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
+.trend-callout rect {
+  fill: color-mix(in srgb, var(--surface) 92%, transparent);
+  stroke: color-mix(in srgb, var(--run) 48%, transparent);
+  stroke-width: 1;
+}
+
+.trend-callout text {
+  fill: var(--fg-faint);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.trend-callout text.value {
+  fill: var(--fg);
+  font-size: 10px;
+}
+
 .trend-hit {
   cursor: pointer;
   outline: none;
@@ -1853,6 +1878,12 @@ button.process-row:hover {
   padding: 7px;
   border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--surface) 62%, transparent);
+}
+
+.trend-detail.compact .trend-detail-sections {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
 }
 
 .trend-detail-sections p {
