@@ -218,10 +218,15 @@ func jsonValue[T any](v T) *T {
 }
 
 type TranscriptStats struct {
-	ScannedFiles int      `json:"scanned_files"`
-	ParsedFiles  int      `json:"parsed_files"`
-	Cached       bool     `json:"cached"`
-	Errors       []string `json:"errors,omitempty"`
+	ScannedFiles                     int      `json:"scanned_files"`
+	ParsedFiles                      int      `json:"parsed_files"`
+	DeferredFiles                    int      `json:"deferred_files"`
+	TailParsedFiles                  int      `json:"tail_parsed_files,omitempty"`
+	HistoricalScanDeferred           bool     `json:"historical_scan_deferred,omitempty"`
+	ForegroundScanLookbackSeconds    int      `json:"foreground_scan_lookback_seconds,omitempty"`
+	ConfiguredHistoryLookbackSeconds int      `json:"configured_history_lookback_seconds,omitempty"`
+	Cached                           bool     `json:"cached"`
+	Errors                           []string `json:"errors,omitempty"`
 }
 
 type ProjectSnapshot struct {
@@ -357,12 +362,17 @@ type Interval struct {
 }
 
 type TranscriptData struct {
-	Traces       map[string]*SessionTrace
-	SessionSpans []Interval
-	BurstSpans   []Interval
-	ScannedFiles int
-	ParsedFiles  int
-	Errors       []string
+	Traces                           map[string]*SessionTrace
+	SessionSpans                     []Interval
+	BurstSpans                       []Interval
+	ScannedFiles                     int
+	ParsedFiles                      int
+	DeferredFiles                    int
+	TailParsedFiles                  int
+	HistoricalScanDeferred           bool
+	ForegroundScanLookbackSeconds    int
+	ConfiguredHistoryLookbackSeconds int
+	Errors                           []string
 }
 
 type transcriptCacheState struct {

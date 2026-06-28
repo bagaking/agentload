@@ -38,9 +38,12 @@ func newObserver(cfg Config) *Observer {
 }
 
 type transcriptCandidate struct {
-	File    TranscriptFile
-	ModTime time.Time
-	Size    int64
+	File      TranscriptFile
+	ModTime   time.Time
+	Size      int64
+	Priority  bool
+	Deferred  bool
+	TailParse bool
 }
 
 type fileTraceCache struct {
@@ -54,6 +57,10 @@ type fileTraceCache struct {
 type transcriptParseFunc func(TranscriptFile) (*SessionTrace, error)
 
 var parseTranscriptFileFunc transcriptParseFunc = parseTranscriptFile
+
+type transcriptTailParseFunc = transcriptParseFunc
+
+var parseTranscriptFileTailFunc transcriptTailParseFunc = parseTranscriptFileTail
 
 type transcriptAppendParseFunc func(TranscriptFile, *SessionTrace, int64) (*SessionTrace, error)
 
@@ -82,7 +89,15 @@ func (o *Observer) transcriptData(claudeRoots, codexRoots, traeRoots []string, p
 	o.inflight[key] = flight
 	o.mu.Unlock()
 
-	data := o.scanTranscripts(claudeRoots, codexRoots, traeRoots, priority, now.Add(-o.cfg.Lookback), o.cfg.IdleGap, o.cfg.MinInterval)
+	data := o.scanTranscriptsWithOptions(claudeRoots, codexRoots, traeRoots, priority, transcriptScanOptions{
+		HistoryCutoff:      now.Add(-o.cfg.Lookback),
+		ForegroundCutoff:   foregroundTranscriptCutoff(now, o.cfg.IdleGap),
+		HistoryLookback:    o.cfg.Lookback,
+		ForegroundLookback: foregroundTranscriptLookback(o.cfg.IdleGap),
+		DeferHistoryWalk:   true,
+		IdleGap:            o.cfg.IdleGap,
+		MinInterval:        o.cfg.MinInterval,
+	})
 	savedAt := time.Now()
 
 	o.mu.Lock()
@@ -116,16 +131,49 @@ func transcriptCacheKey(claudeRoots, codexRoots, traeRoots []string, priority []
 }
 
 func (o *Observer) scanTranscripts(claudeRoots, codexRoots, traeRoots []string, priority []TranscriptFile, cutoff time.Time, idleGap, minInterval time.Duration) *TranscriptData {
-	files := collectTranscriptCandidates(claudeRoots, codexRoots, traeRoots, priority, cutoff)
+	return o.scanTranscriptsWithOptions(claudeRoots, codexRoots, traeRoots, priority, transcriptScanOptions{
+		HistoryCutoff:      cutoff,
+		ForegroundCutoff:   cutoff,
+		HistoryLookback:    durationSinceCutoff(cutoff),
+		ForegroundLookback: durationSinceCutoff(cutoff),
+		DeferHistoryWalk:   false,
+		IdleGap:            idleGap,
+		MinInterval:        minInterval,
+	})
+}
+
+type transcriptScanOptions struct {
+	HistoryCutoff      time.Time
+	ForegroundCutoff   time.Time
+	HistoryLookback    time.Duration
+	ForegroundLookback time.Duration
+	DeferHistoryWalk   bool
+	IdleGap            time.Duration
+	MinInterval        time.Duration
+}
+
+func (o *Observer) scanTranscriptsWithOptions(claudeRoots, codexRoots, traeRoots []string, priority []TranscriptFile, opts transcriptScanOptions) *TranscriptData {
+	collectionCutoff := opts.HistoryCutoff
+	if opts.DeferHistoryWalk && !opts.ForegroundCutoff.IsZero() {
+		collectionCutoff = opts.ForegroundCutoff
+	}
+	files := collectTranscriptCandidates(claudeRoots, codexRoots, traeRoots, priority, collectionCutoff, opts.ForegroundCutoff)
 	data := &TranscriptData{
-		Traces:       make(map[string]*SessionTrace, len(files)),
-		ScannedFiles: len(files),
+		Traces:                           make(map[string]*SessionTrace, len(files)),
+		ScannedFiles:                     len(files),
+		HistoricalScanDeferred:           opts.DeferHistoryWalk,
+		ForegroundScanLookbackSeconds:    int(opts.ForegroundLookback / time.Second),
+		ConfiguredHistoryLookbackSeconds: int(opts.HistoryLookback / time.Second),
 	}
 
 	toParse := make([]transcriptCandidate, 0, len(files))
 	toAppend := make([]transcriptAppendCandidate, 0)
 	o.mu.Lock()
 	for _, candidate := range files {
+		if candidate.Deferred {
+			data.DeferredFiles++
+			continue
+		}
 		cached, ok := o.fileCache[candidate.File.Path]
 		switch {
 		case !ok:
@@ -186,6 +234,9 @@ func (o *Observer) scanTranscripts(claudeRoots, codexRoots, traeRoots []string, 
 		}
 		data.Traces[candidate.File.Path] = result.Trace
 		data.ParsedFiles++
+		if candidate.TailParse {
+			data.TailParsedFiles++
+		}
 	}
 	if len(updates) > 0 {
 		o.mu.Lock()
@@ -194,9 +245,41 @@ func (o *Observer) scanTranscripts(claudeRoots, codexRoots, traeRoots []string, 
 		}
 		o.mu.Unlock()
 	}
-	data.SessionSpans = buildSessionSpans(data.Traces, minInterval)
-	data.BurstSpans = buildBurstSpans(data.Traces, idleGap, minInterval)
+	data.SessionSpans = buildSessionSpans(data.Traces, opts.MinInterval)
+	data.BurstSpans = buildBurstSpans(data.Traces, opts.IdleGap, opts.MinInterval)
 	return data
+}
+
+func foregroundTranscriptLookback(idleGap time.Duration) time.Duration {
+	if idleGap <= 0 {
+		idleGap = 90 * time.Second
+	}
+	lookback := idleGap * 80
+	if lookback < 2*time.Hour {
+		lookback = 2 * time.Hour
+	}
+	if lookback > 6*time.Hour {
+		lookback = 6 * time.Hour
+	}
+	return lookback
+}
+
+func foregroundTranscriptCutoff(now time.Time, idleGap time.Duration) time.Time {
+	if now.IsZero() {
+		return time.Time{}
+	}
+	return now.Add(-foregroundTranscriptLookback(idleGap))
+}
+
+func durationSinceCutoff(cutoff time.Time) time.Duration {
+	if cutoff.IsZero() {
+		return 0
+	}
+	duration := time.Since(cutoff)
+	if duration < 0 {
+		return 0
+	}
+	return duration
 }
 
 type transcriptParseResult struct {
@@ -235,8 +318,8 @@ func parseTranscriptCandidates(candidates []transcriptCandidate) []transcriptPar
 		return results
 	}
 	workerCount := runtime.NumCPU()
-	if workerCount > 8 {
-		workerCount = 8
+	if workerCount > 4 {
+		workerCount = 4
 	}
 	if workerCount < 1 {
 		workerCount = 1
@@ -256,7 +339,11 @@ func parseTranscriptCandidates(candidates []transcriptCandidate) []transcriptPar
 		go func() {
 			defer wg.Done()
 			for item := range jobs {
-				trace, err := parseTranscriptFileFunc(item.Candidate.File)
+				parseFunc := parseTranscriptFileFunc
+				if item.Candidate.TailParse {
+					parseFunc = parseTranscriptFileTailFunc
+				}
+				trace, err := parseFunc(item.Candidate.File)
 				results[item.Index] = transcriptParseResult{
 					Candidate: item.Candidate,
 					Trace:     trace,
@@ -279,8 +366,8 @@ func parseAppendTranscriptCandidates(candidates []transcriptAppendCandidate) []t
 		return results
 	}
 	workerCount := runtime.NumCPU()
-	if workerCount > 8 {
-		workerCount = 8
+	if workerCount > 4 {
+		workerCount = 4
 	}
 	if workerCount < 1 {
 		workerCount = 1
@@ -321,17 +408,40 @@ func parseAppendTranscriptCandidates(candidates []transcriptAppendCandidate) []t
 	return results
 }
 
-func collectTranscriptCandidates(claudeRoots, codexRoots, traeRoots []string, priority []TranscriptFile, cutoff time.Time) []transcriptCandidate {
+func collectTranscriptCandidates(claudeRoots, codexRoots, traeRoots []string, priority []TranscriptFile, historyCutoff, foregroundCutoff time.Time) []transcriptCandidate {
+	priorityKeys := map[string]struct{}{}
+	for _, file := range priority {
+		if file.Path == "" || file.Tool == "" {
+			continue
+		}
+		priorityKeys[file.Tool+"\x00"+filepath.Clean(file.Path)] = struct{}{}
+	}
 	seen := map[string]transcriptCandidate{}
 	addFile := func(file TranscriptFile, info os.FileInfo) {
 		if file.Path == "" || file.Tool == "" {
 			return
 		}
+		file.Path = filepath.Clean(file.Path)
 		key := file.Tool + "\x00" + file.Path
+		_, priorityFile := priorityKeys[key]
+		deferred := false
+		tailParse := false
+		if !priorityFile && !foregroundCutoff.IsZero() {
+			if info.ModTime().Before(foregroundCutoff) {
+				deferred = true
+			} else if !fileMayContainEventsAfterCutoff(file.Path, info, foregroundCutoff) {
+				deferred = true
+			} else {
+				tailParse = true
+			}
+		}
 		seen[key] = transcriptCandidate{
-			File:    file,
-			ModTime: info.ModTime(),
-			Size:    info.Size(),
+			File:      file,
+			ModTime:   info.ModTime(),
+			Size:      info.Size(),
+			Priority:  priorityFile,
+			Deferred:  deferred,
+			TailParse: tailParse,
 		}
 	}
 	for _, file := range priority {
@@ -344,7 +454,7 @@ func collectTranscriptCandidates(claudeRoots, codexRoots, traeRoots []string, pr
 
 	for _, root := range claudeRoots {
 		projectsDir := filepath.Join(root, "projects")
-		walkMatchingFiles(projectsDir, cutoff, func(path string, info os.FileInfo) {
+		walkMatchingFiles(projectsDir, historyCutoff, func(path string, info os.FileInfo) {
 			addFile(TranscriptFile{Tool: "claude", Path: path}, info)
 		})
 	}
@@ -353,16 +463,16 @@ func collectTranscriptCandidates(claudeRoots, codexRoots, traeRoots []string, pr
 			filepath.Join(root, "sessions"),
 			filepath.Join(root, "archived_sessions"),
 		} {
-			walkMatchingFiles(dir, cutoff, func(path string, info os.FileInfo) {
+			walkMatchingFiles(dir, historyCutoff, func(path string, info os.FileInfo) {
 				addFile(TranscriptFile{Tool: "codex", Path: path}, info)
 			})
 		}
-		walkCodexLaneEvents(filepath.Join(root, ".codexl"), cutoff, func(path string, info os.FileInfo) {
+		walkCodexLaneEvents(filepath.Join(root, ".codexl"), historyCutoff, func(path string, info os.FileInfo) {
 			addFile(TranscriptFile{Tool: "codex", Path: path}, info)
 		})
 	}
 	for _, root := range traeRoots {
-		walkMatchingFiles(filepath.Join(root, "sessions"), cutoff, func(path string, info os.FileInfo) {
+		walkMatchingFiles(filepath.Join(root, "sessions"), historyCutoff, func(path string, info os.FileInfo) {
 			addFile(TranscriptFile{Tool: "trae", Path: path}, info)
 		})
 	}
@@ -372,6 +482,15 @@ func collectTranscriptCandidates(claudeRoots, codexRoots, traeRoots []string, pr
 		files = append(files, file)
 	}
 	sort.Slice(files, func(i, j int) bool {
+		if files[i].Deferred != files[j].Deferred {
+			return !files[i].Deferred
+		}
+		if files[i].Priority != files[j].Priority {
+			return files[i].Priority
+		}
+		if !files[i].ModTime.Equal(files[j].ModTime) {
+			return files[i].ModTime.After(files[j].ModTime)
+		}
 		if files[i].File.Tool == files[j].File.Tool {
 			return files[i].File.Path < files[j].File.Path
 		}
@@ -395,9 +514,6 @@ func walkMatchingFiles(root string, cutoff time.Time, fn func(path string, info 
 		if !cutoff.IsZero() && info.ModTime().Before(cutoff) {
 			return nil
 		}
-		if !fileMayContainEventsAfterCutoff(path, info, cutoff) {
-			return nil
-		}
 		fn(filepath.Clean(path), info)
 		return nil
 	})
@@ -416,9 +532,6 @@ func walkCodexLaneEvents(root string, cutoff time.Time, fn func(path string, inf
 			return nil
 		}
 		if !cutoff.IsZero() && info.ModTime().Before(cutoff) {
-			return nil
-		}
-		if !fileMayContainEventsAfterCutoff(path, info, cutoff) {
 			return nil
 		}
 		fn(filepath.Clean(path), info)
@@ -486,6 +599,58 @@ func latestTimestampFromJSONLTail(path string, size int64) (time.Time, bool) {
 	return time.Time{}, false
 }
 
+func forEachRecentJSONLTailLine(path string, fn func([]byte) bool) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	return forEachJSONLTailLine(path, info.Size(), 512*1024, fn)
+}
+
+func forEachJSONLTailLine(path string, size, maxTailBytes int64, fn func([]byte) bool) error {
+	if size <= 0 {
+		return nil
+	}
+	if maxTailBytes <= 0 {
+		maxTailBytes = 256 * 1024
+	}
+	offset := int64(0)
+	if size > maxTailBytes {
+		offset = size - maxTailBytes
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if offset > 0 {
+		if _, err := f.Seek(offset, io.SeekStart); err != nil {
+			return err
+		}
+	}
+	buf, err := io.ReadAll(f)
+	if err != nil {
+		return err
+	}
+	if offset > 0 {
+		if newline := bytes.IndexByte(buf, '\n'); newline >= 0 {
+			buf = buf[newline+1:]
+		} else {
+			return nil
+		}
+	}
+	for _, line := range bytes.Split(buf, []byte{'\n'}) {
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			continue
+		}
+		if !fn(line) {
+			return nil
+		}
+	}
+	return nil
+}
+
 func parseTranscriptFile(file TranscriptFile) (*SessionTrace, error) {
 	switch {
 	case file.Tool == "claude":
@@ -496,6 +661,62 @@ func parseTranscriptFile(file TranscriptFile) (*SessionTrace, error) {
 		return parseCodexTrace(file.Path)
 	case file.Tool == "trae":
 		return parseTraeTrace(file.Path)
+	default:
+		return nil, fmt.Errorf("unsupported transcript type")
+	}
+}
+
+func parseTranscriptFileTail(file TranscriptFile) (*SessionTrace, error) {
+	if file.Tool == "codex" && strings.Contains(file.Path, string(filepath.Separator)+".codexl"+string(filepath.Separator)) {
+		return parseTranscriptFile(file)
+	}
+	switch file.Tool {
+	case "claude":
+		trace := &SessionTrace{
+			Tool:             "claude",
+			Path:             file.Path,
+			SessionID:        strings.TrimSuffix(filepath.Base(file.Path), filepath.Ext(file.Path)),
+			IndependentlyRun: true,
+		}
+		setTraceProjectName(trace, extractClaudeProjectFromPath(file.Path), "transcript_path")
+		if err := forEachRecentJSONLTailLine(file.Path, func(line []byte) bool {
+			processClaudeTraceLine(trace, line)
+			return true
+		}); err != nil {
+			return nil, err
+		}
+		finalizeTrace(trace)
+		return nonEmptyTrace(trace), nil
+	case "codex":
+		trace := &SessionTrace{
+			Tool:             "codex",
+			Path:             file.Path,
+			SessionID:        fallbackSessionIDForFile(file),
+			IndependentlyRun: true,
+		}
+		if err := forEachRecentJSONLTailLine(file.Path, func(line []byte) bool {
+			processCodexTraceLine(trace, line)
+			return true
+		}); err != nil {
+			return nil, err
+		}
+		finalizeTrace(trace)
+		return nonEmptyTrace(trace), nil
+	case "trae":
+		trace := &SessionTrace{
+			Tool:             "trae",
+			Path:             file.Path,
+			SessionID:        fallbackSessionIDForFile(file),
+			IndependentlyRun: true,
+		}
+		if err := forEachRecentJSONLTailLine(file.Path, func(line []byte) bool {
+			processTraeTraceLine(trace, line)
+			return true
+		}); err != nil {
+			return nil, err
+		}
+		finalizeTrace(trace)
+		return nonEmptyTrace(trace), nil
 	default:
 		return nil, fmt.Errorf("unsupported transcript type")
 	}
@@ -1193,12 +1414,17 @@ func cloneTranscriptData(in *TranscriptData) *TranscriptData {
 		return nil
 	}
 	out := &TranscriptData{
-		Traces:       make(map[string]*SessionTrace, len(in.Traces)),
-		SessionSpans: append([]Interval(nil), in.SessionSpans...),
-		BurstSpans:   append([]Interval(nil), in.BurstSpans...),
-		ScannedFiles: in.ScannedFiles,
-		ParsedFiles:  in.ParsedFiles,
-		Errors:       append([]string(nil), in.Errors...),
+		Traces:                           make(map[string]*SessionTrace, len(in.Traces)),
+		SessionSpans:                     append([]Interval(nil), in.SessionSpans...),
+		BurstSpans:                       append([]Interval(nil), in.BurstSpans...),
+		ScannedFiles:                     in.ScannedFiles,
+		ParsedFiles:                      in.ParsedFiles,
+		DeferredFiles:                    in.DeferredFiles,
+		TailParsedFiles:                  in.TailParsedFiles,
+		HistoricalScanDeferred:           in.HistoricalScanDeferred,
+		ForegroundScanLookbackSeconds:    in.ForegroundScanLookbackSeconds,
+		ConfiguredHistoryLookbackSeconds: in.ConfiguredHistoryLookbackSeconds,
+		Errors:                           append([]string(nil), in.Errors...),
 	}
 	for path, trace := range in.Traces {
 		if trace == nil {

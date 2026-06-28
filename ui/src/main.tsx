@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Activity, ArrowUpRight, Bot, Gauge, GitBranch, Languages, Moon, RefreshCw, Search, Server, Sun, Terminal, X } from "lucide-react";
+import { Activity, ArrowUpRight, Bot, ChevronDown, Copy, ExternalLink, Gauge, GitBranch, Languages, Layers, Moon, RefreshCw, Search, Server, Sun, Terminal, X } from "lucide-react";
 import "./styles.css";
 
 const BRAND_NAME = "Agent Load";
@@ -30,7 +30,7 @@ type Snapshot = {
   trends?: TrendSet;
   realtime_trends?: TrendSet;
   history?: { retained_sample_count?: number; loaded_sample_count?: number; last_write_error?: string };
-  transcript_stats?: { scanned_files?: number; parsed_files?: number; cached?: boolean; errors?: string[] };
+  transcript_stats?: TranscriptStats;
   project_focus?: ProjectSnapshot[];
   candidate_workitems?: CandidateWorkitem[];
   live_processes?: LiveProcess[];
@@ -91,6 +91,18 @@ type TrendPoint = {
   runtime_sampled?: boolean;
 };
 
+type TranscriptStats = {
+  scanned_files?: number;
+  parsed_files?: number;
+  deferred_files?: number;
+  tail_parsed_files?: number;
+  historical_scan_deferred?: boolean;
+  foreground_scan_lookback_seconds?: number;
+  configured_history_lookback_seconds?: number;
+  cached?: boolean;
+  errors?: string[];
+};
+
 type ProjectSnapshot = {
   project?: string;
   session_count?: number;
@@ -100,11 +112,29 @@ type ProjectSnapshot = {
   unknown_role_sessions?: number;
   process_count?: number;
   attention_share_pct?: number;
+  attention_basis?: string;
   stale_session_count?: number;
   recent_session_count?: number;
   confidence?: string;
+  confidence_reasons?: string[];
+  project_attribution_confidence?: string;
+  project_attribution_reasons?: string[];
   last_event_age_seconds?: number;
-  tools?: Array<{ tool?: string; session_count?: number; active_burst_count?: number; process_count?: number }>;
+  last_event_at?: string;
+  tools?: ProjectTool[];
+};
+
+type ProjectTool = {
+  tool?: string;
+  session_count?: number;
+  active_burst_count?: number;
+  process_count?: number;
+};
+
+type HostApp = {
+  pid?: number;
+  name?: string;
+  bundle_path?: string;
 };
 
 type LiveProcess = {
@@ -113,7 +143,7 @@ type LiveProcess = {
   command?: string;
   mapped_sessions?: number;
   session_ids?: string[];
-  host_app?: { pid?: number; name?: string; bundle_path?: string };
+  host_app?: HostApp;
 };
 
 type LiveSession = {
@@ -121,14 +151,26 @@ type LiveSession = {
   session_id?: string;
   session_role?: string;
   role_confidence?: string;
+  role_reasons?: string[];
+  thread_source?: string;
+  parent_thread_id?: string;
+  agent_role?: string;
+  agent_nickname?: string;
+  role_hint_source?: string;
+  independently_run?: boolean;
   project?: string;
   process_count?: number;
+  host_apps?: HostApp[];
   active_burst?: boolean;
   freshness?: string;
   mapping_method?: string;
+  missing_transcript?: boolean;
   confidence?: string;
+  confidence_reasons?: string[];
   last_event_age_seconds?: number;
+  last_event_at?: string;
   path?: string;
+  provenance?: string[];
 };
 
 type CandidateWorkitem = {
@@ -202,6 +244,22 @@ const copy: Record<Lang, Record<string, string>> = {
     main: "main",
     subagent: "sub",
     unknown: "unknown",
+    active: "Active",
+    all: "All",
+    total: "Total",
+    host: "Host",
+    tools: "Tools",
+    foreground: "Foreground",
+    deferred: "Deferred",
+    tail: "Tail",
+    cached: "cached",
+    fresh: "fresh",
+    openHost: "Open host app",
+    copySession: "Copy session id",
+    unassigned: "Unassigned",
+    linkedSubagents: "Linked subagents",
+    unlinkedSubagents: "Unlinked subagents",
+    scanWindow: "Foreground window",
   },
   zh: {
     sub: "本地 Agent 控制台",
@@ -240,6 +298,22 @@ const copy: Record<Lang, Record<string, string>> = {
     main: "主",
     subagent: "子",
     unknown: "未知",
+    active: "活跃",
+    all: "全部",
+    total: "合计",
+    host: "宿主",
+    tools: "工具",
+    foreground: "前台",
+    deferred: "延后",
+    tail: "尾部",
+    cached: "缓存",
+    fresh: "新扫",
+    openHost: "打开宿主应用",
+    copySession: "复制会话 ID",
+    unassigned: "未归属",
+    linkedSubagents: "已关联子会话",
+    unlinkedSubagents: "未关联子会话",
+    scanWindow: "前台窗口",
   },
   ja: {
     sub: "ローカル Agent コンソール",
@@ -278,6 +352,22 @@ const copy: Record<Lang, Record<string, string>> = {
     main: "main",
     subagent: "sub",
     unknown: "unknown",
+    active: "Active",
+    all: "All",
+    total: "Total",
+    host: "Host",
+    tools: "Tools",
+    foreground: "Foreground",
+    deferred: "Deferred",
+    tail: "Tail",
+    cached: "cache",
+    fresh: "fresh",
+    openHost: "ホストアプリを開く",
+    copySession: "セッション ID をコピー",
+    unassigned: "Unassigned",
+    linkedSubagents: "Linked subagents",
+    unlinkedSubagents: "Unlinked subagents",
+    scanWindow: "Foreground window",
   },
 };
 
@@ -294,12 +384,19 @@ function App() {
   const [logTab, setLogTab] = useState<LogTab>("summary");
   const [refreshInterval, setRefreshInterval] = useState<number>(() => initialRefreshInterval());
   const shellRef = useRef<HTMLDivElement | null>(null);
+  const lastRenderTokenRef = useRef("");
 
   const t = useCallback((key: string) => copy[lang][key] || copy.en[key] || key, [lang]);
-  const fetchSnapshot = useCallback(async () => {
+  const fetchSnapshot = useCallback(async (reason: "initial" | "manual" | "auto" = "auto") => {
     const response = await fetch("/api/snapshot", { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const next = (await response.json()) as Snapshot;
+    const token = next.refresh_slot_id || next.generated_at || "";
+    if (reason === "auto" && token && token === lastRenderTokenRef.current) {
+      setError(null);
+      return;
+    }
+    lastRenderTokenRef.current = token;
     setSnapshot(next);
     setError(null);
   }, []);
@@ -307,7 +404,7 @@ function App() {
     setRefreshing(true);
     try {
       await fetch("/api/refresh", { method: "POST", headers: { "Content-Type": "application/json" } });
-      await fetchSnapshot();
+      await fetchSnapshot("manual");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -316,12 +413,12 @@ function App() {
   }, [fetchSnapshot]);
 
   useEffect(() => {
-    void fetchSnapshot().catch((err) => setError(err instanceof Error ? err.message : String(err)));
+    void fetchSnapshot("initial").catch((err) => setError(err instanceof Error ? err.message : String(err)));
   }, [fetchSnapshot]);
   useEffect(() => {
     if (!refreshInterval) return;
     const id = window.setInterval(() => {
-      if (document.visibilityState === "visible") void fetchSnapshot().catch(() => undefined);
+      if (document.visibilityState === "visible") void fetchSnapshot("auto").catch(() => undefined);
     }, refreshInterval);
     return () => window.clearInterval(id);
   }, [fetchSnapshot, refreshInterval]);
@@ -435,9 +532,9 @@ function Topbar({
     <header className="topbar">
       <div className="brand">
         <span className="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
-            <path d="M4 19V5l8 5 8-5v14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          <span />
+          <span />
+          <span />
         </span>
         <div className="brand-text">
           <span className="brand-name">{BRAND_NAME}</span>
@@ -604,6 +701,7 @@ function Pane({
         </div>
         <Timeline t={t} snapshot={snapshot} selected={selected} />
         <Metrics t={t} snapshot={snapshot} selected={selected} compact={compact} />
+        <ProjectWorkspace t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} compact={compact} />
         <div className="logwrap">
           <div className="logtabs">
             {(["summary", "evidence", "trend"] as LogTab[]).map((tab) => (
@@ -671,6 +769,317 @@ function Metrics({ t, snapshot, selected, compact }: { t: (key: string) => strin
     </div>
   );
 }
+
+function ProjectWorkspace({
+  t,
+  snapshot,
+  selection,
+  setSelection,
+  compact,
+}: {
+  t: (key: string) => string;
+  snapshot: Snapshot;
+  selection: Selection;
+  setSelection: (value: Selection) => void;
+  compact: boolean;
+}) {
+  const projects = orderedProjects(snapshot);
+  const selectedProject = selection.type === "project" ? projects.find((project) => safeID(project.project) === selection.id) : undefined;
+  const selectedSession = selection.type === "session" ? (snapshot.live_sessions ?? []).find((session) => safeID(session.session_id) === selection.id) : undefined;
+  const selectedProcess = selection.type === "process" ? (snapshot.live_processes ?? []).find((process) => String(process.pid ?? "") === selection.id) : undefined;
+
+  if (selection.type === "session" && selectedSession) {
+    return <SessionEvidencePanel t={t} session={selectedSession} />;
+  }
+  if (selection.type === "process" && selectedProcess) {
+    return <ProcessEvidencePanel t={t} process={selectedProcess} />;
+  }
+  if (selectedProject) {
+    return (
+      <div className="workspace">
+        <ScanBoundary t={t} snapshot={snapshot} compact={compact} />
+        <ProjectTreeRow
+          t={t}
+          snapshot={snapshot}
+          project={selectedProject}
+          setSelection={setSelection}
+          compact={compact}
+          expanded
+        />
+      </div>
+    );
+  }
+  return (
+    <div className="workspace">
+      <ScanBoundary t={t} snapshot={snapshot} compact={compact} />
+      <div className="project-tree-list">
+        {projects.length ? projects.map((project, index) => (
+          <ProjectTreeRow
+            key={safeID(project.project)}
+            t={t}
+            snapshot={snapshot}
+            project={project}
+            setSelection={setSelection}
+            compact={compact}
+            expanded={!compact && index < 2}
+          />
+        )) : (
+          <section className="empty-inline">
+            <Layers size={18} />
+            <span>{t("noData")}</span>
+          </section>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ScanBoundary({ t, snapshot, compact }: { t: (key: string) => string; snapshot: Snapshot; compact: boolean }) {
+  const stats = snapshot.transcript_stats ?? {};
+  const pieces = [
+    { label: t("foreground"), value: `${stats.parsed_files ?? 0}/${stats.scanned_files ?? 0}` },
+    { label: t("deferred"), value: stats.historical_scan_deferred ? "walk" : String(stats.deferred_files ?? 0) },
+    { label: t("tail"), value: stats.tail_parsed_files ?? 0 },
+    { label: t("source"), value: stats.cached ? t("cached") : t("fresh") },
+  ];
+  if (!compact) {
+    pieces.push({ label: t("scanWindow"), value: formatAge(stats.foreground_scan_lookback_seconds) });
+  }
+  return (
+    <section className="scan-boundary" aria-label={t("scan")}>
+      <div className="scan-boundary-main">
+        <Activity size={15} />
+        <span>{t("scan")}</span>
+      </div>
+      <div className="scan-boundary-grid">
+        {pieces.map((piece) => (
+          <span className="scan-readout" key={piece.label} title={`${piece.label}: ${piece.value}`}>
+            <b>{piece.label}</b>
+            <strong>{piece.value}</strong>
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ProjectTreeRow({
+  t,
+  snapshot,
+  project,
+  setSelection,
+  compact,
+  expanded,
+}: {
+  t: (key: string) => string;
+  snapshot: Snapshot;
+  project: ProjectSnapshot;
+  setSelection: (value: Selection) => void;
+  compact: boolean;
+  expanded: boolean;
+}) {
+  const sessions = sessionsForProject(snapshot, project);
+  const counts = projectRoleCounts(project, sessions);
+  const projectId = safeID(project.project);
+  const title = project.project || t("unassigned");
+  return (
+    <article className={`project-tree-row ${expanded ? "expanded" : ""}`}>
+      <div className="project-tree-head">
+        <button className="project-select" type="button" onClick={() => setSelection({ type: "project", id: projectId })}>
+          <ChevronDown size={15} aria-hidden="true" />
+          <span>{title}</span>
+          <small>{formatAge(project.last_event_age_seconds)}</small>
+        </button>
+        <ProjectMetricMatrix t={t} counts={counts} processCount={project.process_count ?? 0} />
+        <ToolStrip t={t} tools={project.tools ?? []} />
+      </div>
+      {expanded ? <SessionTree t={t} sessions={sessions} setSelection={setSelection} compact={compact} /> : null}
+    </article>
+  );
+}
+
+function ProjectMetricMatrix({ t, counts, processCount }: { t: (key: string) => string; counts: RoleCounts; processCount: number }) {
+  return (
+    <div className="project-matrix" aria-label={t("metricSessions")}>
+      <span />
+      <b title={t("main")}>{t("main")}</b>
+      <b title={t("subagent")}>{t("subagent")}</b>
+      <b title={t("total")}>{t("total")}</b>
+      <b>{t("active")}</b>
+      <strong title={`${t("active")} ${t("main")}`}>{counts.activeMain}</strong>
+      <strong title={`${t("active")} ${t("subagent")}`}>{counts.activeSub}</strong>
+      <strong title={`${t("active")} ${t("total")}`}>{counts.activeTotal}</strong>
+      <b>{t("all")}</b>
+      <strong title={`${t("all")} ${t("main")}`}>{counts.main}</strong>
+      <strong title={`${t("all")} ${t("subagent")}`}>{counts.sub}</strong>
+      <strong title={`${t("all")} ${t("total")}`}>{counts.total}</strong>
+      <span className="project-proc" title={t("metricProcesses")}>
+        <Server size={12} />
+        {processCount}
+      </span>
+    </div>
+  );
+}
+
+function ToolStrip({ t, tools }: { t: (key: string) => string; tools: ProjectTool[] }) {
+  if (!tools.length) return null;
+  return (
+    <div className="tool-strip" aria-label={t("tools")}>
+      {tools.map((tool) => {
+        const toolName = tool.tool || "unknown";
+        return (
+          <span className="tool-mark" key={toolName} title={`${toolDisplayName(toolName)} · ${tool.active_burst_count ?? 0}/${tool.session_count ?? 0} ${t("metricSessions")}`}>
+            <ToolIcon tool={toolName} />
+            <strong>{tool.active_burst_count ?? 0}</strong>
+            <small>{tool.session_count ?? 0}</small>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function SessionTree({
+  t,
+  sessions,
+  setSelection,
+  compact,
+}: {
+  t: (key: string) => string;
+  sessions: LiveSession[];
+  setSelection: (value: Selection) => void;
+  compact: boolean;
+}) {
+  const grouped = groupSessionsByTool(sessions);
+  if (!sessions.length) {
+    return <div className="session-tree empty">{t("empty")}</div>;
+  }
+  return (
+    <div className="session-tree">
+      {grouped.map((group) => (
+        <section className="session-group" key={group.tool}>
+          <div className="session-group-head">
+            <span><ToolIcon tool={group.tool} />{toolDisplayName(group.tool)}</span>
+            <strong>{group.sessions.length}</strong>
+          </div>
+          {group.sessions.slice(0, compact ? 5 : 12).map((session) => (
+            <SessionLine key={sessionIdentity(session)} t={t} session={session} setSelection={setSelection} compact={compact} />
+          ))}
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function SessionLine({
+  t,
+  session,
+  setSelection,
+  compact,
+}: {
+  t: (key: string) => string;
+  session: LiveSession;
+  setSelection: (value: Selection) => void;
+  compact: boolean;
+}) {
+  const role = normalizedRole(session.session_role);
+  const sid = session.session_id || "";
+  const host = session.host_apps?.[0];
+  return (
+    <div className={`session-line role-${role} ${session.active_burst ? "is-active" : ""}`}>
+      <button className="session-main" type="button" onClick={() => setSelection({ type: "session", id: safeID(sid) })}>
+        <span className="role-glyph" title={roleLabel(t, role)}>{roleGlyph(role)}</span>
+        <span className="session-title">
+          <strong>{session.agent_nickname || shortID(sid) || "session"}</strong>
+          <small>{formatAge(session.last_event_age_seconds)} · {session.process_count ?? 0} pid</small>
+        </span>
+      </button>
+      <span className="session-tool-pair">
+        <ToolIcon tool={session.tool || "unknown"} />
+        {host ? <HostAppButton t={t} host={host} /> : <span className="host-empty" title={t("host")}>{compact ? "" : t("host")}</span>}
+      </span>
+      <button className="mini-icon" type="button" title={t("copySession")} onClick={() => copyText(sid)}>
+        <Copy size={13} />
+      </button>
+    </div>
+  );
+}
+
+function SessionEvidencePanel({ t, session }: { t: (key: string) => string; session: LiveSession }) {
+  return (
+    <section className="entity-panel">
+      <div className="entity-title">
+        <Bot size={17} />
+        <strong>{session.project || t("unassigned")}</strong>
+        <span>{roleLabel(t, normalizedRole(session.session_role))}</span>
+      </div>
+      <div className="entity-grid">
+        <Readout label="ID" value={session.session_id || "n/a"} />
+        <Readout label={t("tools")} value={toolDisplayName(session.tool)} />
+        <Readout label={t("host")} value={(session.host_apps ?? []).map((app) => app.name).join(", ") || "n/a"} />
+        <Readout label={t("command")} value={session.path || "n/a"} />
+      </div>
+    </section>
+  );
+}
+
+function ProcessEvidencePanel({ t, process }: { t: (key: string) => string; process: LiveProcess }) {
+  return (
+    <section className="entity-panel">
+      <div className="entity-title">
+        <Server size={17} />
+        <strong>{toolDisplayName(process.tool)}</strong>
+        <span>pid {process.pid ?? "n/a"}</span>
+      </div>
+      <div className="entity-grid">
+        <Readout label={t("metricMatched")} value={String(process.mapped_sessions ?? 0)} />
+        <Readout label={t("host")} value={process.host_app?.name || "n/a"} />
+        <Readout label={t("command")} value={process.command || "n/a"} />
+      </div>
+    </section>
+  );
+}
+
+function Readout({ label, value }: { label: string; value?: string }) {
+  return (
+    <span className="readout">
+      <b>{label}</b>
+      <strong>{value || "n/a"}</strong>
+    </span>
+  );
+}
+
+function ToolIcon({ tool }: { tool?: string }) {
+  const iconName = toolIconName(tool);
+  if (!iconName) return <span className="tool-fallback">{toolBadgeLabel(tool)}</span>;
+  return (
+    <span className="tool-icon">
+      <img src={`/api/tool-icon/${encodeURIComponent(iconName)}`} alt="" loading="lazy" decoding="async" />
+    </span>
+  );
+}
+
+function HostAppButton({ t, host }: { t: (key: string) => string; host: HostApp }) {
+  return (
+    <button className="host-app" type="button" title={`${t("openHost")}: ${host.name || host.pid}`} onClick={() => openHostApp(host)}>
+      <span className="host-icon">
+        <img src={`/api/host-app-icon/${encodeURIComponent(String(host.pid ?? ""))}`} alt="" loading="lazy" decoding="async" />
+      </span>
+      <ExternalLink size={12} />
+    </button>
+  );
+}
+
+type RoleCounts = {
+  main: number;
+  sub: number;
+  unknown: number;
+  total: number;
+  activeMain: number;
+  activeSub: number;
+  activeUnknown: number;
+  activeTotal: number;
+};
 
 function LanguageControl({ lang, setLang }: { lang: Lang; setLang: (lang: Lang) => void }) {
   return (
@@ -827,6 +1236,137 @@ function selectionMetrics(t: (key: string) => string, snapshot: Snapshot, select
     { key: t("samples"), value: snapshot.history?.retained_sample_count ?? 0, cls: "", icon: <Gauge size={15} /> },
     { key: t("topProject"), value: risk?.top_project || "none", cls: "", icon: <GitBranch size={15} /> },
   ];
+}
+
+function orderedProjects(snapshot: Snapshot): ProjectSnapshot[] {
+  return [...(snapshot.project_focus ?? [])].sort((a, b) => {
+    const activeDelta = (b.active_burst_count ?? 0) - (a.active_burst_count ?? 0);
+    if (activeDelta) return activeDelta;
+    const attentionDelta = (b.attention_share_pct ?? 0) - (a.attention_share_pct ?? 0);
+    if (attentionDelta) return attentionDelta;
+    return String(a.project || "").localeCompare(String(b.project || ""));
+  });
+}
+
+function projectKey(project?: string): string {
+  return String(project || "unassigned").trim() || "unassigned";
+}
+
+function sessionsForProject(snapshot: Snapshot, project: ProjectSnapshot): LiveSession[] {
+  const key = projectKey(project.project).toLowerCase();
+  return [...(snapshot.live_sessions ?? [])]
+    .filter((session) => projectKey(session.project).toLowerCase() === key)
+    .sort((a, b) => {
+      if (Number(Boolean(a.active_burst)) !== Number(Boolean(b.active_burst))) return Number(Boolean(b.active_burst)) - Number(Boolean(a.active_burst));
+      const ageA = typeof a.last_event_age_seconds === "number" ? a.last_event_age_seconds : Number.MAX_SAFE_INTEGER;
+      const ageB = typeof b.last_event_age_seconds === "number" ? b.last_event_age_seconds : Number.MAX_SAFE_INTEGER;
+      if (ageA !== ageB) return ageA - ageB;
+      return sessionIdentity(a).localeCompare(sessionIdentity(b));
+    });
+}
+
+function projectRoleCounts(project: ProjectSnapshot, sessions: LiveSession[]): RoleCounts {
+  const counts: RoleCounts = {
+    main: project.main_agent_sessions ?? 0,
+    sub: project.subagent_sessions ?? 0,
+    unknown: project.unknown_role_sessions ?? 0,
+    total: project.session_count ?? 0,
+    activeMain: 0,
+    activeSub: 0,
+    activeUnknown: 0,
+    activeTotal: project.active_burst_count ?? 0,
+  };
+  if (sessions.length) {
+    counts.main = 0;
+    counts.sub = 0;
+    counts.unknown = 0;
+    counts.activeMain = 0;
+    counts.activeSub = 0;
+    counts.activeUnknown = 0;
+    sessions.forEach((session) => {
+      const role = normalizedRole(session.session_role);
+      if (role === "main") counts.main++;
+      else if (role === "subagent") counts.sub++;
+      else counts.unknown++;
+      if (session.active_burst) {
+        if (role === "main") counts.activeMain++;
+        else if (role === "subagent") counts.activeSub++;
+        else counts.activeUnknown++;
+      }
+    });
+    counts.total = sessions.length;
+    counts.activeTotal = counts.activeMain + counts.activeSub + counts.activeUnknown;
+  }
+  return counts;
+}
+
+function groupSessionsByTool(sessions: LiveSession[]): Array<{ tool: string; sessions: LiveSession[] }> {
+  const groups = new Map<string, LiveSession[]>();
+  sessions.forEach((session) => {
+    const tool = String(session.tool || "unknown").trim() || "unknown";
+    groups.set(tool, [...(groups.get(tool) ?? []), session]);
+  });
+  return Array.from(groups.entries())
+    .map(([tool, items]) => ({ tool, sessions: items }))
+    .sort((a, b) => {
+      const activeDelta = b.sessions.filter((session) => session.active_burst).length - a.sessions.filter((session) => session.active_burst).length;
+      if (activeDelta) return activeDelta;
+      return a.tool.localeCompare(b.tool);
+    });
+}
+
+function normalizedRole(role?: string): "main" | "subagent" | "unknown" {
+  const value = String(role || "").trim().toLowerCase();
+  if (value === "main" || value === "main_agent" || value === "user") return "main";
+  if (value === "sub" || value === "subagent" || value === "agent") return "subagent";
+  return "unknown";
+}
+
+function roleLabel(t: (key: string) => string, role: "main" | "subagent" | "unknown"): string {
+  return role === "main" ? t("main") : role === "subagent" ? t("subagent") : t("unknown");
+}
+
+function roleGlyph(role: "main" | "subagent" | "unknown"): string {
+  if (role === "main") return "M";
+  if (role === "subagent") return "S";
+  return "?";
+}
+
+function sessionIdentity(session: LiveSession): string {
+  return session.session_id || session.path || `${session.tool || "tool"}:${session.project || "project"}`;
+}
+
+function toolDisplayName(toolName?: string): string {
+  const raw = String(toolName || "").trim();
+  if (!raw) return "Unknown";
+  const key = raw.toLowerCase();
+  if (key === "codex" || key === "codexl") return "Codex";
+  if (key === "claude") return "Claude";
+  if (key === "trae" || key === "traex") return "Trae";
+  return raw;
+}
+
+function toolIconName(toolName?: string): string {
+  const key = String(toolName || "").trim().toLowerCase();
+  if (key === "codex" || key === "codexl") return "codex";
+  if (key === "claude") return "claude";
+  if (key === "trae" || key === "traex") return "trae";
+  return "";
+}
+
+function toolBadgeLabel(toolName?: string): string {
+  const raw = String(toolName || "?").trim();
+  return (raw.slice(0, 2) || "?").toUpperCase();
+}
+
+async function openHostApp(host: HostApp) {
+  if (!host.pid) return;
+  await fetch(`/api/open-host-app/${encodeURIComponent(String(host.pid))}`, { method: "POST" }).catch(() => undefined);
+}
+
+function copyText(value: string) {
+  if (!value) return;
+  void navigator.clipboard?.writeText(value).catch(() => undefined);
 }
 
 function renderLogText(t: (key: string) => string, snapshot: Snapshot, selected: SelectedView, tab: LogTab): string {

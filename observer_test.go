@@ -312,3 +312,186 @@ func TestTranscriptScanKeepsCodexLLaneFilesOnFullParse(t *testing.T) {
 		t.Fatalf("expected codexL lane events to stay on full parse, got full=%d append=%d", fullReads.Load(), appendReads.Load())
 	}
 }
+
+func TestForegroundTranscriptScanDefersOlderNonPriorityFiles(t *testing.T) {
+	tmp := t.TempDir()
+	recentPath := filepath.Join(tmp, ".codex", "sessions", "recent.jsonl")
+	oldPath := filepath.Join(tmp, ".codex", "sessions", "old.jsonl")
+	priorityPath := filepath.Join(tmp, ".codex", "sessions", "priority.jsonl")
+	for _, path := range []string{recentPath, oldPath, priorityPath} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir transcript dir: %v", err)
+		}
+	}
+	if err := os.WriteFile(recentPath, []byte(`{"timestamp":"2026-06-28T12:00:00Z","payload":{"id":"recent","cwd":"/tmp/agentload"}}`+"\n"), 0o644); err != nil {
+		t.Fatalf("write recent transcript: %v", err)
+	}
+	if err := os.WriteFile(oldPath, []byte(`{"timestamp":"2026-06-28T09:00:00Z","payload":{"id":"old","cwd":"/tmp/agentload"}}`+"\n"), 0o644); err != nil {
+		t.Fatalf("write old transcript: %v", err)
+	}
+	if err := os.WriteFile(priorityPath, []byte(`{"timestamp":"2026-06-28T09:10:00Z","payload":{"id":"priority","cwd":"/tmp/agentload"}}`+"\n"), 0o644); err != nil {
+		t.Fatalf("write priority transcript: %v", err)
+	}
+	oldTime := time.Date(2026, 6, 28, 9, 30, 0, 0, time.UTC)
+	recentTime := time.Date(2026, 6, 28, 12, 10, 0, 0, time.UTC)
+	if err := os.Chtimes(oldPath, oldTime, oldTime); err != nil {
+		t.Fatalf("set old mtime: %v", err)
+	}
+	if err := os.Chtimes(priorityPath, oldTime, oldTime); err != nil {
+		t.Fatalf("set priority mtime: %v", err)
+	}
+	if err := os.Chtimes(recentPath, recentTime, recentTime); err != nil {
+		t.Fatalf("set recent mtime: %v", err)
+	}
+
+	observer := newObserver(Config{
+		IdleGap:     90 * time.Second,
+		MinInterval: 15 * time.Second,
+		Lookback:    24 * time.Hour,
+	})
+	var reads atomic.Int32
+	var tailReads atomic.Int32
+	original := parseTranscriptFileFunc
+	originalTail := parseTranscriptFileTailFunc
+	parseTranscriptFileFunc = func(file TranscriptFile) (*SessionTrace, error) {
+		reads.Add(1)
+		return original(file)
+	}
+	parseTranscriptFileTailFunc = func(file TranscriptFile) (*SessionTrace, error) {
+		tailReads.Add(1)
+		return originalTail(file)
+	}
+	t.Cleanup(func() {
+		parseTranscriptFileFunc = original
+		parseTranscriptFileTailFunc = originalTail
+	})
+
+	data := observer.scanTranscriptsWithOptions(nil, []string{filepath.Join(tmp, ".codex")}, nil, []TranscriptFile{{Tool: "codex", Path: priorityPath}}, transcriptScanOptions{
+		HistoryCutoff:      time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC),
+		ForegroundCutoff:   time.Date(2026, 6, 28, 11, 0, 0, 0, time.UTC),
+		HistoryLookback:    24 * time.Hour,
+		ForegroundLookback: time.Hour,
+		IdleGap:            90 * time.Second,
+		MinInterval:        15 * time.Second,
+	})
+
+	if data.ScannedFiles != 3 {
+		t.Fatalf("expected three candidates, got %+v", data)
+	}
+	if data.DeferredFiles != 1 {
+		t.Fatalf("expected one older non-priority file to be deferred, got %+v", data)
+	}
+	if reads.Load() != 1 || tailReads.Load() != 1 || data.ParsedFiles != 2 || data.TailParsedFiles != 1 {
+		t.Fatalf("expected priority to full-parse and recent to tail-parse, full=%d tail=%d data=%+v", reads.Load(), tailReads.Load(), data)
+	}
+	if data.Traces[oldPath] != nil {
+		t.Fatalf("expected old non-priority trace to be absent from foreground data")
+	}
+	if data.Traces[priorityPath] == nil || data.Traces[recentPath] == nil {
+		t.Fatalf("expected priority and recent traces, got %+v", data.Traces)
+	}
+	if data.ForegroundScanLookbackSeconds != 3600 || data.ConfiguredHistoryLookbackSeconds != 86400 {
+		t.Fatalf("expected scan window metadata, got %+v", data)
+	}
+}
+
+func TestForegroundTranscriptScanCanDeferHistoryWalk(t *testing.T) {
+	tmp := t.TempDir()
+	recentPath := filepath.Join(tmp, ".codex", "sessions", "recent.jsonl")
+	oldPath := filepath.Join(tmp, ".codex", "sessions", "old.jsonl")
+	priorityPath := filepath.Join(tmp, ".codex", "sessions", "priority.jsonl")
+	for _, path := range []string{recentPath, oldPath, priorityPath} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir transcript dir: %v", err)
+		}
+	}
+	if err := os.WriteFile(recentPath, []byte(`{"timestamp":"2026-06-28T12:00:00Z","payload":{"id":"recent","cwd":"/tmp/agentload"}}`+"\n"), 0o644); err != nil {
+		t.Fatalf("write recent transcript: %v", err)
+	}
+	if err := os.WriteFile(oldPath, []byte(`{"timestamp":"2026-06-28T09:00:00Z","payload":{"id":"old","cwd":"/tmp/agentload"}}`+"\n"), 0o644); err != nil {
+		t.Fatalf("write old transcript: %v", err)
+	}
+	if err := os.WriteFile(priorityPath, []byte(`{"timestamp":"2026-06-28T09:10:00Z","payload":{"id":"priority","cwd":"/tmp/agentload"}}`+"\n"), 0o644); err != nil {
+		t.Fatalf("write priority transcript: %v", err)
+	}
+	oldTime := time.Date(2026, 6, 28, 9, 30, 0, 0, time.UTC)
+	recentTime := time.Date(2026, 6, 28, 12, 10, 0, 0, time.UTC)
+	for _, path := range []string{oldPath, priorityPath} {
+		if err := os.Chtimes(path, oldTime, oldTime); err != nil {
+			t.Fatalf("set old mtime: %v", err)
+		}
+	}
+	if err := os.Chtimes(recentPath, recentTime, recentTime); err != nil {
+		t.Fatalf("set recent mtime: %v", err)
+	}
+
+	observer := newObserver(Config{
+		IdleGap:     90 * time.Second,
+		MinInterval: 15 * time.Second,
+		Lookback:    24 * time.Hour,
+	})
+	data := observer.scanTranscriptsWithOptions(nil, []string{filepath.Join(tmp, ".codex")}, nil, []TranscriptFile{{Tool: "codex", Path: priorityPath}}, transcriptScanOptions{
+		HistoryCutoff:      time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC),
+		ForegroundCutoff:   time.Date(2026, 6, 28, 11, 0, 0, 0, time.UTC),
+		HistoryLookback:    24 * time.Hour,
+		ForegroundLookback: time.Hour,
+		DeferHistoryWalk:   true,
+		IdleGap:            90 * time.Second,
+		MinInterval:        15 * time.Second,
+	})
+
+	if data.ScannedFiles != 2 {
+		t.Fatalf("expected only recent and priority candidates when history walk is deferred, got %+v", data)
+	}
+	if data.DeferredFiles != 0 || !data.HistoricalScanDeferred {
+		t.Fatalf("expected historical directory enumeration to be marked deferred without per-file count, got %+v", data)
+	}
+	if data.Traces[oldPath] != nil || data.Traces[priorityPath] == nil || data.Traces[recentPath] == nil {
+		t.Fatalf("expected priority and recent traces only, got %+v", data.Traces)
+	}
+}
+
+func TestForegroundTranscriptScanDefersFreshMTimeWhenTailIsOlder(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, ".codex", "sessions", "old-tail.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir transcript dir: %v", err)
+	}
+	body := `{"timestamp":"2026-06-28T09:00:00Z","payload":{"id":"old-tail","cwd":"/tmp/agentload"}}` + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+	freshMTime := time.Date(2026, 6, 28, 12, 10, 0, 0, time.UTC)
+	if err := os.Chtimes(path, freshMTime, freshMTime); err != nil {
+		t.Fatalf("set transcript mtime: %v", err)
+	}
+
+	observer := newObserver(Config{
+		IdleGap:     90 * time.Second,
+		MinInterval: 15 * time.Second,
+		Lookback:    24 * time.Hour,
+	})
+	var reads atomic.Int32
+	original := parseTranscriptFileFunc
+	parseTranscriptFileFunc = func(file TranscriptFile) (*SessionTrace, error) {
+		reads.Add(1)
+		return original(file)
+	}
+	t.Cleanup(func() { parseTranscriptFileFunc = original })
+
+	data := observer.scanTranscriptsWithOptions(nil, []string{filepath.Join(tmp, ".codex")}, nil, nil, transcriptScanOptions{
+		HistoryCutoff:      time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC),
+		ForegroundCutoff:   time.Date(2026, 6, 28, 11, 0, 0, 0, time.UTC),
+		HistoryLookback:    24 * time.Hour,
+		ForegroundLookback: time.Hour,
+		IdleGap:            90 * time.Second,
+		MinInterval:        15 * time.Second,
+	})
+
+	if data.ScannedFiles != 1 || data.DeferredFiles != 1 {
+		t.Fatalf("expected fresh-mtime old-tail candidate to be deferred, got %+v", data)
+	}
+	if reads.Load() != 0 || data.ParsedFiles != 0 {
+		t.Fatalf("expected deferred candidate not to parse, reads=%d data=%+v", reads.Load(), data)
+	}
+}

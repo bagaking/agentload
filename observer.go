@@ -69,10 +69,15 @@ func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 		HistoricPeaks: historicPeaks,
 		Trends:        buildTranscriptTrendWindows(data, now, o.cfg.Lookback),
 		TranscriptStats: TranscriptStats{
-			ScannedFiles: data.ScannedFiles,
-			ParsedFiles:  data.ParsedFiles,
-			Cached:       cached,
-			Errors:       append([]string(nil), data.Errors...),
+			ScannedFiles:                     data.ScannedFiles,
+			ParsedFiles:                      data.ParsedFiles,
+			DeferredFiles:                    data.DeferredFiles,
+			TailParsedFiles:                  data.TailParsedFiles,
+			HistoricalScanDeferred:           data.HistoricalScanDeferred,
+			ForegroundScanLookbackSeconds:    data.ForegroundScanLookbackSeconds,
+			ConfiguredHistoryLookbackSeconds: data.ConfiguredHistoryLookbackSeconds,
+			Cached:                           cached,
+			Errors:                           append([]string(nil), data.Errors...),
 		},
 		ProjectFocus:       projectFocus,
 		CandidateWorkitems: candidateWorkitems,
@@ -96,6 +101,15 @@ func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 	notes = append(notes, sessionNotes...)
 	if len(snapshot.TranscriptStats.Errors) > 0 {
 		notes = append(notes, "Some transcript files could not be parsed; see transcript_stats.errors.")
+	}
+	if snapshot.TranscriptStats.DeferredFiles > 0 {
+		notes = append(notes, fmt.Sprintf(
+			"%d older transcript files were deferred from the foreground snapshot; live process files and transcripts with recent local activity are still included.",
+			snapshot.TranscriptStats.DeferredFiles,
+		))
+	}
+	if snapshot.TranscriptStats.HistoricalScanDeferred {
+		notes = append(notes, "Historical transcript directory enumeration was deferred from the foreground snapshot; live process files and foreground-window transcripts are still included.")
 	}
 	snapshot.Notes = uniqueSortedStrings(notes)
 	return snapshot
