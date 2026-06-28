@@ -1319,6 +1319,63 @@ kbd {
   line-height: 1.45;
 }
 
+.meaning-detail-grid,
+.meaning-point-row {
+  grid-column: 1 / -1;
+}
+
+.meaning-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.meaning-strip.compact .meaning-detail-grid {
+  grid-template-columns: 1fr;
+}
+
+.meaning-detail-grid span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 7px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--inset) 58%, transparent);
+}
+
+.meaning-detail-grid b,
+.meaning-point-row span {
+  color: var(--fg-faint);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.meaning-detail-grid em {
+  color: var(--fg-muted);
+  font-style: normal;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.meaning-point-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.meaning-point-row span {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  padding: 0 7px;
+  border-radius: var(--r-pill);
+  color: var(--fg-muted);
+  background: color-mix(in srgb, var(--surface) 68%, transparent);
+  border: 1px solid var(--border-soft);
+  font-family: var(--font-mono);
+}
+
 .dash-evidence-column,
 .dash-atlas-side,
 .ledger-nav {
@@ -1339,6 +1396,84 @@ kbd {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
 }
+
+.evidence-health {
+  display: grid;
+  gap: 7px;
+}
+
+.evidence-note {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--surface) 62%, transparent);
+  border: 1px solid var(--border-soft);
+}
+
+.evidence-health.good .mapping-note {
+  border-color: color-mix(in srgb, var(--ok) 28%, var(--border));
+}
+
+.evidence-health.warn .mapping-note {
+  border-color: color-mix(in srgb, var(--run) 28%, var(--border));
+}
+
+.evidence-health.bad .mapping-note {
+  border-color: color-mix(in srgb, var(--bad) 28%, var(--border));
+}
+
+.evidence-note-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.evidence-note-head span {
+  color: var(--fg-faint);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.evidence-note-head strong,
+.signal-note em {
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.evidence-note p {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 11.5px;
+  line-height: 1.38;
+}
+
+.mapping-meter {
+  position: relative;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--border) 52%, transparent);
+}
+
+.mapping-meter i {
+  display: block;
+  width: var(--coverage);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.evidence-health.good .mapping-meter i { background: var(--ok); }
+.evidence-health.warn .mapping-meter i { background: var(--run); }
+.evidence-health.bad .mapping-meter i { background: var(--bad); }
 
 .tool-split {
   display: grid;

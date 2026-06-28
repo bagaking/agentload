@@ -298,6 +298,22 @@ const copy: Record<Lang, Record<string, string>> = {
     whyTrust: "Why trust it",
     currentMeaning: "Current meaning",
     currentMeaningCopy: "Active bursts are recent transcript movement, sessions are live or recently active work, and processes are visible local tool pids.",
+    metricExplanation: "Metric explanation",
+    metricLegend: "Fresh / Sessions / Processes are measured from local transcripts and visible runtime processes.",
+    activeThinkingCaveat: "A live session can be idle; fresh movement means the transcript moved recently.",
+    evidenceHealth: "Evidence health",
+    mappingHealth: "Mapping health",
+    scanState: "Scan state",
+    evidenceNote: "Evidence note",
+    transcriptsParsed: "transcripts parsed",
+    foregroundWindow: "foreground window",
+    historicalWalkDeferred: "historical walk deferred",
+    foregroundWindowOnly: "foreground window only",
+    processesObserved: "processes observed",
+    processEvidenceMapped: "process evidence mapped to sessions",
+    evidenceNeedsReview: "process evidence still needs a session link",
+    lowConfidenceEvidence: "sessions need stronger attribution",
+    noSignals: "No active evidence warning",
     mapped: "mapped",
     unmatched: "unmatched",
     noTrend: "No trend samples yet",
@@ -399,6 +415,22 @@ const copy: Record<Lang, Record<string, string>> = {
     whyTrust: "可信依据",
     currentMeaning: "当前口径",
     currentMeaningCopy: "活跃突发来自最近活动记录，session 表示仍在或刚活跃的工作，process 是本地可见工具进程。",
+    metricExplanation: "指标解释",
+    metricLegend: "最近动作 / 会话 / 进程都来自本地活动记录和可见运行时进程。",
+    activeThinkingCaveat: "会话存活不等于正在输出；最近动作表示活动记录刚发生变化。",
+    evidenceHealth: "证据健康",
+    mappingHealth: "映射健康",
+    scanState: "扫描状态",
+    evidenceNote: "证据说明",
+    transcriptsParsed: "条活动记录已解析",
+    foregroundWindow: "前台窗口",
+    historicalWalkDeferred: "历史遍历已延后",
+    foregroundWindowOnly: "仅前台窗口",
+    processesObserved: "个进程可见",
+    processEvidenceMapped: "进程证据已连接到会话",
+    evidenceNeedsReview: "进程证据仍需要会话连接",
+    lowConfidenceEvidence: "会话归因需要更强证据",
+    noSignals: "没有活跃证据警告",
     mapped: "已映射",
     unmatched: "未匹配",
     noTrend: "暂无趋势采样",
@@ -500,6 +532,22 @@ const copy: Record<Lang, Record<string, string>> = {
     whyTrust: "Why trust it",
     currentMeaning: "Current meaning",
     currentMeaningCopy: "Active bursts are recent transcript movement, sessions are live or recently active work, and processes are visible local tool pids.",
+    metricExplanation: "Metric explanation",
+    metricLegend: "Fresh / Sessions / Processes are measured from local transcripts and visible runtime processes.",
+    activeThinkingCaveat: "A live session can be idle; fresh movement means the transcript moved recently.",
+    evidenceHealth: "Evidence health",
+    mappingHealth: "Mapping health",
+    scanState: "Scan state",
+    evidenceNote: "Evidence note",
+    transcriptsParsed: "transcripts parsed",
+    foregroundWindow: "foreground window",
+    historicalWalkDeferred: "historical walk deferred",
+    foregroundWindowOnly: "foreground window only",
+    processesObserved: "processes observed",
+    processEvidenceMapped: "process evidence mapped to sessions",
+    evidenceNeedsReview: "process evidence still needs a session link",
+    lowConfidenceEvidence: "sessions need stronger attribution",
+    noSignals: "No active evidence warning",
     mapped: "mapped",
     unmatched: "unmatched",
     noTrend: "No trend samples yet",
@@ -884,9 +932,9 @@ function FieldIndex({ t, snapshot, compact = false }: { t: (key: string) => stri
 }
 
 function CurrentMeaningStrip({ t, snapshot, compact = false }: { t: (key: string) => string; snapshot: Snapshot; compact?: boolean }) {
-  const risk = snapshot.coordination_risk ?? {};
-  const signals = risk.signals ?? [];
-  const lead = signals[0]?.evidence || t("currentMeaningCopy");
+  const lead = primaryEvidenceNote(t, snapshot);
+  const points = currentMeaningPoints(t, snapshot).slice(0, compact ? 2 : 3);
+  const stats = snapshot.transcript_stats ?? {};
   return (
     <section className={`meaning-strip ${compact ? "compact" : ""}`}>
       <div>
@@ -894,6 +942,25 @@ function CurrentMeaningStrip({ t, snapshot, compact = false }: { t: (key: string
         <strong>{t("currentMeaning")}</strong>
       </div>
       <p>{lead}</p>
+      <div className="meaning-detail-grid">
+        <span>
+          <b>{t("metricExplanation")}</b>
+          <em>{t("metricLegend")}</em>
+        </span>
+        <span>
+          <b>{t("evidenceNote")}</b>
+          <em>{t("activeThinkingCaveat")}</em>
+        </span>
+        <span>
+          <b>{t("scanState")}</b>
+          <em>{transcriptScanNote(t, stats)}</em>
+        </span>
+      </div>
+      {points.length ? (
+        <div className="meaning-point-row">
+          {points.map((point) => <span key={point}>{point}</span>)}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -910,6 +977,7 @@ function DashboardEvidenceColumn({ t, snapshot }: { t: (key: string) => string; 
         <Readout label={t("tail")} value={String(stats.tail_parsed_files ?? 0)} />
         <Readout label={t("metricMatched")} value={formatPct(summary.mapping_coverage_pct)} />
       </div>
+      <EvidenceHealth t={t} snapshot={snapshot} />
       <div className="tool-split">
         <div className="dash-mini-head">
           <h3>{t("toolSplit")}</h3>
@@ -918,6 +986,44 @@ function DashboardEvidenceColumn({ t, snapshot }: { t: (key: string) => string; 
         <ToolMix t={t} snapshot={snapshot} />
       </div>
     </aside>
+  );
+}
+
+function EvidenceHealth({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot }) {
+  const stats = snapshot.transcript_stats ?? {};
+  const summary = snapshot.summary ?? {};
+  const current = snapshot.current ?? {};
+  const coverage = clampPct(summary.mapping_coverage_pct ?? 0);
+  const tone = coverage >= 80 ? "good" : coverage >= 50 ? "warn" : "bad";
+  return (
+    <section className={`evidence-health ${tone}`} aria-label={t("evidenceHealth")}>
+      <article className="evidence-note mapping-note">
+        <div className="evidence-note-head">
+          <span>{t("mappingHealth")}</span>
+          <strong>{formatPct(summary.mapping_coverage_pct)}</strong>
+        </div>
+        <div className="mapping-meter" style={{ "--coverage": `${coverage}%` } as React.CSSProperties}>
+          <i />
+        </div>
+        <p>{mappingHealthText(t, snapshot)}</p>
+      </article>
+      <article className="evidence-note scanner-note">
+        <div className="evidence-note-head">
+          <span>{t("scanState")}</span>
+          <strong>{stats.cached ? t("cached") : t("fresh")}</strong>
+        </div>
+        <p>{transcriptScanSummary(t, stats, snapshot.history?.retained_sample_count)}</p>
+        <p>{transcriptScanNote(t, stats)}</p>
+      </article>
+      <article className="evidence-note signal-note">
+        <div className="evidence-note-head">
+          <span>{t("evidenceNote")}</span>
+          <strong>{coordinationPostureLabel(snapshot, t)}</strong>
+        </div>
+        <p>{primaryEvidenceNote(t, snapshot)}</p>
+        <em>{current.pid_concurrency ?? 0} {t("processesObserved")}</em>
+      </article>
+    </section>
   );
 }
 
@@ -2066,6 +2172,58 @@ function selectionMetrics(t: (key: string) => string, snapshot: Snapshot, select
     { key: t("samples"), value: snapshot.history?.retained_sample_count ?? 0, cls: "", icon: <Gauge size={15} /> },
     { key: t("topProject"), value: risk?.top_project || "none", cls: "", icon: <GitBranch size={15} /> },
   ];
+}
+
+function currentMeaningPoints(t: (key: string) => string, snapshot: Snapshot): string[] {
+  const current = snapshot.current ?? {};
+  const summary = snapshot.summary ?? {};
+  const projectCount = summary.project_count ?? snapshot.project_focus?.length ?? 0;
+  return [
+    `${current.active_burst_concurrency ?? 0} ${t("active")} / ${current.session_concurrency ?? 0} ${t("sessions")}`,
+    `${summary.mapped_processes ?? 0} ${t("mapped")} / ${summary.unmapped_processes ?? 0} ${t("unmatched")}`,
+    `${projectCount} ${t("projects")} / ${summary.hot_project_count ?? 0} ${t("active")}`,
+  ];
+}
+
+function transcriptScanSummary(t: (key: string) => string, stats: TranscriptStats, retainedSamples?: number): string {
+  const parsed = stats.parsed_files ?? 0;
+  const scanned = stats.scanned_files ?? 0;
+  const deferred = stats.deferred_files ?? 0;
+  const tail = stats.tail_parsed_files ?? 0;
+  const retained = typeof retainedSamples === "number" ? ` · ${retainedSamples} ${t("samples")}` : "";
+  return `${parsed}/${scanned} ${t("transcriptsParsed")} · ${deferred} ${t("deferred")} · ${tail} ${t("tail")}${retained}`;
+}
+
+function transcriptScanNote(t: (key: string) => string, stats: TranscriptStats): string {
+  const window = formatAge(stats.foreground_scan_lookback_seconds);
+  if (stats.historical_scan_deferred) {
+    return `${t("historicalWalkDeferred")} · ${t("foregroundWindow")} ${window}`;
+  }
+  if ((stats.deferred_files ?? 0) > 0) {
+    return `${stats.deferred_files ?? 0} ${t("deferred")} · ${t("foregroundWindow")} ${window}`;
+  }
+  return `${t("foregroundWindowOnly")} · ${t("foregroundWindow")} ${window}`;
+}
+
+function mappingHealthText(t: (key: string) => string, snapshot: Snapshot): string {
+  const summary = snapshot.summary ?? {};
+  const current = snapshot.current ?? {};
+  return `${summary.mapped_processes ?? 0} ${t("mapped")} / ${summary.unmapped_processes ?? 0} ${t("unmatched")} · ${current.pid_concurrency ?? 0} ${t("processesObserved")}`;
+}
+
+function primaryEvidenceNote(t: (key: string) => string, snapshot: Snapshot): string {
+  const risk = snapshot.coordination_risk ?? {};
+  const summary = snapshot.summary ?? {};
+  const firstSignal = risk.signals?.find((signal) => signal.evidence)?.evidence;
+  if (firstSignal) return firstSignal;
+  const unmapped = risk.orphan_process_count ?? summary.unmapped_processes ?? 0;
+  if (unmapped > 0) return `${unmapped} ${t("evidenceNeedsReview")}`;
+  const lowConfidence = risk.low_confidence_session_count ?? 0;
+  if (lowConfidence > 0) return `${lowConfidence} ${t("lowConfidenceEvidence")}`;
+  const mapped = summary.mapped_processes ?? 0;
+  const pids = snapshot.current?.pid_concurrency ?? 0;
+  if (mapped || pids) return `${mapped}/${pids} ${t("processEvidenceMapped")}`;
+  return t("noSignals");
 }
 
 function orderedProjects(snapshot: Snapshot): ProjectSnapshot[] {
