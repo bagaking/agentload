@@ -253,6 +253,13 @@ const copy: Record<Lang, Record<string, string>> = {
     summary: "Summary",
     evidence: "Evidence",
     trend: "Trend",
+    role: "Role",
+    roleConfidence: "Role confidence",
+    mappingMethod: "Mapping method",
+    threadSource: "Thread source",
+    parentThread: "Parent thread",
+    roleHint: "Role hint",
+    freshness: "Freshness",
     noData: "Waiting for local evidence",
     empty: "Select an observation to inspect it",
     emptySub: "Projects, sessions, and processes are grouped from local process and transcript evidence.",
@@ -370,6 +377,13 @@ const copy: Record<Lang, Record<string, string>> = {
     summary: "摘要",
     evidence: "证据",
     trend: "趋势",
+    role: "角色",
+    roleConfidence: "角色置信度",
+    mappingMethod: "映射方式",
+    threadSource: "线程来源",
+    parentThread: "父线程",
+    roleHint: "角色线索",
+    freshness: "新鲜度",
     noData: "等待本地证据",
     empty: "选择一个观测对象",
     emptySub: "项目、会话和进程来自本地进程与活动记录证据。",
@@ -487,6 +501,13 @@ const copy: Record<Lang, Record<string, string>> = {
     summary: "概要",
     evidence: "証拠",
     trend: "推移",
+    role: "Role",
+    roleConfidence: "Role confidence",
+    mappingMethod: "Mapping method",
+    threadSource: "Thread source",
+    parentThread: "Parent thread",
+    roleHint: "Role hint",
+    freshness: "Freshness",
     noData: "ローカル証拠待ち",
     empty: "観測対象を選択",
     emptySub: "プロジェクト、セッション、プロセスはローカル証拠から構成されます。",
@@ -1949,6 +1970,7 @@ function SessionLine({
   const role = normalizedRole(session.session_role);
   const sid = session.session_id || "";
   const host = session.host_apps?.[0];
+  const evidenceItems = sessionEvidenceItems(t, session, compact);
   return (
     <div className={`session-line role-${role} ${session.active_burst ? "is-active" : ""} ${child ? "is-child" : ""}`}>
       <button className="session-main" type="button" onClick={() => setSelection({ type: "session", id: safeID(sid) })}>
@@ -1965,6 +1987,14 @@ function SessionLine({
       <button className="mini-icon" type="button" title={t("copySession")} onClick={() => copyText(sid)}>
         <Copy size={13} />
       </button>
+      <div className="session-evidence-strip" aria-label={t("evidence")}>
+        {evidenceItems.map((item) => (
+          <span className={`session-evidence-chip ${item.tone ?? ""}`} key={item.label}>
+            <b>{item.label}</b>
+            <em>{item.value}</em>
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1979,6 +2009,13 @@ function SessionEvidencePanel({ t, session }: { t: (key: string) => string; sess
       </div>
       <div className="entity-grid">
         <Readout label={t("sessionID")} value={session.session_id || t("unavailable")} />
+        <Readout label={t("role")} value={roleLabel(t, normalizedRole(session.session_role))} />
+        <Readout label={t("roleConfidence")} value={session.role_confidence || t("unavailable")} />
+        <Readout label={t("mappingMethod")} value={session.mapping_method || t("unavailable")} />
+        <Readout label={t("threadSource")} value={session.thread_source || t("unavailable")} />
+        <Readout label={t("parentThread")} value={session.parent_thread_id || t("unavailable")} />
+        <Readout label={t("roleHint")} value={session.role_hint_source || session.agent_role || t("unavailable")} />
+        <Readout label={t("freshness")} value={session.freshness || (session.active_burst ? t("active") : t("idle"))} />
         <Readout label={t("tools")} value={toolDisplayName(session.tool)} />
         <Readout label={t("host")} value={(session.host_apps ?? []).map((app) => app.name).join(", ") || t("unavailable")} />
         <Readout label={t("command")} value={session.path || t("unavailable")} />
@@ -2395,6 +2432,23 @@ function roleGlyph(role: "main" | "subagent" | "unknown"): string {
   if (role === "main") return "M";
   if (role === "subagent") return "S";
   return "?";
+}
+
+function sessionEvidenceItems(t: (key: string) => string, session: LiveSession, compact: boolean): Array<{ label: string; value: string; tone?: string }> {
+  const role = normalizedRole(session.session_role);
+  const relationship = session.parent_thread_id ? shortID(session.parent_thread_id) : roleLabel(t, role);
+  const items = [
+    {
+      label: t("confidence"),
+      value: session.confidence || session.role_confidence || t("unavailable"),
+      tone: session.confidence === "high" || session.role_confidence === "high" ? "good" : "",
+    },
+    { label: t("mappingMethod"), value: session.mapping_method || t("unavailable") },
+    { label: session.parent_thread_id ? t("parentThread") : t("threadSource"), value: session.thread_source || relationship },
+    { label: t("roleHint"), value: session.role_hint_source || session.agent_role || session.agent_nickname || t("unavailable") },
+    { label: t("freshness"), value: session.freshness || (session.active_burst ? t("active") : t("idle")), tone: session.active_burst ? "active" : "" },
+  ];
+  return compact ? items.slice(0, 3) : items;
 }
 
 function sessionIdentity(session: LiveSession): string {

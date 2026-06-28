@@ -896,6 +896,9 @@ kbd {
 .session-line.is-active {
   border-color: color-mix(in srgb, var(--run) 22%, transparent);
 }
+.session-line.is-child {
+  margin-left: 18px;
+}
 .session-main {
   min-width: 0;
   display: flex;
@@ -976,6 +979,46 @@ kbd {
   color: var(--fg);
   border-color: var(--border);
   background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+}
+.session-evidence-strip {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
+  min-width: 0;
+}
+.session-evidence-chip {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 5px 6px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--surface) 58%, transparent);
+  border: 1px solid transparent;
+}
+.session-evidence-chip b {
+  color: var(--fg-faint);
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.session-evidence-chip em {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-style: normal;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-evidence-chip.good {
+  border-color: color-mix(in srgb, var(--ok) 22%, transparent);
+}
+.session-evidence-chip.active {
+  border-color: color-mix(in srgb, var(--run) 28%, transparent);
 }
 
 .entity-panel {
@@ -2163,6 +2206,7 @@ kbd {
   .run-head-meta { max-width: 100%; width: 100%; }
   .cmd { max-width: none; }
   .metrics { grid-template-columns: repeat(2, 1fr); }
+  .session-evidence-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 540px) {
@@ -2184,6 +2228,16 @@ kbd {
   .process-row {
     grid-template-columns: 1fr;
   }
+  .session-line {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .session-tool-pair {
+    justify-self: end;
+  }
+  .session-line .mini-icon {
+    grid-column: 2;
+  }
+  .session-evidence-strip { grid-template-columns: 1fr; }
   .trend-suite-head,
   .trend-detail-strip {
     grid-template-columns: 1fr;
