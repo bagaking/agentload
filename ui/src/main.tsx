@@ -416,7 +416,7 @@ function App() {
     };
   }, [snapshot, selection, railTab, logTab, view]);
 
-  const selected = useMemo(() => resolveSelection(snapshot, selection), [snapshot, selection]);
+  const selected = useMemo(() => resolveSelection(t, snapshot, selection), [t, snapshot, selection]);
   const compact = view === "popover";
   const running = refreshing;
 
@@ -645,7 +645,7 @@ function DashboardSurface({
   setTrendSelection: React.Dispatch<React.SetStateAction<Record<TrendLane, string | undefined>>>;
 }) {
   if (!snapshot) return <EmptySurface t={t} error={error} />;
-  const railItems = buildRailItems(snapshot, railTab, query);
+  const railItems = buildRailItems(t, snapshot, railTab, query);
   return (
     <main className="dashboard-surface">
       <ErrorBanner t={t} error={error} />
@@ -1530,7 +1530,7 @@ function TrendSuite({
       <div className="trend-suite-head">
         <div className="trend-suite-copy">
           <h2>{t("trendSuite")}</h2>
-          <span>{effectiveRange} · {formatTrendWindow(history ?? runtime)}</span>
+          <span>{effectiveRange} · {formatTrendWindow(t, history ?? runtime)}</span>
         </div>
         <div className="trend-range-switch" role="group" aria-label={t("trend")}>
           {TREND_RANGES.map((item) => (
@@ -2492,7 +2492,7 @@ type RoleCounts = {
 
 function LanguageControl({ t, lang, setLang }: { t: (key: string) => string; lang: Lang; setLang: (lang: Lang) => void }) {
   return (
-    <div className="lang-control" aria-label="Language">
+    <div className="lang-control" aria-label={t("language")}>
       <Languages size={14} />
       {(["en", "zh", "ja"] as Lang[]).map((item) => {
         const label = languageDisplayName(item);
@@ -2539,7 +2539,7 @@ type SelectedView = {
   details: string[];
 };
 
-function resolveSelection(snapshot: Snapshot | null, selection: Selection): SelectedView {
+function resolveSelection(t: (key: string) => string, snapshot: Snapshot | null, selection: Selection): SelectedView {
   if (!snapshot || selection.type === "overview") {
     return {
       title: BRAND_NAME,
@@ -2553,7 +2553,7 @@ function resolveSelection(snapshot: Snapshot | null, selection: Selection): Sele
   if (selection.type === "project") {
     const project = (snapshot.project_focus ?? []).find((item) => safeID(item.project) === selection.id);
     return {
-      title: project?.project || "Unassigned",
+      title: project?.project || t("unassigned"),
       kind: "scan",
       status: (project?.active_burst_count ?? 0) > 0 ? "running" : "done",
       command: `project:${project?.project || "unassigned"}`,
@@ -2573,7 +2573,7 @@ function resolveSelection(snapshot: Snapshot | null, selection: Selection): Sele
   if (selection.type === "session") {
     const session = (snapshot.live_sessions ?? []).find((item) => safeID(item.session_id) === selection.id);
     return {
-      title: session?.project || shortID(session?.session_id) || "Session",
+      title: session?.project || shortID(session?.session_id) || t("session"),
       kind: "query",
       status: session?.active_burst ? "running" : "done",
       command: session?.path || `session:${session?.session_id || "unknown"}`,
@@ -2592,7 +2592,7 @@ function resolveSelection(snapshot: Snapshot | null, selection: Selection): Sele
   }
   const process = (snapshot.live_processes ?? []).find((item) => String(item.pid ?? "") === selection.id);
   return {
-    title: `${process?.tool || "process"} · ${process?.pid ?? "pid"}`,
+    title: `${process?.tool || t("process")} · ${process?.pid ?? t("pid")}`,
     kind: "verify",
     status: (process?.mapped_sessions ?? 0) > 0 ? "done" : "failed",
     command: process?.command || `pid:${process?.pid || "unknown"}`,
@@ -2609,7 +2609,7 @@ function resolveSelection(snapshot: Snapshot | null, selection: Selection): Sele
   };
 }
 
-function buildRailItems(snapshot: Snapshot | null, tab: RailTab, query: string): RailItem[] {
+function buildRailItems(t: (key: string) => string, snapshot: Snapshot | null, tab: RailTab, query: string): RailItem[] {
   if (!snapshot) return [];
   const needle = query.trim().toLowerCase();
   const filter = (item: RailItem) => !needle || `${item.title} ${item.description} ${item.command} ${item.tags.join(" ")}`.toLowerCase().includes(needle);
@@ -2619,23 +2619,23 @@ function buildRailItems(snapshot: Snapshot | null, tab: RailTab, query: string):
       id: safeID(project.project),
       type: "project",
       kind: "scan",
-      title: project.project || "Unassigned",
-      description: `${project.session_count ?? 0} sessions · ${project.process_count ?? 0} processes`,
+      title: project.project || t("unassigned"),
+      description: `${project.session_count ?? 0} ${t("sessions")} · ${project.process_count ?? 0} ${t("processes")}`,
       command: `attention ${formatPct(project.attention_share_pct)}`,
       status: (project.active_burst_count ?? 0) > 0 ? "active" : "done",
-      tags: [`main ${project.main_agent_sessions ?? 0}`, `sub ${project.subagent_sessions ?? 0}`],
-      value: `${project.active_burst_count ?? 0} fresh`,
+      tags: [`${t("mainShort")} ${project.main_agent_sessions ?? 0}`, `${t("subagentShort")} ${project.subagent_sessions ?? 0}`],
+      value: `${project.active_burst_count ?? 0} ${t("fresh")}`,
     }));
   } else if (tab === "sessions") {
     items = (snapshot.live_sessions ?? []).map((session) => ({
       id: safeID(session.session_id),
       type: "session",
       kind: "query",
-      title: session.project || shortID(session.session_id) || "Session",
-      description: `${session.tool || "tool"} · ${session.session_role || "unknown"} · ${session.freshness || "unknown"}`,
-      command: session.path || shortID(session.session_id) || "session",
+      title: session.project || shortID(session.session_id) || t("session"),
+      description: `${session.tool || t("tool")} · ${session.session_role || t("unknown")} · ${session.freshness || t("unknown")}`,
+      command: session.path || shortID(session.session_id) || t("session"),
       status: session.active_burst ? "active" : "done",
-      tags: [session.tool || "tool", session.session_role || "unknown"],
+      tags: [session.tool || t("tool"), session.session_role || t("unknown")],
       value: formatAge(session.last_event_age_seconds),
     }));
   } else {
@@ -2643,12 +2643,12 @@ function buildRailItems(snapshot: Snapshot | null, tab: RailTab, query: string):
       id: String(process.pid ?? ""),
       type: "process",
       kind: "verify",
-      title: `${process.tool || "tool"} · ${process.pid ?? "pid"}`,
-      description: `${process.mapped_sessions ?? 0} mapped sessions`,
-      command: process.command || "process",
+      title: `${process.tool || t("tool")} · ${process.pid ?? t("pid")}`,
+      description: `${process.mapped_sessions ?? 0} ${t("mappedSessions")}`,
+      command: process.command || t("process"),
       status: (process.mapped_sessions ?? 0) > 0 ? "done" : "failed",
-      tags: [process.tool || "tool", process.host_app?.name || "host unknown"],
-      value: `${process.mapped_sessions ?? 0} mapped`,
+      tags: [process.tool || t("tool"), process.host_app?.name || t("hostUnknown")],
+      value: `${process.mapped_sessions ?? 0} ${t("mapped")}`,
     }));
   }
   return items.filter(filter);
@@ -2659,9 +2659,9 @@ function selectionMetrics(t: (key: string) => string, snapshot: Snapshot, select
   const risk = snapshot.coordination_risk;
   return [
     { key: t("resultKind"), value: selected.kind, cls: "is-accent", icon: <Terminal size={15} /> },
-    { key: t("source"), value: stats?.cached ? "cache" : "fresh", cls: "", icon: <Activity size={15} /> },
+    { key: t("source"), value: stats?.cached ? t("cached") : t("fresh"), cls: "", icon: <Activity size={15} /> },
     { key: t("samples"), value: snapshot.history?.retained_sample_count ?? 0, cls: "", icon: <Gauge size={15} /> },
-    { key: t("topProject"), value: risk?.top_project || "none", cls: "", icon: <GitBranch size={15} /> },
+    { key: t("topProject"), value: risk?.top_project || t("none"), cls: "", icon: <GitBranch size={15} /> },
   ];
 }
 
@@ -3011,7 +3011,7 @@ function renderLogText(t: (key: string) => string, snapshot: Snapshot, selected:
   }
   if (tab === "evidence") {
     const notes = [...(snapshot.notes ?? []), ...(snapshot.transcript_stats?.errors ?? []), ...selected.details];
-    if (!notes.length) return `${t("evidence")}: none`;
+    if (!notes.length) return `${t("evidence")}: ${t("none")}`;
     return notes.map((line, index) => `${String(index + 1).padStart(2, "0")}  ${line}`).join("\n");
   }
   const history = bestWindow(snapshot.trends);
@@ -3019,10 +3019,10 @@ function renderLogText(t: (key: string) => string, snapshot: Snapshot, selected:
   const points = mergeTrendPoints(history?.points ?? [], runtime?.points ?? []).slice(-18);
   return points
     .map((point) => {
-      const at = point.at ? formatDateTime(point.at) : "n/a";
+      const at = point.at ? formatDateTime(point.at) : t("unavailable");
       return `${at}  fresh=${point.active_burst_concurrency ?? "-"} sessions=${point.session_concurrency ?? "-"} pids=${point.pid_concurrency ?? "-"} mapped=${point.mapped_processes ?? "-"}`;
     })
-    .join("\n") || `${t("trend")}: empty`;
+    .join("\n") || `${t("trend")}: ${t("noTrend")}`;
 }
 
 function postHostAction(action: "open_dashboard" | "close" | "quit") {
@@ -3172,7 +3172,7 @@ function trendContextMetrics(t: (key: string) => string, window?: TrendWindow): 
   return [
     { label: t("trendRange"), value: window?.range || t("unavailable") },
     { label: t("trendBucket"), value: granularity },
-    { label: t("trendWindow"), value: formatTrendWindow(window) },
+    { label: t("trendWindow"), value: formatTrendWindow(t, window) },
     { label: t("trendSourceWindow"), value: source },
     { label: t("trendCompleteness"), value: completeness },
   ];
@@ -3188,14 +3188,14 @@ function trendExplanationSections(t: (key: string) => string, lane: TrendLane, p
   ];
 }
 
-function formatTrendWindow(window: TrendWindow | undefined): string {
+function formatTrendWindow(t: (key: string) => string, window: TrendWindow | undefined): string {
   const points = window?.points ?? [];
-  if (!points.length) return "n/a";
+  if (!points.length) return t("unavailable");
   const firstAt = points[0]?.at;
   const lastAt = points[points.length - 1]?.at;
   const first = firstAt ? formatDateTime(firstAt) : "";
   const last = lastAt ? formatDateTime(lastAt) : "";
-  return first && last ? `${first} -> ${last}` : window?.range || "n/a";
+  return first && last ? `${first} -> ${last}` : window?.range || t("unavailable");
 }
 
 function trendChart(window: TrendWindow | undefined, points: TrendPoint[], lane: TrendLane): TrendChartModel {
@@ -3377,8 +3377,8 @@ function metricState(snapshot: Snapshot, t: (key: string) => string): string {
 function coordinationPostureLabel(snapshot: Snapshot, t: (key: string) => string): string {
   const risk = snapshot.coordination_risk ?? {};
   const signals = risk.signals?.length ?? 0;
-  if (signals > 0) return `${signals} signals`;
-  if ((risk.low_confidence_session_count ?? 0) > 0) return `${risk.low_confidence_session_count} low confidence`;
+  if (signals > 0) return t("signalsCount").replace("{count}", String(signals));
+  if ((risk.low_confidence_session_count ?? 0) > 0) return t("lowConfidenceCount").replace("{count}", String(risk.low_confidence_session_count));
   return t("fresh");
 }
 
