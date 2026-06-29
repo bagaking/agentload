@@ -94,6 +94,9 @@ agent evidence.
 - Auto refresh defaults to `5m`. A paused refresh state may exist, but it must be
   labeled as refresh pause/off and must not be conflated with an idle session
   state.
+- Observation timestamp areas should expose the user-facing refresh cadence as
+  a compact click-to-cycle control. Raw refresh slot identifiers belong in
+  protocol metadata or diagnostics, not in primary dashboard chrome.
 - Multilingual UI copy is part of the design surface. New operator-facing text
   must be added to every supported locale with matching placeholder tokens.
 - Locale resources should stay in `ui/src/i18n.ts`; UI components should call

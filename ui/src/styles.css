@@ -4977,6 +4977,27 @@ body[data-view="dashboard"] .dash-front-meta-item em {
   -webkit-line-clamp: 1;
 }
 
+body[data-view="dashboard"] .front-refresh-interval {
+  justify-self: start;
+  min-height: 18px;
+  padding: 0 5px;
+  gap: 4px;
+  border-radius: 4px;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+body[data-view="dashboard"] .front-refresh-interval.is-paused {
+  color: var(--run);
+}
+
+body[data-view="dashboard"] .front-refresh-interval svg {
+  flex: 0 0 auto;
+}
+
 body[data-view="dashboard"] .dash-band-head {
   margin-bottom: 7px;
 }

@@ -758,7 +758,7 @@ function DashboardSurface({
         cycleRefreshInterval={cycleRefreshInterval}
       />
       <section className="dash-front-band">
-        <DashboardFrontTopline t={t} snapshot={snapshot} />
+        <DashboardFrontTopline t={t} snapshot={snapshot} refreshInterval={refreshInterval} cycleRefreshInterval={cycleRefreshInterval} />
         <section className="dash-field-index">
           <DashboardBandHead kicker={t("runtimeField")} title={t("activityCounts")} meta={dashboardProjectMeta(t, snapshot)} />
           <DashboardFieldGrid t={t} snapshot={snapshot} />
@@ -936,7 +936,17 @@ function DashboardInspectorStrip({
   );
 }
 
-function DashboardFrontTopline({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot }) {
+function DashboardFrontTopline({
+  t,
+  snapshot,
+  refreshInterval,
+  cycleRefreshInterval,
+}: {
+  t: (key: string) => string;
+  snapshot: Snapshot;
+  refreshInterval: number;
+  cycleRefreshInterval: () => void;
+}) {
   const stats = snapshot.transcript_stats ?? {};
   return (
     <div className="dash-front-topline">
@@ -948,7 +958,10 @@ function DashboardFrontTopline({ t, snapshot }: { t: (key: string) => string; sn
         <div className="dash-front-meta-item stamp">
           <span>{t("observed")}</span>
           <strong>{snapshot.generated_at ? formatDateTime(snapshot.generated_at) : t("unavailable")}</strong>
-          <em>{snapshot.refresh_slot_id || t("fresh")}</em>
+          <button className={`refresh-interval front-refresh-interval ${refreshInterval ? "" : "is-paused"}`} type="button" data-focus-key={focusKey("refresh-interval", "front")} onClick={cycleRefreshInterval} title={t("autoRefresh")} aria-label={t("autoRefresh")}>
+            <RefreshCw size={10} aria-hidden="true" />
+            <span>{formatRefreshInterval(refreshInterval, t)}</span>
+          </button>
         </div>
         <div className="dash-front-meta-item">
           <span>{t("localSource")}</span>
