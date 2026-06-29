@@ -127,6 +127,13 @@ type TrendChartModel = {
   timeBands: TrendTimeBand[];
   axis: { start: string; selected?: string; end: string };
 };
+type TrendLaneSummary = {
+  lane: TrendLane;
+  title: string;
+  trendWindow?: TrendWindow;
+  points: TrendPoint[];
+  selected?: TrendPoint;
+};
 type RefreshReason = "initial" | "manual" | "auto";
 type ActiveElementIdentity =
   | { type: "focus-key"; key: string }
@@ -550,6 +557,7 @@ function App() {
         theme={theme}
         setTheme={setTheme}
         compact={compact}
+        snapshot={snapshot}
         running={running}
         error={error}
         refreshSnapshot={refreshSnapshot}
@@ -1126,7 +1134,6 @@ function PopoverAuditShell({
 function PopoverRuntimeInstrument({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot }) {
   const current = snapshot.current ?? {};
   const summary = snapshot.summary ?? {};
-  const stats = snapshot.transcript_stats ?? {};
   const scale = currentPeerScale(current);
   const rows = [
     {
@@ -1161,14 +1168,6 @@ function PopoverRuntimeInstrument({ t, snapshot }: { t: (key: string) => string;
       <div className="instrument-spine" aria-hidden="true">
         <span />
         <span />
-      </div>
-      <div className="instrument-topline">
-        <span className={`field-status ${statusTone(snapshot)}`}>{metricState(snapshot, t)}</span>
-        <span className="instrument-window" title={transcriptScanNote(t, stats)}>
-          <Activity size={13} />
-          <span>{t("scanWindow")}</span>
-          <strong>{formatAge(stats.foreground_scan_lookback_seconds, t)}</strong>
-        </span>
       </div>
       <div className="instrument-stat-grid">
         {rows.map((row) => (
@@ -1742,6 +1741,12 @@ function TrendSuite({
   const effectiveRange = activeRanges.includes(range) ? range : activeRanges[0] ?? range;
   const history = trendWindowForRange(snapshot.trends, effectiveRange);
   const runtime = trendWindowForRange(snapshot.realtime_trends, effectiveRange);
+  const [focusedLane, setFocusedLane] = useState<TrendLane>("history");
+  const laneSummaries: TrendLaneSummary[] = [
+    trendLaneSummary("history", t("historyLane"), history, trendSelection.history),
+    trendLaneSummary("runtime", t("runtimeLane"), runtime, trendSelection.runtime),
+  ].filter((summary) => Boolean(summary.trendWindow || summary.points.length));
+  const activeSummary = laneSummaries.find((summary) => summary.lane === focusedLane && summary.selected) ?? laneSummaries.find((summary) => summary.selected);
   return (
     <section className={`trend-suite ${compact ? "compact" : "dashboard"}`}>
       <div className="trend-suite-head">
@@ -1757,11 +1762,22 @@ function TrendSuite({
           ))}
         </div>
       </div>
-      {history || runtime ? (
-        <div className="trend-duo">
-          <TrendLaneView t={t} lane="history" title={t("historyLane")} trendWindow={history} compact={compact} selectedAt={trendSelection.history} setTrendSelection={setTrendSelection} />
-          <TrendLaneView t={t} lane="runtime" title={t("runtimeLane")} trendWindow={runtime} compact={compact} selectedAt={trendSelection.runtime} setTrendSelection={setTrendSelection} />
-        </div>
+      {laneSummaries.length ? (
+        <>
+          <div className="trend-duo">
+            {laneSummaries.map((summary) => (
+              <TrendLaneView
+                key={summary.lane}
+                t={t}
+                summary={summary}
+                isFocused={activeSummary?.lane === summary.lane}
+                setFocusedLane={setFocusedLane}
+                setTrendSelection={setTrendSelection}
+              />
+            ))}
+          </div>
+          <TrendSelectionInspector t={t} summary={activeSummary} compact={compact} />
+        </>
       ) : (
         <section className="empty-inline"><Gauge size={18} /><span>{t("noTrend")}</span></section>
       )}
@@ -1771,41 +1787,58 @@ function TrendSuite({
 
 function TrendLaneView({
   t,
-  lane,
-  title,
-  trendWindow,
-  compact,
-  selectedAt,
+  summary,
+  isFocused,
+  setFocusedLane,
   setTrendSelection,
 }: {
   t: (key: string) => string;
-  lane: TrendLane;
-  title: string;
-  trendWindow?: TrendWindow;
-  compact: boolean;
-  selectedAt?: string;
+  summary: TrendLaneSummary;
+  isFocused: boolean;
+  setFocusedLane: (lane: TrendLane) => void;
   setTrendSelection: React.Dispatch<React.SetStateAction<Record<TrendLane, string | undefined>>>;
 }) {
-  const sampleKey = lane === "history" ? "transcript_sampled" : "runtime_sampled";
-  const points = sampledPoints(trendWindow, sampleKey);
-  const selected = points.find((point) => point.at === selectedAt) ?? points[points.length - 1];
+  const { lane, title, trendWindow, points, selected } = summary;
   const chart = trendChart(trendWindow, points, lane);
   const selectedPlot = selected ? chart.points.find((point) => point.at === selected.at) : undefined;
   const calloutX = selectedPlot ? clampNumber(selectedPlot.x > 196 ? selectedPlot.x - 122 : selectedPlot.x + 8, 10, 198) : 0;
   const selectedReadout = selected ? trendSelectedReadout(t, lane, selected) : "";
+  const selectedAxisLabel = selected?.at ? formatChartAxisLabel(selected.at) : t("selectedValues");
+  const selectPoint = (at?: string) => {
+    setFocusedLane(lane);
+    if (at) setTrendSelection((current) => ({ ...current, [lane]: at }));
+  };
+  const selectNearestPlotPoint = (event: React.MouseEvent<SVGSVGElement>) => {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    if (!bounds || !chart.points.length) return;
+    const x = ((event.clientX - bounds.left) / bounds.width) * 320;
+    const nearest = chart.points.reduce((best, item) => (Math.abs(item.x - x) < Math.abs(best.x - x) ? item : best), chart.points[0]);
+    selectPoint(nearest.at);
+  };
   return (
-    <article className={`trend-lane ${lane}`}>
+    <article className={`trend-lane ${lane} ${isFocused ? "is-focused" : ""}`}>
       <div className="trend-lane-head">
-        <div>
+        <div className="trend-lane-title">
           <span className="trend-kicker">{title}</span>
-          <small>{trendWindow?.range || t("unavailable")}</small>
+          <small>{trendWindow?.range || t("unavailable")} · {points.length} {t("samples")}</small>
         </div>
-        <em>{points.length} {t("samples")}</em>
+        <button
+          aria-pressed={isFocused}
+          className="trend-lane-readout"
+          data-focus-key={focusKey("trend-lane-readout", lane, selected?.at || "")}
+          disabled={!selected}
+          title={selected?.at ? formatDateTime(selected.at) : t("unavailable")}
+          type="button"
+          onClick={() => selectPoint(selected?.at)}
+        >
+          <span>{selected?.at ? formatChartAxisLabel(selected.at) : t("unavailable")}</span>
+          <strong>{selectedReadout || t("unavailable")}</strong>
+        </button>
       </div>
       {points.length ? (
         <>
           <div className="trend-chart">
-            <svg viewBox="0 0 320 112" role="img" aria-label={title}>
+            <svg viewBox="0 0 320 112" role="img" aria-label={title} onClick={selectNearestPlotPoint}>
               <g className="trend-time-bands" aria-hidden="true">
                 {chart.timeBands.map((band, index) => (
                   <rect className={`time-band ${band.tone}`} key={`${band.tone}-${index}`} x={band.x} y="12" width={band.width} height="80" />
@@ -1821,7 +1854,7 @@ function TrendLaneView({
                   <line x1={selectedPlot.x} y1="10" x2={selectedPlot.x} y2="94" />
                   <g className="trend-callout" transform={`translate(${calloutX.toFixed(1)} 13)`}>
                     <rect width="112" height="40" rx="5" />
-                    <text x="7" y="13">{selected.at ? formatChartAxisLabel(selected.at) : t("selectedValues")}</text>
+                    <text x="7" y="13">{selectedAxisLabel}</text>
                     <text className="value" x="7" y="29">{selectedReadout}</text>
                   </g>
                 </g>
@@ -1837,11 +1870,11 @@ function TrendLaneView({
                   tabIndex={0}
                   aria-label={`${title} ${formatDateTime(item.at)}`}
                   data-focus-key={focusKey("trend-point", lane, trendWindow?.range || "", item.at || "")}
-                  onClick={() => setTrendSelection((current) => ({ ...current, [lane]: item.at }))}
+                  onClick={() => selectPoint(item.at)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
-                      setTrendSelection((current) => ({ ...current, [lane]: item.at }));
+                      selectPoint(item.at);
                     }
                   }}
                 >
@@ -1858,7 +1891,6 @@ function TrendLaneView({
               </g>
             </svg>
           </div>
-          {selected ? <TrendDetail t={t} lane={lane} point={selected} trendWindow={trendWindow} compact={compact} /> : null}
         </>
       ) : (
         <section className="empty-inline"><Gauge size={18} /><span>{t("noTrend")}</span></section>
@@ -1867,53 +1899,47 @@ function TrendLaneView({
   );
 }
 
-function TrendDetail({ t, lane, point, trendWindow, compact }: { t: (key: string) => string; lane: TrendLane; point: TrendPoint; trendWindow?: TrendWindow; compact: boolean }) {
+function TrendSelectionInspector({ t, summary, compact }: { t: (key: string) => string; summary?: TrendLaneSummary; compact: boolean }) {
   const detailsId = useId();
-  const [expanded, setExpanded] = useState(!compact);
-  const contextMetrics = trendContextMetrics(t, trendWindow);
-  const metrics = trendDetailMetrics(t, lane, point);
-  const sections = trendExplanationSections(t, lane, point);
+  const [expanded, setExpanded] = useState(false);
+  const point = summary?.selected;
+  if (!summary || !point) return null;
+  const contextMetrics = trendContextMetrics(t, summary.trendWindow);
+  const metrics = trendDetailMetrics(t, summary.lane, point);
+  const sections = trendExplanationSections(t, summary.lane, point);
   return (
-    <div className={`trend-detail ${compact ? "compact" : ""} ${expanded ? "expanded" : ""}`}>
-      <div className="trend-detail-strip">
-        <div className="trend-detail-stamp">
-          <em>{t("trendExactBucket")}</em>
+    <aside className={`trend-inspector ${compact ? "compact" : ""} ${expanded ? "expanded" : ""}`}>
+      <div className="trend-inspector-lead">
+        <div className="trend-inspector-anchor">
+          <span>{summary.title}</span>
           <strong>{point.at ? formatDateTime(point.at) : t("unavailable")}</strong>
         </div>
-        <div className="trend-selected-readout">
-          <span>{t("selectedValues")}</span>
-          <strong>{trendSelectedReadout(t, lane, point)}</strong>
-        </div>
-      </div>
-      {compact ? (
-        <div className="trend-detail-toggle-row">
-          <button
-            aria-controls={detailsId}
-            aria-expanded={expanded}
-            aria-label={expanded ? t("collapseDetails") : t("expandDetails")}
-            className="disclosure-icon-btn trend-detail-toggle"
-            data-focus-key={focusKey("trend-detail", lane, point.at || "", compact ? "compact" : "full")}
-            title={expanded ? t("collapseDetails") : t("expandDetails")}
-            type="button"
-            onClick={() => setExpanded((current) => !current)}
-          >
-            <Info size={13} aria-hidden="true" />
-            <span>{expanded ? t("collapseDetails") : t("expandDetails")}</span>
-          </button>
-        </div>
-      ) : null}
-      <div className="trend-detail-details" id={detailsId} hidden={!expanded}>
-        <div className="trend-detail-grid trend-context-grid">
-          {contextMetrics.map((metric) => (
-            <span className="trend-detail-metric context" key={metric.label}>
+        <div className="trend-inspector-readouts">
+          {metrics.map((metric) => (
+            <span className="trend-inspector-metric" key={metric.label}>
               <b>{metric.label}</b>
               <strong>{metric.value}</strong>
             </span>
           ))}
         </div>
-        <div className="trend-detail-grid">
-          {metrics.map((metric) => (
-            <span className="trend-detail-metric" key={metric.label}>
+        <button
+          aria-controls={detailsId}
+          aria-expanded={expanded}
+          aria-label={expanded ? t("collapseDetails") : t("expandDetails")}
+          className="disclosure-icon-btn trend-detail-toggle"
+          data-focus-key={focusKey("trend-detail", summary.lane, point.at || "", compact ? "compact" : "full")}
+          title={expanded ? t("collapseDetails") : t("expandDetails")}
+          type="button"
+          onClick={() => setExpanded((current) => !current)}
+        >
+          <Info size={13} aria-hidden="true" />
+          <span>{expanded ? t("collapseDetails") : t("expandDetails")}</span>
+        </button>
+      </div>
+      <div className="trend-detail-details trend-inspector-details" id={detailsId} hidden={!expanded}>
+        <div className="trend-detail-grid trend-context-grid">
+          {contextMetrics.map((metric) => (
+            <span className="trend-detail-metric context" key={metric.label}>
               <b>{metric.label}</b>
               <strong>{metric.value}</strong>
             </span>
@@ -1928,7 +1954,7 @@ function TrendDetail({ t, lane, point, trendWindow, compact }: { t: (key: string
           ))}
         </div>
       </div>
-    </div>
+    </aside>
   );
 }
 
@@ -1939,6 +1965,7 @@ function Topbar({
   theme,
   setTheme,
   compact,
+  snapshot,
   running,
   error,
   refreshSnapshot,
@@ -1951,6 +1978,7 @@ function Topbar({
   theme: Theme;
   setTheme: (theme: Theme) => void;
   compact: boolean;
+  snapshot: Snapshot | null;
   running: boolean;
   error: string | null;
   refreshSnapshot: () => void;
@@ -1973,7 +2001,7 @@ function Topbar({
         </div>
       </div>
       <div className="topbar-meta">
-        {compact ? <LocalStatus t={t} /> : <Pill tone="safe">{t("loopback")}</Pill>}
+        {compact ? <LocalStatus t={t} snapshot={snapshot} /> : <Pill tone="safe">{t("loopback")}</Pill>}
         {showTopbarStatus ? <Pill tone={topbarStatusTone}>{error ? t("failed") : running ? t("running") : t("idle")}</Pill> : null}
         {!compact ? (
           <button className="kbd-hint" type="button" data-focus-key={focusKey("topbar-refresh-interval")} onClick={cycleRefreshInterval} title={t("autoRefresh")}>
@@ -2002,9 +2030,11 @@ function Topbar({
   );
 }
 
-function LocalStatus({ t }: { t: (key: string) => string }) {
+function LocalStatus({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot | null }) {
+  const state = snapshot ? metricState(snapshot, t) : t("noData");
+  const label = `${state} · ${t("loopback")}`;
   return (
-    <span className="local-status-chip" role="status" title={t("loopback")} aria-label={t("loopback")}>
+    <span className="local-status-chip" role="status" title={label} aria-label={label}>
       <span className="state-dot observed" aria-hidden="true" />
     </span>
   );
@@ -2304,10 +2334,8 @@ function ScanBoundary({ t, snapshot, compact }: { t: (key: string) => string; sn
     { label: t("deferred"), value: deferredScanValue(t, stats) },
     { label: t("tail"), value: stats.tail_parsed_files ?? 0 },
     { label: t("source"), value: stats.cached ? t("cached") : t("fresh") },
+    { label: t("scanWindow"), value: formatAge(stats.foreground_scan_lookback_seconds, t) },
   ];
-  if (!compact) {
-    pieces.push({ label: t("scanWindow"), value: formatAge(stats.foreground_scan_lookback_seconds, t) });
-  }
   return (
     <section className="scan-boundary" aria-label={t("scan")}>
       <div className="scan-boundary-main">
@@ -3588,6 +3616,22 @@ function activeTrendRanges(snapshot: Snapshot): TrendRange[] {
 
 function trendWindowForRange(set: TrendSet | undefined, range: TrendRange): TrendWindow | undefined {
   return set?.windows?.find((window) => window.range === range);
+}
+
+function trendLaneSummary(lane: TrendLane, title: string, trendWindow: TrendWindow | undefined, selectedAt?: string): TrendLaneSummary {
+  const sampleKey = lane === "history" ? "transcript_sampled" : "runtime_sampled";
+  const points = sampledPoints(trendWindow, sampleKey);
+  return {
+    lane,
+    title,
+    trendWindow,
+    points,
+    selected: selectedTrendPoint(points, selectedAt),
+  };
+}
+
+function selectedTrendPoint(points: TrendPoint[], selectedAt?: string): TrendPoint | undefined {
+  return points.find((point) => point.at === selectedAt) ?? points[points.length - 1];
 }
 
 function sampledPoints(window: TrendWindow | undefined, sampledKey: "transcript_sampled" | "runtime_sampled"): TrendPoint[] {

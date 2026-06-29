@@ -57,6 +57,10 @@ agent evidence.
   The top bar, live-state pill, runtime summary, metric cells, and scan readouts
   should rely on planar fills, subtle separators, and state color rather than
   each drawing its own strong border.
+- Popover primary metrics should not reserve a full line for duplicated ambient
+  state. The compact top status mark owns live/active hover text; foreground
+  scan-window duration belongs with scan-boundary metadata unless it becomes an
+  exceptional warning.
 - Compact explanatory rows should avoid decorative icons when the label and
   adjacent controls already identify the row. Compact scan readouts should stay
   on one row whenever the available width can hold the observed fields.
@@ -110,6 +114,14 @@ agent evidence.
 - Trend selections should expose the selected time and compact numeric readout
   first. Longer interpretation and trust explanations belong behind an
   accessible disclosure control, especially in the popover.
+- Compact trend views should show both lanes and the selected readout within the
+  first reading pass. Do not repeat bulky selected-bucket cards under every
+  lane; use one shared inspector strip and keep per-lane readouts inline with
+  the lane header.
+- Trend charts are audit controls, not presentation cards. Use flat chart
+  planes, thin separators, short range controls, and dense click targets so the
+  operator can compare lanes without scrolling through repeated explanation
+  panels.
 - Light mode must keep weak labels, icons, tree rails, and control text readable;
   do not rely on very pale gray text for operator-critical controls.
 - Auto refresh defaults to `5m`. A paused refresh state may exist, but it must be
@@ -129,11 +141,14 @@ agent evidence.
   hierarchy, density, contrast, controls, terminology, or auditability, fold it
   back into this document instead of leaving it only in chat history.
 - Use the token family in `ui/src/styles.css` as the source of truth:
-  - primary accent: blue
-  - active/running: yellow
-  - mapped/ok: green
-  - mismatch/error: red
-  - secondary operator surfaces: dark neutral grays
+  - primary accent: refined blue
+  - local movement / mapped / ok: mint green
+  - running / attention / sampled process activity: brass amber
+  - mismatch / error: coral red
+  - secondary operator surfaces: graphite in dark mode and porcelain slate in
+    light mode
+  - dark and light themes must define their own semantic tokens instead of
+    relying on a single accent color with automatic inversion
 
 ## Implementation Contract
 
