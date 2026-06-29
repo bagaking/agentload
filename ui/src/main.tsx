@@ -1025,7 +1025,7 @@ function PopoverRuntimeInstrument({ t, snapshot }: { t: (key: string) => string;
         <span className="instrument-window" title={transcriptScanNote(t, stats)}>
           <Activity size={13} />
           <span>{t("scanWindow")}</span>
-          <strong>{formatAge(stats.foreground_scan_lookback_seconds)}</strong>
+          <strong>{formatAge(stats.foreground_scan_lookback_seconds, t)}</strong>
         </span>
       </div>
       <div className="instrument-stat-grid">
@@ -2065,7 +2065,7 @@ function ScanBoundary({ t, snapshot, compact }: { t: (key: string) => string; sn
     { label: t("source"), value: stats.cached ? t("cached") : t("fresh") },
   ];
   if (!compact) {
-    pieces.push({ label: t("scanWindow"), value: formatAge(stats.foreground_scan_lookback_seconds) });
+    pieces.push({ label: t("scanWindow"), value: formatAge(stats.foreground_scan_lookback_seconds, t) });
   }
   return (
     <section className="scan-boundary" aria-label={t("scan")}>
@@ -2111,7 +2111,7 @@ function ProjectTreeRow({
   const projectId = safeID(project.project);
   const title = project.project || t("unassigned");
   const evidenceItems = projectEvidenceItems(t, project, compact);
-  const projectAge = formatAge(project.last_event_age_seconds);
+  const projectAge = formatAge(project.last_event_age_seconds, t);
   const projectMeta = projectAge;
   const selected = selection.type === "project" && selection.id === projectId;
   const selectProject = () => {
@@ -2316,7 +2316,7 @@ function SessionLine({
   const processText = compact ? `${session.process_count ?? 0}p` : `${session.process_count ?? 0} ${t("pid")}`;
   const selected = selection.type === "session" && safeID(sid) === selection.id;
   const title = session.agent_nickname || shortID(sid) || "session";
-  const meta = `${formatAge(session.last_event_age_seconds)} · ${processText} · ${session.confidence || t("unavailable")}`;
+  const meta = `${formatAge(session.last_event_age_seconds, t)} · ${processText} · ${session.confidence || t("unavailable")}`;
   if (compact) {
     return (
       <div className={`session-line role-${role} ${session.active_burst ? "is-active" : ""} ${selected ? "is-selected" : ""} ${child ? "is-child" : ""}`}>
@@ -2636,7 +2636,7 @@ function buildRailItems(t: (key: string) => string, snapshot: Snapshot | null, t
       command: session.path || shortID(session.session_id) || t("session"),
       status: session.active_burst ? "active" : "done",
       tags: [session.tool || t("tool"), session.session_role || t("unknown")],
-      value: formatAge(session.last_event_age_seconds),
+      value: formatAge(session.last_event_age_seconds, t),
     }));
   } else {
     items = (snapshot.live_processes ?? []).map((process) => ({
@@ -2700,7 +2700,7 @@ function transcriptScanSummary(t: (key: string) => string, stats: TranscriptStat
 }
 
 function transcriptScanNote(t: (key: string) => string, stats: TranscriptStats): string {
-  const window = formatAge(stats.foreground_scan_lookback_seconds);
+  const window = formatAge(stats.foreground_scan_lookback_seconds, t);
   if (stats.historical_scan_deferred) {
     return `${t("historicalWalkDeferred")} · ${t("foregroundWindow")} ${window}`;
   }
@@ -2803,7 +2803,7 @@ function projectEvidenceItems(t: (key: string) => string, project: ProjectSnapsh
     { label: t("attribution"), value: project.project_attribution_confidence || t("unavailable"), tone: project.project_attribution_confidence === "high" ? "good" : "" },
     { label: t("recent"), value: String(recent), tone: recent > 0 ? "active" : "" },
     { label: t("stale"), value: String(stale), tone: stale > 0 ? "warn" : "" },
-    { label: t("lastEvent"), value: formatAge(project.last_event_age_seconds) },
+    { label: t("lastEvent"), value: formatAge(project.last_event_age_seconds, t) },
   ];
   return compact ? items.slice(0, 4) : items;
 }
@@ -3165,7 +3165,7 @@ function trendSelectedReadout(t: (key: string) => string, lane: TrendLane, point
 }
 
 function trendContextMetrics(t: (key: string) => string, window?: TrendWindow): Array<{ label: string; value: string }> {
-  const granularity = typeof window?.granularity_seconds === "number" && window.granularity_seconds > 0 ? formatAge(window.granularity_seconds) : t("unavailable");
+  const granularity = typeof window?.granularity_seconds === "number" && window.granularity_seconds > 0 ? formatAge(window.granularity_seconds, t) : t("unavailable");
   const sourceLookback = typeof window?.source_lookback_hours === "number" && Number.isFinite(window.source_lookback_hours) ? `${window.source_lookback_hours}h` : "";
   const source = window?.source_from ? `${formatDateTime(window.source_from)}${sourceLookback ? ` · ${sourceLookback}` : ""}` : sourceLookback || t("unavailable");
   const completeness = window?.history_complete === true ? t("complete") : window?.history_complete === false ? t("partial") : t("unavailable");
@@ -3405,8 +3405,8 @@ function formatChartHour(value: string): string {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-function formatAge(seconds?: number): string {
-  if (typeof seconds !== "number" || seconds < 0) return "n/a";
+function formatAge(seconds?: number, t?: (key: string) => string): string {
+  if (typeof seconds !== "number" || seconds < 0) return t ? t("unavailable") : "n/a";
   if (seconds < 60) return `${Math.round(seconds)}s`;
   if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
   if (seconds < 86400) return `${Math.round(seconds / 3600)}h`;
@@ -3415,7 +3415,7 @@ function formatAge(seconds?: number): string {
 
 function formatRefreshInterval(ms: number, t: (key: string) => string): string {
   if (!ms) return t("refreshPaused");
-  return formatAge(ms / 1000);
+  return formatAge(ms / 1000, t);
 }
 
 function shortID(value?: string): string {
