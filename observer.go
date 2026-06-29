@@ -97,6 +97,11 @@ func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 		o.cfg.IdleGap,
 	)
 
+	snapshot.Notes = buildSnapshotNotes(snapshot, processNotes, sessionNotes)
+	return snapshot
+}
+
+func buildSnapshotNotes(snapshot Snapshot, processNotes, sessionNotes []string) []string {
 	notes := append([]string{}, processNotes...)
 	notes = append(notes, sessionNotes...)
 	if len(snapshot.TranscriptStats.Errors) > 0 {
@@ -109,10 +114,9 @@ func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 		))
 	}
 	if snapshot.TranscriptStats.HistoricalScanDeferred {
-		notes = append(notes, "Historical transcript directory enumeration was deferred from the foreground snapshot; live process files and foreground-window transcripts are still included.")
+		notes = append(notes, "Full historical transcript parsing was deferred from the foreground snapshot; live process files and foreground-window transcripts are still included.")
 	}
-	snapshot.Notes = uniqueSortedStrings(notes)
-	return snapshot
+	return uniqueSortedStrings(notes)
 }
 
 func (o *Observer) snapshotConfig(claudeRoots, codexRoots, traeRoots []string) SnapshotConfig {

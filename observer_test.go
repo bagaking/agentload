@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -82,6 +83,24 @@ func TestObserverSnapshotConfigUsesRefreshIntervalAndDiscoveredRoots(t *testing.
 	}
 	if got.TraeRoots[0] != "/live/.trae/cli" {
 		t.Fatalf("expected snapshot trae roots to be copied, got %v", got.TraeRoots)
+	}
+}
+
+func TestSnapshotNotesDescribeDeferredHistoricalParsing(t *testing.T) {
+	notes := buildSnapshotNotes(Snapshot{
+		TranscriptStats: TranscriptStats{
+			HistoricalScanDeferred: true,
+		},
+	}, nil, nil)
+
+	want := "Full historical transcript parsing was deferred from the foreground snapshot; live process files and foreground-window transcripts are still included."
+	if !slices.Contains(notes, want) {
+		t.Fatalf("expected snapshot notes to include %q, got %#v", want, notes)
+	}
+	for _, note := range notes {
+		if strings.Contains(note, "directory enumeration") {
+			t.Fatalf("expected snapshot notes not to claim directory enumeration was deferred, got %#v", notes)
+		}
 	}
 }
 
@@ -444,7 +463,7 @@ func TestForegroundTranscriptScanCanDeferHistoryWalk(t *testing.T) {
 		t.Fatalf("expected only recent and priority candidates when history walk is deferred, got %+v", data)
 	}
 	if data.DeferredFiles != 0 || !data.HistoricalScanDeferred {
-		t.Fatalf("expected historical directory enumeration to be marked deferred without per-file count, got %+v", data)
+		t.Fatalf("expected full historical parsing to be marked deferred without per-file count, got %+v", data)
 	}
 	if data.Traces[oldPath] != nil || data.Traces[priorityPath] == nil || data.Traces[recentPath] == nil {
 		t.Fatalf("expected priority and recent traces only, got %+v", data.Traces)
