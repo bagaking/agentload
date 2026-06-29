@@ -8,6 +8,7 @@ const BRAND_NAME = "Agent Load";
 const ACTIVE = new Set(["active", "running", "queued"]);
 const DEFAULT_REFRESH_INTERVAL_MS = 300_000;
 const MANUAL_REFRESH_SETTLE_MS = 450;
+const READER_CONTEXT_TTL_MS = 20_000;
 const READER_REFRESH_FLOOR_MS = 60_000;
 const REFRESH_INTERVALS_MS = [30_000, 60_000, 120_000, 300_000, 0] as const;
 const REFRESH_INTERVAL_STORAGE_KEY = "agentload.refreshIntervalMs.v5";
@@ -288,9 +289,18 @@ function App() {
   const popoverVisibleRef = useRef(true);
   const fetchInFlightRef = useRef<Promise<void> | null>(null);
   const refreshTimerRef = useRef<number | null>(null);
+  const readerActiveUntilRef = useRef(0);
+  const readerScheduleBumpAfterRef = useRef(0);
   const [surfaceVersion, setSurfaceVersion] = useState(0);
 
   const t = useCallback((key: string) => copy[lang][key] || copy.en[key] || key, [lang]);
+  const markReaderInteraction = useCallback(() => {
+    const now = Date.now();
+    readerActiveUntilRef.current = now + READER_CONTEXT_TTL_MS;
+    if (now < readerScheduleBumpAfterRef.current) return;
+    readerScheduleBumpAfterRef.current = now + 1000;
+    setSurfaceVersion((value) => value + 1);
+  }, []);
   const fetchSnapshot = useCallback(async (reason: RefreshReason = "auto") => {
     if (reason === "auto" && !surfaceVisible(view, popoverVisibleRef.current)) return;
     if (fetchInFlightRef.current) {
@@ -349,7 +359,7 @@ function App() {
     };
     const schedule = () => {
       clearTimer();
-      const delay = effectiveAutoRefreshDelay(view, popoverView, refreshInterval, popoverVisibleRef.current, shellRef.current);
+      const delay = effectiveAutoRefreshDelay(view, popoverView, refreshInterval, popoverVisibleRef.current, shellRef.current, readerActiveUntilRef.current);
       if (!delay || cancelled) return;
       refreshTimerRef.current = window.setTimeout(async () => {
         refreshTimerRef.current = null;
@@ -397,6 +407,24 @@ function App() {
       window.removeEventListener("agentLoadPopoverHidden", onPopoverHidden);
     };
   }, [fetchSnapshot, refreshInterval, view]);
+  useEffect(() => {
+    const shouldMarkReaderEvent = (event: Event) => {
+      const target = event.target;
+      if (event.type === "scroll" && (target === document || target === document.scrollingElement || target === document.documentElement)) return true;
+      return target instanceof Node && Boolean(shellRef.current?.contains(target));
+    };
+    const onReaderEvent = (event: Event) => {
+      if (shouldMarkReaderEvent(event)) markReaderInteraction();
+    };
+    document.addEventListener("click", onReaderEvent, true);
+    document.addEventListener("keydown", onReaderEvent, true);
+    document.addEventListener("scroll", onReaderEvent, true);
+    return () => {
+      document.removeEventListener("click", onReaderEvent, true);
+      document.removeEventListener("keydown", onReaderEvent, true);
+      document.removeEventListener("scroll", onReaderEvent, true);
+    };
+  }, [markReaderInteraction]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     window.localStorage.setItem("agentload.theme", theme);
@@ -3124,12 +3152,14 @@ function effectiveAutoRefreshDelay(
   refreshInterval: number,
   popoverVisible: boolean,
   shell: HTMLElement | null,
+  readerActiveUntil: number,
 ): number {
   if (!refreshInterval || !surfaceVisible(view, popoverVisible)) return 0;
-  return readerContextActive(view, popoverView, shell) ? Math.max(refreshInterval, READER_REFRESH_FLOOR_MS) : refreshInterval;
+  return readerContextActive(view, popoverView, shell, readerActiveUntil) ? Math.max(refreshInterval, READER_REFRESH_FLOOR_MS) : refreshInterval;
 }
 
-function readerContextActive(view: "popover" | "dashboard", popoverView: PopoverView, shell: HTMLElement | null): boolean {
+function readerContextActive(view: "popover" | "dashboard", popoverView: PopoverView, shell: HTMLElement | null, readerActiveUntil: number): boolean {
+  if (readerActiveUntil > Date.now()) return true;
   if (document.scrollingElement && document.scrollingElement.scrollTop > 8) return true;
   const root = shell ?? document;
   if (root.querySelector('[aria-expanded="true"]')) return true;
