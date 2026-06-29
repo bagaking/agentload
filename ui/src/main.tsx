@@ -459,22 +459,43 @@ function App() {
     const target = shellRef.current;
     if (!target) return;
     let observer: ResizeObserver | null = null;
+    let resizeFrame = 0;
+    let settledTimer = 0;
+    let lastHeight = 0;
     const postResize = () => {
       if (!surfaceVisible(view, popoverVisibleRef.current)) return;
       const height = Math.ceil(Math.min(Math.max(target.scrollHeight || 420, 320), 580));
+      if (!height || Math.abs(height - lastHeight) < 2) return;
+      lastHeight = height;
       window.webkit?.messageHandlers?.agentLoadResize?.postMessage({ height });
+    };
+    const requestResize = () => {
+      if (!surfaceVisible(view, popoverVisibleRef.current) || resizeFrame) return;
+      resizeFrame = window.requestAnimationFrame(() => {
+        resizeFrame = 0;
+        postResize();
+      });
+    };
+    const requestSettledResize = () => {
+      requestResize();
+      window.clearTimeout(settledTimer);
+      settledTimer = window.setTimeout(requestResize, 120);
     };
     const startResize = () => {
       if (!surfaceVisible(view, popoverVisibleRef.current)) return;
       if (!observer) {
-        observer = new ResizeObserver(postResize);
+        observer = new ResizeObserver(requestResize);
         observer.observe(target);
       }
-      postResize();
+      requestSettledResize();
     };
     const stopResize = () => {
       observer?.disconnect();
       observer = null;
+      if (resizeFrame) window.cancelAnimationFrame(resizeFrame);
+      resizeFrame = 0;
+      window.clearTimeout(settledTimer);
+      settledTimer = 0;
     };
     const onVisible = () => startResize();
     const onHidden = () => stopResize();
@@ -492,7 +513,7 @@ function App() {
       window.removeEventListener("agentLoadPopoverHidden", onHidden);
       document.removeEventListener("visibilitychange", onDocumentVisibility);
     };
-  }, [snapshot, selection, railTab, logTab, view]);
+  }, [error, logTab, popoverView, railTab, refreshInterval, selection, snapshot, trendRange, trendSelection, view]);
 
   const selected = useMemo(() => resolveSelection(t, snapshot, selection), [t, snapshot, selection]);
   const compact = view === "popover";
@@ -1301,7 +1322,7 @@ function ProjectAtlas({
               selection={selection}
               setSelection={setSelection}
               compact={compact}
-              expanded={openProjects.has(projectId) || selection.id === projectId}
+              expanded={openProjects.has(projectId)}
               onToggle={() => toggleProject(projectId)}
               rank={index + 1}
             />
@@ -2319,18 +2340,20 @@ function SessionTree({
   const linkedLimit = compact ? 2 : 3;
   const childLimit = compact ? 3 : 3;
   const unlinkedLimit = compact ? 3 : 4;
-  const visibleGroups = groups.slice(0, groupLimit);
+  const [showOverflow, setShowOverflow] = useState(false);
+  const collapsedGroups = groups.slice(0, groupLimit);
   const hiddenGroups = groups.slice(groupLimit).reduce((total, group) => total + group.sessions.length, 0);
-  const hiddenTotal = hiddenGroups + visibleGroups.reduce((total, group) => total + hiddenToolSessionCount(group, linkedLimit, childLimit, unlinkedLimit), 0);
+  const hiddenTotal = hiddenGroups + collapsedGroups.reduce((total, group) => total + hiddenToolSessionCount(group, linkedLimit, childLimit, unlinkedLimit), 0);
+  const visibleGroups = showOverflow ? groups : collapsedGroups;
   if (!sessions.length) {
     return <div className="session-tree empty">{t("empty")}</div>;
   }
   return (
     <div className="session-tree">
       {visibleGroups.map((group) => {
-        const visibleLinked = group.linked.slice(0, linkedLimit);
-        const visibleUnlinked = group.unlinked.slice(0, unlinkedLimit);
-        const visibleUnknown = group.unknown.slice(0, Math.max(1, unlinkedLimit - visibleUnlinked.length));
+        const visibleLinked = showOverflow ? group.linked : group.linked.slice(0, linkedLimit);
+        const visibleUnlinked = showOverflow ? group.unlinked : group.unlinked.slice(0, unlinkedLimit);
+        const visibleUnknown = showOverflow ? group.unknown : group.unknown.slice(0, Math.max(1, unlinkedLimit - visibleUnlinked.length));
         return (
           <section className="session-tool-block" key={group.tool}>
             <div className="session-tool-head">
@@ -2344,7 +2367,7 @@ function SessionTree({
                   <strong>{branch.children.length}</strong>
                 </div>
                 <SessionLine t={t} session={branch.parent} selection={selection} setSelection={setSelection} compact={compact} />
-                {branch.children.slice(0, childLimit).map((session) => (
+                {(showOverflow ? branch.children : branch.children.slice(0, childLimit)).map((session) => (
                   <SessionLine key={sessionIdentity(session)} t={t} session={session} selection={selection} setSelection={setSelection} compact={compact} child />
                 ))}
               </section>
@@ -2374,7 +2397,12 @@ function SessionTree({
           </section>
         );
       })}
-      {hiddenTotal ? <div className="session-tree-more">{t("moreCount").replace("{count}", String(hiddenTotal))}</div> : null}
+      {hiddenTotal ? (
+        <button className={`session-tree-more ${showOverflow ? "is-expanded" : ""}`} type="button" onClick={() => setShowOverflow((value) => !value)} aria-expanded={showOverflow}>
+          <ChevronDown size={12} aria-hidden="true" />
+          <span>{t(showOverflow ? "lessCount" : "moreCount").replace("{count}", String(hiddenTotal))}</span>
+        </button>
+      ) : null}
     </div>
   );
 }

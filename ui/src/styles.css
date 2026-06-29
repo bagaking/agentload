@@ -5468,6 +5468,40 @@ body[data-view="dashboard"] .session-line.is-selected {
   background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 6.5%, transparent), transparent 46%);
 }
 
+.session-tree-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  border: 0;
+  background: transparent;
+  appearance: none;
+  cursor: pointer;
+  text-align: left;
+  line-height: 1;
+}
+
+.session-tree-more svg {
+  flex: 0 0 auto;
+  opacity: .72;
+  transform: rotate(-90deg);
+  transition: transform .12s ease, opacity .12s ease;
+}
+
+.session-tree-more.is-expanded svg {
+  transform: rotate(0deg);
+}
+
+.session-tree-more:hover,
+.session-tree-more:focus-visible {
+  color: var(--console-text);
+}
+
+.session-tree-more:hover svg,
+.session-tree-more:focus-visible svg {
+  opacity: 1;
+}
+
 body[data-view="dashboard"] .session-tree-more {
   min-height: 22px;
   padding: 4px 0 0 15px;
