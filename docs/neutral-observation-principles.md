@@ -40,6 +40,11 @@ process and transcript evidence alone.
   and running processes should appear as peer measurements by default.
 - Explanations should say what the number is and how it was observed, not what
   the user should feel about it.
+- Explanatory text should not compete with the metric block. Keep realtime
+  metrics visible first, then provide a single compact disclosure for metric
+  definitions, evidence notes, and scan-window limits. The disclosure should
+  be collapsed by default so multiple explanatory paragraphs do not stack in
+  the first reading pass.
 
 ## Role And Attention Inference
 
@@ -190,3 +195,21 @@ the scanner may parse only the appended JSONL bytes and merge them into the
 cached trace. If the file was rewritten, truncated, left with a partial final
 line, or uses sidecar metadata that may have changed independently, do a full
 parse instead.
+When file modification time is fresh but the JSONL tail has a parseable last
+event timestamp older than the lookback window, the scanner may skip that file
+as an old transcript. If the tail does not expose a reliable timestamp, keep
+the file in the scan. This keeps the rule evidence-bound and avoids converting
+missing tail evidence into missing activity.
+
+Cold-start scans should protect the foreground snapshot. The foreground
+snapshot must include transcript files that are currently held by live
+processes, plus transcript files with recent local activity evidence inside the
+foreground scan window. Older non-priority transcript files may be counted as
+`deferred_files` instead of parsed synchronously. The UI should show parsed,
+candidate, and deferred counts so the operator can see the evidence boundary.
+Do not describe deferred historical files as ongoing activity or as a value
+judgment about the operator's concurrency.
+If the foreground path narrows history work, describe that boundary as full
+historical parsing being deferred unless candidate directory enumeration is
+also explicitly skipped. User-facing copy must not claim that historical
+directories were not enumerated when the implementation only reduced parsing.
