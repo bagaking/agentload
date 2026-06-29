@@ -4811,6 +4811,33 @@ body[data-view="dashboard"] .tool-mix-item {
   padding: 4px 5px;
 }
 
+body[data-view="dashboard"] .candidate-rail {
+  gap: 1px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--console-line-soft) 68%, transparent);
+}
+
+body[data-view="dashboard"] .candidate-row {
+  min-height: 25px;
+  gap: 5px;
+  padding: 4px 5px;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--console-material-2) 54%, transparent);
+}
+
+body[data-view="dashboard"] .candidate-main {
+  gap: 5px;
+}
+
+body[data-view="dashboard"] .candidate-main strong {
+  font-size: 9.5px;
+}
+
+body[data-view="dashboard"] .candidate-main em,
+body[data-view="dashboard"] .candidate-mix {
+  font-size: 8.5px;
+}
+
 body[data-view="dashboard"] .dash-atlas-band,
 body[data-view="dashboard"] .dash-ledger-band,
 body[data-view="dashboard"] .trend-suite.dashboard {
@@ -5048,6 +5075,23 @@ body[data-view="dashboard"] .session-title small {
 
 body[data-view="dashboard"] .session-tool-pair {
   gap: 3px;
+}
+
+body[data-view="dashboard"] .session-tool-pair .tool-icon {
+  opacity: .74;
+}
+
+body[data-view="dashboard"] .session-tool-pair .host-app,
+body[data-view="dashboard"] .mini-icon {
+  opacity: .16;
+  transition: opacity .12s ease, background .12s ease;
+}
+
+body[data-view="dashboard"] .session-line:hover .session-tool-pair .host-app,
+body[data-view="dashboard"] .session-line:focus-within .session-tool-pair .host-app,
+body[data-view="dashboard"] .session-line:hover .mini-icon,
+body[data-view="dashboard"] .session-line:focus-within .mini-icon {
+  opacity: .78;
 }
 
 body[data-view="dashboard"] .mini-icon {
@@ -5451,5 +5495,430 @@ body[data-view="popover"] .footer-meta {
   body[data-view="dashboard"] .dash-evidence-column {
     padding-left: 0;
     border-left: 0;
+  }
+}
+
+/* Compact audit pass: thinner first viewport, denser outlines, fewer framed cells. */
+body[data-view="dashboard"] {
+  font-size: 11px;
+}
+
+body[data-view="dashboard"] .dashboard-surface {
+  gap: 7px;
+  padding: 7px 9px 16px;
+}
+
+body[data-view="dashboard"] .dash-front-band,
+body[data-view="dashboard"] .dash-atlas-band,
+body[data-view="dashboard"] .dash-ledger-band,
+body[data-view="dashboard"] .trend-suite.dashboard,
+body[data-view="dashboard"] .dash-inspector-strip {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--ok) 1.8%, transparent), transparent 26%),
+    color-mix(in srgb, var(--console-material) 92%, transparent);
+}
+
+body[data-view="dashboard"] .dash-front-band {
+  grid-template-columns: minmax(0, 1fr) minmax(246px, .34fr);
+  gap: 6px 11px;
+  padding: 7px 10px 8px 15px;
+}
+
+body[data-view="dashboard"] .dash-front-band::before {
+  inset: 8px auto 8px 6px;
+  width: 3px;
+  opacity: .72;
+}
+
+body[data-view="dashboard"] .dash-front-topline {
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 9px;
+  padding-bottom: 5px;
+}
+
+body[data-view="dashboard"] .dash-front-status {
+  gap: 5px;
+}
+
+body[data-view="dashboard"] .field-status,
+body[data-view="dashboard"] .issue-stamp {
+  min-height: 17px;
+  padding: 1px 5px;
+  font-size: 8.5px;
+}
+
+body[data-view="dashboard"] .dash-front-meta-item {
+  min-height: 32px;
+  gap: 2px;
+  padding: 4px 5px;
+}
+
+body[data-view="dashboard"] .dash-front-meta-item span,
+body[data-view="dashboard"] .dash-support-cell > span,
+body[data-view="dashboard"] .dash-band-head > span,
+body[data-view="dashboard"] .dash-mini-head > span,
+body[data-view="dashboard"] .band-head span,
+body[data-view="dashboard"] .note-kicker {
+  font-size: 8px;
+}
+
+body[data-view="dashboard"] .dash-front-meta-item strong {
+  font-size: 10px;
+}
+
+body[data-view="dashboard"] .dash-front-meta-item em {
+  display: none;
+}
+
+body[data-view="dashboard"] .dash-field-index > .dash-band-head,
+body[data-view="dashboard"] .dash-evidence-column > .dash-band-head {
+  display: none;
+}
+
+body[data-view="dashboard"] .dash-field-index {
+  gap: 4px;
+}
+
+body[data-view="dashboard"] .dash-field-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+body[data-view="dashboard"] .dash-support-cell,
+body[data-view="dashboard"] .field-cell {
+  min-height: 48px;
+  gap: 3px;
+  padding: 5px 6px;
+}
+
+body[data-view="dashboard"] .dash-support-cell strong,
+body[data-view="dashboard"] .field-cell strong {
+  font-size: 21px;
+  line-height: .9;
+}
+
+body[data-view="dashboard"] .dash-support-cell em,
+body[data-view="dashboard"] .field-cell em {
+  font-size: 9px;
+}
+
+body[data-view="dashboard"] .field-cell i,
+body[data-view="dashboard"] .calibration-row i,
+body[data-view="dashboard"] .age-row i {
+  height: 3px;
+}
+
+body[data-view="dashboard"] .meaning-strip {
+  min-height: 23px;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 5px;
+  padding: 3px 0 0;
+}
+
+body[data-view="dashboard"] .meaning-strip div {
+  gap: 4px;
+}
+
+body[data-view="dashboard"] .meaning-strip strong {
+  font-size: 9px;
+}
+
+body[data-view="dashboard"] .meaning-strip > div:first-child {
+  padding-left: 6px;
+}
+
+body[data-view="dashboard"] .meaning-strip > p {
+  display: block;
+  overflow: hidden;
+  padding-right: 6px;
+  font-size: 9px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-view="dashboard"] .meaning-point-row {
+  display: none;
+}
+
+body[data-view="dashboard"] .dash-field-index .meaning-strip {
+  display: none;
+}
+
+body[data-view="dashboard"] .dash-evidence-column {
+  gap: 4px;
+  padding-left: 9px;
+  align-self: start;
+}
+
+body[data-view="dashboard"] .evidence-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+body[data-view="dashboard"] .readout {
+  padding: 4px 5px;
+}
+
+body[data-view="dashboard"] .evidence-health {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+}
+
+body[data-view="dashboard"] .evidence-note {
+  min-height: 21px;
+  padding: 4px 5px;
+}
+
+body[data-view="dashboard"] .evidence-note-head strong,
+body[data-view="dashboard"] .readout strong {
+  font-size: 9px;
+}
+
+body[data-view="dashboard"] .dash-atlas-band {
+  gap: 6px;
+  padding: 7px 10px 9px;
+}
+
+body[data-view="dashboard"] .dash-atlas-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(210px, .28fr);
+  gap: 9px;
+  max-height: calc(100vh - 214px);
+  min-height: 0;
+  overflow: hidden;
+}
+
+body[data-view="dashboard"] .dash-atlas-panel,
+body[data-view="dashboard"] .dash-atlas-side {
+  min-height: 0;
+  overflow: auto;
+}
+
+body[data-view="dashboard"] .dash-atlas-side {
+  gap: 6px;
+  padding-left: 9px;
+}
+
+body[data-view="dashboard"] .dash-band-head {
+  margin-bottom: 4px;
+}
+
+body[data-view="dashboard"] .dash-band-head h2,
+body[data-view="dashboard"] .trend-suite-copy h2 {
+  font-size: 11.5px;
+}
+
+body[data-view="dashboard"] .project-columns {
+  grid-template-columns: 20px minmax(150px, 1fr) minmax(124px, .3fr) minmax(82px, .18fr);
+  min-height: 16px;
+  padding-bottom: 3px;
+  font-size: 7.8px;
+}
+
+body[data-view="dashboard"] .project-tree-head {
+  grid-template-columns: 20px minmax(150px, 1fr) minmax(124px, .3fr) minmax(82px, .18fr);
+  min-height: 23px;
+  gap: 6px;
+  padding: 1px 0;
+}
+
+body[data-view="dashboard"] .project-rank {
+  width: 20px;
+  font-size: 8px;
+}
+
+body[data-view="dashboard"] .project-select span {
+  font-size: 10px;
+}
+
+body[data-view="dashboard"] .project-select small {
+  font-size: 8.5px;
+}
+
+body[data-view="dashboard"] .project-matrix {
+  gap: 4px;
+}
+
+body[data-view="dashboard"] .project-matrix strong {
+  min-width: 12px;
+  font-size: 9px;
+}
+
+body[data-view="dashboard"] .project-proc {
+  font-size: 8.5px;
+}
+
+body[data-view="dashboard"] .tool-mark {
+  min-height: 17px;
+  padding: 0 3px;
+}
+
+body[data-view="dashboard"] .tool-icon,
+body[data-view="dashboard"] .host-icon,
+body[data-view="dashboard"] .tool-fallback {
+  width: 14px;
+  height: 14px;
+}
+
+body[data-view="dashboard"] .project-evidence-strip {
+  display: none;
+}
+
+body[data-view="dashboard"] .session-tree {
+  padding-bottom: 3px;
+}
+
+body[data-view="dashboard"] .session-branch {
+  padding-left: 10px;
+}
+
+body[data-view="dashboard"] .session-branch::before {
+  left: 2px;
+  top: 16px;
+  bottom: 4px;
+  opacity: .82;
+}
+
+body[data-view="dashboard"] .session-group-head {
+  min-height: 17px;
+  padding: 2px 0;
+  font-size: 7.8px;
+}
+
+body[data-view="dashboard"] .session-group-head span {
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-view="dashboard"] .session-group-head strong {
+  min-width: 17px;
+  text-align: right;
+}
+
+body[data-view="dashboard"] .session-line {
+  grid-template-columns: minmax(0, 1fr) auto 19px;
+  min-height: 21px;
+  gap: 4px;
+  padding: 2px 0;
+}
+
+body[data-view="dashboard"] .session-line:hover {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 4.5%, transparent), transparent 38%);
+}
+
+body[data-view="dashboard"] .session-line.is-child {
+  margin-left: 8px;
+}
+
+body[data-view="dashboard"] .session-line.is-child::before {
+  left: -7px;
+  width: 6px;
+}
+
+body[data-view="dashboard"] .role-glyph {
+  width: 14px;
+  height: 14px;
+}
+
+body[data-view="dashboard"] .role-glyph svg {
+  width: 9px;
+  height: 9px;
+}
+
+body[data-view="dashboard"] .session-title strong {
+  font-size: 9.4px;
+}
+
+body[data-view="dashboard"] .session-title small {
+  font-size: 8px;
+}
+
+body[data-view="dashboard"] .mini-icon {
+  width: 18px;
+  height: 18px;
+}
+
+body[data-view="dashboard"] .mini-icon svg {
+  width: 11px;
+  height: 11px;
+}
+
+body[data-view="dashboard"] .dash-side-module {
+  gap: 4px;
+}
+
+body[data-view="dashboard"] .dash-side-module + .dash-side-module {
+  padding-top: 5px;
+}
+
+body[data-view="dashboard"] .dash-mini-head h3 {
+  font-size: 9px;
+}
+
+body[data-view="dashboard"] .calibration-row {
+  gap: 3px;
+  padding-bottom: 5px;
+}
+
+body[data-view="dashboard"] .calibration-row-head span,
+body[data-view="dashboard"] .calibration-row p,
+body[data-view="dashboard"] .calibration-row em,
+body[data-view="dashboard"] .age-row {
+  font-size: 8.5px;
+}
+
+body[data-view="dashboard"] .calibration-row-head strong {
+  font-size: 12px;
+}
+
+body[data-view="dashboard"] .candidate-row {
+  min-height: 22px;
+  padding: 3px 4px;
+}
+
+body[data-view="dashboard"] .candidate-main strong {
+  font-size: 8.8px;
+}
+
+body[data-view="dashboard"] .candidate-main em,
+body[data-view="dashboard"] .candidate-mix {
+  font-size: 7.8px;
+}
+
+body[data-view="dashboard"] .confidence-grid span {
+  padding: 4px;
+}
+
+body[data-view="dashboard"] .dash-ledger-band,
+body[data-view="dashboard"] .trend-suite.dashboard {
+  gap: 6px;
+  padding: 7px 10px 9px;
+}
+
+body[data-view="dashboard"] .process-row {
+  min-height: 22px;
+  padding: 3px 0;
+  font-size: 9.5px;
+}
+
+body[data-view="dashboard"] .process-row.head {
+  min-height: 20px;
+  font-size: 7.8px;
+}
+
+body[data-view="dashboard"] .trend-chart {
+  min-height: 62px;
+}
+
+body[data-view="dashboard"] .dash-inspector-strip {
+  grid-template-columns: 138px minmax(260px, .58fr) minmax(0, 1fr);
+  padding: 5px 7px;
+}
+
+@media (max-width: 920px) {
+  body[data-view="dashboard"] .dash-atlas-grid {
+    max-height: none;
+    overflow: visible;
   }
 }

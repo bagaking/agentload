@@ -1082,7 +1082,7 @@ function DashboardSurface({
         <DashboardBandHead kicker={t("liveLedger")} title={t("projectSessionTree")} meta={`${snapshot.live_sessions?.length ?? 0} ${t("sessions")}`} />
         <div className="dash-atlas-grid">
           <div className="dash-atlas-panel">
-            <ProjectAtlas t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} limit={14} defaultExpandedCount={0} showHead={false} />
+            <ProjectAtlas t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} limit={14} defaultExpandedCount={3} showHead={false} />
           </div>
           <DashboardSideRails t={t} snapshot={snapshot} />
         </div>
@@ -1570,6 +1570,10 @@ function DashboardSideRails({ t, snapshot }: { t: (key: string) => string; snaps
         <CalibrationRail t={t} snapshot={snapshot} scale={scale} />
       </section>
       <section className="dash-side-module">
+        <div className="dash-mini-head"><h3>{t("candidateWorkitems")}</h3><span>{t("sessionProcessMix")}</span></div>
+        <CandidateWorkitemsRail t={t} snapshot={snapshot} limit={3} />
+      </section>
+      <section className="dash-side-module">
         <div className="dash-mini-head"><h3>{t("sessionAge")}</h3><span>{t("currentFreshnessBuckets")}</span></div>
         <AgeRail t={t} buckets={snapshot.age_buckets ?? []} />
       </section>
@@ -1679,10 +1683,10 @@ function ConfidenceGrid({ t, snapshot }: { t: (key: string) => string; snapshot:
   );
 }
 
-function CandidateWorkitemsRail({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot }) {
+function CandidateWorkitemsRail({ t, snapshot, limit = 5 }: { t: (key: string) => string; snapshot: Snapshot; limit?: number }) {
   const rows = [...(snapshot.candidate_workitems ?? [])]
     .sort((a, b) => (b.session_count ?? 0) - (a.session_count ?? 0))
-    .slice(0, 5);
+    .slice(0, limit);
   if (!rows.length) return <span className="muted-inline">{t("unavailable")}</span>;
   return (
     <div className="candidate-rail">
@@ -2480,9 +2484,9 @@ function SessionTree({
   compact: boolean;
 }) {
   const branches = buildSessionBranches(sessions);
-  const linkedLimit = compact ? 3 : 5;
-  const childLimit = compact ? 3 : 4;
-  const unlinkedLimit = compact ? 4 : 7;
+  const linkedLimit = compact ? 3 : 4;
+  const childLimit = compact ? 3 : 3;
+  const unlinkedLimit = compact ? 4 : 5;
   const visibleLinked = branches.linked.slice(0, linkedLimit);
   const visibleUnlinked = branches.unlinked.slice(0, unlinkedLimit);
   const hiddenLinked = Math.max(0, branches.linked.length - visibleLinked.length);
