@@ -1136,6 +1136,7 @@ function PopoverRuntimeInstrument({ t, snapshot }: { t: (key: string) => string;
   const current = snapshot.current ?? {};
   const summary = snapshot.summary ?? {};
   const scale = currentPeerScale(current);
+  const active = (current.active_burst_concurrency ?? 0) > 0;
   const rows = [
     {
       key: "burst",
@@ -1165,11 +1166,7 @@ function PopoverRuntimeInstrument({ t, snapshot }: { t: (key: string) => string;
     },
   ];
   return (
-    <section className="popover-instrument" aria-label={t("runtimeField")}>
-      <div className="instrument-spine" aria-hidden="true">
-        <span />
-        <span />
-      </div>
+    <section className={`popover-instrument ${active ? "is-active" : ""}`} aria-label={t("runtimeField")}>
       <div className="instrument-stat-grid">
         {rows.map((row) => (
           <article className={`instrument-stat ${row.key}`} key={row.key}>
@@ -1811,9 +1808,14 @@ function TrendLaneView({
     if (at) setTrendSelection((current) => ({ ...current, [lane]: at }));
   };
   const selectNearestPlotPoint = (event: React.MouseEvent<SVGSVGElement>) => {
-    const bounds = event.currentTarget.getBoundingClientRect();
-    if (!bounds || !chart.points.length) return;
-    const x = ((event.clientX - bounds.left) / bounds.width) * 320;
+    const svg = event.currentTarget;
+    const matrix = svg.getScreenCTM();
+    if (!matrix || !chart.points.length) return;
+    const cursor = svg.createSVGPoint();
+    cursor.x = event.clientX;
+    cursor.y = event.clientY;
+    const svgPoint = cursor.matrixTransform(matrix.inverse());
+    const x = clampNumber(svgPoint.x, 8, 312);
     const nearest = chart.points.reduce((best, item) => (Math.abs(item.x - x) < Math.abs(best.x - x) ? item : best), chart.points[0]);
     selectPoint(nearest.at);
   };
@@ -1863,7 +1865,10 @@ function TrendLaneView({
                   tabIndex={0}
                   aria-label={`${title} ${formatDateTime(item.at)}`}
                   data-focus-key={focusKey("trend-point", lane, trendWindow?.range || "", item.at || "")}
-                  onClick={() => selectPoint(item.at)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    selectPoint(item.at);
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
@@ -1997,26 +2002,33 @@ function Topbar({
     <header className="topbar">
       <div className="brand">
         <span className="brand-mark" aria-hidden="true">
-          <span />
-          <span />
-          <span />
+          <svg viewBox="0 0 32 32" focusable="false">
+            <rect className="mark-plate" x="3" y="3" width="26" height="26" rx="8" />
+            <path className="mark-orbit" d="M8 20.5C10.3 16 13.2 13.8 16.6 13.8C20.3 13.8 22.4 10.9 24.6 7.8" />
+            <rect className="mark-bar a" x="8" y="18" width="4.4" height="7" rx="2.2" />
+            <rect className="mark-bar b" x="14" y="13" width="4.4" height="12" rx="2.2" />
+            <rect className="mark-bar c" x="20" y="9" width="4.4" height="16" rx="2.2" />
+            <circle className="mark-node" cx="24" cy="8" r="2.6" />
+          </svg>
         </span>
         <div className="brand-text">
           <span className="brand-name">{BRAND_NAME}</span>
           <span className="brand-sub">{t("sub")}</span>
         </div>
+        <div className="brand-actions">
+          {compact ? <LocalStatus t={t} snapshot={snapshot} /> : <Pill tone="safe">{t("loopback")}</Pill>}
+          <button className="icon-btn topbar-refresh-action" type="button" data-focus-key={focusKey("topbar-refresh")} onClick={refreshSnapshot} title={t("refresh")} aria-label={t("refresh")}>
+            <RefreshCw size={16} className={running ? "spin" : ""} />
+          </button>
+          {showTopbarStatus ? <Pill tone={topbarStatusTone}>{error ? t("failed") : running ? t("running") : t("idle")}</Pill> : null}
+        </div>
       </div>
       <div className="topbar-meta">
-        {compact ? <LocalStatus t={t} snapshot={snapshot} /> : <Pill tone="safe">{t("loopback")}</Pill>}
-        {showTopbarStatus ? <Pill tone={topbarStatusTone}>{error ? t("failed") : running ? t("running") : t("idle")}</Pill> : null}
         {!compact ? (
           <button className="kbd-hint" type="button" data-focus-key={focusKey("topbar-refresh-interval")} onClick={cycleRefreshInterval} title={t("autoRefresh")}>
             <kbd>{formatRefreshInterval(refreshInterval, t)}</kbd> {t("auto")}
           </button>
         ) : null}
-        <button className="icon-btn" type="button" data-focus-key={focusKey("topbar-refresh")} onClick={refreshSnapshot} title={t("refresh")} aria-label={t("refresh")}>
-          <RefreshCw size={16} className={running ? "spin" : ""} />
-        </button>
         <LanguageControl t={t} lang={lang} setLang={setLang} />
         <button className="icon-btn" type="button" data-focus-key={focusKey("topbar-theme")} onClick={() => setTheme(theme === "light" ? "dark" : "light")} title={t("toggleTheme")} aria-label={t("toggleTheme")}>
           {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}

@@ -7774,6 +7774,200 @@ body[data-view="popover"] .scan-readout strong {
   white-space: nowrap;
 }
 
+/* Popover header and instrument polish: primary state belongs with the brand. */
+.brand-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.brand-mark {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+  place-items: center;
+  padding: 0;
+}
+
+.brand-mark svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.brand-mark .mark-plate {
+  fill: color-mix(in srgb, var(--console-material-2) 82%, transparent);
+  stroke: color-mix(in srgb, var(--accent) 36%, var(--console-line));
+  stroke-width: 1.2;
+}
+
+.brand-mark .mark-orbit {
+  fill: none;
+  stroke: color-mix(in srgb, var(--accent) 72%, transparent);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  opacity: .86;
+}
+
+.brand-mark .mark-bar {
+  fill: color-mix(in srgb, var(--fg) 88%, transparent);
+}
+
+.brand-mark .mark-bar.a {
+  fill: color-mix(in srgb, var(--fg) 78%, var(--ok));
+}
+
+.brand-mark .mark-bar.b {
+  fill: color-mix(in srgb, var(--accent) 56%, var(--fg));
+}
+
+.brand-mark .mark-bar.c {
+  fill: color-mix(in srgb, var(--ok) 68%, var(--fg));
+}
+
+.brand-mark .mark-node {
+  fill: var(--ok);
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--ok) 58%, transparent));
+}
+
+.local-status-chip.is-active {
+  animation: statusBreathe 2.4s ease-in-out infinite;
+}
+
+.local-status-chip.is-active .state-dot {
+  animation: dotBreathe 2.4s ease-in-out infinite;
+}
+
+body[data-view="popover"] .topbar {
+  min-height: 36px;
+  padding: 4px 8px;
+}
+
+body[data-view="popover"] .brand {
+  flex: 0 1 auto;
+  gap: 7px;
+}
+
+body[data-view="popover"] .brand-mark {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+body[data-view="popover"] .brand-text {
+  flex: none;
+}
+
+body[data-view="popover"] .brand-name {
+  max-width: 118px;
+  font-size: 11.2px;
+  letter-spacing: .09em;
+}
+
+body[data-view="popover"] .brand-actions {
+  gap: 4px;
+  margin-left: 2px;
+}
+
+body[data-view="popover"] .brand-actions .local-status-chip,
+body[data-view="popover"] .brand-actions .icon-btn {
+  width: 27px;
+  min-width: 27px;
+  height: 27px;
+  border-radius: 9px;
+}
+
+body[data-view="popover"] .brand-actions .pill {
+  max-width: 62px;
+}
+
+body[data-view="popover"] .topbar-meta {
+  flex: 1 1 auto;
+}
+
+body[data-view="popover"] .topbar-meta .local-status-chip,
+body[data-view="popover"] .topbar-meta .topbar-refresh-action {
+  display: none;
+}
+
+body[data-view="popover"] .local-status-chip {
+  background:
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--ok) 30%, transparent), transparent 56%),
+    color-mix(in srgb, var(--ok) 10%, var(--console-material-2));
+}
+
+body[data-view="popover"] .popover-instrument {
+  padding-left: 7px;
+}
+
+body[data-view="popover"] .popover-instrument > * {
+  position: relative;
+  z-index: 1;
+}
+
+body[data-view="popover"] .popover-instrument::before {
+  inset: -22px -40px 36px -12px;
+  z-index: 0;
+  opacity: .22;
+  filter: blur(10px) saturate(1.2);
+  background:
+    radial-gradient(ellipse at 16% 28%, color-mix(in srgb, var(--accent) 24%, transparent), transparent 42%),
+    radial-gradient(ellipse at 64% 10%, color-mix(in srgb, var(--run) 12%, transparent), transparent 38%),
+    linear-gradient(100deg, transparent 6%, color-mix(in srgb, var(--accent) 12%, transparent) 44%, transparent 72%);
+  animation: instrumentAmbient 8s ease-in-out infinite;
+}
+
+body[data-view="popover"] .popover-instrument.is-active::before {
+  opacity: .4;
+  background:
+    radial-gradient(ellipse at 14% 28%, color-mix(in srgb, var(--ok) 34%, transparent), transparent 42%),
+    radial-gradient(ellipse at 68% 8%, color-mix(in srgb, var(--accent) 17%, transparent), transparent 40%),
+    linear-gradient(100deg, transparent 8%, color-mix(in srgb, var(--ok) 18%, transparent) 42%, transparent 72%);
+  animation-duration: 5.8s;
+}
+
+body[data-view="popover"] .instrument-spine {
+  display: none;
+}
+
+@keyframes statusBreathe {
+  0%, 100% {
+    box-shadow:
+      0 0 0 0 color-mix(in srgb, var(--ok) 0%, transparent),
+      inset 0 0 0 1px color-mix(in srgb, var(--ok) 22%, transparent);
+    transform: translateZ(0);
+  }
+  50% {
+    box-shadow:
+      0 0 0 7px color-mix(in srgb, var(--ok) 11%, transparent),
+      0 0 18px color-mix(in srgb, var(--ok) 24%, transparent),
+      inset 0 0 0 1px color-mix(in srgb, var(--ok) 38%, transparent);
+  }
+}
+
+@keyframes dotBreathe {
+  0%, 100% {
+    opacity: .82;
+    transform: scale(.86);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+}
+
+@keyframes instrumentAmbient {
+  0%, 100% {
+    transform: translate3d(-2%, -1%, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(5%, 3%, 0) scale(1.05);
+  }
+}
+
 body[data-view="popover"] .popover-project-table .project-tree-list {
   padding-right: 8px;
 }

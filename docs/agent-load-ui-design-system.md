@@ -61,6 +61,9 @@ agent evidence.
   not solid cards. Use subtle material tint, one-pixel separation, and semantic
   color emphasis so the numeric readout stays prominent without adding box
   chrome.
+- Metric clusters should avoid unexplained decorative spines, dots, or rails.
+  If activity needs visual atmosphere, use a faint background motion layer whose
+  color follows the active state while leaving the data and labels unobstructed.
 - Popover primary metrics should not reserve a full line for duplicated ambient
   state. The compact top status mark owns live/active hover text; foreground
   scan-window duration belongs with scan-boundary metadata unless it becomes an
@@ -68,6 +71,11 @@ agent evidence.
 - Compact status hover text should state the current observation state only.
   Loopback address and no-upload reassurance are detail metadata; do not show
   them in default hover text where they can cover primary readings.
+- In compact popover chrome, live state and manual refresh are primary status
+  controls and should sit with the brand/title cluster. The right control group
+  should stay focused on language, theme, dashboard, and window actions.
+- Active live-state marks should breathe subtly when local movement is present.
+  The animation must read as state feedback, not a decorative loading spinner.
 - Compact explanatory rows should avoid decorative icons when the label and
   adjacent controls already identify the row. Compact scan readouts should stay
   on one row whenever the available width can hold the observed fields.
@@ -138,6 +146,9 @@ agent evidence.
 - Trend chart callouts must render above series points and point hit targets,
   and must not intercept chart clicks. Dense point clusters should still allow
   nearest-bucket selection by clicking the chart plane.
+- Trend chart pointer selection must use the SVG viewBox coordinate transform,
+  not raw element width ratios, so clicked positions match plotted points even
+  when the SVG letterboxes or scales responsively.
 - Light mode must keep weak labels, icons, tree rails, and control text readable;
   do not rely on very pale gray text for operator-critical controls.
 - Auto refresh defaults to `5m`. A paused refresh state may exist, but it must be
