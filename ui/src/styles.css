@@ -761,6 +761,9 @@ kbd {
 .project-tree-row.expanded {
   border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
 }
+.project-tree-row.is-selected {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 7%, transparent), color-mix(in srgb, var(--surface) 94%, transparent) 42%);
+}
 .project-tree-head {
   display: grid;
   grid-template-columns: minmax(140px, 1fr) auto minmax(90px, auto);
@@ -2753,6 +2756,10 @@ kbd {
   background:
     linear-gradient(90deg, color-mix(in srgb, var(--accent) 5%, transparent), transparent 32%),
     color-mix(in srgb, var(--fg) 1.8%, transparent);
+}
+
+.project-tree-row.is-selected {
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 70%, transparent);
 }
 
 .project-tree-head {

@@ -2410,18 +2410,19 @@ function ProjectTreeRow({
   const evidenceItems = projectEvidenceItems(t, project, compact);
   const projectAge = formatAge(project.last_event_age_seconds);
   const projectMeta = compact ? `${projectAge} · ${counts.total}s · ${project.process_count ?? 0}p` : projectAge;
+  const selected = selection.type === "project" && selection.id === projectId;
   const selectProject = () => {
+    setSelection({ type: "project", id: projectId });
     if (onToggle) {
       onToggle();
       return;
     }
-    setSelection({ type: "project", id: projectId });
   };
   return (
-    <article className={`project-tree-row ${expanded ? "expanded" : ""}`}>
+    <article className={`project-tree-row ${expanded ? "expanded" : ""} ${selected ? "is-selected" : ""}`}>
       <div className="project-tree-head">
         <span className="project-rank">{rank ?? "-"}</span>
-        <button className="project-select" type="button" onClick={selectProject} aria-expanded={expanded}>
+        <button className="project-select" type="button" onClick={selectProject} aria-current={selected ? "true" : undefined} aria-expanded={expanded}>
           <ChevronDown size={15} aria-hidden="true" />
           <span>{title}</span>
           <small>{projectMeta}</small>
