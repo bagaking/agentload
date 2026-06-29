@@ -868,7 +868,7 @@ function DashboardInspectorStrip({
       <div className="dash-inspector-controls">
         <div className="rail-tabs" role="tablist">
           {(["projects", "sessions", "processes"] as RailTab[]).map((tab) => (
-            <button key={tab} className={`rail-tab ${activeTab === tab ? "is-active" : ""}`} type="button" role="tab" onClick={() => setActiveTab(tab)}>
+            <button key={tab} className={`rail-tab ${activeTab === tab ? "is-active" : ""}`} type="button" role="tab" data-focus-key={focusKey("dashboard-inspector-tab", tab)} onClick={() => setActiveTab(tab)}>
               {tab === "projects" ? <GitBranch size={14} /> : tab === "sessions" ? <Bot size={14} /> : <Server size={14} />}
               {t(tab)}
             </button>
@@ -880,7 +880,7 @@ function DashboardInspectorStrip({
         </div>
       </div>
       <div className="dash-inspector-list">
-        <button className={`ledger-chip overview ${selection.type === "overview" ? "is-selected" : ""}`} type="button" onClick={() => setSelection({ type: "overview", id: "overview" })}>
+        <button className={`ledger-chip overview ${selection.type === "overview" ? "is-selected" : ""}`} type="button" data-focus-key={focusKey("dashboard-inspector-item", "overview")} onClick={() => setSelection({ type: "overview", id: "overview" })}>
           <span>{t("overview")}</span>
           <em>/api</em>
         </button>
@@ -889,6 +889,7 @@ function DashboardInspectorStrip({
             className={`ledger-chip ${selection.id === item.id && selection.type === item.type ? "is-selected" : ""}`}
             type="button"
             key={`${item.type}-${item.id}`}
+            data-focus-key={focusKey("dashboard-inspector-item", item.type, item.id)}
             onClick={() => setSelection({ type: item.type, id: item.id } as Selection)}
           >
             <span>{item.title}</span>
@@ -1129,6 +1130,7 @@ function CurrentMeaningStrip({ t, snapshot, compact = false }: { t: (key: string
         <button
           className="disclosure-icon-btn"
           type="button"
+          data-focus-key={focusKey("meaning-detail", compact ? "compact" : "full")}
           aria-label={expanded ? t("collapseDetails") : t("expandDetails")}
           aria-expanded={expanded}
           aria-controls={detailsId}
@@ -1478,7 +1480,7 @@ function ProcessLedgerRow({ t, process, selection, setSelection }: { t: (key: st
   return (
     <div className={`process-row process-detail-row ${selected ? "is-selected" : ""}`} role="row">
       <span className="process-cell process-main-cell" role="cell">
-        <button className="process-main" type="button" aria-current={selected ? "true" : undefined} onClick={() => setSelection({ type: "process", id: processID })}>
+        <button className="process-main" type="button" data-focus-key={focusKey("process", processID)} aria-current={selected ? "true" : undefined} onClick={() => setSelection({ type: "process", id: processID })}>
           <Server size={13} />
           <span>{t("pid")} {process.pid ?? t("unavailable")}</span>
         </button>
@@ -1487,7 +1489,7 @@ function ProcessLedgerRow({ t, process, selection, setSelection }: { t: (key: st
       <span className={`process-map ${(process.mapped_sessions ?? 0) > 0 ? "mapped" : "unmapped"}`} role="cell">{process.mapped_sessions ?? 0}</span>
       <div className="process-session-preview" role="cell" aria-label={t("sessions")}>
         {sessions.length ? sessions.slice(0, 3).map((sessionID) => (
-          <button className="session-chip" type="button" key={sessionID} onClick={() => setSelection({ type: "session", id: safeID(sessionID) })}>
+          <button className="session-chip" type="button" key={sessionID} data-focus-key={focusKey("process-session", processID, sessionID)} onClick={() => setSelection({ type: "session", id: safeID(sessionID) })}>
             {shortID(sessionID)}
           </button>
         )) : <span className="muted-inline">{t("unavailable")}</span>}
@@ -1541,7 +1543,7 @@ function LedgerNavigation({
       <div className="ledger-nav-head">
         <div className="rail-tabs" role="tablist">
           {(["projects", "sessions", "processes"] as RailTab[]).map((tab) => (
-            <button key={tab} className={`rail-tab ${activeTab === tab ? "is-active" : ""}`} type="button" role="tab" onClick={() => setActiveTab(tab)}>
+            <button key={tab} className={`rail-tab ${activeTab === tab ? "is-active" : ""}`} type="button" role="tab" data-focus-key={focusKey("ledger-nav-tab", tab)} onClick={() => setActiveTab(tab)}>
               {tab === "projects" ? <GitBranch size={14} /> : tab === "sessions" ? <Bot size={14} /> : <Server size={14} />}
               {t(tab)}
             </button>
@@ -1558,6 +1560,7 @@ function LedgerNavigation({
             className={`ledger-chip ${selection.id === item.id && selection.type === item.type ? "is-selected" : ""}`}
             type="button"
             key={`${item.type}-${item.id}`}
+            data-focus-key={focusKey("ledger-nav-item", item.type, item.id)}
             onClick={() => setSelection({ type: item.type, id: item.id } as Selection)}
           >
             <span>{item.title}</span>
@@ -1740,6 +1743,7 @@ function TrendDetail({ t, lane, point, trendWindow, compact }: { t: (key: string
             aria-expanded={expanded}
             aria-label={expanded ? t("collapseDetails") : t("expandDetails")}
             className="disclosure-icon-btn trend-detail-toggle"
+            data-focus-key={focusKey("trend-detail", lane, point.at || "", compact ? "compact" : "full")}
             title={expanded ? t("collapseDetails") : t("expandDetails")}
             type="button"
             onClick={() => setExpanded((current) => !current)}
@@ -1821,23 +1825,23 @@ function Topbar({
         {compact ? <LocalStatus t={t} /> : <Pill tone="safe">{t("loopback")}</Pill>}
         <Pill tone={error ? "bad" : running ? "running" : "idle"}>{error ? t("failed") : running ? t("running") : t("idle")}</Pill>
         {!compact ? (
-          <button className="kbd-hint" type="button" onClick={cycleRefreshInterval} title={t("autoRefresh")}>
+          <button className="kbd-hint" type="button" data-focus-key={focusKey("topbar-refresh-interval")} onClick={cycleRefreshInterval} title={t("autoRefresh")}>
             <kbd>{formatRefreshInterval(refreshInterval, t)}</kbd> {t("auto")}
           </button>
         ) : null}
-        <button className="icon-btn" type="button" onClick={refreshSnapshot} title={t("refresh")} aria-label={t("refresh")}>
+        <button className="icon-btn" type="button" data-focus-key={focusKey("topbar-refresh")} onClick={refreshSnapshot} title={t("refresh")} aria-label={t("refresh")}>
           <RefreshCw size={16} className={running ? "spin" : ""} />
         </button>
         <LanguageControl t={t} lang={lang} setLang={setLang} />
-        <button className="icon-btn" type="button" onClick={() => setTheme(theme === "light" ? "dark" : "light")} title={t("toggleTheme")} aria-label={t("toggleTheme")}>
+        <button className="icon-btn" type="button" data-focus-key={focusKey("topbar-theme")} onClick={() => setTheme(theme === "light" ? "dark" : "light")} title={t("toggleTheme")} aria-label={t("toggleTheme")}>
           {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
         </button>
         {compact ? (
           <>
-            <button className="icon-btn" type="button" onClick={() => postHostAction("open_dashboard")} title={t("dashboard")} aria-label={t("dashboard")}>
+            <button className="icon-btn" type="button" data-focus-key={focusKey("topbar-dashboard")} onClick={() => postHostAction("open_dashboard")} title={t("dashboard")} aria-label={t("dashboard")}>
               <ArrowUpRight size={16} />
             </button>
-            <button className="icon-btn" type="button" onClick={() => postHostAction("close")} title={t("close")} aria-label={t("close")}>
+            <button className="icon-btn" type="button" data-focus-key={focusKey("topbar-close")} onClick={() => postHostAction("close")} title={t("close")} aria-label={t("close")}>
               <X size={16} />
             </button>
           </>
@@ -1885,7 +1889,7 @@ function Rail({
     <aside className="rail">
       <div className="rail-tabs" role="tablist">
         {tabs.map((tab) => (
-          <button key={tab.id} className={`rail-tab ${activeTab === tab.id ? "is-active" : ""}`} type="button" role="tab" onClick={() => setActiveTab(tab.id)}>
+          <button key={tab.id} className={`rail-tab ${activeTab === tab.id ? "is-active" : ""}`} type="button" role="tab" data-focus-key={focusKey("rail-tab", tab.id)} onClick={() => setActiveTab(tab.id)}>
             {tab.icon}
             {t(tab.id)}
           </button>
@@ -1897,7 +1901,7 @@ function Rail({
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("search")} autoComplete="off" spellCheck={false} />
         </div>
         <div className="rail-list" role="listbox" aria-label={t(activeTab)}>
-          <button className={`act ${selection.type === "overview" ? "is-selected" : ""}`} data-kind="scan" type="button" onClick={() => setSelection({ type: "overview", id: "overview" })}>
+          <button className={`act ${selection.type === "overview" ? "is-selected" : ""}`} data-kind="scan" type="button" data-focus-key={focusKey("rail-item", "overview")} onClick={() => setSelection({ type: "overview", id: "overview" })}>
             <div className="act-top">
               <span className="act-title">{t("overview")}</span>
               <span className="act-state" />
@@ -1913,6 +1917,7 @@ function Rail({
             <button
               className={`act ${selection.id === item.id && selection.type === item.type ? "is-selected" : ""} ${ACTIVE.has(item.status) ? "is-running" : item.status === "done" ? "is-done" : item.status === "failed" ? "is-failed" : ""}`}
               data-kind={item.kind}
+              data-focus-key={focusKey("rail-item", item.type, item.id)}
               key={`${item.type}-${item.id}`}
               type="button"
               onClick={() => setSelection({ type: item.type, id: item.id } as Selection)}
@@ -1979,8 +1984,8 @@ function Pane({
           </div>
           <div className="run-head-meta">
             <code className="cmd">{selected.command}</code>
-            <button className="ghost-btn" type="button" onClick={refreshSnapshot}>{t("refresh")}</button>
-            {!compact ? <button className="ghost-btn" type="button" onClick={() => setSelection({ type: "overview", id: "overview" })}>{t("overview")}</button> : null}
+            <button className="ghost-btn" type="button" data-focus-key={focusKey("detail-refresh")} onClick={refreshSnapshot}>{t("refresh")}</button>
+            {!compact ? <button className="ghost-btn" type="button" data-focus-key={focusKey("detail-overview")} onClick={() => setSelection({ type: "overview", id: "overview" })}>{t("overview")}</button> : null}
           </div>
         </div>
         <Timeline t={t} snapshot={snapshot} selected={selected} />
@@ -1989,7 +1994,7 @@ function Pane({
         <div className="logwrap">
           <div className="logtabs">
             {(["summary", "evidence", "trend"] as LogTab[]).map((tab) => (
-              <button className={`logtab ${logTab === tab ? "is-active" : ""}`} type="button" key={tab} onClick={() => setLogTab(tab)}>
+              <button className={`logtab ${logTab === tab ? "is-active" : ""}`} type="button" key={tab} data-focus-key={focusKey("log-tab", tab)} onClick={() => setLogTab(tab)}>
                 {t(tab)}
               </button>
             ))}
@@ -2395,7 +2400,7 @@ function SessionLine({
         </span>
         <span className="session-title">
           <SessionIdControl t={t} sid={sid} title={title} selected={selected} setSelection={setSelection} />
-          <button className="session-meta-button" type="button" onClick={() => setSelection({ type: "session", id: safeID(sid) })}>
+          <button className="session-meta-button" type="button" data-focus-key={focusKey("session-meta", sid || title)} onClick={() => setSelection({ type: "session", id: safeID(sid) })}>
             <small>{meta}</small>
           </button>
         </span>
@@ -2416,7 +2421,7 @@ function SessionLine({
         <RoleGlyph t={t} role={role} />
         <span className="session-title">
           <SessionIdControl t={t} sid={sid} title={title} selected={selected} setSelection={setSelection} />
-          <button className="session-meta-button" type="button" onClick={() => setSelection({ type: "session", id: safeID(sid) })}>
+          <button className="session-meta-button" type="button" data-focus-key={focusKey("session-meta", sid || title)} onClick={() => setSelection({ type: "session", id: safeID(sid) })}>
             <small>{meta}</small>
           </button>
         </span>
@@ -2570,6 +2575,7 @@ function LanguageControl({ t, lang, setLang }: { t: (key: string) => string; lan
             type="button"
             aria-pressed={lang === item}
             aria-label={t("languageOption").replace("{label}", label)}
+            data-focus-key={focusKey("language", item)}
             onClick={() => setLang(item)}
           >
             {item.toUpperCase()}
@@ -2582,7 +2588,7 @@ function LanguageControl({ t, lang, setLang }: { t: (key: string) => string; lan
 
 function TermLabel({ label, tip }: { label: string; tip: string }) {
   return (
-    <span className="term-label" tabIndex={0} role="button" aria-label={`${label}: ${tip}`} data-tip={tip} title={tip}>
+    <span className="term-label" tabIndex={0} role="button" data-focus-key={focusKey("term", label)} aria-label={`${label}: ${tip}`} data-tip={tip} title={tip}>
       {label}
     </span>
   );
