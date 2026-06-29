@@ -58,6 +58,9 @@ agent evidence.
   process count, and observed tool coverage before expansion. Expansion is for
   relationship inspection, not the first moment when distribution becomes
   visible.
+- Project lists must not silently hide known projects. The compact popover
+  should preserve the current project set, and any intentionally capped project
+  list must expose a dense open/close overflow control with the hidden count.
 - Expanded project rows must keep sessions in a compact tree outline. Avoid
   block-level evidence stacks inside the popover; global audit should not
   require scrolling past full evidence cards to understand parent/child session

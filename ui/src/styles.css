@@ -5502,6 +5502,10 @@ body[data-view="dashboard"] .session-line.is-selected {
   opacity: 1;
 }
 
+.project-tree-more {
+  margin-left: 22px;
+}
+
 body[data-view="dashboard"] .session-tree-more {
   min-height: 22px;
   padding: 4px 0 0 15px;
@@ -6893,6 +6897,10 @@ body[data-view="popover"] .session-tree-more {
   padding: 3px 0 0 8px;
   color: var(--console-text-faint);
   font-size: 8px;
+}
+
+body[data-view="popover"] .project-tree-more {
+  margin-left: 18px;
 }
 
 body[data-view="popover"] .meaning-strip.compact.is-expanded .meaning-detail-grid {

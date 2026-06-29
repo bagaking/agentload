@@ -1076,7 +1076,7 @@ function PopoverAuditShell({
           </div>
           <span>{dashboardProjectMeta(t, snapshot)}</span>
         </div>
-        <ProjectAtlas t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} compact limit={8} defaultExpandedCount={0} showHead={false} />
+        <ProjectAtlas t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} compact defaultExpandedCount={0} showHead={false} />
       </section>
     </section>
   );
@@ -1282,8 +1282,12 @@ function ProjectAtlas({
   defaultExpandedCount: number;
   showHead?: boolean;
 }) {
-  const projects = orderedProjects(snapshot).slice(0, limit ?? Number.POSITIVE_INFINITY);
-  const initialOpen = useMemo(() => new Set(projects.slice(0, defaultExpandedCount).map((project) => safeID(project.project))), [defaultExpandedCount, projects]);
+  const allProjects = useMemo(() => orderedProjects(snapshot), [snapshot]);
+  const clippedProjects = allProjects.slice(0, limit ?? Number.POSITIVE_INFINITY);
+  const hiddenProjectCount = Math.max(0, allProjects.length - clippedProjects.length);
+  const [showOverflow, setShowOverflow] = useState(false);
+  const projects = showOverflow ? allProjects : clippedProjects;
+  const initialOpen = useMemo(() => new Set(allProjects.slice(0, defaultExpandedCount).map((project) => safeID(project.project))), [allProjects, defaultExpandedCount]);
   const [openProjects, setOpenProjects] = useState<Set<string>>(initialOpen);
   useEffect(() => {
     setOpenProjects((current) => {
@@ -1301,7 +1305,7 @@ function ProjectAtlas({
   };
   return (
     <section className={`project-atlas ${compact ? "compact" : ""}`}>
-      {showHead ? <BandHead kicker={compact ? t("liveLedger") : t("projects")} title={t("projectSessionTree")} meta={`${projects.length} ${t("projects")}`} /> : null}
+      {showHead ? <BandHead kicker={compact ? t("liveLedger") : t("projects")} title={t("projectSessionTree")} meta={`${allProjects.length} ${t("projects")}`} /> : null}
       {projects.length ? (
         <div className="project-columns" aria-hidden="true">
           <span>#</span>
@@ -1333,6 +1337,12 @@ function ProjectAtlas({
             <span>{t("noData")}</span>
           </section>
         )}
+        {hiddenProjectCount ? (
+          <button className={`session-tree-more project-tree-more ${showOverflow ? "is-expanded" : ""}`} type="button" onClick={() => setShowOverflow((value) => !value)} aria-expanded={showOverflow}>
+            <ChevronDown size={12} aria-hidden="true" />
+            <span>{t(showOverflow ? "lessCount" : "moreCount").replace("{count}", String(hiddenProjectCount))}</span>
+          </button>
+        ) : null}
       </div>
     </section>
   );
