@@ -18,6 +18,8 @@ agent evidence.
   and theme controls
 - popover surface with an online/trend switch, current meaning strip, scan
   boundary, compact project/session atlas, and trend suite
+- popover language control remains visible in compact mode; locale switching is
+  a first-class operator control, not a dashboard-only setting
 - dashboard surface with front status, evidence column, project/session atlas,
   calibration rail, age rail, confidence grid, process ledger, and trend suite
 - Project / Sessions / Processes navigation remains available as a dense
@@ -31,7 +33,16 @@ agent evidence.
 - Keep padding tight enough for repeated operational use.
 - Use thin separators and depth changes; avoid heavy line-box scaffolding and
   oversized framed logs.
+- Expanded project rows must keep sessions in a compact tree outline. Avoid
+  block-level evidence stacks inside the popover; global audit should not
+  require scrolling past full evidence cards to understand parent/child session
+  shape.
 - Use icons for tabs, commands, status, and metrics where they reduce text load.
+- Light mode must keep weak labels, icons, tree rails, and control text readable;
+  do not rely on very pale gray text for operator-critical controls.
+- Auto refresh defaults to `5m`. A paused refresh state may exist, but it must be
+  labeled as refresh pause/off and must not be conflated with an idle session
+  state.
 - Use the token family in `ui/src/styles.css` as the source of truth:
   - primary accent: blue
   - active/running: yellow

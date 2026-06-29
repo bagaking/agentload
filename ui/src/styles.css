@@ -6044,3 +6044,322 @@ body[data-view="dashboard"] .dash-inspector-strip {
     overflow: visible;
   }
 }
+
+/* Popover refinement: compact tree audit, visible locale control, and readable light mode. */
+:root[data-theme="light"] {
+  --fg-muted: #4d5968;
+  --fg-faint: #687486;
+  --border: #d7dde5;
+  --border-soft: #e2e6ec;
+  --border-strong: #b8c1ce;
+  --console-line: rgba(72, 84, 102, .24);
+  --console-line-soft: rgba(72, 84, 102, .15);
+  --console-material: rgba(253, 254, 255, .95);
+  --console-material-2: rgba(246, 248, 251, .98);
+  --console-material-cell: rgba(24, 34, 50, .04);
+  --console-text-soft: rgba(39, 49, 64, .82);
+  --console-text-faint: rgba(63, 73, 88, .74);
+  --console-track: rgba(24, 34, 50, .11);
+}
+
+:root[data-theme="light"] .brand-mark span {
+  background: linear-gradient(180deg, #5c6a7d, #8793a4);
+}
+
+:root[data-theme="light"] body[data-view="popover"] .icon-btn,
+:root[data-theme="light"] body[data-view="popover"] .refresh-interval,
+:root[data-theme="light"] body[data-view="popover"] .footer-link,
+:root[data-theme="light"] body[data-view="popover"] .popover-view-switch,
+:root[data-theme="light"] body[data-view="popover"] .lang-control {
+  color: #475467;
+  border-color: rgba(86, 99, 118, .22);
+  background: rgba(255, 255, 255, .72);
+}
+
+:root[data-theme="light"] body[data-view="popover"] .icon-btn:hover,
+:root[data-theme="light"] body[data-view="popover"] .refresh-interval:hover,
+:root[data-theme="light"] body[data-view="popover"] .footer-link:hover {
+  color: #101421;
+  border-color: rgba(86, 99, 118, .34);
+  background: rgba(255, 255, 255, .92);
+}
+
+body[data-view="popover"] .lang-control {
+  display: inline-grid;
+  grid-template-columns: 13px repeat(3, 17px);
+  align-items: center;
+  gap: 1px;
+  min-height: 20px;
+  padding: 1px 2px;
+  border-radius: 6px;
+  flex: 0 0 auto;
+}
+
+body[data-view="popover"] .lang-control svg {
+  width: 11px;
+  height: 11px;
+}
+
+body[data-view="popover"] .lang-control button {
+  min-width: 0;
+  height: 16px;
+  padding: 0;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  letter-spacing: 0;
+  line-height: 16px;
+}
+
+body[data-view="popover"] .footer-interval {
+  width: auto;
+  min-width: 40px;
+  height: 22px;
+  padding: 0 6px;
+  gap: 4px;
+  border-radius: 6px;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 8.8px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+body[data-view="popover"] .footer-interval svg {
+  flex: 0 0 auto;
+}
+
+body[data-view="popover"] .footer-interval.is-paused {
+  color: var(--run);
+}
+
+body[data-view="popover"] .footer-meta {
+  gap: 5px;
+}
+
+body[data-view="popover"] .footer-meta > span:not(.state-dot) {
+  max-width: 92px;
+  color: var(--console-text-soft);
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-list {
+  border-top-color: var(--console-line-soft);
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-row {
+  border-bottom-color: var(--console-line-soft);
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-row.is-selected,
+body[data-view="popover"] .popover-project-table .project-tree-row.expanded {
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 58%, transparent);
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-head {
+  min-height: 22px;
+  padding: 2px 0;
+}
+
+body[data-view="popover"] .popover-project-table .project-select {
+  gap: 4px;
+}
+
+body[data-view="popover"] .popover-project-table .project-select svg {
+  width: 12px;
+  height: 12px;
+}
+
+body[data-view="popover"] .popover-project-table .project-select span {
+  font-size: 9.8px;
+  font-weight: 690;
+}
+
+body[data-view="popover"] .popover-project-table .project-select small {
+  color: var(--console-text-faint);
+  font-size: 8px;
+}
+
+body[data-view="popover"] .popover-project-table .session-tree {
+  gap: 0;
+  padding: 0 0 4px 18px;
+}
+
+body[data-view="popover"] .popover-project-table .session-tool-block {
+  gap: 0;
+  padding: 2px 0;
+  border-top: 1px solid color-mix(in srgb, var(--console-line-soft) 72%, transparent);
+}
+
+body[data-view="popover"] .popover-project-table .session-tool-block:first-child {
+  border-top: 0;
+}
+
+body[data-view="popover"] .popover-project-table .session-tool-head {
+  justify-content: flex-start;
+  gap: 5px;
+  min-height: 17px;
+  padding: 1px 0;
+  color: var(--console-text-faint);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+body[data-view="popover"] .popover-project-table .session-tool-head .tool-icon,
+body[data-view="popover"] .popover-project-table .session-tool-head .tool-fallback {
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+}
+
+body[data-view="popover"] .popover-project-table .session-tool-head strong {
+  color: var(--console-text-soft);
+  font-size: 8px;
+}
+
+body[data-view="popover"] .popover-project-table .session-branch {
+  position: relative;
+  gap: 0;
+  padding-left: 8px;
+}
+
+body[data-view="popover"] .popover-project-table .session-branch::before {
+  content: "";
+  position: absolute;
+  left: 1px;
+  top: 13px;
+  bottom: 6px;
+  width: 1px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 34%, transparent), color-mix(in srgb, var(--console-line) 72%, transparent));
+}
+
+body[data-view="popover"] .popover-project-table .session-group-head {
+  min-height: 16px;
+  padding: 1px 0;
+  color: var(--console-text-faint);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+body[data-view="popover"] .popover-project-table .session-group-head span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .popover-project-table .session-group-head strong {
+  color: var(--console-text-soft);
+  font-size: 8px;
+}
+
+body[data-view="popover"] .popover-project-table .session-line {
+  position: relative;
+  grid-template-columns: minmax(0, 1fr) 31px 18px;
+  min-height: 21px;
+  gap: 4px;
+  padding: 1px 0 1px 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+body[data-view="popover"] .popover-project-table .session-line::before {
+  content: "";
+  position: absolute;
+  left: 1px;
+  top: 50%;
+  width: 6px;
+  height: 1px;
+  border: 0;
+  background: color-mix(in srgb, var(--console-line) 86%, transparent);
+}
+
+body[data-view="popover"] .popover-project-table .session-line.is-child {
+  margin-left: 7px;
+}
+
+body[data-view="popover"] .popover-project-table .session-line.is-selected {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 9%, transparent), transparent 58%);
+}
+
+body[data-view="popover"] .popover-project-table .session-main {
+  gap: 4px;
+}
+
+body[data-view="popover"] .popover-project-table .role-glyph {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 4px;
+}
+
+body[data-view="popover"] .popover-project-table .role-glyph svg {
+  width: 10px;
+  height: 10px;
+}
+
+body[data-view="popover"] .popover-project-table .session-title {
+  gap: 0;
+}
+
+body[data-view="popover"] .popover-project-table .session-title strong {
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 9.4px;
+  font-weight: 700;
+  line-height: 1.12;
+}
+
+body[data-view="popover"] .popover-project-table .session-title small {
+  color: var(--console-text-faint);
+  font-size: 8px;
+  line-height: 1.08;
+}
+
+body[data-view="popover"] .popover-project-table .session-tool-pair {
+  gap: 2px;
+  justify-self: end;
+}
+
+body[data-view="popover"] .popover-project-table .session-tool-pair .tool-icon,
+body[data-view="popover"] .popover-project-table .session-tool-pair .tool-fallback,
+body[data-view="popover"] .popover-project-table .session-tool-pair .host-icon {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+}
+
+body[data-view="popover"] .popover-project-table .host-app {
+  height: 16px;
+}
+
+body[data-view="popover"] .popover-project-table .host-app svg {
+  display: none;
+}
+
+body[data-view="popover"] .popover-project-table .mini-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  opacity: .22;
+}
+
+body[data-view="popover"] .popover-project-table .session-line:hover .mini-icon,
+body[data-view="popover"] .popover-project-table .session-line:focus-within .mini-icon {
+  opacity: .85;
+}
+
+body[data-view="popover"] .popover-project-table .session-evidence-strip,
+body[data-view="popover"] .popover-project-table .session-line.is-selected .session-evidence-strip {
+  display: none;
+}
+
+body[data-view="popover"] .session-tree-more {
+  padding: 3px 0 0 8px;
+  color: var(--console-text-faint);
+  font-size: 8px;
+}

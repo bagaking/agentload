@@ -5,8 +5,9 @@ import "./styles.css";
 
 const BRAND_NAME = "Agent Load";
 const ACTIVE = new Set(["active", "running", "queued"]);
+const DEFAULT_REFRESH_INTERVAL_MS = 300_000;
 const REFRESH_INTERVALS_MS = [30_000, 60_000, 120_000, 300_000, 0] as const;
-const REFRESH_INTERVAL_STORAGE_KEY = "agentload.refreshIntervalMs.v4";
+const REFRESH_INTERVAL_STORAGE_KEY = "agentload.refreshIntervalMs.v5";
 const TREND_RANGES: TrendRange[] = ["1D", "3D", "7D", "15D", "30D"];
 
 type Lang = "en" | "zh" | "ja";
@@ -410,6 +411,7 @@ const copy: Record<Lang, Record<string, string>> = {
     mappedProcesses: "Mapped",
     unmappedProcesses: "Unmatched",
     autoRefresh: "Auto refresh",
+    refreshPaused: "off",
     auto: "auto",
     toggleTheme: "Toggle theme",
   },
@@ -559,6 +561,7 @@ const copy: Record<Lang, Record<string, string>> = {
     mappedProcesses: "已映射",
     unmappedProcesses: "未匹配",
     autoRefresh: "自动刷新",
+    refreshPaused: "关闭",
     auto: "自动",
     toggleTheme: "切换主题",
   },
@@ -708,6 +711,7 @@ const copy: Record<Lang, Record<string, string>> = {
     mappedProcesses: "Mapped",
     unmappedProcesses: "Unmatched",
     autoRefresh: "Auto refresh",
+    refreshPaused: "off",
     auto: "auto",
     toggleTheme: "Toggle theme",
   },
@@ -792,7 +796,7 @@ function App() {
   useEffect(() => {
     const refreshIfStale = () => {
       if (!refreshInterval || !surfaceVisible(view, popoverVisibleRef.current)) return;
-      const staleAfter = Math.max(300_000, refreshInterval);
+      const staleAfter = Math.max(DEFAULT_REFRESH_INTERVAL_MS, refreshInterval);
       if (!snapshotRef.current || Date.now() - lastSnapshotReceivedAtRef.current >= staleAfter) {
         void fetchSnapshot("auto").catch(() => undefined);
       }
@@ -1014,8 +1018,9 @@ function PopoverFooter({
       <div className="footer-meta">
         <span className={`state-dot ${snapshot ? "observed" : "idle"}`} aria-hidden="true" />
         <span>{generated}</span>
-        <button className="refresh-interval footer-interval" type="button" onClick={cycleRefreshInterval} title={t("autoRefresh")} aria-label={t("autoRefresh")}>
-          {formatRefreshInterval(refreshInterval, t)}
+        <button className={`refresh-interval footer-interval ${refreshInterval ? "" : "is-paused"}`} type="button" onClick={cycleRefreshInterval} title={t("autoRefresh")} aria-label={t("autoRefresh")}>
+          <RefreshCw size={11} aria-hidden="true" />
+          <span>{formatRefreshInterval(refreshInterval, t)}</span>
         </button>
       </div>
       <div className="popover-footer-controls">
@@ -3234,8 +3239,10 @@ function initialTheme(): Theme {
 }
 
 function initialRefreshInterval(): number {
-  const raw = Number(window.localStorage.getItem(REFRESH_INTERVAL_STORAGE_KEY));
-  return REFRESH_INTERVALS_MS.includes(raw as (typeof REFRESH_INTERVALS_MS)[number]) ? raw : 300_000;
+  const stored = window.localStorage.getItem(REFRESH_INTERVAL_STORAGE_KEY);
+  if (stored === null) return DEFAULT_REFRESH_INTERVAL_MS;
+  const raw = Number(stored);
+  return REFRESH_INTERVALS_MS.includes(raw as (typeof REFRESH_INTERVALS_MS)[number]) ? raw : DEFAULT_REFRESH_INTERVAL_MS;
 }
 
 function surfaceVisible(view: "popover" | "dashboard", popoverVisible: boolean): boolean {
@@ -3565,7 +3572,7 @@ function formatAge(seconds?: number): string {
 }
 
 function formatRefreshInterval(ms: number, t: (key: string) => string): string {
-  if (!ms) return t("idle");
+  if (!ms) return t("refreshPaused");
   return formatAge(ms / 1000);
 }
 
