@@ -3899,6 +3899,123 @@ body[data-view="popover"] .trend-suite.compact {
     var(--console-material);
 }
 
+.trend-chart .time-band {
+  stroke: none;
+  opacity: .34;
+}
+
+.trend-chart .time-band.night {
+  fill: color-mix(in srgb, #5670a4 18%, transparent);
+}
+
+.trend-chart .time-band.morning {
+  fill: color-mix(in srgb, var(--ok) 10%, transparent);
+}
+
+.trend-chart .time-band.day {
+  fill: color-mix(in srgb, var(--fg) 4.5%, transparent);
+}
+
+.trend-chart .time-band.evening {
+  fill: color-mix(in srgb, var(--run) 12%, transparent);
+}
+
+.trend-chart .series-area {
+  stroke: none;
+  opacity: .16;
+}
+
+.trend-lane.history .series-area.primary {
+  fill: var(--ok);
+}
+
+.trend-lane.history .series-area.secondary {
+  fill: var(--accent);
+  opacity: .11;
+}
+
+.trend-lane.runtime .series-area.primary {
+  fill: var(--run);
+}
+
+.trend-lane.runtime .series-area.secondary {
+  fill: var(--fg);
+  opacity: .075;
+}
+
+.trend-lane.history .series.primary {
+  stroke: var(--ok);
+}
+
+.trend-lane.history .series.secondary {
+  stroke: var(--accent);
+}
+
+.trend-lane.runtime .series.primary {
+  stroke: var(--run);
+}
+
+.trend-lane.runtime .series.secondary {
+  stroke: color-mix(in srgb, var(--fg) 58%, transparent);
+  stroke-dasharray: 4 5;
+}
+
+.trend-chart .trend-point {
+  pointer-events: none;
+  stroke: color-mix(in srgb, var(--bg) 88%, transparent);
+  stroke-width: 1.15;
+}
+
+.trend-lane.history .trend-point.primary {
+  fill: var(--ok);
+}
+
+.trend-lane.history .trend-point.secondary {
+  fill: var(--accent);
+}
+
+.trend-lane.runtime .trend-point.primary {
+  fill: var(--run);
+}
+
+.trend-lane.runtime .trend-point.secondary {
+  fill: color-mix(in srgb, var(--fg) 82%, transparent);
+}
+
+.trend-chart .trend-point.is-selected {
+  stroke: var(--fg);
+  stroke-width: 1.85;
+}
+
+.trend-chart .trend-point-hit {
+  fill: transparent;
+  stroke: transparent;
+  cursor: pointer;
+}
+
+.trend-hit:hover .trend-point-hit,
+.trend-hit:focus-visible .trend-point-hit,
+.trend-chart .trend-point-hit.is-selected {
+  fill: color-mix(in srgb, var(--fg) 5%, transparent);
+  stroke: color-mix(in srgb, var(--fg) 18%, transparent);
+}
+
+.chart-axis-labels text {
+  fill: var(--console-text-faint);
+  font-family: var(--font-mono);
+  font-size: 8.2px;
+  font-weight: 700;
+  letter-spacing: 0;
+  paint-order: stroke;
+  stroke: color-mix(in srgb, var(--bg) 82%, transparent);
+  stroke-linejoin: round;
+  stroke-width: 2px;
+}
+
+.chart-axis-labels text.selected {
+  fill: var(--fg);
+}
+
 body[data-view="dashboard"] .dash-nav-band {
   opacity: .94;
 }
