@@ -260,6 +260,12 @@ const copy: Record<Lang, Record<string, string>> = {
     parentThread: "Parent thread",
     roleHint: "Role hint",
     freshness: "Freshness",
+    attention: "Attention",
+    basis: "Basis",
+    attribution: "Attribution",
+    recent: "Recent",
+    stale: "Stale",
+    lastEvent: "Last event",
     noData: "Waiting for local evidence",
     empty: "Select an observation to inspect it",
     emptySub: "Projects, sessions, and processes are grouped from local process and transcript evidence.",
@@ -384,6 +390,12 @@ const copy: Record<Lang, Record<string, string>> = {
     parentThread: "父线程",
     roleHint: "角色线索",
     freshness: "新鲜度",
+    attention: "注意力",
+    basis: "依据",
+    attribution: "归因",
+    recent: "近期",
+    stale: "停滞",
+    lastEvent: "最近事件",
     noData: "等待本地证据",
     empty: "选择一个观测对象",
     emptySub: "项目、会话和进程来自本地进程与活动记录证据。",
@@ -508,6 +520,12 @@ const copy: Record<Lang, Record<string, string>> = {
     parentThread: "Parent thread",
     roleHint: "Role hint",
     freshness: "Freshness",
+    attention: "Attention",
+    basis: "Basis",
+    attribution: "Attribution",
+    recent: "Recent",
+    stale: "Stale",
+    lastEvent: "Last event",
     noData: "ローカル証拠待ち",
     empty: "観測対象を選択",
     emptySub: "プロジェクト、セッション、プロセスはローカル証拠から構成されます。",
@@ -1850,6 +1868,7 @@ function ProjectTreeRow({
   const counts = projectRoleCounts(project, sessions);
   const projectId = safeID(project.project);
   const title = project.project || t("unassigned");
+  const evidenceItems = projectEvidenceItems(t, project, compact);
   return (
     <article className={`project-tree-row ${expanded ? "expanded" : ""}`}>
       <div className="project-tree-head">
@@ -1863,6 +1882,14 @@ function ProjectTreeRow({
         </button>
         <ProjectMetricMatrix t={t} counts={counts} processCount={project.process_count ?? 0} />
         <ToolStrip t={t} tools={project.tools ?? []} />
+      </div>
+      <div className="project-evidence-strip" aria-label={t("evidence")}>
+        {evidenceItems.map((item) => (
+          <span className={`project-evidence-chip ${item.tone ?? ""}`} key={item.label}>
+            <b>{item.label}</b>
+            <em>{item.value}</em>
+          </span>
+        ))}
       </div>
       {expanded ? <SessionTree t={t} sessions={sessions} setSelection={setSelection} compact={compact} /> : null}
     </article>
@@ -2352,6 +2379,21 @@ function projectRoleCounts(project: ProjectSnapshot, sessions: LiveSession[]): R
     counts.activeTotal = counts.activeMain + counts.activeSub + counts.activeUnknown;
   }
   return counts;
+}
+
+function projectEvidenceItems(t: (key: string) => string, project: ProjectSnapshot, compact: boolean): Array<{ label: string; value: string; tone?: string }> {
+  const stale = project.stale_session_count ?? 0;
+  const recent = project.recent_session_count ?? 0;
+  const items = [
+    { label: t("attention"), value: formatPct(project.attention_share_pct), tone: (project.attention_share_pct ?? 0) > 50 ? "active" : "" },
+    { label: t("basis"), value: project.attention_basis || t("unavailable") },
+    { label: t("confidence"), value: project.confidence || t("unavailable"), tone: project.confidence === "high" ? "good" : "" },
+    { label: t("attribution"), value: project.project_attribution_confidence || t("unavailable"), tone: project.project_attribution_confidence === "high" ? "good" : "" },
+    { label: t("recent"), value: String(recent), tone: recent > 0 ? "active" : "" },
+    { label: t("stale"), value: String(stale), tone: stale > 0 ? "warn" : "" },
+    { label: t("lastEvent"), value: formatAge(project.last_event_age_seconds) },
+  ];
+  return compact ? items.slice(0, 4) : items;
 }
 
 function groupSessionsByTool(sessions: LiveSession[]): Array<{ tool: string; sessions: LiveSession[] }> {
