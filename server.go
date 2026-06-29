@@ -182,7 +182,7 @@ func (a *trayApp) snapshotForClient(ctx context.Context) Snapshot {
 		if snapshot.RefreshSlotID == "" {
 			snapshot.RefreshSlotID = a.refreshSlotID(time.Now())
 		}
-		return snapshot
+		return sanitizeSnapshotForClient(snapshot)
 	}
 	ctx, cancel := context.WithTimeout(ctx, maxDuration(45*time.Second, a.cfg.Lookback/10))
 	defer cancel()
@@ -190,7 +190,16 @@ func (a *trayApp) snapshotForClient(ctx context.Context) Snapshot {
 	if snapshot.RefreshSlotID == "" {
 		snapshot.RefreshSlotID = a.refreshSlotID(time.Now())
 	}
-	return a.rememberSnapshot(snapshot)
+	return sanitizeSnapshotForClient(a.rememberSnapshot(snapshot))
+}
+
+func sanitizeSnapshotForClient(snapshot Snapshot) Snapshot {
+	snapshot.Config.ClaudeRoots = []string{}
+	snapshot.Config.CodexRoots = []string{}
+	snapshot.Config.TraeRoots = []string{}
+	snapshot.Config.HistoryFile = ""
+	snapshot.History.StorePath = ""
+	return snapshot
 }
 
 func serveEmbeddedFile(w http.ResponseWriter, r *http.Request, path, ctype string, noCache bool) {

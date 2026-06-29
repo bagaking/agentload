@@ -165,6 +165,48 @@ func TestHandleSnapshotAPIFillsRefreshSlotForCachedSnapshot(t *testing.T) {
 	}
 }
 
+func TestHandleSnapshotAPIRedactsConfigPaths(t *testing.T) {
+	app := &trayApp{cfg: Config{RefreshInterval: 5 * time.Minute}}
+	app.lastSnapshot = Snapshot{
+		GeneratedAt: "2026-06-28T12:00:00Z",
+		Config: SnapshotConfig{
+			IdleGapSeconds:       90,
+			ClaudeRoots:          []string{filepath.Join("private", "roots", ".claude")},
+			CodexRoots:           []string{filepath.Join("private", "roots", ".codex")},
+			TraeRoots:            []string{filepath.Join("private", "roots", ".trae", "cli")},
+			HistoryFile:          filepath.Join("private", "state", "history.jsonl"),
+			ProcessRefreshTarget: 300,
+		},
+		History: SnapshotHistory{StorePath: filepath.Join("private", "state", "history.jsonl"), LoadedSampleCount: 2},
+	}
+	app.haveSnapshot = true
+	handler := app.handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/snapshot", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d with body %q", rec.Code, rec.Body.String())
+	}
+	var got Snapshot
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode snapshot response: %v", err)
+	}
+	if len(got.Config.ClaudeRoots) != 0 || len(got.Config.CodexRoots) != 0 || len(got.Config.TraeRoots) != 0 {
+		t.Fatalf("expected client config roots to be redacted, got %+v", got.Config)
+	}
+	if got.Config.HistoryFile != "" || got.History.StorePath != "" {
+		t.Fatalf("expected client history paths to be redacted, got config=%q history=%q", got.Config.HistoryFile, got.History.StorePath)
+	}
+	if got.Config.IdleGapSeconds != 90 || got.Config.ProcessRefreshTarget != 300 || got.History.LoadedSampleCount != 2 {
+		t.Fatalf("expected non-path metadata to remain, got config=%+v history=%+v", got.Config, got.History)
+	}
+	if app.lastSnapshot.Config.HistoryFile == "" || len(app.lastSnapshot.Config.CodexRoots) == 0 || app.lastSnapshot.History.StorePath == "" {
+		t.Fatalf("expected cached internal snapshot to retain path metadata, got config=%+v history=%+v", app.lastSnapshot.Config, app.lastSnapshot.History)
+	}
+}
+
 func TestFormatTrayMetaTitleIncludesScanCoverage(t *testing.T) {
 	got := formatTrayMetaTitle(Snapshot{
 		GeneratedAt: "2026-06-28T12:00:00Z",
