@@ -2386,23 +2386,29 @@ function ProjectTreeRow({
 }
 
 function ProjectCompactMetrics({ t, counts, processCount }: { t: (key: string) => string; counts: RoleCounts; processCount: number }) {
+  const activeTitle = projectMetricGroupTitle(t, "active", counts);
+  const allTitle = projectMetricGroupTitle(t, "all", counts);
+  const mainTitle = projectMetricObjectTitle(t, "main");
+  const subagentTitle = projectMetricObjectTitle(t, "subagent");
+  const totalTitle = projectMetricObjectTitle(t, "total");
+  const processTitle = projectMetricProcessTitle(t, processCount);
   return (
     <div className="project-compact-metrics" aria-label={t("metricSessions")}>
       <div className="project-compact-table">
         <span />
-        <b title={t("main")}>{t("mainShort")}</b>
-        <b title={t("subagent")}>{t("subagentShort")}</b>
-        <b title={t("total")}>{t("totalShort")}</b>
-        <em title={t("active")}>{t("activeShort")}</em>
-        <strong title={`${t("active")} ${t("main")}`}>{counts.activeMain}</strong>
-        <strong title={`${t("active")} ${t("subagent")}`}>{counts.activeSub}</strong>
-        <strong title={`${t("active")} ${t("total")}`}>{counts.activeTotal}</strong>
-        <em title={t("all")}>{t("allShort")}</em>
-        <strong title={`${t("all")} ${t("main")}`}>{counts.main}</strong>
-        <strong title={`${t("all")} ${t("subagent")}`}>{counts.sub}</strong>
-        <strong title={`${t("all")} ${t("total")}`}>{counts.total}</strong>
+        <b title={mainTitle} aria-label={mainTitle}>{t("mainShort")}</b>
+        <b title={subagentTitle} aria-label={subagentTitle}>{t("subagentShort")}</b>
+        <b title={totalTitle} aria-label={totalTitle}>{t("totalShort")}</b>
+        <em title={activeTitle} aria-label={activeTitle}>{t("activeShort")}</em>
+        <ProjectMetricNumber t={t} scope="active" metric="main" value={counts.activeMain} />
+        <ProjectMetricNumber t={t} scope="active" metric="subagent" value={counts.activeSub} />
+        <ProjectMetricNumber t={t} scope="active" metric="total" value={counts.activeTotal} />
+        <em title={allTitle} aria-label={allTitle}>{t("allShort")}</em>
+        <ProjectMetricNumber t={t} scope="all" metric="main" value={counts.main} />
+        <ProjectMetricNumber t={t} scope="all" metric="subagent" value={counts.sub} />
+        <ProjectMetricNumber t={t} scope="all" metric="total" value={counts.total} />
       </div>
-      <span className="project-compact-proc" title={t("metricProcesses")}>
+      <span className="project-compact-proc" title={processTitle} aria-label={processTitle}>
         <i>{t("processShort")}</i>
         <strong>{processCount}</strong>
       </span>
@@ -2411,26 +2417,37 @@ function ProjectCompactMetrics({ t, counts, processCount }: { t: (key: string) =
 }
 
 function ProjectMetricMatrix({ t, counts, processCount }: { t: (key: string) => string; counts: RoleCounts; processCount: number }) {
+  const activeTitle = projectMetricGroupTitle(t, "active", counts);
+  const allTitle = projectMetricGroupTitle(t, "all", counts);
+  const mainTitle = projectMetricObjectTitle(t, "main");
+  const subagentTitle = projectMetricObjectTitle(t, "subagent");
+  const totalTitle = projectMetricObjectTitle(t, "total");
+  const processTitle = projectMetricProcessTitle(t, processCount);
   return (
     <div className="project-matrix" aria-label={t("metricSessions")}>
       <span />
-      <b title={t("main")}>{t("main")}</b>
-      <b title={t("subagent")}>{t("subagent")}</b>
-      <b title={t("total")}>{t("total")}</b>
-      <b>{t("active")}</b>
-      <strong title={`${t("active")} ${t("main")}`}>{counts.activeMain}</strong>
-      <strong title={`${t("active")} ${t("subagent")}`}>{counts.activeSub}</strong>
-      <strong title={`${t("active")} ${t("total")}`}>{counts.activeTotal}</strong>
-      <b>{t("all")}</b>
-      <strong title={`${t("all")} ${t("main")}`}>{counts.main}</strong>
-      <strong title={`${t("all")} ${t("subagent")}`}>{counts.sub}</strong>
-      <strong title={`${t("all")} ${t("total")}`}>{counts.total}</strong>
-      <span className="project-proc" title={t("metricProcesses")}>
+      <b title={mainTitle} aria-label={mainTitle}>{t("main")}</b>
+      <b title={subagentTitle} aria-label={subagentTitle}>{t("subagent")}</b>
+      <b title={totalTitle} aria-label={totalTitle}>{t("total")}</b>
+      <b title={activeTitle} aria-label={activeTitle}>{t("active")}</b>
+      <ProjectMetricNumber t={t} scope="active" metric="main" value={counts.activeMain} />
+      <ProjectMetricNumber t={t} scope="active" metric="subagent" value={counts.activeSub} />
+      <ProjectMetricNumber t={t} scope="active" metric="total" value={counts.activeTotal} />
+      <b title={allTitle} aria-label={allTitle}>{t("all")}</b>
+      <ProjectMetricNumber t={t} scope="all" metric="main" value={counts.main} />
+      <ProjectMetricNumber t={t} scope="all" metric="subagent" value={counts.sub} />
+      <ProjectMetricNumber t={t} scope="all" metric="total" value={counts.total} />
+      <span className="project-proc" title={processTitle} aria-label={processTitle}>
         <Server size={12} />
         {processCount}
       </span>
     </div>
   );
+}
+
+function ProjectMetricNumber({ t, scope, metric, value }: { t: (key: string) => string; scope: ProjectMetricScope; metric: ProjectMetricObject; value: number }) {
+  const title = projectMetricCellTitle(t, scope, metric, value);
+  return <strong title={title} aria-label={title}>{value}</strong>;
 }
 
 function ToolStrip({ t, tools }: { t: (key: string) => string; tools: ProjectTool[] }) {
@@ -2733,6 +2750,60 @@ type RoleCounts = {
   activeUnknown: number;
   activeTotal: number;
 };
+
+type ProjectMetricScope = "active" | "all";
+type ProjectMetricObject = "main" | "subagent" | "total";
+
+function projectMetricGroupTitle(t: (key: string) => string, scope: ProjectMetricScope, counts: RoleCounts): string {
+  const active = scope === "active";
+  return formatCopy(t("projectMetricGroupTooltip"), {
+    group: projectMetricScopeLabel(t, scope),
+    main: active ? counts.activeMain : counts.main,
+    subagent: active ? counts.activeSub : counts.sub,
+    sessions: active ? counts.activeTotal : counts.total,
+    detail: projectMetricScopeHelp(t, scope),
+  });
+}
+
+function projectMetricCellTitle(t: (key: string) => string, scope: ProjectMetricScope, metric: ProjectMetricObject, value: number): string {
+  return formatCopy(t("projectMetricCellTooltip"), {
+    scope: projectMetricScopeLabel(t, scope),
+    metric: projectMetricObjectLabel(t, metric),
+    value,
+    detail: `${projectMetricScopeHelp(t, scope)} ${projectMetricObjectHelp(t, metric)}`,
+  });
+}
+
+function projectMetricProcessTitle(t: (key: string) => string, value: number): string {
+  return formatCopy(t("projectMetricProcessTooltip"), {
+    value,
+    detail: t("projectMetricProcessHelp"),
+  });
+}
+
+function projectMetricObjectTitle(t: (key: string) => string, metric: ProjectMetricObject): string {
+  return `${projectMetricObjectLabel(t, metric)}: ${projectMetricObjectHelp(t, metric)}`;
+}
+
+function projectMetricScopeLabel(t: (key: string) => string, scope: ProjectMetricScope): string {
+  return scope === "active" ? t("active") : t("all");
+}
+
+function projectMetricScopeHelp(t: (key: string) => string, scope: ProjectMetricScope): string {
+  return t(scope === "active" ? "projectMetricActiveGroupHelp" : "projectMetricAllGroupHelp");
+}
+
+function projectMetricObjectLabel(t: (key: string) => string, metric: ProjectMetricObject): string {
+  if (metric === "main") return t("main");
+  if (metric === "subagent") return t("subagent");
+  return t("total");
+}
+
+function projectMetricObjectHelp(t: (key: string) => string, metric: ProjectMetricObject): string {
+  if (metric === "main") return t("projectMetricMainHelp");
+  if (metric === "subagent") return t("projectMetricSubagentHelp");
+  return t("projectMetricTotalHelp");
+}
 
 function LanguageControl({ t, lang, setLang }: { t: (key: string) => string; lang: Lang; setLang: (lang: Lang) => void }) {
   return (
