@@ -7232,3 +7232,129 @@ body[data-view="popover"] .popover-project-table .project-disclosure svg {
     grid-template-columns: 24px 18px minmax(0, 1fr) minmax(170px, auto);
   }
 }
+
+/* Popover refinement: first-viewport status uses planar layers instead of stacked frames. */
+body[data-view="popover"] .topbar {
+  border-bottom-color: color-mix(in srgb, var(--console-line-soft) 42%, transparent);
+  box-shadow: none;
+}
+
+body[data-view="popover"] .local-status-chip,
+body[data-view="popover"] .pill,
+body[data-view="popover"] .icon-btn,
+body[data-view="popover"] .refresh-interval,
+body[data-view="popover"] .lang-control,
+body[data-view="popover"] .popover-view-switch,
+body[data-view="popover"] .footer-link {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+body[data-view="popover"] .local-status-chip {
+  background:
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--ok) 22%, transparent), transparent 58%),
+    color-mix(in srgb, var(--ok) 7%, var(--console-material-2));
+}
+
+body[data-view="popover"] .pill,
+body[data-view="popover"] .icon-btn,
+body[data-view="popover"] .refresh-interval,
+body[data-view="popover"] .lang-control,
+body[data-view="popover"] .popover-view-switch,
+body[data-view="popover"] .footer-link {
+  background: color-mix(in srgb, var(--console-material-2) 78%, transparent);
+}
+
+body[data-view="popover"] .icon-btn:hover,
+body[data-view="popover"] .icon-btn:focus-visible,
+body[data-view="popover"] .refresh-interval:hover,
+body[data-view="popover"] .refresh-interval:focus-visible,
+body[data-view="popover"] .footer-link:hover,
+body[data-view="popover"] .footer-link:focus-visible {
+  background: color-mix(in srgb, var(--fg) 7%, var(--console-material-2));
+  outline: none;
+}
+
+body[data-view="popover"] .popover-instrument {
+  border-top: 0;
+  border-bottom-color: color-mix(in srgb, var(--console-line-soft) 58%, transparent);
+  background:
+    radial-gradient(circle at 4% 16%, color-mix(in srgb, var(--ok) 13%, transparent), transparent 20%),
+    linear-gradient(90deg, color-mix(in srgb, var(--ok) 5%, transparent), transparent 36%),
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 3.5%, transparent), transparent 62%),
+    var(--console-material);
+  box-shadow: none;
+}
+
+body[data-view="popover"] .field-status,
+body[data-view="popover"] .issue-stamp {
+  border: 0;
+  box-shadow: none;
+}
+
+body[data-view="popover"] .field-status.active {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 15%, transparent);
+}
+
+body[data-view="popover"] .field-status.warn {
+  color: var(--run);
+  background: color-mix(in srgb, var(--run) 14%, transparent);
+}
+
+body[data-view="popover"] .instrument-stat-grid {
+  gap: 0;
+  background: transparent;
+}
+
+body[data-view="popover"] .instrument-stat {
+  position: relative;
+  background: color-mix(in srgb, var(--console-material-2) 26%, transparent);
+}
+
+body[data-view="popover"] .instrument-stat + .instrument-stat::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 1px;
+  background: color-mix(in srgb, var(--console-line-soft) 62%, transparent);
+}
+
+body[data-view="popover"] .scan-boundary {
+  border-top-color: color-mix(in srgb, var(--console-line-soft) 52%, transparent);
+  box-shadow: none;
+}
+
+body[data-view="popover"] .scan-boundary-grid {
+  gap: 0;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--console-material-2) 28%, transparent);
+}
+
+body[data-view="popover"] .scan-readout {
+  position: relative;
+  border: 0;
+  background: transparent;
+}
+
+body[data-view="popover"] .scan-readout + .scan-readout::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  background: color-mix(in srgb, var(--console-line-soft) 58%, transparent);
+}
+
+:root[data-theme="light"] body[data-view="popover"] .local-status-chip,
+:root[data-theme="light"] body[data-view="popover"] .pill,
+:root[data-theme="light"] body[data-view="popover"] .icon-btn,
+:root[data-theme="light"] body[data-view="popover"] .refresh-interval,
+:root[data-theme="light"] body[data-view="popover"] .lang-control,
+:root[data-theme="light"] body[data-view="popover"] .popover-view-switch,
+:root[data-theme="light"] body[data-view="popover"] .footer-link {
+  border-color: transparent;
+}

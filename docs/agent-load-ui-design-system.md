@@ -53,6 +53,10 @@ agent evidence.
 - Keep padding tight enough for repeated operational use.
 - Use thin separators and depth changes; avoid heavy line-box scaffolding and
   oversized framed logs.
+- Popover first-viewport status areas should not stack multiple visible frames.
+  The top bar, live-state pill, runtime summary, metric cells, and scan readouts
+  should rely on planar fills, subtle separators, and state color rather than
+  each drawing its own strong border.
 - Favor scan-line density for audit lists. Primary rows should expose only the
   fields needed to understand global state; secondary identifiers such as full
   local addresses, long paths, and verbose evidence belong in tooltips, detail
