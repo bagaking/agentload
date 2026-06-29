@@ -3381,7 +3381,6 @@ body[data-view="dashboard"] .trend-suite.dashboard {
     border-left: 0;
   }
 }
-
 @media (max-width: 540px) {
   body[data-view="dashboard"] .dashboard-surface {
     padding: 9px;
@@ -4545,13 +4544,11 @@ body[data-view="popover"] .popover-project-table .project-matrix {
     display: none;
   }
 
-  body[data-view="dashboard"] .project-tree-head,
-  body[data-view="popover"] .popover-project-table .project-tree-head {
+  body[data-view="dashboard"] .project-tree-head {
     grid-template-columns: 20px minmax(0, 1fr);
   }
 
-  body[data-view="dashboard"] .project-matrix,
-  body[data-view="popover"] .popover-project-table .project-matrix {
+  body[data-view="dashboard"] .project-matrix {
     grid-column: 2;
     justify-self: stretch;
   }
@@ -5182,6 +5179,258 @@ body[data-view="dashboard"] .dash-inspector-list .ledger-chip {
 
 body[data-view="dashboard"] .dash-inspector-list .ledger-chip span {
   max-width: 92px;
+}
+
+/* Popover density pass: keep online status and projects visible without long scrolling. */
+body[data-view="popover"] .topbar {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  min-height: 30px;
+  padding: 4px 6px;
+  overflow: hidden;
+}
+
+body[data-view="popover"] .brand {
+  gap: 6px;
+  min-width: 0;
+}
+
+body[data-view="popover"] .brand-mark {
+  width: 19px;
+  height: 19px;
+  padding: 3px;
+  border-radius: 5px;
+}
+
+body[data-view="popover"] .brand-mark span:nth-child(1) { height: 6px; }
+body[data-view="popover"] .brand-mark span:nth-child(2) { height: 10px; }
+body[data-view="popover"] .brand-mark span:nth-child(3) { height: 13px; }
+
+body[data-view="popover"] .brand-name {
+  max-width: 86px;
+  overflow: hidden;
+  font-size: 9.8px;
+  letter-spacing: .05em;
+  text-overflow: ellipsis;
+}
+
+body[data-view="popover"] .brand-sub {
+  display: none;
+}
+
+body[data-view="popover"] .topbar-meta {
+  flex: 1;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+
+body[data-view="popover"] .pill {
+  min-height: 19px;
+  max-width: 70px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  font-size: 8.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body[data-view="popover"] .pill-idle {
+  max-width: 50px;
+}
+
+body[data-view="popover"] .lang-control {
+  display: none;
+}
+
+body[data-view="popover"] .icon-btn,
+body[data-view="popover"] .refresh-interval {
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+}
+
+body[data-view="popover"] .popover-surface {
+  padding: 5px 6px;
+}
+
+body[data-view="popover"] .audit-shell {
+  gap: 5px;
+}
+
+body[data-view="popover"] .popover-instrument {
+  min-height: 0;
+  padding: 6px 7px 6px 13px;
+}
+
+body[data-view="popover"] .popover-instrument::before {
+  inset: 52px 7px 43px 13px;
+  opacity: .18;
+}
+
+body[data-view="popover"] .instrument-spine {
+  inset: 12px auto 8px 5px;
+}
+
+body[data-view="popover"] .instrument-spine span:last-child {
+  top: 74px;
+}
+
+body[data-view="popover"] .instrument-topline {
+  min-height: 19px;
+}
+
+body[data-view="popover"] .instrument-window {
+  font-size: 8px;
+}
+
+body[data-view="popover"] .instrument-stat-grid {
+  margin-top: 5px;
+}
+
+body[data-view="popover"] .instrument-stat {
+  min-height: 49px;
+  gap: 3px;
+  padding: 5px;
+}
+
+body[data-view="popover"] .instrument-stat span {
+  font-size: 7.8px;
+}
+
+body[data-view="popover"] .instrument-stat strong {
+  font-size: 21px;
+}
+
+body[data-view="popover"] .instrument-stat em {
+  display: none;
+}
+
+body[data-view="popover"] .instrument-scale-rail {
+  gap: 3px;
+  margin-top: 5px;
+}
+
+body[data-view="popover"] .instrument-scale-row {
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 5px;
+}
+
+body[data-view="popover"] .instrument-scale-row b {
+  font-size: 8px;
+}
+
+body[data-view="popover"] .popover-instrument .meaning-strip {
+  margin-top: 5px;
+  padding-top: 4px;
+}
+
+body[data-view="popover"] .meaning-strip {
+  grid-template-columns: 1fr;
+  gap: 5px;
+}
+
+body[data-view="popover"] .meaning-strip > div:first-child {
+  padding-left: 0;
+}
+
+body[data-view="popover"] .meaning-strip > p {
+  padding-right: 0;
+  font-size: 9px;
+  line-height: 1.22;
+  -webkit-line-clamp: 1;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+}
+
+body[data-view="popover"] .meaning-strip.compact .meaning-detail-grid {
+  display: none;
+}
+
+body[data-view="popover"] .scan-boundary {
+  min-height: 25px;
+  padding: 4px 6px 4px 13px;
+}
+
+body[data-view="popover"] .scan-boundary-main {
+  font-size: 8.5px;
+}
+
+body[data-view="popover"] .scan-boundary-grid {
+  gap: 4px;
+}
+
+body[data-view="popover"] .scan-readout {
+  min-height: 19px;
+  padding: 2px 4px;
+}
+
+body[data-view="popover"] .scan-readout b,
+body[data-view="popover"] .scan-readout strong {
+  font-size: 8px;
+}
+
+body[data-view="popover"] .popover-project-table {
+  padding: 5px 7px 5px 13px;
+}
+
+body[data-view="popover"] .popover-project-head {
+  align-items: center;
+  padding-bottom: 4px;
+}
+
+body[data-view="popover"] .popover-project-head h2 {
+  font-size: 10.5px;
+}
+
+body[data-view="popover"] .popover-project-head > span {
+  max-width: 126px;
+  font-size: 8.5px;
+}
+
+body[data-view="popover"] .project-columns {
+  display: none;
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-head {
+  grid-template-columns: 18px minmax(0, 1fr);
+  min-height: 24px;
+  gap: 5px;
+  padding: 2px 0;
+}
+
+body[data-view="popover"] .popover-project-table .project-rank {
+  width: 18px;
+  font-size: 8px;
+}
+
+body[data-view="popover"] .popover-project-table .project-select span {
+  font-size: 10px;
+}
+
+body[data-view="popover"] .popover-project-table .project-select small {
+  font-size: 8px;
+}
+
+body[data-view="popover"] .popover-project-table .project-evidence-strip {
+  display: none;
+}
+
+body[data-view="popover"] .popover-footer {
+  min-height: 31px;
+  padding: 4px 6px;
+}
+
+body[data-view="popover"] .popover-view-switch {
+  width: 108px;
+}
+
+body[data-view="popover"] .popover-view-switch button,
+body[data-view="popover"] .footer-link,
+body[data-view="popover"] .footer-meta {
+  font-size: 8.8px;
 }
 
 @media (max-width: 1100px) {

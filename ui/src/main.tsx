@@ -1316,7 +1316,7 @@ function PopoverAuditShell({
           </div>
           <span>{dashboardProjectMeta(t, snapshot)}</span>
         </div>
-        <ProjectAtlas t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} compact limit={6} defaultExpandedCount={0} showHead={false} />
+        <ProjectAtlas t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} compact limit={8} defaultExpandedCount={0} showHead={false} />
       </section>
     </section>
   );
@@ -2389,6 +2389,8 @@ function ProjectTreeRow({
   const projectId = safeID(project.project);
   const title = project.project || t("unassigned");
   const evidenceItems = projectEvidenceItems(t, project, compact);
+  const projectAge = formatAge(project.last_event_age_seconds);
+  const projectMeta = compact ? `${projectAge} · ${counts.total}s · ${project.process_count ?? 0}p` : projectAge;
   const selectProject = () => {
     if (onToggle) {
       onToggle();
@@ -2403,9 +2405,9 @@ function ProjectTreeRow({
         <button className="project-select" type="button" onClick={selectProject} aria-expanded={expanded}>
           <ChevronDown size={15} aria-hidden="true" />
           <span>{title}</span>
-          <small>{formatAge(project.last_event_age_seconds)}</small>
+          <small>{projectMeta}</small>
         </button>
-        <ProjectMetricMatrix t={t} counts={counts} processCount={project.process_count ?? 0} />
+        {compact ? null : <ProjectMetricMatrix t={t} counts={counts} processCount={project.process_count ?? 0} />}
         <ToolStrip t={t} tools={project.tools ?? []} />
       </div>
       {expanded ? (
@@ -2540,7 +2542,7 @@ function SessionLine({
   return (
     <div className={`session-line role-${role} ${session.active_burst ? "is-active" : ""} ${child ? "is-child" : ""}`}>
       <button className="session-main" type="button" onClick={() => setSelection({ type: "session", id: safeID(sid) })}>
-        <span className="role-glyph" title={roleLabel(t, role)}>{roleGlyph(role)}</span>
+        <RoleGlyph t={t} role={role} />
         <span className="session-title">
           <strong>{session.agent_nickname || shortID(sid) || "session"}</strong>
           <small>{formatAge(session.last_event_age_seconds)} · {session.process_count ?? 0} {t("pid")} · {session.confidence || t("unavailable")}</small>
@@ -3023,10 +3025,14 @@ function roleLabel(t: (key: string) => string, role: "main" | "subagent" | "unkn
   return role === "main" ? t("main") : role === "subagent" ? t("subagent") : t("unknown");
 }
 
-function roleGlyph(role: "main" | "subagent" | "unknown"): string {
-  if (role === "main") return "M";
-  if (role === "subagent") return "S";
-  return "?";
+function RoleGlyph({ t, role }: { t: (key: string) => string; role: "main" | "subagent" | "unknown" }) {
+  const label = roleLabel(t, role);
+  const icon = role === "main" ? <Terminal size={12} /> : role === "subagent" ? <Bot size={12} /> : <GitBranch size={12} />;
+  return (
+    <span className="role-glyph" title={label} aria-label={label}>
+      {icon}
+    </span>
+  );
 }
 
 function sessionEvidenceItems(t: (key: string) => string, session: LiveSession, compact: boolean): Array<{ label: string; value: string; tone?: string }> {
