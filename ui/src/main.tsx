@@ -2989,15 +2989,24 @@ function primaryEvidenceNote(t: (key: string) => string, snapshot: Snapshot): st
   const risk = snapshot.coordination_risk ?? {};
   const summary = snapshot.summary ?? {};
   const firstSignal = risk.signals?.find((signal) => signal.evidence)?.evidence;
-  if (firstSignal) return firstSignal;
+  if (firstSignal) return normalizeEvidenceNote(t, firstSignal);
+  const firstNote = [...(snapshot.notes ?? []), ...(snapshot.transcript_stats?.errors ?? [])].find((note) => note);
+  if (firstNote) return normalizeEvidenceNote(t, firstNote);
   const unmapped = risk.orphan_process_count ?? summary.unmapped_processes ?? 0;
-  if (unmapped > 0) return `${unmapped} ${t("evidenceNeedsReview")}`;
+  if (unmapped > 0) return formatCopy(t("unmatchedSignalWarning"), { count: unmapped });
   const lowConfidence = risk.low_confidence_session_count ?? 0;
   if (lowConfidence > 0) return `${lowConfidence} ${t("lowConfidenceEvidence")}`;
   const mapped = summary.mapped_processes ?? 0;
   const pids = snapshot.current?.pid_concurrency ?? 0;
   if (mapped || pids) return `${mapped}/${pids} ${t("processEvidenceMapped")}`;
   return t("noSignals");
+}
+
+function normalizeEvidenceNote(t: (key: string) => string, note: string): string {
+  const text = String(note || "").trim();
+  const unmatched = text.match(/^(\d+)\s+(?:visible\s+)?live processes (?:are not currently matched to local session evidence|have no mapped session)\.?$/i);
+  if (unmatched) return formatCopy(t("unmatchedSignalWarning"), { count: unmatched[1] });
+  return text;
 }
 
 function orderedProjects(snapshot: Snapshot): ProjectSnapshot[] {
