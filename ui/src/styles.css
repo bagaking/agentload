@@ -2383,6 +2383,48 @@ kbd {
   gap: 8px;
 }
 
+.trend-detail-toggle-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -2px;
+}
+
+.trend-detail-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 22px;
+  padding: 3px 7px;
+  border: 1px solid color-mix(in srgb, var(--fg) 12%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--surface) 54%, transparent);
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 760;
+}
+
+.trend-detail-toggle:hover,
+.trend-detail-toggle:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 34%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--fg);
+  outline: none;
+}
+
+.trend-detail-toggle[aria-expanded="true"] {
+  color: var(--fg);
+}
+
+.trend-detail-details {
+  display: grid;
+  gap: 7px;
+}
+
+.trend-detail-details[hidden] {
+  display: none;
+}
+
 .trend-detail-strip {
   display: grid;
   grid-template-columns: minmax(0, .8fr) minmax(0, 1fr);

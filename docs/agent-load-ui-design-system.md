@@ -47,6 +47,9 @@ agent evidence.
 - Dense explanation blocks should default to a compact lead sentence and expose
   full details through an accessible disclosure control instead of permanently
   occupying popover height.
+- Trend selections should expose the selected time and compact numeric readout
+  first. Longer interpretation and trust explanations belong behind an
+  accessible disclosure control, especially in the popover.
 - Light mode must keep weak labels, icons, tree rails, and control text readable;
   do not rely on very pale gray text for operator-critical controls.
 - Auto refresh defaults to `5m`. A paused refresh state may exist, but it must be

@@ -2035,10 +2035,12 @@ function TrendLaneView({
 }
 
 function TrendDetail({ t, lane, point, compact }: { t: (key: string) => string; lane: TrendLane; point: TrendPoint; compact: boolean }) {
+  const detailsId = useId();
+  const [expanded, setExpanded] = useState(!compact);
   const metrics = trendDetailMetrics(t, lane, point);
   const sections = trendExplanationSections(t, lane, point);
   return (
-    <div className={`trend-detail ${compact ? "compact" : ""}`}>
+    <div className={`trend-detail ${compact ? "compact" : ""} ${expanded ? "expanded" : ""}`}>
       <div className="trend-detail-strip">
         <div className="trend-detail-stamp">
           <em>{t("trendExactBucket")}</em>
@@ -2049,21 +2051,39 @@ function TrendDetail({ t, lane, point, compact }: { t: (key: string) => string; 
           <strong>{trendSelectedReadout(t, lane, point)}</strong>
         </div>
       </div>
-      <div className="trend-detail-grid">
-        {metrics.map((metric) => (
-          <span className="trend-detail-metric" key={metric.label}>
-            <b>{metric.label}</b>
-            <strong>{metric.value}</strong>
-          </span>
-        ))}
-      </div>
-      <div className="trend-detail-sections">
-        {sections.map((section) => (
-          <section key={section.label}>
-            <span>{section.label}</span>
-            <p>{section.text}</p>
-          </section>
-        ))}
+      {compact ? (
+        <div className="trend-detail-toggle-row">
+          <button
+            aria-controls={detailsId}
+            aria-expanded={expanded}
+            aria-label={expanded ? t("collapseDetails") : t("expandDetails")}
+            className="disclosure-icon-btn trend-detail-toggle"
+            title={expanded ? t("collapseDetails") : t("expandDetails")}
+            type="button"
+            onClick={() => setExpanded((current) => !current)}
+          >
+            <Info size={13} aria-hidden="true" />
+            <span>{expanded ? t("collapseDetails") : t("expandDetails")}</span>
+          </button>
+        </div>
+      ) : null}
+      <div className="trend-detail-details" id={detailsId} hidden={!expanded}>
+        <div className="trend-detail-grid">
+          {metrics.map((metric) => (
+            <span className="trend-detail-metric" key={metric.label}>
+              <b>{metric.label}</b>
+              <strong>{metric.value}</strong>
+            </span>
+          ))}
+        </div>
+        <div className="trend-detail-sections">
+          {sections.map((section) => (
+            <section key={section.label}>
+              <span>{section.label}</span>
+              <p>{section.text}</p>
+            </section>
+          ))}
+        </div>
       </div>
     </div>
   );
