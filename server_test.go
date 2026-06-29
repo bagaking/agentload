@@ -139,6 +139,42 @@ func TestHandleSnapshotAPIReturnsCompactJSONAndRefreshSlotHeader(t *testing.T) {
 	}
 }
 
+func TestHandleSnapshotAPIHonorsRefreshSlotValidators(t *testing.T) {
+	app := &trayApp{}
+	app.rememberSnapshot(Snapshot{
+		GeneratedAt:   "2026-06-28T12:00:00Z",
+		RefreshSlotID: "30s:2026-06-28T12:00:00Z",
+	})
+	handler := app.handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/snapshot", nil)
+	req.Header.Set("If-None-Match", strconv.Quote("30s:2026-06-28T12:00:00Z"))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotModified {
+		t.Fatalf("expected status 304, got %d with body %q", rec.Code, rec.Body.String())
+	}
+	if rec.Body.Len() != 0 {
+		t.Fatalf("expected not-modified response without body, got %q", rec.Body.String())
+	}
+	if got := rec.Header().Get("X-Refresh-Slot-ID"); got != "30s:2026-06-28T12:00:00Z" {
+		t.Fatalf("expected refresh slot header on 304, got %q", got)
+	}
+
+	headReq := httptest.NewRequest(http.MethodHead, "/api/snapshot", nil)
+	headRec := httptest.NewRecorder()
+	handler.ServeHTTP(headRec, headReq)
+	if headRec.Code != http.StatusOK {
+		t.Fatalf("expected status 200 for HEAD, got %d", headRec.Code)
+	}
+	if headRec.Body.Len() != 0 {
+		t.Fatalf("expected HEAD response without body, got %q", headRec.Body.String())
+	}
+	if got := headRec.Header().Get("ETag"); got != strconv.Quote("30s:2026-06-28T12:00:00Z") {
+		t.Fatalf("expected HEAD ETag, got %q", got)
+	}
+}
+
 func TestHandleSnapshotAPIFillsRefreshSlotForCachedSnapshot(t *testing.T) {
 	app := &trayApp{cfg: Config{RefreshInterval: 5 * time.Minute}}
 	app.lastSnapshot = Snapshot{GeneratedAt: "2026-06-28T12:00:00Z"}

@@ -80,12 +80,32 @@ func (a *trayApp) handleSnapshotAPI(w http.ResponseWriter, r *http.Request) {
 	snapshot := a.snapshotForClient(r.Context())
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
+	var snapshotETag string
 	if snapshot.RefreshSlotID != "" {
+		snapshotETag = strconv.Quote(snapshot.RefreshSlotID)
 		w.Header().Set("X-Refresh-Slot-ID", snapshot.RefreshSlotID)
-		w.Header().Set("ETag", strconv.Quote(snapshot.RefreshSlotID))
+		w.Header().Set("ETag", snapshotETag)
+	}
+	if snapshotETag != "" && etagListMatches(r.Header.Get("If-None-Match"), snapshotETag) {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
+		return
 	}
 	enc := json.NewEncoder(w)
 	_ = enc.Encode(snapshot)
+}
+
+func etagListMatches(header, expected string) bool {
+	for _, item := range strings.Split(header, ",") {
+		item = strings.TrimSpace(item)
+		if item == "*" || item == expected {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *trayApp) handleRefreshAPI(w http.ResponseWriter, r *http.Request) {
