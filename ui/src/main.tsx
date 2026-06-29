@@ -124,10 +124,14 @@ type TrendChartModel = {
   axis: { start: string; selected?: string; end: string };
 };
 type RefreshReason = "initial" | "manual" | "auto";
+type ActiveElementIdentity =
+  | { type: "focus-key"; key: string }
+  | { type: "selector"; selector: string };
 type ViewportState = {
   windowX: number;
   windowY: number;
   activeElement: HTMLElement | null;
+  activeIdentity: ActiveElementIdentity | null;
   scrollTargets: Array<{ selector: string; index: number; top: number; left: number }>;
 };
 
@@ -634,7 +638,7 @@ function PopoverFooter({
       <div className="footer-meta">
         <span className={`state-dot ${snapshot ? "observed" : "idle"}`} aria-hidden="true" />
         <span>{generated}</span>
-        <button className={`refresh-interval footer-interval ${refreshInterval ? "" : "is-paused"}`} type="button" onClick={cycleRefreshInterval} title={t("autoRefresh")} aria-label={t("autoRefresh")}>
+        <button className={`refresh-interval footer-interval ${refreshInterval ? "" : "is-paused"}`} type="button" data-focus-key={focusKey("refresh-interval", "popover")} onClick={cycleRefreshInterval} title={t("autoRefresh")} aria-label={t("autoRefresh")}>
           <RefreshCw size={11} aria-hidden="true" />
           <span>{formatRefreshInterval(refreshInterval, t)}</span>
         </button>
@@ -651,6 +655,7 @@ function PopoverFooter({
               aria-selected={popoverView === view}
               aria-controls={`popover-panel-${view}`}
               tabIndex={popoverView === view ? 0 : -1}
+              data-focus-key={focusKey("popover-view", view)}
               onClick={() => setPopoverView(view)}
             >
               {view === "online" ? <Activity size={13} /> : <Gauge size={13} />}
@@ -658,7 +663,7 @@ function PopoverFooter({
             </button>
           ))}
         </div>
-        <button className="footer-link" type="button" onClick={() => postHostAction("open_dashboard")} title={t("dashboard")} aria-label={t("dashboard")}>
+        <button className="footer-link" type="button" data-focus-key={focusKey("open-dashboard", "popover")} onClick={() => postHostAction("open_dashboard")} title={t("dashboard")} aria-label={t("dashboard")}>
           <ArrowUpRight size={14} />
           <span>{t("dashboard")}</span>
         </button>
@@ -796,11 +801,11 @@ function DashboardMasthead({
       </div>
       <div className="dashboard-masthead-side">
         <div className="dashboard-masthead-actions">
-          <button className="ghost-btn dashboard-refresh-action" type="button" onClick={refreshSnapshot} disabled={running} aria-label={t("refresh")}>
+          <button className="ghost-btn dashboard-refresh-action" type="button" data-focus-key={focusKey("refresh", "dashboard")} onClick={refreshSnapshot} disabled={running} aria-label={t("refresh")}>
             <RefreshCw size={14} className={running ? "spin" : ""} />
             <span>{running ? t("running") : t("refresh")}</span>
           </button>
-          <button className={`refresh-interval dashboard-refresh-interval ${refreshInterval ? "" : "is-paused"}`} type="button" onClick={cycleRefreshInterval} title={t("autoRefresh")} aria-label={t("autoRefresh")}>
+          <button className={`refresh-interval dashboard-refresh-interval ${refreshInterval ? "" : "is-paused"}`} type="button" data-focus-key={focusKey("refresh-interval", "dashboard")} onClick={cycleRefreshInterval} title={t("autoRefresh")} aria-label={t("autoRefresh")}>
             <span>{formatRefreshInterval(refreshInterval, t)}</span>
           </button>
         </div>
@@ -1594,7 +1599,7 @@ function TrendSuite({
         </div>
         <div className="trend-range-switch" role="group" aria-label={t("trend")}>
           {TREND_RANGES.map((item) => (
-            <button key={item} type="button" disabled={!activeRanges.includes(item)} aria-pressed={item === effectiveRange} onClick={() => setRange(item)}>
+            <button key={item} type="button" disabled={!activeRanges.includes(item)} aria-pressed={item === effectiveRange} data-focus-key={focusKey("trend-range", item)} onClick={() => setRange(item)}>
               {item}
             </button>
           ))}
@@ -1679,6 +1684,7 @@ function TrendLaneView({
                   role="button"
                   tabIndex={0}
                   aria-label={`${title} ${formatDateTime(item.at)}`}
+                  data-focus-key={focusKey("trend-point", lane, trendWindow?.range || "", item.at || "")}
                   onClick={() => setTrendSelection((current) => ({ ...current, [lane]: item.at }))}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
@@ -2185,7 +2191,7 @@ function ProjectTreeRow({
     <article className={`project-tree-row ${expanded ? "expanded" : ""} ${selected ? "is-selected" : ""}`}>
       <div className="project-tree-head">
         <span className="project-rank">{rank ?? "-"}</span>
-        <button className="project-select" type="button" onClick={selectProject} aria-current={selected ? "true" : undefined} aria-expanded={expanded}>
+        <button className="project-select" type="button" data-focus-key={focusKey("project", projectId)} onClick={selectProject} aria-current={selected ? "true" : undefined} aria-expanded={expanded}>
           <ChevronDown size={15} aria-hidden="true" />
           <span>{title}</span>
           <small>{projectMeta}</small>
@@ -2446,7 +2452,7 @@ function SessionIdControl({
 }) {
   return (
     <span className="session-id-control" title={sid || title}>
-      <button className="session-id-button" type="button" aria-current={selected ? "true" : undefined} onClick={() => setSelection({ type: "session", id: safeID(sid) })}>
+      <button className="session-id-button" type="button" data-focus-key={focusKey("session", sid || title)} aria-current={selected ? "true" : undefined} onClick={() => setSelection({ type: "session", id: safeID(sid) })}>
         <strong>{title}</strong>
       </button>
       <button
@@ -2454,6 +2460,7 @@ function SessionIdControl({
         type="button"
         title={t("copySession")}
         aria-label={t("copySession")}
+        data-focus-key={focusKey("session-copy", sid || title)}
         disabled={!sid}
         onClick={(event) => {
           event.stopPropagation();
@@ -2530,7 +2537,7 @@ function ToolIcon({ tool }: { tool?: string }) {
 
 function HostAppButton({ t, host }: { t: (key: string) => string; host: HostApp }) {
   return (
-    <button className="host-app" type="button" title={`${t("openHost")}: ${host.name || host.pid}`} onClick={() => openHostApp(host)}>
+    <button className="host-app" type="button" data-focus-key={focusKey("host-app", host.pid ?? host.bundle_path ?? host.name ?? "")} title={`${t("openHost")}: ${host.name || host.pid}`} onClick={() => openHostApp(host)}>
       <span className="host-icon">
         <img src={`/api/host-app-icon/${encodeURIComponent(String(host.pid ?? ""))}`} alt="" loading="lazy" decoding="async" />
       </span>
@@ -3187,6 +3194,7 @@ function captureViewportState(shell: HTMLElement | null): ViewportState {
     windowX: window.scrollX,
     windowY: window.scrollY,
     activeElement: active,
+    activeIdentity: activeElementIdentity(active),
     scrollTargets,
   };
 }
@@ -3200,10 +3208,35 @@ function restoreViewportState(state: ViewportState) {
       element.scrollLeft = target.left;
     });
     window.scrollTo(state.windowX, state.windowY);
-    if (state.activeElement?.isConnected && document.activeElement !== state.activeElement) {
-      state.activeElement.focus({ preventScroll: true });
+    const active = state.activeElement?.isConnected ? state.activeElement : findElementFromIdentity(state.activeIdentity);
+    if (active && document.activeElement !== active) {
+      active.focus({ preventScroll: true });
     }
   });
+}
+
+function activeElementIdentity(active: HTMLElement | null): ActiveElementIdentity | null {
+  if (!active) return null;
+  const keyed = active.closest<HTMLElement>("[data-focus-key]");
+  if (keyed?.dataset.focusKey) return { type: "focus-key", key: keyed.dataset.focusKey };
+  if (active.id) return { type: "selector", selector: `#${cssEscape(active.id)}` };
+  return null;
+}
+
+function findElementFromIdentity(identity: ActiveElementIdentity | null): HTMLElement | null {
+  if (!identity) return null;
+  if (identity.type === "selector") return document.querySelector<HTMLElement>(identity.selector);
+  const nodes = Array.from(document.querySelectorAll<HTMLElement>("[data-focus-key]"));
+  return nodes.find((node) => node.dataset.focusKey === identity.key) ?? null;
+}
+
+function focusKey(...parts: Array<string | number | boolean | null | undefined>): string {
+  return parts.map((part) => encodeURIComponent(String(part ?? ""))).join(":");
+}
+
+function cssEscape(value: string): string {
+  if (window.CSS?.escape) return window.CSS.escape(value);
+  return value.replace(/["\\#.;:[\],>+~*^$|=()\s]/g, "\\$&");
 }
 
 function bestWindow(set?: TrendSet): TrendWindow | undefined {
