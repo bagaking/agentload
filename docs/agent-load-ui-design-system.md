@@ -43,6 +43,9 @@ agent evidence.
 - Core runtime terms such as fresh movement, sessions, processes, mapping
   health, and scan state should expose short hover/focus explanations so dense
   operator views stay readable without adding permanent copy.
+- Dense explanation blocks should default to a compact lead sentence and expose
+  full details through an accessible disclosure control instead of permanently
+  occupying popover height.
 - Light mode must keep weak labels, icons, tree rails, and control text readable;
   do not rely on very pale gray text for operator-critical controls.
 - Auto refresh defaults to `5m`. A paused refresh state may exist, but it must be

@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Activity, ArrowUpRight, Bot, ChevronDown, Copy, ExternalLink, Gauge, GitBranch, Languages, Layers, Moon, RefreshCw, Search, Server, Sun, Terminal, X } from "lucide-react";
+import { Activity, ArrowUpRight, Bot, ChevronDown, Copy, ExternalLink, Gauge, GitBranch, Info, Languages, Layers, Moon, RefreshCw, Search, Server, Sun, Terminal, X } from "lucide-react";
 import "./styles.css";
 
 const BRAND_NAME = "Agent Load";
@@ -280,6 +280,9 @@ const copy: Record<Lang, Record<string, string>> = {
     refresh: "Refresh",
     dashboard: "Dashboard",
     close: "Close",
+    info: "Info",
+    expandDetails: "Expand details",
+    collapseDetails: "Collapse details",
     inspect: "Inspect",
     metricFresh: "Fresh movement",
     metricSessions: "Sessions",
@@ -437,6 +440,9 @@ const copy: Record<Lang, Record<string, string>> = {
     refresh: "刷新",
     dashboard: "控制台",
     close: "关闭",
+    info: "信息",
+    expandDetails: "展开详情",
+    collapseDetails: "收起详情",
     inspect: "查看",
     metricFresh: "最近动作",
     metricSessions: "会话",
@@ -594,6 +600,9 @@ const copy: Record<Lang, Record<string, string>> = {
     refresh: "更新",
     dashboard: "ダッシュボード",
     close: "閉じる",
+    info: "Info",
+    expandDetails: "Expand details",
+    collapseDetails: "Collapse details",
     inspect: "検査",
     metricFresh: "最近ログ動き",
     metricSessions: "セッション",
@@ -1427,17 +1436,30 @@ function PopoverRuntimeInstrument({ t, snapshot }: { t: (key: string) => string;
 }
 
 function CurrentMeaningStrip({ t, snapshot, compact = false }: { t: (key: string) => string; snapshot: Snapshot; compact?: boolean }) {
+  const detailsId = useId();
+  const [expanded, setExpanded] = useState(!compact);
   const lead = primaryEvidenceNote(t, snapshot);
   const points = currentMeaningPoints(t, snapshot).slice(0, compact ? 2 : 3);
   const stats = snapshot.transcript_stats ?? {};
   return (
-    <section className={`meaning-strip ${compact ? "compact" : ""}`}>
-      <div>
+    <section className={`meaning-strip ${compact ? "compact" : ""} ${expanded ? "is-expanded" : ""}`}>
+      <div className="meaning-head">
         <Activity size={15} />
         <strong>{t("currentMeaning")}</strong>
+        <button
+          className="disclosure-icon-btn"
+          type="button"
+          aria-label={expanded ? t("collapseDetails") : t("expandDetails")}
+          aria-expanded={expanded}
+          aria-controls={detailsId}
+          onClick={() => setExpanded((value) => !value)}
+          title={expanded ? t("collapseDetails") : t("expandDetails")}
+        >
+          <Info size={12} />
+        </button>
       </div>
       <p>{lead}</p>
-      <div className="meaning-detail-grid">
+      <div className="meaning-detail-grid" id={detailsId} hidden={!expanded}>
         <span>
           <b>{t("metricExplanation")}</b>
           <em>{t("metricLegend")}</em>
@@ -1452,7 +1474,7 @@ function CurrentMeaningStrip({ t, snapshot, compact = false }: { t: (key: string
         </span>
       </div>
       {points.length ? (
-        <div className="meaning-point-row">
+        <div className="meaning-point-row" hidden={!expanded}>
           {points.map((point) => <span key={point}>{point}</span>)}
         </div>
       ) : null}

@@ -1531,6 +1531,34 @@ kbd {
   white-space: nowrap;
 }
 
+.meaning-head {
+  min-width: 0;
+}
+
+.meaning-strip .disclosure-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  color: inherit;
+  cursor: pointer;
+}
+
+.meaning-strip .disclosure-icon-btn:hover,
+.meaning-strip .disclosure-icon-btn:focus-visible {
+  border-color: color-mix(in srgb, currentColor 42%, transparent);
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  outline: none;
+}
+
+.meaning-strip .disclosure-icon-btn[aria-expanded="true"] {
+  color: var(--fg);
+}
+
 .meaning-strip strong {
   font-size: 11px;
   text-transform: uppercase;
@@ -1546,6 +1574,11 @@ kbd {
 .meaning-detail-grid,
 .meaning-point-row {
   grid-column: 1 / -1;
+}
+
+.meaning-detail-grid[hidden],
+.meaning-point-row[hidden] {
+  display: none !important;
 }
 
 .meaning-detail-grid {
@@ -6407,4 +6440,21 @@ body[data-view="popover"] .session-tree-more {
   padding: 3px 0 0 8px;
   color: var(--console-text-faint);
   font-size: 8px;
+}
+
+body[data-view="popover"] .meaning-strip.compact.is-expanded .meaning-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+
+body[data-view="popover"] .popover-instrument .meaning-strip.is-expanded .meaning-point-row {
+  display: flex;
+  gap: 4px;
+}
+
+body[data-view="popover"] .meaning-strip .disclosure-icon-btn {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
 }
