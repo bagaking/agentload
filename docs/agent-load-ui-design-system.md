@@ -28,6 +28,9 @@ agent evidence.
   tooltip, or detail surface.
 - dashboard surface with front status, evidence column, project/session atlas,
   calibration rail, age rail, confidence grid, process ledger, and trend suite
+- dashboard uses document-level scrolling as a full report surface. Do not lock
+  it to a single viewport or hide lower audit bands behind nested panel scroll;
+  the popover is the constrained-height surface.
 - Project / Sessions / Processes navigation remains available as a dense
   inspector band for focused lookup
 - main/detail panes may show result-style headers and evidence text, but should

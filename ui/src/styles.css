@@ -1308,7 +1308,10 @@ kbd {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .app-dashboard {
-  overflow: hidden;
+  height: auto;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: visible;
 }
 
 .dashboard-surface,
@@ -1321,6 +1324,7 @@ kbd {
   display: grid;
   gap: 14px;
   padding: 14px;
+  overflow: visible;
 }
 
 .popover-surface {
@@ -5732,6 +5736,8 @@ body[data-view="dashboard"] {
 body[data-view="dashboard"] .dashboard-surface {
   gap: 7px;
   padding: 7px 9px 16px;
+  min-height: auto;
+  overflow: visible;
 }
 
 body[data-view="dashboard"] .dash-front-band,
@@ -5907,15 +5913,15 @@ body[data-view="dashboard"] .dash-atlas-band {
 body[data-view="dashboard"] .dash-atlas-grid {
   grid-template-columns: minmax(0, 1fr) minmax(210px, .28fr);
   gap: 9px;
-  max-height: calc(100vh - 214px);
+  max-height: none;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 body[data-view="dashboard"] .dash-atlas-panel,
 body[data-view="dashboard"] .dash-atlas-side {
   min-height: 0;
-  overflow: auto;
+  overflow: visible;
 }
 
 body[data-view="dashboard"] .dash-atlas-side {
