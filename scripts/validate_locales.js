@@ -6,6 +6,7 @@ const path = require("node:path");
 
 const rootDir = path.resolve(__dirname, "..");
 const mainSourcePath = path.join(rootDir, "ui", "src", "main.tsx");
+const copySourcePath = path.join(rootDir, "ui", "src", "i18n.ts");
 const locales = ["en", "zh", "ja"];
 
 function fail(message) {
@@ -69,7 +70,7 @@ function findBalancedBlock(source, openIndex) {
     }
   }
 
-  fail(`Could not find matching brace in ${path.relative(rootDir, mainSourcePath)}.`);
+  fail("Could not find matching brace in locale copy source.");
 }
 
 function extractCopyObject(source) {
@@ -110,7 +111,8 @@ function equalArray(left, right) {
 }
 
 function validateCopy() {
-  const source = fs.readFileSync(mainSourcePath, "utf8");
+  const source = fs.readFileSync(copySourcePath, "utf8");
+  const mainSource = fs.readFileSync(mainSourcePath, "utf8");
   const copyBody = extractCopyObject(source);
   const copy = new Map(locales.map((locale) => [locale, parseLocale(locale, extractLocaleBlock(copyBody, locale))]));
   const baseline = copy.get("en");
@@ -138,7 +140,7 @@ function validateCopy() {
   const referenced = new Set();
   const referencePattern = /\bt\(\s*["'`]([A-Za-z][A-Za-z0-9_]*)["'`]\s*\)/g;
   let referenceMatch;
-  while ((referenceMatch = referencePattern.exec(source)) !== null) {
+  while ((referenceMatch = referencePattern.exec(mainSource)) !== null) {
     referenced.add(referenceMatch[1]);
   }
   const missingReferences = Array.from(referenced).filter((key) => !baseline.has(key)).sort();

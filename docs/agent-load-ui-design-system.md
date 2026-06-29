@@ -57,6 +57,8 @@ agent evidence.
   state.
 - Multilingual UI copy is part of the design surface. New operator-facing text
   must be added to every supported locale with matching placeholder tokens.
+- Locale resources should stay in `ui/src/i18n.ts`; UI components should call
+  the translation helper instead of embedding language-specific copy inline.
 - Review feedback is design input. If a critique exposes a reusable rule about
   hierarchy, density, contrast, controls, terminology, or auditability, fold it
   back into this document instead of leaving it only in chat history.
