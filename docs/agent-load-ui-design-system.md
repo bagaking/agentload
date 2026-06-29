@@ -61,6 +61,9 @@ agent evidence.
   state. The compact top status mark owns live/active hover text; foreground
   scan-window duration belongs with scan-boundary metadata unless it becomes an
   exceptional warning.
+- Compact status hover text should state the current observation state only.
+  Loopback address and no-upload reassurance are detail metadata; do not show
+  them in default hover text where they can cover primary readings.
 - Compact explanatory rows should avoid decorative icons when the label and
   adjacent controls already identify the row. Compact scan readouts should stay
   on one row whenever the available width can hold the observed fields.
@@ -122,6 +125,9 @@ agent evidence.
   planes, thin separators, short range controls, and dense click targets so the
   operator can compare lanes without scrolling through repeated explanation
   panels.
+- Trend chart callouts must render above series points and point hit targets,
+  and must not intercept chart clicks. Dense point clusters should still allow
+  nearest-bucket selection by clicking the chart plane.
 - Light mode must keep weak labels, icons, tree rails, and control text readable;
   do not rely on very pale gray text for operator-critical controls.
 - Auto refresh defaults to `5m`. A paused refresh state may exist, but it must be

@@ -1849,16 +1849,7 @@ function TrendLaneView({
               <path className="series-area secondary" d={chart.secondaryAreaPath} />
               <path className="series primary" d={chart.primaryPath} />
               <path className="series secondary" d={chart.secondaryPath} />
-              {selectedPlot ? (
-                <g className="trend-selection-guide" aria-hidden="true">
-                  <line x1={selectedPlot.x} y1="10" x2={selectedPlot.x} y2="94" />
-                  <g className="trend-callout" transform={`translate(${calloutX.toFixed(1)} 13)`}>
-                    <rect width="112" height="40" rx="5" />
-                    <text x="7" y="13">{selectedAxisLabel}</text>
-                    <text className="value" x="7" y="29">{selectedReadout}</text>
-                  </g>
-                </g>
-              ) : null}
+              {selectedPlot ? <line className="trend-selection-line" x1={selectedPlot.x} y1="10" x2={selectedPlot.x} y2="94" aria-hidden="true" /> : null}
               {chart.secondaryPoints.map((item) => (
                 <circle className={`trend-point secondary ${selected?.at === item.at ? "is-selected" : ""}`} key={`${lane}-secondary-${item.at}`} cx={item.x} cy={item.y} r="2.5" />
               ))}
@@ -1889,6 +1880,13 @@ function TrendLaneView({
                 ) : null}
                 <text x="312" y="108" textAnchor="end">{chart.axis.end}</text>
               </g>
+              {selectedPlot ? (
+                <g className="trend-callout" transform={`translate(${calloutX.toFixed(1)} 13)`} aria-hidden="true">
+                  <rect width="112" height="40" rx="5" />
+                  <text x="7" y="13">{selectedAxisLabel}</text>
+                  <text className="value" x="7" y="29">{selectedReadout}</text>
+                </g>
+              ) : null}
             </svg>
           </div>
         </>
@@ -2032,9 +2030,9 @@ function Topbar({
 
 function LocalStatus({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot | null }) {
   const state = snapshot ? metricState(snapshot, t) : t("noData");
-  const label = `${state} · ${t("loopback")}`;
+  const active = (snapshot?.current?.active_burst_concurrency ?? 0) > 0;
   return (
-    <span className="local-status-chip" role="status" title={label} aria-label={label}>
+    <span className={`local-status-chip ${active ? "is-active" : ""}`} role="status" title={state} aria-label={state}>
       <span className="state-dot observed" aria-hidden="true" />
     </span>
   );

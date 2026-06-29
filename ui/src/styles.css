@@ -236,6 +236,10 @@ code, kbd, pre { font-family: var(--font-mono); }
   height: 7px;
 }
 
+.local-status-chip.is-active .state-dot {
+  animation: pulse 1.25s ease-in-out infinite;
+}
+
 .kbd-hint {
   display: inline-flex;
   align-items: center;
@@ -2572,7 +2576,7 @@ body[data-view="popover"] .warning-banner {
 .trend-chart .series.primary { stroke: var(--ok); }
 .trend-chart .series.secondary { stroke: var(--accent); opacity: .78; }
 
-.trend-selection-guide line {
+.trend-selection-line {
   stroke: color-mix(in srgb, var(--run) 72%, transparent);
   stroke-width: 1;
   stroke-dasharray: 3 4;
@@ -2582,6 +2586,10 @@ body[data-view="popover"] .warning-banner {
   fill: color-mix(in srgb, var(--surface) 92%, transparent);
   stroke: color-mix(in srgb, var(--run) 48%, transparent);
   stroke-width: 1;
+}
+
+.trend-callout {
+  pointer-events: none;
 }
 
 .trend-callout text {
