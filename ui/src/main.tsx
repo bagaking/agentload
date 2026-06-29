@@ -117,6 +117,7 @@ type TrendPoint = {
 
 type TrendPlotPoint = { at: string; x: number; y: number; value: number };
 type TrendTimeBand = { tone: "night" | "morning" | "day" | "evening"; x: number; width: number };
+type TrendAxisTick = { x: number; label: string };
 type TrendChartModel = {
   primaryPath: string;
   secondaryPath: string;
@@ -125,7 +126,7 @@ type TrendChartModel = {
   points: TrendPlotPoint[];
   secondaryPoints: TrendPlotPoint[];
   timeBands: TrendTimeBand[];
-  axis: { start: string; selected?: string; end: string };
+  axis: { start: string; selected?: string; end: string; ticks: TrendAxisTick[] };
 };
 type TrendLaneSummary = {
   lane: TrendLane;
@@ -1804,6 +1805,7 @@ function TrendLaneView({
   const calloutX = selectedPlot ? clampNumber(selectedPlot.x > 196 ? selectedPlot.x - 122 : selectedPlot.x + 8, 10, 198) : 0;
   const selectedReadout = selected ? trendSelectedReadout(t, lane, selected) : "";
   const selectedAxisLabel = selected?.at ? formatChartAxisLabel(selected.at) : t("selectedValues");
+  const visibleAxisTicks = selectedPlot ? chart.axis.ticks.filter((tick) => Math.abs(tick.x - selectedPlot.x) > 30) : chart.axis.ticks;
   const selectPoint = (at?: string) => {
     setFocusedLane(lane);
     if (at) setTrendSelection((current) => ({ ...current, [lane]: at }));
@@ -1875,6 +1877,12 @@ function TrendLaneView({
               ))}
               <g className="chart-axis-labels" aria-hidden="true">
                 <text x="8" y="108">{chart.axis.start}</text>
+                {visibleAxisTicks.map((tick) => (
+                  <g className="axis-segment" key={`${lane}-axis-${tick.x.toFixed(1)}`}>
+                    <line x1={tick.x} y1="96" x2={tick.x} y2="101" />
+                    <text x={tick.x} y="108" textAnchor="middle">{tick.label}</text>
+                  </g>
+                ))}
                 {selectedPlot && chart.axis.selected && selectedPlot.x > 62 && selectedPlot.x < 258 ? (
                   <text className="selected" x={selectedPlot.x} y="108" textAnchor="middle">{chart.axis.selected}</text>
                 ) : null}
@@ -3730,6 +3738,7 @@ function trendChart(window: TrendWindow | undefined, points: TrendPoint[], lane:
       start: frame ? formatChartAxisLabel(new Date(frame.fromMs).toISOString()) : firstAt ? formatChartAxisLabel(firstAt) : "",
       selected: selected?.at ? formatChartHour(selected.at) : undefined,
       end: frame ? formatChartAxisLabel(new Date(frame.toMs).toISOString()) : lastAt ? formatChartAxisLabel(lastAt) : "",
+      ticks: trendAxisTicks(frame),
     },
   };
 }
@@ -3760,6 +3769,17 @@ function trendPointX(frame: { fromMs: number; spanMs: number } | null, point: Tr
     return 8 + ratio * 304;
   }
   return total <= 1 ? 160 : 8 + (index / (total - 1)) * 304;
+}
+
+function trendAxisTicks(frame: { fromMs: number; spanMs: number } | null): TrendAxisTick[] {
+  if (!frame) return [];
+  return [0.25, 0.5, 0.75].map((ratio) => {
+    const atMs = frame.fromMs + frame.spanMs * ratio;
+    return {
+      x: 8 + ratio * 304,
+      label: formatChartTickLabel(new Date(atMs).toISOString(), frame.spanMs),
+    };
+  });
 }
 
 function linePath(points: TrendPlotPoint[]): string {
@@ -3900,6 +3920,18 @@ function formatChartAxisLabel(value: string): string {
 function formatChartHour(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatChartTickLabel(value: string, spanMs: number): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  if (spanMs > 3 * 24 * 60 * 60 * 1000) {
+    return date.toLocaleDateString([], { month: "numeric", day: "numeric" });
+  }
+  if (spanMs > 36 * 60 * 60 * 1000) {
+    return `${date.toLocaleDateString([], { month: "numeric", day: "numeric" })} ${date.toLocaleTimeString([], { hour: "2-digit" })}`;
+  }
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 

@@ -57,6 +57,10 @@ agent evidence.
   The top bar, live-state pill, runtime summary, metric cells, and scan readouts
   should rely on planar fills, subtle separators, and state color rather than
   each drawing its own strong border.
+- Compact popover metric cells should read as translucent planar instruments,
+  not solid cards. Use subtle material tint, one-pixel separation, and semantic
+  color emphasis so the numeric readout stays prominent without adding box
+  chrome.
 - Popover primary metrics should not reserve a full line for duplicated ambient
   state. The compact top status mark owns live/active hover text; foreground
   scan-window duration belongs with scan-boundary metadata unless it becomes an
@@ -117,6 +121,9 @@ agent evidence.
 - Trend selections should expose the selected time and compact numeric readout
   first. Longer interpretation and trust explanations belong behind an
   accessible disclosure control, especially in the popover.
+- Trend selection readout cells follow the same translucent instrument rule as
+  compact metric cells. They should sit above the chart as light material
+  overlays rather than opaque cards that compete with plotted values.
 - Compact trend views should show both lanes and the selected readout within the
   first reading pass. Do not repeat bulky selected-bucket cards under every
   lane; use one shared inspector strip and keep per-lane readouts inline with
@@ -125,6 +132,9 @@ agent evidence.
   planes, thin separators, short range controls, and dense click targets so the
   operator can compare lanes without scrolling through repeated explanation
   panels.
+- Trend axes should expose compact in-between time ticks when the chart has
+  enough width. These segment labels should be faint ledges for reading rhythm,
+  and should yield when they collide with the selected time label.
 - Trend chart callouts must render above series points and point hit targets,
   and must not intercept chart clicks. Dense point clusters should still allow
   nearest-bucket selection by clicking the chart plane.

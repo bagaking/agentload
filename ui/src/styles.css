@@ -2644,16 +2644,62 @@ body[data-view="popover"] .warning-banner {
   align-items: center;
   gap: 1px;
   overflow: hidden;
-  background: var(--console-line-soft);
+  background: transparent;
 }
 
 .trend-inspector-anchor,
 .trend-inspector-metric {
   display: grid;
+  position: relative;
+  isolation: isolate;
   min-width: 0;
+  overflow: hidden;
   gap: 2px;
   padding: 6px 8px;
-  background: color-mix(in srgb, var(--console-material-2) 72%, transparent);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, currentColor 16%, transparent) 0 1px, transparent 1px),
+    linear-gradient(180deg, color-mix(in srgb, var(--fg) 5%, transparent), transparent 58%),
+    color-mix(in srgb, var(--console-material-2) 18%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--fg) 4%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--bg) 12%, transparent);
+  backdrop-filter: blur(10px) saturate(1.1);
+  -webkit-backdrop-filter: blur(10px) saturate(1.1);
+}
+
+.trend-inspector-anchor::after,
+.trend-inspector-metric::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, currentColor 10%, transparent), transparent 42%),
+    linear-gradient(0deg, color-mix(in srgb, var(--bg) 10%, transparent), transparent 48%);
+  opacity: .76;
+  pointer-events: none;
+}
+
+.trend-inspector-anchor > *,
+.trend-inspector-metric > * {
+  position: relative;
+  z-index: 1;
+}
+
+.trend-inspector-anchor {
+  color: var(--accent);
+}
+
+.trend-inspector-readouts .trend-inspector-metric:nth-child(1) {
+  color: var(--ok);
+}
+
+.trend-inspector-readouts .trend-inspector-metric:nth-child(2) {
+  color: var(--run);
+}
+
+.trend-inspector-readouts .trend-inspector-metric:nth-child(3) {
+  color: var(--accent);
 }
 
 .trend-inspector-anchor span,
@@ -2690,9 +2736,13 @@ body[data-view="popover"] .warning-banner {
   align-self: stretch;
   min-height: 100%;
   border: 0;
-  border-left: 1px solid var(--console-line-soft);
   border-radius: 0;
-  background: color-mix(in srgb, var(--console-material-2) 68%, transparent);
+  background: color-mix(in srgb, var(--console-material-2) 18%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--fg) 4%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--bg) 12%, transparent);
+  backdrop-filter: blur(10px) saturate(1.1);
+  -webkit-backdrop-filter: blur(10px) saturate(1.1);
 }
 
 .trend-inspector-details {
@@ -4764,6 +4814,17 @@ body[data-view="popover"] .trend-suite.compact .trend-detail-toggle span {
   stroke: color-mix(in srgb, var(--bg) 82%, transparent);
   stroke-linejoin: round;
   stroke-width: 2px;
+}
+
+.chart-axis-labels .axis-segment line {
+  stroke: color-mix(in srgb, var(--console-text-faint) 42%, transparent);
+  stroke-width: .8;
+}
+
+.chart-axis-labels .axis-segment text {
+  fill: color-mix(in srgb, var(--console-text-faint) 84%, transparent);
+  font-size: 7.4px;
+  font-weight: 650;
 }
 
 .chart-axis-labels text.selected {
@@ -7584,8 +7645,40 @@ body[data-view="popover"] .instrument-stat-grid {
 
 body[data-view="popover"] .instrument-stat {
   position: relative;
-  background: color-mix(in srgb, var(--console-material-2) 26%, transparent);
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: 0;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, currentColor 18%, transparent) 0 1px, transparent 1px),
+    linear-gradient(180deg, color-mix(in srgb, var(--fg) 5%, transparent), transparent 52%),
+    color-mix(in srgb, var(--console-material-2) 15%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--fg) 4%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--bg) 12%, transparent);
+  backdrop-filter: blur(10px) saturate(1.12);
+  -webkit-backdrop-filter: blur(10px) saturate(1.12);
 }
+
+body[data-view="popover"] .instrument-stat::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, currentColor 12%, transparent), transparent 44%),
+    linear-gradient(0deg, color-mix(in srgb, var(--bg) 12%, transparent), transparent 46%);
+  opacity: .74;
+  pointer-events: none;
+}
+
+body[data-view="popover"] .instrument-stat > * {
+  position: relative;
+  z-index: 1;
+}
+
+body[data-view="popover"] .instrument-stat.burst { color: var(--ok); }
+body[data-view="popover"] .instrument-stat.session { color: var(--accent); }
+body[data-view="popover"] .instrument-stat.pid { color: var(--run); }
 
 body[data-view="popover"] .instrument-stat + .instrument-stat::before {
   content: "";
