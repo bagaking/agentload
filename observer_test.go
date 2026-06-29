@@ -39,27 +39,31 @@ func TestNormalizeRefreshIntervalFloorsNonZeroValuesAtThirtySeconds(t *testing.T
 }
 
 func TestObserverSnapshotConfigUsesRefreshIntervalAndDiscoveredRoots(t *testing.T) {
+	cfgHistory := filepath.Join("fixtures", "config", "history.jsonl")
+	cfgClaudeRoot := filepath.Join("fixtures", "config", ".claude")
+	cfgCodexRoot := filepath.Join("fixtures", "config", ".codex")
+	cfgTraeRoot := filepath.Join("fixtures", "config", ".trae", "cli")
 	observer := newObserver(Config{
 		IdleGap:            90 * time.Second,
 		MinInterval:        15 * time.Second,
 		Lookback:           48 * time.Hour,
 		TranscriptCacheTTL: 30 * time.Second,
 		RefreshInterval:    12 * time.Second,
-		HistoryFile:        "/cfg/history.jsonl",
-		ClaudeRoots:        []string{"/cfg/.claude"},
-		CodexRoots:         []string{"/cfg/.codex"},
-		TraeRoots:          []string{"/cfg/.trae/cli"},
+		HistoryFile:        cfgHistory,
+		ClaudeRoots:        []string{cfgClaudeRoot},
+		CodexRoots:         []string{cfgCodexRoot},
+		TraeRoots:          []string{cfgTraeRoot},
 	})
 
-	claudeRoots := []string{"/live/.claude"}
-	codexRoots := []string{"/live/.codex"}
-	traeRoots := []string{"/live/.trae/cli"}
+	claudeRoots := []string{filepath.Join("fixtures", "live", ".claude")}
+	codexRoots := []string{filepath.Join("fixtures", "live", ".codex")}
+	traeRoots := []string{filepath.Join("fixtures", "live", ".trae", "cli")}
 	got := observer.snapshotConfig(claudeRoots, codexRoots, traeRoots)
 
 	if got.ProcessRefreshTarget != 12 {
 		t.Fatalf("expected process refresh target 12, got %d", got.ProcessRefreshTarget)
 	}
-	if got.HistoryFile != "/cfg/history.jsonl" {
+	if got.HistoryFile != cfgHistory {
 		t.Fatalf("expected history file to be preserved, got %q", got.HistoryFile)
 	}
 	if !slices.Equal(got.ClaudeRoots, claudeRoots) {
@@ -72,16 +76,16 @@ func TestObserverSnapshotConfigUsesRefreshIntervalAndDiscoveredRoots(t *testing.
 		t.Fatalf("expected discovered trae roots %v, got %v", traeRoots, got.TraeRoots)
 	}
 
-	claudeRoots[0] = "/mutated/.claude"
-	codexRoots[0] = "/mutated/.codex"
-	traeRoots[0] = "/mutated/.trae/cli"
-	if got.ClaudeRoots[0] != "/live/.claude" {
+	claudeRoots[0] = filepath.Join("fixtures", "mutated", ".claude")
+	codexRoots[0] = filepath.Join("fixtures", "mutated", ".codex")
+	traeRoots[0] = filepath.Join("fixtures", "mutated", ".trae", "cli")
+	if got.ClaudeRoots[0] != filepath.Join("fixtures", "live", ".claude") {
 		t.Fatalf("expected snapshot claude roots to be copied, got %v", got.ClaudeRoots)
 	}
-	if got.CodexRoots[0] != "/live/.codex" {
+	if got.CodexRoots[0] != filepath.Join("fixtures", "live", ".codex") {
 		t.Fatalf("expected snapshot codex roots to be copied, got %v", got.CodexRoots)
 	}
-	if got.TraeRoots[0] != "/live/.trae/cli" {
+	if got.TraeRoots[0] != filepath.Join("fixtures", "live", ".trae", "cli") {
 		t.Fatalf("expected snapshot trae roots to be copied, got %v", got.TraeRoots)
 	}
 }
