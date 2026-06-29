@@ -6299,7 +6299,9 @@ body[data-view="popover"] .popover-project-table .project-tree-row.expanded {
 }
 
 body[data-view="popover"] .popover-project-table .project-tree-head {
+  grid-template-columns: 18px minmax(72px, 1fr) minmax(116px, auto) minmax(46px, auto);
   min-height: 22px;
+  gap: 5px;
   padding: 2px 0;
 }
 
@@ -6320,6 +6322,110 @@ body[data-view="popover"] .popover-project-table .project-select span {
 body[data-view="popover"] .popover-project-table .project-select small {
   color: var(--console-text-faint);
   font-size: 8px;
+}
+
+body[data-view="popover"] .popover-project-table .project-compact-metrics {
+  display: grid;
+  grid-template-columns: minmax(86px, auto) auto;
+  align-items: center;
+  justify-self: end;
+  gap: 4px;
+  min-width: 0;
+  color: var(--console-text-faint);
+}
+
+body[data-view="popover"] .popover-project-table .project-compact-table {
+  display: grid;
+  grid-template-columns: 16px repeat(3, 14px);
+  align-items: center;
+  gap: 1px 3px;
+  font-family: var(--font-mono);
+  line-height: 1;
+}
+
+body[data-view="popover"] .popover-project-table .project-compact-table b,
+body[data-view="popover"] .popover-project-table .project-compact-table em {
+  color: var(--console-text-faint);
+  font-size: 6.8px;
+  font-style: normal;
+  font-weight: 760;
+  letter-spacing: 0;
+  text-align: right;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .popover-project-table .project-compact-table strong {
+  color: var(--fg);
+  font-size: 9px;
+  font-weight: 780;
+  text-align: right;
+}
+
+body[data-view="popover"] .popover-project-table .project-compact-table strong:nth-of-type(1),
+body[data-view="popover"] .popover-project-table .project-compact-table strong:nth-of-type(4) {
+  color: var(--accent-hi);
+}
+
+body[data-view="popover"] .popover-project-table .project-compact-table strong:nth-of-type(2),
+body[data-view="popover"] .popover-project-table .project-compact-table strong:nth-of-type(5) {
+  color: var(--ok);
+}
+
+body[data-view="popover"] .popover-project-table .project-compact-proc {
+  display: grid;
+  gap: 1px;
+  min-width: 16px;
+  color: var(--run);
+  font-family: var(--font-mono);
+  line-height: 1;
+  text-align: right;
+}
+
+body[data-view="popover"] .popover-project-table .project-compact-proc i {
+  color: var(--console-text-faint);
+  font-size: 6.8px;
+  font-style: normal;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+body[data-view="popover"] .popover-project-table .project-compact-proc strong {
+  font-size: 10px;
+}
+
+body[data-view="popover"] .popover-project-table .tool-strip {
+  display: flex;
+  justify-self: end;
+  max-width: 62px;
+  overflow: hidden;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+body[data-view="popover"] .popover-project-table .tool-mark {
+  min-height: 16px;
+  gap: 1px;
+  padding: 0 2px;
+  border-left: 0;
+}
+
+body[data-view="popover"] .popover-project-table .tool-mark:nth-child(n+2) {
+  display: none;
+}
+
+body[data-view="popover"] .popover-project-table .tool-mark .tool-icon,
+body[data-view="popover"] .popover-project-table .tool-mark .tool-fallback {
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+}
+
+body[data-view="popover"] .popover-project-table .tool-mark strong,
+body[data-view="popover"] .popover-project-table .tool-mark small {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  line-height: 1;
 }
 
 body[data-view="popover"] .popover-project-table .session-tree {
@@ -6401,7 +6507,7 @@ body[data-view="popover"] .popover-project-table .session-group-head strong {
 
 body[data-view="popover"] .popover-project-table .session-line {
   position: relative;
-  grid-template-columns: 14px 31px minmax(0, 1fr) 16px;
+  grid-template-columns: 14px 31px minmax(0, 1fr);
   min-height: 18px;
   gap: 4px;
   padding: 0 0 0 8px;
@@ -6460,8 +6566,69 @@ body[data-view="popover"] .popover-project-table .session-title {
   white-space: nowrap;
 }
 
-body[data-view="popover"] .popover-project-table .session-title strong {
+body[data-view="popover"] .popover-project-table .session-id-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
   flex: 1 1 auto;
+}
+
+body[data-view="popover"] .popover-project-table .session-id-button,
+body[data-view="popover"] .popover-project-table .session-meta-button,
+body[data-view="popover"] .popover-project-table .session-copy-inline {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+body[data-view="popover"] .popover-project-table .session-id-button {
+  flex: 0 1 auto;
+  min-width: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+body[data-view="popover"] .popover-project-table .session-id-button strong {
+  display: block;
+}
+
+body[data-view="popover"] .popover-project-table .session-copy-inline {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 13px;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  color: var(--console-text-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .12s ease, color .12s ease, background .12s ease;
+}
+
+body[data-view="popover"] .popover-project-table .session-line:hover .session-copy-inline,
+body[data-view="popover"] .popover-project-table .session-line:focus-within .session-copy-inline {
+  opacity: .82;
+}
+
+body[data-view="popover"] .popover-project-table .session-copy-inline:hover,
+body[data-view="popover"] .popover-project-table .session-copy-inline:focus-visible {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  opacity: 1;
+}
+
+body[data-view="popover"] .popover-project-table .session-meta-button {
+  flex: 0 0 auto;
+  max-width: 92px;
+  min-width: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+body[data-view="popover"] .popover-project-table .session-title strong {
   min-width: 0;
   color: var(--fg);
   font-family: var(--font-mono);
@@ -6474,8 +6641,7 @@ body[data-view="popover"] .popover-project-table .session-title strong {
 }
 
 body[data-view="popover"] .popover-project-table .session-title small {
-  flex: 0 0 auto;
-  max-width: 92px;
+  display: block;
   color: var(--console-text-faint);
   font-size: 8px;
   line-height: 1.08;

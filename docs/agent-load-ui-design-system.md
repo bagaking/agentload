@@ -43,6 +43,10 @@ agent evidence.
   fields needed to understand global state; secondary identifiers such as full
   local addresses, long paths, and verbose evidence belong in tooltips, detail
   panes, or disclosure surfaces.
+- Compact project rows should expose role mix, active/all session totals,
+  process count, and observed tool coverage before expansion. Expansion is for
+  relationship inspection, not the first moment when distribution becomes
+  visible.
 - Expanded project rows must keep sessions in a compact tree outline. Avoid
   block-level evidence stacks inside the popover; global audit should not
   require scrolling past full evidence cards to understand parent/child session
@@ -50,6 +54,9 @@ agent evidence.
 - Expanded popover session rows should fit role, agent mark, host mark, short id,
   last activity age, process count, and confidence onto one scan line whenever
   the width allows it. Detail panels may carry longer evidence.
+- Row actions in compact session lists should attach to the identifier they act
+  on. Copy controls belong inline with the session id, with hover/focus emphasis
+  and reserved width, rather than as a separate grid item that can wrap.
 - Use icons for tabs, commands, status, and metrics where they reduce text load.
 - Core runtime terms such as fresh movement, sessions, processes, mapping
   health, and scan state should expose short hover/focus explanations so dense

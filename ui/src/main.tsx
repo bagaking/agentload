@@ -2014,7 +2014,7 @@ function ProjectTreeRow({
   const title = project.project || t("unassigned");
   const evidenceItems = projectEvidenceItems(t, project, compact);
   const projectAge = formatAge(project.last_event_age_seconds);
-  const projectMeta = compact ? `${projectAge} · ${counts.total}s · ${project.process_count ?? 0}p` : projectAge;
+  const projectMeta = projectAge;
   const selected = selection.type === "project" && selection.id === projectId;
   const selectProject = () => {
     setSelection({ type: "project", id: projectId });
@@ -2032,7 +2032,7 @@ function ProjectTreeRow({
           <span>{title}</span>
           <small>{projectMeta}</small>
         </button>
-        {compact ? null : <ProjectMetricMatrix t={t} counts={counts} processCount={project.process_count ?? 0} />}
+        {compact ? <ProjectCompactMetrics t={t} counts={counts} processCount={project.process_count ?? 0} /> : <ProjectMetricMatrix t={t} counts={counts} processCount={project.process_count ?? 0} />}
         <ToolStrip t={t} tools={project.tools ?? []} />
       </div>
       {expanded ? (
@@ -2049,6 +2049,31 @@ function ProjectTreeRow({
         </>
       ) : null}
     </article>
+  );
+}
+
+function ProjectCompactMetrics({ t, counts, processCount }: { t: (key: string) => string; counts: RoleCounts; processCount: number }) {
+  return (
+    <div className="project-compact-metrics" aria-label={t("metricSessions")}>
+      <div className="project-compact-table">
+        <span />
+        <b title={t("main")}>{t("mainShort")}</b>
+        <b title={t("subagent")}>{t("subagentShort")}</b>
+        <b title={t("total")}>{t("totalShort")}</b>
+        <em title={t("active")}>{t("activeShort")}</em>
+        <strong title={`${t("active")} ${t("main")}`}>{counts.activeMain}</strong>
+        <strong title={`${t("active")} ${t("subagent")}`}>{counts.activeSub}</strong>
+        <strong title={`${t("active")} ${t("total")}`}>{counts.activeTotal}</strong>
+        <em title={t("all")}>{t("allShort")}</em>
+        <strong title={`${t("all")} ${t("main")}`}>{counts.main}</strong>
+        <strong title={`${t("all")} ${t("subagent")}`}>{counts.sub}</strong>
+        <strong title={`${t("all")} ${t("total")}`}>{counts.total}</strong>
+      </div>
+      <span className="project-compact-proc" title={t("metricProcesses")}>
+        <i>{t("processShort")}</i>
+        <strong>{processCount}</strong>
+      </span>
+    </div>
   );
 }
 
@@ -2085,7 +2110,7 @@ function ToolStrip({ t, tools }: { t: (key: string) => string; tools: ProjectToo
           <span className="tool-mark" key={toolName} title={`${toolDisplayName(toolName)} · ${tool.active_burst_count ?? 0}/${tool.session_count ?? 0} ${t("metricSessions")}`}>
             <ToolIcon tool={toolName} />
             <strong>{tool.active_burst_count ?? 0}</strong>
-            <small>{tool.session_count ?? 0}</small>
+            <small>/{tool.session_count ?? 0}</small>
           </span>
         );
       })}
@@ -2204,15 +2229,19 @@ function SessionLine({
           <ToolIcon tool={session.tool || "unknown"} />
           {host ? <HostAppButton t={t} host={host} /> : <span className="host-empty" title={t("host")} />}
         </span>
-        <button className="session-main" type="button" aria-current={selected ? "true" : undefined} onClick={() => setSelection({ type: "session", id: safeID(sid) })}>
-          <span className="session-title">
-            <strong>{title}</strong>
-            <small>{meta}</small>
+        <span className="session-title">
+          <span className="session-id-control">
+            <button className="session-id-button" type="button" aria-current={selected ? "true" : undefined} onClick={() => setSelection({ type: "session", id: safeID(sid) })}>
+              <strong>{title}</strong>
+            </button>
+            <button className="session-copy-inline" type="button" title={t("copySession")} aria-label={t("copySession")} onClick={() => copyText(sid)}>
+              <Copy size={10} />
+            </button>
           </span>
-        </button>
-        <button className="mini-icon" type="button" title={t("copySession")} onClick={() => copyText(sid)}>
-          <Copy size={13} />
-        </button>
+          <button className="session-meta-button" type="button" onClick={() => setSelection({ type: "session", id: safeID(sid) })}>
+            <small>{meta}</small>
+          </button>
+        </span>
         <div className="session-evidence-strip" aria-label={t("evidence")}>
           {evidenceItems.map((item) => (
             <span className={`session-evidence-chip ${item.tone ?? ""}`} key={item.label}>
