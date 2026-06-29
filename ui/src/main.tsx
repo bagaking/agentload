@@ -817,17 +817,39 @@ function App() {
     if (view !== "popover") return;
     const target = shellRef.current;
     if (!target) return;
+    let observer: ResizeObserver | null = null;
     const postResize = () => {
+      if (!surfaceVisible(view, popoverVisibleRef.current)) return;
       const height = Math.ceil(Math.min(Math.max(target.scrollHeight || 420, 320), 580));
       window.webkit?.messageHandlers?.agentLoadResize?.postMessage({ height });
     };
-    postResize();
-    const observer = new ResizeObserver(postResize);
-    observer.observe(target);
-    window.addEventListener("agentLoadPopoverShown", postResize);
+    const startResize = () => {
+      if (!surfaceVisible(view, popoverVisibleRef.current)) return;
+      if (!observer) {
+        observer = new ResizeObserver(postResize);
+        observer.observe(target);
+      }
+      postResize();
+    };
+    const stopResize = () => {
+      observer?.disconnect();
+      observer = null;
+    };
+    const onVisible = () => startResize();
+    const onHidden = () => stopResize();
+    const onDocumentVisibility = () => {
+      if (surfaceVisible(view, popoverVisibleRef.current)) startResize();
+      else stopResize();
+    };
+    startResize();
+    window.addEventListener("agentLoadPopoverShown", onVisible);
+    window.addEventListener("agentLoadPopoverHidden", onHidden);
+    document.addEventListener("visibilitychange", onDocumentVisibility);
     return () => {
-      observer.disconnect();
-      window.removeEventListener("agentLoadPopoverShown", postResize);
+      stopResize();
+      window.removeEventListener("agentLoadPopoverShown", onVisible);
+      window.removeEventListener("agentLoadPopoverHidden", onHidden);
+      document.removeEventListener("visibilitychange", onDocumentVisibility);
     };
   }, [snapshot, selection, railTab, logTab, view]);
 
@@ -858,18 +880,27 @@ function App() {
         cycleRefreshInterval={cycleRefreshInterval}
       />
       {view === "popover" ? (
-        <PopoverSurface
-          t={t}
-          snapshot={snapshot}
-          selection={selection}
-          setSelection={setSelection}
-          popoverView={popoverView}
-          setPopoverView={setPopoverView}
-          trendRange={trendRange}
-          setTrendRange={setTrendRange}
-          trendSelection={trendSelection}
-          setTrendSelection={setTrendSelection}
-        />
+        <>
+          <PopoverSurface
+            t={t}
+            snapshot={snapshot}
+            selection={selection}
+            setSelection={setSelection}
+            popoverView={popoverView}
+            trendRange={trendRange}
+            setTrendRange={setTrendRange}
+            trendSelection={trendSelection}
+            setTrendSelection={setTrendSelection}
+          />
+          <PopoverFooter
+            t={t}
+            snapshot={snapshot}
+            popoverView={popoverView}
+            setPopoverView={setPopoverView}
+            refreshInterval={refreshInterval}
+            cycleRefreshInterval={cycleRefreshInterval}
+          />
+        </>
       ) : (
         <DashboardSurface
           t={t}
@@ -900,7 +931,6 @@ function PopoverSurface({
   selection,
   setSelection,
   popoverView,
-  setPopoverView,
   trendRange,
   setTrendRange,
   trendSelection,
@@ -911,7 +941,6 @@ function PopoverSurface({
   selection: Selection;
   setSelection: (value: Selection) => void;
   popoverView: PopoverView;
-  setPopoverView: (value: PopoverView) => void;
   trendRange: TrendRange;
   setTrendRange: (value: TrendRange) => void;
   trendSelection: Record<TrendLane, string | undefined>;
@@ -920,28 +949,92 @@ function PopoverSurface({
   if (!snapshot) return <EmptySurface t={t} compact />;
   return (
     <main className="popover-surface">
-      <div className="popover-view-switch" role="tablist" aria-label={t("view")}>
-        {(["online", "trend"] as PopoverView[]).map((view) => (
-          <button key={view} className={popoverView === view ? "is-active" : ""} type="button" role="tab" aria-selected={popoverView === view} onClick={() => setPopoverView(view)}>
-            {view === "online" ? <Activity size={14} /> : <Gauge size={14} />}
-            {view === "online" ? t("online") : t("trend")}
-          </button>
-        ))}
+      <div className="popover-current-surface">
+        <div className="popover-current-scroll">
+          <div className="popover-view-shell">
+            <section
+              className="popover-view-panel online"
+              id="popover-panel-online"
+              role="tabpanel"
+              aria-labelledby="popover-view-online"
+              hidden={popoverView !== "online"}
+            >
+              <PopoverAuditShell t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} />
+            </section>
+            <section
+              className="popover-view-panel trend"
+              id="popover-panel-trend"
+              role="tabpanel"
+              aria-labelledby="popover-view-trend"
+              hidden={popoverView !== "trend"}
+            >
+              <TrendSuite
+                t={t}
+                snapshot={snapshot}
+                compact
+                range={trendRange}
+                setRange={setTrendRange}
+                trendSelection={trendSelection}
+                setTrendSelection={setTrendSelection}
+              />
+            </section>
+          </div>
+        </div>
       </div>
-      {popoverView === "online" ? (
-        <PopoverAuditShell t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} />
-      ) : (
-        <TrendSuite
-          t={t}
-          snapshot={snapshot}
-          compact
-          range={trendRange}
-          setRange={setTrendRange}
-          trendSelection={trendSelection}
-          setTrendSelection={setTrendSelection}
-        />
-      )}
     </main>
+  );
+}
+
+function PopoverFooter({
+  t,
+  snapshot,
+  popoverView,
+  setPopoverView,
+  refreshInterval,
+  cycleRefreshInterval,
+}: {
+  t: (key: string) => string;
+  snapshot: Snapshot | null;
+  popoverView: PopoverView;
+  setPopoverView: (value: PopoverView) => void;
+  refreshInterval: number;
+  cycleRefreshInterval: () => void;
+}) {
+  const generated = snapshot?.generated_at ? formatDateTime(snapshot.generated_at) : t("noData");
+  return (
+    <footer className="popover-footer">
+      <div className="footer-meta">
+        <span className={`state-dot ${snapshot ? "observed" : "idle"}`} aria-hidden="true" />
+        <span>{generated}</span>
+        <button className="refresh-interval footer-interval" type="button" onClick={cycleRefreshInterval} title={t("autoRefresh")} aria-label={t("autoRefresh")}>
+          {formatRefreshInterval(refreshInterval, t)}
+        </button>
+      </div>
+      <div className="popover-footer-controls">
+        <div className="popover-view-switch" role="tablist" aria-label={t("view")}>
+          {(["online", "trend"] as PopoverView[]).map((view) => (
+            <button
+              key={view}
+              id={`popover-view-${view}`}
+              className={popoverView === view ? "is-active" : ""}
+              type="button"
+              role="tab"
+              aria-selected={popoverView === view}
+              aria-controls={`popover-panel-${view}`}
+              tabIndex={popoverView === view ? 0 : -1}
+              onClick={() => setPopoverView(view)}
+            >
+              {view === "online" ? <Activity size={13} /> : <Gauge size={13} />}
+              <span>{view === "online" ? t("online") : t("trend")}</span>
+            </button>
+          ))}
+        </div>
+        <button className="footer-link" type="button" onClick={() => postHostAction("open_dashboard")} title={t("dashboard")} aria-label={t("dashboard")}>
+          <ArrowUpRight size={14} />
+          <span>{t("dashboard")}</span>
+        </button>
+      </div>
+    </footer>
   );
 }
 
@@ -1019,6 +1112,9 @@ function DashboardSurface({
       />
 
       <section className="dash-nav-band">
+        <div className="dash-inspector-head">
+          <DashboardBandHead kicker={t("inspect")} title={`${t("projects")} / ${t("sessions")} / ${t("processes")}`} meta={t("emptySub")} />
+        </div>
         <LedgerNavigation
           t={t}
           activeTab={railTab}
@@ -2992,7 +3088,7 @@ function surfaceVisible(view: "popover" | "dashboard", popoverVisible: boolean):
 
 function captureViewportState(shell: HTMLElement | null): ViewportState {
   const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  const selectors = [".popover-surface", ".dashboard-surface", ".project-tree-list", ".ledger-nav-list", ".log"];
+  const selectors = [".popover-current-scroll", ".popover-surface", ".dashboard-surface", ".project-tree-list", ".ledger-nav-list", ".log"];
   const scrollTargets = selectors.flatMap((selector) => {
     const root = shell ?? document;
     return Array.from(root.querySelectorAll<HTMLElement>(selector)).map((element, index) => ({

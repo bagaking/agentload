@@ -245,6 +245,44 @@ kbd {
 }
 .icon-btn:hover { color: var(--fg); border-color: var(--border-strong); }
 
+.refresh-interval,
+.footer-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: var(--r-sm);
+  color: var(--fg-muted);
+  background: color-mix(in srgb, var(--surface-2) 90%, transparent);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 680;
+  white-space: nowrap;
+}
+
+.refresh-interval:hover,
+.footer-link:hover {
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+
+.state-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-pill);
+  background: var(--fg-faint);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--fg-faint) 12%, transparent);
+  flex: none;
+}
+
+.state-dot.observed {
+  background: var(--ok);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 13%, transparent);
+}
+
 .lang-control {
   display: inline-flex;
   align-items: center;
@@ -3306,6 +3344,24 @@ body[data-view="dashboard"] .dash-nav-band {
   padding: 16px 18px 18px;
 }
 
+body[data-view="dashboard"] .dash-inspector-head {
+  grid-column: 1 / -1;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--console-line-soft);
+}
+
+body[data-view="dashboard"] .dash-inspector-head .dash-band-head {
+  margin-bottom: 0;
+}
+
+body[data-view="dashboard"] .dash-inspector-head .dash-band-head > span {
+  max-width: min(620px, 56vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: none;
+}
+
 body[data-view="dashboard"] .trend-suite.dashboard {
   padding: 18px;
 }
@@ -3459,13 +3515,13 @@ body[data-view="popover"] .brand-mark {
   border-radius: var(--r-sm);
 }
 
-body[data-view="popover"] .brand-text span,
-body[data-view="popover"] .topbar-meta .kbd-hint,
-body[data-view="popover"] .lang-control {
+body[data-view="popover"] .brand-sub,
+body[data-view="popover"] .topbar-meta .kbd-hint {
   display: none;
 }
 
-body[data-view="popover"] .brand-text strong {
+body[data-view="popover"] .brand-name {
+  display: block;
   font-size: 12px;
   letter-spacing: .06em;
   text-transform: uppercase;
@@ -3473,6 +3529,22 @@ body[data-view="popover"] .brand-text strong {
 
 body[data-view="popover"] .topbar-meta {
   gap: 5px;
+}
+
+body[data-view="popover"] .pill {
+  min-height: 25px;
+  padding: 3px 7px;
+  font-size: 10.5px;
+}
+
+body[data-view="popover"] .lang-control {
+  min-height: 25px;
+  padding: 2px 3px;
+}
+
+body[data-view="popover"] .lang-control button {
+  padding: 1px 4px;
+  font-size: 9.5px;
 }
 
 body[data-view="popover"] .icon-btn,
@@ -3484,8 +3556,82 @@ body[data-view="popover"] .refresh-interval {
 
 body[data-view="popover"] .popover-surface {
   gap: 8px;
-  padding: 8px 9px 10px;
+  flex: 1;
+  padding: 8px 9px;
+  overflow: hidden;
+}
+
+body[data-view="popover"] .popover-current-surface {
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+body[data-view="popover"] .popover-current-scroll {
+  height: 100%;
   overflow: auto;
+  padding-right: 1px;
+}
+
+body[data-view="popover"] .popover-view-shell,
+body[data-view="popover"] .popover-view-panel {
+  min-width: 0;
+}
+
+body[data-view="popover"] .popover-view-panel[hidden] {
+  display: none;
+}
+
+body[data-view="popover"] .popover-footer {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 42px;
+  padding: 7px 9px 8px;
+  border-top: 1px solid var(--console-line-soft);
+  background: color-mix(in srgb, var(--console-material) 88%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--fg) 2%, transparent);
+  backdrop-filter: blur(16px) saturate(1.25);
+  -webkit-backdrop-filter: blur(16px) saturate(1.25);
+}
+
+body[data-view="popover"] .footer-meta,
+body[data-view="popover"] .popover-footer-controls {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+body[data-view="popover"] .footer-meta {
+  gap: 7px;
+  color: var(--console-text-soft);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+body[data-view="popover"] .footer-meta > span:not(.state-dot) {
+  overflow: hidden;
+  max-width: 132px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .popover-footer-controls {
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+body[data-view="popover"] .footer-link {
+  height: 25px;
+  padding: 0 7px;
+  border-color: var(--console-line-soft);
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
+  font-size: 10px;
+  letter-spacing: .03em;
+  text-transform: uppercase;
 }
 
 body[data-view="popover"] .popover-view-switch {
