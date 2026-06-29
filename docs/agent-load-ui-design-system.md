@@ -57,6 +57,9 @@ agent evidence.
   The top bar, live-state pill, runtime summary, metric cells, and scan readouts
   should rely on planar fills, subtle separators, and state color rather than
   each drawing its own strong border.
+- Compact explanatory rows should avoid decorative icons when the label and
+  adjacent controls already identify the row. Compact scan readouts should stay
+  on one row whenever the available width can hold the observed fields.
 - Favor scan-line density for audit lists. Primary rows should expose only the
   fields needed to understand global state; secondary identifiers such as full
   local addresses, long paths, and verbose evidence belong in tooltips, detail

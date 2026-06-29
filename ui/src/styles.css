@@ -7358,3 +7358,50 @@ body[data-view="popover"] .scan-readout + .scan-readout::before {
 :root[data-theme="light"] body[data-view="popover"] .footer-link {
   border-color: transparent;
 }
+
+body[data-view="popover"] .popover-instrument .meaning-head > svg:first-child {
+  display: none;
+}
+
+body[data-view="popover"] .scan-boundary {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 4px 9px 4px 14px;
+}
+
+body[data-view="popover"] .scan-boundary-main {
+  gap: 5px;
+  min-width: 0;
+}
+
+body[data-view="popover"] .scan-boundary-main svg {
+  width: 12px;
+  height: 12px;
+}
+
+body[data-view="popover"] .scan-boundary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  min-width: 0;
+}
+
+body[data-view="popover"] .scan-readout {
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  min-height: 24px;
+  padding: 3px 6px;
+}
+
+body[data-view="popover"] .scan-readout b,
+body[data-view="popover"] .scan-readout strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  line-height: 1.05;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
