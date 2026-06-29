@@ -1546,7 +1546,7 @@ function CandidateWorkitemsRail({ t, snapshot, limit = 5 }: { t: (key: string) =
       {rows.map((item, index) => (
         <article className="candidate-row" key={item.key || `${item.project}-${item.tool}-${index}`}>
           <div className="candidate-main">
-            <ToolIcon tool={item.tool || "unknown"} />
+            <ToolIcon t={t} tool={item.tool || "unknown"} />
             <span>
               <strong>{item.project || t("unassigned")}</strong>
               <em>{item.freshness_bucket || t("unavailable")} · {item.confidence || t("unavailable")}</em>
@@ -1611,7 +1611,7 @@ function ProcessLedgerRow({ t, process, selection, setSelection }: { t: (key: st
           <span>{t("pid")} {process.pid ?? t("unavailable")}</span>
         </button>
       </span>
-      <span className="process-cell tool-cell" role="cell"><ToolIcon tool={process.tool || "unknown"} />{toolDisplayName(process.tool)}</span>
+      <span className="process-cell tool-cell" role="cell"><ToolIcon t={t} tool={process.tool || "unknown"} />{toolDisplayName(process.tool)}</span>
       <span className={`process-map ${(process.mapped_sessions ?? 0) > 0 ? "mapped" : "unmapped"}`} role="cell">{process.mapped_sessions ?? 0}</span>
       <div className={`process-session-preview ${showAllSessions ? "is-expanded" : ""}`} role="cell" aria-label={t("sessions")}>
         {sessions.length ? visibleSessions.map((sessionID) => (
@@ -1647,7 +1647,7 @@ function ToolMix({ t, snapshot }: { t: (key: string) => string; snapshot: Snapsh
     <div className="tool-mix">
       {tools.length ? tools.slice(0, 4).map(([tool, metrics]) => (
         <span className="tool-mix-item" key={tool}>
-          <ToolIcon tool={tool} />
+          <ToolIcon t={t} tool={tool} />
           <strong>{toolDisplayName(tool)}</strong>
           <em>{metrics.active_burst_concurrency ?? 0}/{metrics.session_concurrency ?? 0}</em>
         </span>
@@ -2463,7 +2463,7 @@ function ToolStrip({ t, tools }: { t: (key: string) => string; tools: ProjectToo
         });
         return (
           <span className="tool-mark" key={toolName} title={title} aria-label={title}>
-            <ToolIcon tool={toolName} />
+            <ToolIcon t={t} tool={toolName} title={title} />
             <strong>{tool.active_burst_count ?? 0}</strong>
             <small>/{tool.session_count ?? 0}</small>
           </span>
@@ -2509,7 +2509,7 @@ function SessionTree({
         return (
           <section className="session-tool-block" key={group.tool}>
             <div className="session-tool-head">
-              <span><ToolIcon tool={group.tool} />{toolDisplayName(group.tool)}</span>
+              <span><ToolIcon t={t} tool={group.tool} />{toolDisplayName(group.tool)}</span>
               <strong>{group.activeCount}/{group.sessions.length}</strong>
             </div>
             {visibleLinked.map((branch) => (
@@ -2589,7 +2589,7 @@ function SessionLine({
           <RoleGlyph t={t} role={role} />
         </span>
         <span className="session-tool-pair">
-          <ToolIcon tool={session.tool || "unknown"} />
+          <ToolIcon t={t} tool={session.tool || "unknown"} />
           {host ? <HostAppButton t={t} host={host} /> : <HostAppEmpty t={t} />}
         </span>
         <span className="session-title">
@@ -2621,7 +2621,7 @@ function SessionLine({
         </span>
       </span>
       <span className="session-tool-pair">
-        <ToolIcon tool={session.tool || "unknown"} />
+        <ToolIcon t={t} tool={session.tool || "unknown"} />
         {host ? <HostAppButton t={t} host={host} /> : <HostAppEmpty t={t} label={!compact} />}
       </span>
       <div className="session-evidence-strip" aria-label={t("evidence")}>
@@ -2724,11 +2724,12 @@ function Readout({ label, value }: { label: string; value?: string }) {
   );
 }
 
-function ToolIcon({ tool }: { tool?: string }) {
+function ToolIcon({ t, tool, title }: { t: (key: string) => string; tool?: string; title?: string }) {
   const iconName = toolIconName(tool);
-  if (!iconName) return <span className="tool-fallback">{toolBadgeLabel(tool)}</span>;
+  const label = title || formatCopy(t("codingAgentTooltip"), { tool: toolDisplayName(tool) });
+  if (!iconName) return <span className="tool-fallback" title={label} aria-label={label}>{toolBadgeLabel(tool)}</span>;
   return (
-    <span className="tool-icon">
+    <span className="tool-icon" title={label} aria-label={label}>
       <img src={`/api/tool-icon/${encodeURIComponent(iconName)}`} alt="" loading="lazy" decoding="async" />
     </span>
   );
