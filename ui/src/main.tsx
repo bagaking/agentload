@@ -1099,7 +1099,7 @@ function DashboardSurface({
 
       <section className="dash-ledger-band">
         <DashboardBandHead kicker={t("liveLedger")} title={t("processLedger")} meta={`${snapshot.live_processes?.length ?? 0} ${t("processes")}`} />
-        <ProcessLedger t={t} snapshot={snapshot} setSelection={setSelection} />
+        <ProcessLedger t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} />
       </section>
 
       <TrendSuite
@@ -1720,7 +1720,7 @@ function CandidateWorkitemsRail({ t, snapshot, limit = 5 }: { t: (key: string) =
   );
 }
 
-function ProcessLedger({ t, snapshot, setSelection }: { t: (key: string) => string; snapshot: Snapshot; setSelection: (value: Selection) => void }) {
+function ProcessLedger({ t, snapshot, selection, setSelection }: { t: (key: string) => string; snapshot: Snapshot; selection: Selection; setSelection: (value: Selection) => void }) {
   const rows = [...(snapshot.live_processes ?? [])].sort((a, b) => (b.mapped_sessions ?? 0) - (a.mapped_sessions ?? 0)).slice(0, 18);
   return (
     <div className="process-ledger" role="table" aria-label={t("processLedger")}>
@@ -1733,20 +1733,21 @@ function ProcessLedger({ t, snapshot, setSelection }: { t: (key: string) => stri
         <span>{t("host")}</span>
       </div>
       {rows.map((process) => (
-        <ProcessLedgerRow t={t} process={process} setSelection={setSelection} key={process.pid ?? process.command} />
+        <ProcessLedgerRow t={t} process={process} selection={selection} setSelection={setSelection} key={process.pid ?? process.command} />
       ))}
     </div>
   );
 }
 
-function ProcessLedgerRow({ t, process, setSelection }: { t: (key: string) => string; process: LiveProcess; setSelection: (value: Selection) => void }) {
+function ProcessLedgerRow({ t, process, selection, setSelection }: { t: (key: string) => string; process: LiveProcess; selection: Selection; setSelection: (value: Selection) => void }) {
   const processID = String(process.pid ?? "");
   const sessions = process.session_ids ?? [];
   const host = process.host_app;
+  const selected = selection.type === "process" && selection.id === processID;
   return (
-    <div className="process-row process-detail-row" role="row">
+    <div className={`process-row process-detail-row ${selected ? "is-selected" : ""}`} role="row">
       <span className="process-cell process-main-cell" role="cell">
-        <button className="process-main" type="button" onClick={() => setSelection({ type: "process", id: processID })}>
+        <button className="process-main" type="button" aria-current={selected ? "true" : undefined} onClick={() => setSelection({ type: "process", id: processID })}>
           <Server size={13} />
           <span>{t("pid")} {process.pid ?? t("unavailable")}</span>
         </button>

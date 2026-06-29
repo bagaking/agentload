@@ -1931,6 +1931,11 @@ kbd {
   background: color-mix(in srgb, var(--surface-2) 72%, transparent);
 }
 
+.process-detail-row.is-selected {
+  color: var(--fg);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 7%, transparent), transparent 42%);
+}
+
 .process-row.head {
   color: var(--fg-faint);
   font-size: 10px;
@@ -6001,6 +6006,15 @@ body[data-view="dashboard"] .process-row {
   min-height: 22px;
   padding: 3px 0;
   font-size: 9.5px;
+}
+
+body[data-view="dashboard"] .process-row.is-selected {
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 72%, transparent);
+}
+
+body[data-view="dashboard"] .process-row.is-selected .session-chip {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
 body[data-view="dashboard"] .process-row.head {
