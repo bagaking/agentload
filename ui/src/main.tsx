@@ -119,6 +119,13 @@ type TrendChartModel = {
   timeBands: TrendTimeBand[];
   axis: { start: string; selected?: string; end: string };
 };
+type RefreshReason = "initial" | "manual" | "auto";
+type ViewportState = {
+  windowX: number;
+  windowY: number;
+  activeElement: HTMLElement | null;
+  scrollTargets: Array<{ selector: string; index: number; top: number; left: number }>;
+};
 
 type TranscriptStats = {
   scanned_files?: number;
@@ -711,21 +718,43 @@ function App() {
   const [refreshInterval, setRefreshInterval] = useState<number>(() => initialRefreshInterval());
   const shellRef = useRef<HTMLDivElement | null>(null);
   const lastRenderTokenRef = useRef("");
+  const lastSnapshotReceivedAtRef = useRef(0);
+  const snapshotRef = useRef<Snapshot | null>(null);
+  const popoverVisibleRef = useRef(true);
+  const fetchInFlightRef = useRef<Promise<void> | null>(null);
 
   const t = useCallback((key: string) => copy[lang][key] || copy.en[key] || key, [lang]);
-  const fetchSnapshot = useCallback(async (reason: "initial" | "manual" | "auto" = "auto") => {
-    const response = await fetch("/api/snapshot", { cache: "no-store" });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const next = (await response.json()) as Snapshot;
-    const token = next.refresh_slot_id || next.generated_at || "";
-    if (reason === "auto" && token && token === lastRenderTokenRef.current) {
-      setError(null);
-      return;
+  const fetchSnapshot = useCallback(async (reason: RefreshReason = "auto") => {
+    if (reason === "auto" && !surfaceVisible(view, popoverVisibleRef.current)) return;
+    if (fetchInFlightRef.current) {
+      if (reason === "auto") return;
+      await fetchInFlightRef.current.catch(() => undefined);
     }
-    lastRenderTokenRef.current = token;
-    setSnapshot(next);
-    setError(null);
-  }, []);
+    const fetchWork = (async () => {
+      const response = await fetch("/api/snapshot", { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const next = (await response.json()) as Snapshot;
+      lastSnapshotReceivedAtRef.current = Date.now();
+      const token = next.refresh_slot_id || next.generated_at || "";
+      if (reason === "auto" && token && token === lastRenderTokenRef.current) {
+        snapshotRef.current = next;
+        setError(null);
+        return;
+      }
+      const viewport = reason === "auto" && snapshotRef.current ? captureViewportState(shellRef.current) : null;
+      lastRenderTokenRef.current = token;
+      snapshotRef.current = next;
+      setSnapshot(next);
+      setError(null);
+      if (viewport) restoreViewportState(viewport);
+    })();
+    fetchInFlightRef.current = fetchWork;
+    try {
+      await fetchWork;
+    } finally {
+      if (fetchInFlightRef.current === fetchWork) fetchInFlightRef.current = null;
+    }
+  }, [view]);
   const refreshSnapshot = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -744,10 +773,35 @@ function App() {
   useEffect(() => {
     if (!refreshInterval) return;
     const id = window.setInterval(() => {
-      if (document.visibilityState === "visible") void fetchSnapshot("auto").catch(() => undefined);
+      if (surfaceVisible(view, popoverVisibleRef.current)) void fetchSnapshot("auto").catch(() => undefined);
     }, refreshInterval);
     return () => window.clearInterval(id);
-  }, [fetchSnapshot, refreshInterval]);
+  }, [fetchSnapshot, refreshInterval, view]);
+  useEffect(() => {
+    const refreshIfStale = () => {
+      if (!refreshInterval || !surfaceVisible(view, popoverVisibleRef.current)) return;
+      const staleAfter = Math.max(300_000, refreshInterval);
+      if (!snapshotRef.current || Date.now() - lastSnapshotReceivedAtRef.current >= staleAfter) {
+        void fetchSnapshot("auto").catch(() => undefined);
+      }
+    };
+    const onVisibilityChange = () => refreshIfStale();
+    const onPopoverShown = () => {
+      popoverVisibleRef.current = true;
+      refreshIfStale();
+    };
+    const onPopoverHidden = () => {
+      popoverVisibleRef.current = false;
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("agentLoadPopoverShown", onPopoverShown);
+    window.addEventListener("agentLoadPopoverHidden", onPopoverHidden);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("agentLoadPopoverShown", onPopoverShown);
+      window.removeEventListener("agentLoadPopoverHidden", onPopoverHidden);
+    };
+  }, [fetchSnapshot, refreshInterval, view]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     window.localStorage.setItem("agentload.theme", theme);
@@ -2929,6 +2983,46 @@ function initialTheme(): Theme {
 function initialRefreshInterval(): number {
   const raw = Number(window.localStorage.getItem(REFRESH_INTERVAL_STORAGE_KEY));
   return REFRESH_INTERVALS_MS.includes(raw as (typeof REFRESH_INTERVALS_MS)[number]) ? raw : 300_000;
+}
+
+function surfaceVisible(view: "popover" | "dashboard", popoverVisible: boolean): boolean {
+  if (document.visibilityState && document.visibilityState !== "visible") return false;
+  return view !== "popover" || popoverVisible;
+}
+
+function captureViewportState(shell: HTMLElement | null): ViewportState {
+  const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const selectors = [".popover-surface", ".dashboard-surface", ".project-tree-list", ".ledger-nav-list", ".log"];
+  const scrollTargets = selectors.flatMap((selector) => {
+    const root = shell ?? document;
+    return Array.from(root.querySelectorAll<HTMLElement>(selector)).map((element, index) => ({
+      selector,
+      index,
+      top: element.scrollTop,
+      left: element.scrollLeft,
+    }));
+  });
+  return {
+    windowX: window.scrollX,
+    windowY: window.scrollY,
+    activeElement: active,
+    scrollTargets,
+  };
+}
+
+function restoreViewportState(state: ViewportState) {
+  window.requestAnimationFrame(() => {
+    state.scrollTargets.forEach((target) => {
+      const element = document.querySelectorAll<HTMLElement>(target.selector)[target.index];
+      if (!element) return;
+      element.scrollTop = target.top;
+      element.scrollLeft = target.left;
+    });
+    window.scrollTo(state.windowX, state.windowY);
+    if (state.activeElement?.isConnected && document.activeElement !== state.activeElement) {
+      state.activeElement.focus({ preventScroll: true });
+    }
+  });
 }
 
 function bestWindow(set?: TrendSet): TrendWindow | undefined {
