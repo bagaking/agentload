@@ -295,8 +295,14 @@ const copy: Record<Lang, Record<string, string>> = {
     scanWindow: "Foreground window",
     online: "Online",
     runtimeField: "Runtime field",
+    runtimeEvidence: "Runtime evidence",
     activityCounts: "Activity counts",
     localSource: "Local source",
+    observed: "Observed",
+    projectCounts: "Project counts",
+    scanAndMapping: "Scan and mapping",
+    topLiveMix: "Top live mix",
+    currentFreshnessBuckets: "Current freshness buckets",
     evidenceColumn: "Evidence",
     projectSessionTree: "Project / Sessions",
     liveLedger: "Live ledger",
@@ -316,6 +322,13 @@ const copy: Record<Lang, Record<string, string>> = {
     metricExplanation: "Metric explanation",
     metricLegend: "Fresh / Sessions / Processes are measured from local transcripts and visible runtime processes.",
     activeThinkingCaveat: "A live session can be idle; fresh movement means the transcript moved recently.",
+    activeBurstHint: "Recent transcript movement inside the active window.",
+    knownSessions: "Known live or recently active sessions.",
+    visibleProcesses: "Visible local tool processes.",
+    currentScale: "Scaled against the current peer maximum.",
+    liveIdle: "live {live} / idle {idle}",
+    mappedPct: "{pct} mapped",
+    unmatchedCount: "{count} unmatched",
     evidenceHealth: "Evidence health",
     mappingHealth: "Mapping health",
     candidateWorkitems: "Candidate workitems",
@@ -430,8 +443,14 @@ const copy: Record<Lang, Record<string, string>> = {
     scanWindow: "前台窗口",
     online: "在线",
     runtimeField: "运行现场",
+    runtimeEvidence: "运行证据",
     activityCounts: "活动计数",
     localSource: "本地来源",
+    observed: "观测时间",
+    projectCounts: "项目计数",
+    scanAndMapping: "扫描与映射",
+    topLiveMix: "现场工具分布",
+    currentFreshnessBuckets: "当前新鲜度分桶",
     evidenceColumn: "证据",
     projectSessionTree: "项目 / 会话",
     liveLedger: "现场账本",
@@ -451,6 +470,13 @@ const copy: Record<Lang, Record<string, string>> = {
     metricExplanation: "指标解释",
     metricLegend: "最近动作 / 会话 / 进程都来自本地活动记录和可见运行时进程。",
     activeThinkingCaveat: "会话存活不等于正在输出；最近动作表示活动记录刚发生变化。",
+    activeBurstHint: "活跃窗口内最近发生的活动记录变化。",
+    knownSessions: "已知仍在或刚活跃的会话。",
+    visibleProcesses: "本地可见工具进程。",
+    currentScale: "按当前同组最大值缩放。",
+    liveIdle: "活跃 {live} / 空闲 {idle}",
+    mappedPct: "{pct} 已映射",
+    unmatchedCount: "{count} 未匹配",
     evidenceHealth: "证据健康",
     mappingHealth: "映射健康",
     candidateWorkitems: "候选工作项",
@@ -565,8 +591,14 @@ const copy: Record<Lang, Record<string, string>> = {
     scanWindow: "Foreground window",
     online: "Online",
     runtimeField: "Runtime field",
+    runtimeEvidence: "Runtime evidence",
     activityCounts: "Activity counts",
     localSource: "Local source",
+    observed: "Observed",
+    projectCounts: "Project counts",
+    scanAndMapping: "Scan and mapping",
+    topLiveMix: "Top live mix",
+    currentFreshnessBuckets: "Current freshness buckets",
     evidenceColumn: "Evidence",
     projectSessionTree: "Project / Sessions",
     liveLedger: "Live ledger",
@@ -586,6 +618,13 @@ const copy: Record<Lang, Record<string, string>> = {
     metricExplanation: "Metric explanation",
     metricLegend: "Fresh / Sessions / Processes are measured from local transcripts and visible runtime processes.",
     activeThinkingCaveat: "A live session can be idle; fresh movement means the transcript moved recently.",
+    activeBurstHint: "Recent transcript movement inside the active window.",
+    knownSessions: "Known live or recently active sessions.",
+    visibleProcesses: "Visible local tool processes.",
+    currentScale: "Scaled against the current peer maximum.",
+    liveIdle: "live {live} / idle {idle}",
+    mappedPct: "{pct} mapped",
+    unmatchedCount: "{count} unmatched",
     evidenceHealth: "Evidence health",
     mappingHealth: "Mapping health",
     candidateWorkitems: "Candidate workitems",
@@ -875,21 +914,19 @@ function DashboardSurface({
   return (
     <main className="dashboard-surface">
       <section className="dash-front-band">
-        <div className="dash-front-main">
-          <div className="dash-status-row">
-            <span className={`field-status ${statusTone(snapshot)}`}>{metricState(snapshot, t)}</span>
-            <span className="issue-stamp">{coordinationPostureLabel(snapshot, t)}</span>
-          </div>
-          <FieldIndex t={t} snapshot={snapshot} />
+        <DashboardFrontTopline t={t} snapshot={snapshot} />
+        <section className="dash-field-index">
+          <DashboardBandHead kicker={t("runtimeField")} title={t("activityCounts")} meta={dashboardProjectMeta(t, snapshot)} />
+          <DashboardFieldGrid t={t} snapshot={snapshot} />
           <CurrentMeaningStrip t={t} snapshot={snapshot} compact />
-        </div>
+        </section>
         <DashboardEvidenceColumn t={t} snapshot={snapshot} />
       </section>
 
       <section className="dash-atlas-band">
-        <BandHead kicker={t("liveLedger")} title={t("projectSessionTree")} meta={`${snapshot.live_sessions?.length ?? 0} ${t("sessions")}`} />
+        <DashboardBandHead kicker={t("liveLedger")} title={t("projectSessionTree")} meta={`${snapshot.live_sessions?.length ?? 0} ${t("sessions")}`} />
         <div className="dash-atlas-grid">
-          <div className="dash-atlas-main">
+          <div className="dash-atlas-panel">
             <ProjectAtlas t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} limit={10} defaultExpandedCount={2} showHead={false} />
           </div>
           <DashboardSideRails t={t} snapshot={snapshot} />
@@ -897,7 +934,7 @@ function DashboardSurface({
       </section>
 
       <section className="dash-ledger-band">
-        <BandHead kicker={t("liveLedger")} title={t("processLedger")} meta={`${snapshot.live_processes?.length ?? 0} ${t("processes")}`} />
+        <DashboardBandHead kicker={t("liveLedger")} title={t("processLedger")} meta={`${snapshot.live_processes?.length ?? 0} ${t("processes")}`} />
         <ProcessLedger t={t} snapshot={snapshot} setSelection={setSelection} />
       </section>
 
@@ -934,6 +971,73 @@ function DashboardSurface({
         setTrendSelection={setTrendSelection}
       />
     </main>
+  );
+}
+
+function DashboardBandHead({ kicker, title, meta }: { kicker: string; title: string; meta?: string }) {
+  return (
+    <div className="dash-band-head">
+      <div>
+        <span className="note-kicker">{kicker}</span>
+        <h2>{title}</h2>
+      </div>
+      {meta ? <span>{meta}</span> : null}
+    </div>
+  );
+}
+
+function DashboardFrontTopline({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot }) {
+  const stats = snapshot.transcript_stats ?? {};
+  return (
+    <div className="dash-front-topline">
+      <div className="dash-front-status">
+        <span className={`field-status ${statusTone(snapshot)}`}>{metricState(snapshot, t)}</span>
+        <span className="issue-stamp">{coordinationPostureLabel(snapshot, t)}</span>
+      </div>
+      <div className="dash-front-meta">
+        <div className="dash-front-meta-item stamp">
+          <span>{t("observed")}</span>
+          <strong>{snapshot.generated_at ? formatDateTime(snapshot.generated_at) : t("unavailable")}</strong>
+          <em>{snapshot.refresh_slot_id || t("fresh")}</em>
+        </div>
+        <div className="dash-front-meta-item">
+          <span>{t("localSource")}</span>
+          <strong>{stats.cached ? t("cached") : t("fresh")}</strong>
+          <em>{transcriptScanNote(t, stats)}</em>
+        </div>
+        <div className="dash-front-meta-item">
+          <span>{t("projectCounts")}</span>
+          <strong>{dashboardProjectMeta(t, snapshot)}</strong>
+          <em>{dashboardProjectLead(t, snapshot)}</em>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DashboardFieldGrid({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot }) {
+  const current = snapshot.current ?? {};
+  const summary = snapshot.summary ?? {};
+  return (
+    <div className="dash-field-grid">
+      <article className="dash-support-cell burst">
+        <span>{t("metricFresh")}</span>
+        <strong>{current.active_burst_concurrency ?? 0}</strong>
+        <em>{t("activeBurstHint")}</em>
+      </article>
+      <div className="dash-support-read">
+        <article className="dash-support-cell session">
+          <span>{t("metricSessions")}</span>
+          <strong>{current.session_concurrency ?? 0}</strong>
+          <em>{t("liveIdle").replace("{live}", String(summary.active_sessions ?? 0)).replace("{idle}", String(summary.idle_sessions ?? 0))}</em>
+        </article>
+        <article className="dash-support-cell pid">
+          <span>{t("metricProcesses")}</span>
+          <strong>{current.pid_concurrency ?? 0}</strong>
+          <em>{`${summary.mapped_processes ?? 0} ${t("mapped")} / ${summary.unmapped_processes ?? 0} ${t("unmatched")}`}</em>
+        </article>
+      </div>
+    </div>
   );
 }
 
@@ -1026,18 +1130,20 @@ function DashboardEvidenceColumn({ t, snapshot }: { t: (key: string) => string; 
   const summary = snapshot.summary ?? {};
   return (
     <aside className="dash-evidence-column">
-      <BandHead kicker={t("evidenceColumn")} title={t("runtimeField")} meta={stats.cached ? t("cached") : t("fresh")} />
-      <div className="evidence-grid">
-        <Readout label={t("scan")} value={`${stats.parsed_files ?? 0}/${stats.scanned_files ?? 0}`} />
-        <Readout label={t("deferred")} value={String(stats.deferred_files ?? 0)} />
-        <Readout label={t("tail")} value={String(stats.tail_parsed_files ?? 0)} />
-        <Readout label={t("metricMatched")} value={formatPct(summary.mapping_coverage_pct)} />
+      <DashboardBandHead kicker={t("evidenceColumn")} title={t("runtimeEvidence")} meta={t("scanAndMapping")} />
+      <div className="dash-evidence-block">
+        <div className="evidence-grid">
+          <Readout label={t("scan")} value={`${stats.parsed_files ?? 0}/${stats.scanned_files ?? 0}`} />
+          <Readout label={t("deferred")} value={String(stats.deferred_files ?? 0)} />
+          <Readout label={t("tail")} value={String(stats.tail_parsed_files ?? 0)} />
+          <Readout label={t("metricMatched")} value={formatPct(summary.mapping_coverage_pct)} />
+        </div>
+        <EvidenceHealth t={t} snapshot={snapshot} />
       </div>
-      <EvidenceHealth t={t} snapshot={snapshot} />
-      <div className="tool-split">
+      <div className="dash-evidence-block tool-split">
         <div className="dash-mini-head">
           <h3>{t("toolSplit")}</h3>
-          <span>{t("tools")}</span>
+          <span>{t("topLiveMix")}</span>
         </div>
         <ToolMix t={t} snapshot={snapshot} />
       </div>
@@ -1155,38 +1261,65 @@ function DashboardSideRails({ t, snapshot }: { t: (key: string) => string; snaps
     <aside className="dash-atlas-side">
       <section className="dash-side-module">
         <div className="dash-mini-head"><h3>{t("calibration")}</h3><span>{t("currentMeaning")}</span></div>
-        <CalibrationRail t={t} current={current} scale={scale} />
+        <CalibrationRail t={t} snapshot={snapshot} scale={scale} />
       </section>
       <section className="dash-side-module">
-        <div className="dash-mini-head"><h3>{t("sessionAge")}</h3><span>{t("age")}</span></div>
+        <div className="dash-mini-head"><h3>{t("sessionAge")}</h3><span>{t("currentFreshnessBuckets")}</span></div>
         <AgeRail t={t} buckets={snapshot.age_buckets ?? []} />
       </section>
       <section className="dash-side-module">
         <div className="dash-mini-head"><h3>{t("evidenceConfidence")}</h3><span>{t("confidence")}</span></div>
         <ConfidenceGrid t={t} snapshot={snapshot} />
       </section>
-      <section className="dash-side-module">
-        <div className="dash-mini-head"><h3>{t("candidateWorkitems")}</h3><span>{t("workitems")}</span></div>
-        <CandidateWorkitemsRail t={t} snapshot={snapshot} />
-      </section>
     </aside>
   );
 }
 
-function CalibrationRail({ t, current, scale }: { t: (key: string) => string; current: CurrentMetrics; scale: number }) {
+function CalibrationRail({ t, snapshot, scale }: { t: (key: string) => string; snapshot: Snapshot; scale: number }) {
+  const current = snapshot.current ?? {};
+  const summary = snapshot.summary ?? {};
+  const mappedPct = t("mappedPct").replace("{pct}", formatPct(summary.mapping_coverage_pct));
+  const unmatchedCount = t("unmatchedCount").replace("{count}", String(summary.unmapped_processes ?? 0));
   const rows = [
-    [t("active"), current.active_burst_concurrency ?? 0],
-    [t("sessions"), current.session_concurrency ?? 0],
-    [t("processes"), current.pid_concurrency ?? 0],
-  ] as const;
+    {
+      key: "burst",
+      label: t("active"),
+      value: current.active_burst_concurrency ?? 0,
+      primary: t("activeBurstHint"),
+      secondary: t("currentScale"),
+      pct: pctPart(current.active_burst_concurrency, scale),
+    },
+    {
+      key: "session",
+      label: t("sessions"),
+      value: current.session_concurrency ?? 0,
+      primary: t("knownSessions"),
+      secondary: t("liveIdle")
+        .replace("{live}", String(summary.active_sessions ?? 0))
+        .replace("{idle}", String(summary.idle_sessions ?? 0)),
+      pct: pctPart(current.session_concurrency, scale),
+    },
+    {
+      key: "pid",
+      label: t("processes"),
+      value: current.pid_concurrency ?? 0,
+      primary: t("visibleProcesses"),
+      secondary: `${mappedPct} · ${unmatchedCount}`,
+      pct: pctPart(current.pid_concurrency, scale),
+    },
+  ];
   return (
     <div className="calibration-rail">
-      {rows.map(([label, value]) => (
-        <div className="calibration-row" key={label}>
-          <span>{label}</span>
-          <i><b style={{ width: `${clampPct(pctPart(value, scale), 4)}%` }} /></i>
-          <strong>{value}</strong>
-        </div>
+      {rows.map((row) => (
+        <article className={`calibration-row ${row.key}`} key={row.key}>
+          <div className="calibration-row-head">
+            <span>{row.label}</span>
+            <strong>{row.value}</strong>
+          </div>
+          <i aria-hidden="true"><b style={{ width: `${clampPct(row.pct, 4)}%` }} /></i>
+          <p>{row.primary}</p>
+          <em>{row.secondary}</em>
+        </article>
       ))}
     </div>
   );
@@ -2335,6 +2468,20 @@ function currentMeaningPoints(t: (key: string) => string, snapshot: Snapshot): s
     `${summary.mapped_processes ?? 0} ${t("mapped")} / ${summary.unmapped_processes ?? 0} ${t("unmatched")}`,
     `${projectCount} ${t("projects")} / ${summary.hot_project_count ?? 0} ${t("active")}`,
   ];
+}
+
+function dashboardProjectMeta(t: (key: string) => string, snapshot: Snapshot): string {
+  const summary = snapshot.summary ?? {};
+  const projectCount = summary.project_count ?? snapshot.project_focus?.length ?? 0;
+  const hotCount = summary.hot_project_count ?? orderedProjects(snapshot).filter((project) => (project.active_burst_count ?? 0) > 0).length;
+  return `${projectCount} ${t("projects")} / ${hotCount} ${t("active")}`;
+}
+
+function dashboardProjectLead(t: (key: string) => string, snapshot: Snapshot): string {
+  const top = orderedProjects(snapshot)[0];
+  if (!top?.project) return t("unavailable");
+  const attention = typeof top.attention_share_pct === "number" ? `${formatPct(top.attention_share_pct)} · ` : "";
+  return `${attention}${top.project}`;
 }
 
 function transcriptScanSummary(t: (key: string) => string, stats: TranscriptStats, retainedSamples?: number): string {
