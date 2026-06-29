@@ -60,6 +60,8 @@ func discoverLiveProcesses(ctx context.Context) ([]LiveProcess, []string) {
 	return processes, lsofNotes
 }
 
+var discoverLiveProcessesFunc = discoverLiveProcesses
+
 type processRow struct {
 	UID     int
 	PID     int

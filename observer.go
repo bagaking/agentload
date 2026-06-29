@@ -14,7 +14,7 @@ import (
 
 func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 	scanStart := time.Now()
-	processes, processNotes := discoverLiveProcesses(ctx)
+	processes, processNotes := discoverLiveProcessesFunc(ctx)
 	now := time.Now()
 	extraClaudeRoots, extraCodexRoots, extraTraeRoots, priority := rootsFromLiveProcesses(processes)
 	claudeRoots, codexRoots, traeRoots := o.mergeKnownRoots(extraClaudeRoots, extraCodexRoots, extraTraeRoots)

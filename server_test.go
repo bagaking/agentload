@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"io/fs"
 	"net/http"
@@ -207,6 +208,74 @@ func TestHandleSnapshotAPIRedactsConfigPaths(t *testing.T) {
 	}
 }
 
+func TestHandleSnapshotAPIRedactsFreshObserverConfigPaths(t *testing.T) {
+	originalDiscover := discoverLiveProcessesFunc
+	discoverLiveProcessesFunc = func(context.Context) ([]LiveProcess, []string) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		discoverLiveProcessesFunc = originalDiscover
+	})
+
+	tmp := t.TempDir()
+	claudeRoot := filepath.Join(tmp, "roots", ".claude")
+	codexRoot := filepath.Join(tmp, "roots", ".codex")
+	traeRoot := filepath.Join(tmp, "roots", ".trae", "cli")
+	for _, root := range []string{claudeRoot, codexRoot, traeRoot} {
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			t.Fatalf("create root %q: %v", root, err)
+		}
+	}
+	historyFile := filepath.Join(tmp, "state", "history.jsonl")
+	cfg := Config{
+		IdleGap:            90 * time.Second,
+		MinInterval:        15 * time.Second,
+		Lookback:           time.Hour,
+		TranscriptCacheTTL: time.Minute,
+		RefreshInterval:    5 * time.Minute,
+		HistoryFile:        historyFile,
+		ClaudeRoots:        []string{claudeRoot},
+		CodexRoots:         []string{codexRoot},
+		TraeRoots:          []string{traeRoot},
+	}
+	app := &trayApp{
+		cfg:      cfg,
+		observer: newObserver(cfg),
+		history:  localHistoryState{path: historyFile},
+	}
+	handler := app.handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/snapshot", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d with body %q", rec.Code, rec.Body.String())
+	}
+	var got Snapshot
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode snapshot response: %v", err)
+	}
+	if len(got.Config.ClaudeRoots) != 0 || len(got.Config.CodexRoots) != 0 || len(got.Config.TraeRoots) != 0 {
+		t.Fatalf("expected fresh client config roots to be redacted, got %+v", got.Config)
+	}
+	if got.Config.HistoryFile != "" || got.History.StorePath != "" {
+		t.Fatalf("expected fresh client history paths to be redacted, got config=%q history=%q", got.Config.HistoryFile, got.History.StorePath)
+	}
+	if got.Config.IdleGapSeconds != 90 || got.Config.ProcessRefreshTarget != 300 || got.History.LoadedSampleCount != 1 {
+		t.Fatalf("expected fresh non-path metadata to remain, got config=%+v history=%+v", got.Config, got.History)
+	}
+	if !app.haveSnapshot {
+		t.Fatalf("expected fresh observer snapshot to be cached internally")
+	}
+	if app.lastSnapshot.Config.HistoryFile != historyFile || app.lastSnapshot.History.StorePath != historyFile {
+		t.Fatalf("expected internal fresh snapshot to retain history paths, got config=%q history=%q", app.lastSnapshot.Config.HistoryFile, app.lastSnapshot.History.StorePath)
+	}
+	if !stringSliceContains(app.lastSnapshot.Config.ClaudeRoots, claudeRoot) || !stringSliceContains(app.lastSnapshot.Config.CodexRoots, codexRoot) || !stringSliceContains(app.lastSnapshot.Config.TraeRoots, traeRoot) {
+		t.Fatalf("expected internal fresh snapshot to retain root paths, got %+v", app.lastSnapshot.Config)
+	}
+}
+
 func TestFormatTrayMetaTitleIncludesScanCoverage(t *testing.T) {
 	got := formatTrayMetaTitle(Snapshot{
 		GeneratedAt: "2026-06-28T12:00:00Z",
@@ -245,6 +314,15 @@ func TestNormalizeToolIconNameAllowlist(t *testing.T) {
 			}
 		})
 	}
+}
+
+func stringSliceContains(items []string, want string) bool {
+	for _, item := range items {
+		if item == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestTraeIconDoesNotFallbackToKarpApp(t *testing.T) {
