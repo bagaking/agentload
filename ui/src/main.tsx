@@ -2514,10 +2514,12 @@ function SessionTree({
             </div>
             {visibleLinked.map((branch) => (
               <section className="session-branch" key={sessionIdentity(branch.parent)}>
-                <div className="session-group-head">
-                  <span>{branch.parent.agent_nickname || shortID(branch.parent.session_id) || t("main")}</span>
-                  <strong>{branch.children.length}</strong>
-                </div>
+                {!compact ? (
+                  <div className="session-group-head">
+                    <span>{branch.parent.agent_nickname || shortID(branch.parent.session_id) || t("main")}</span>
+                    <strong>{branch.children.length}</strong>
+                  </div>
+                ) : null}
                 <SessionLine t={t} session={branch.parent} selection={selection} setSelection={setSelection} compact={compact} />
                 {(showOverflow ? branch.children : branch.children.slice(0, childLimit)).map((session) => (
                   <SessionLine key={sessionIdentity(session)} t={t} session={session} selection={selection} setSelection={setSelection} compact={compact} child />

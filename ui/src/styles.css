@@ -6536,22 +6536,35 @@ body[data-view="popover"] .popover-project-table .project-tree-list {
 
 body[data-view="popover"] .popover-project-table .project-tree-row {
   border-bottom-color: var(--console-line-soft);
+  position: relative;
+  overflow: visible;
 }
 
 body[data-view="popover"] .popover-project-table .project-tree-row.is-selected,
 body[data-view="popover"] .popover-project-table .project-tree-row.expanded {
-  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 58%, transparent);
+  box-shadow: none;
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-row.is-selected::before,
+body[data-view="popover"] .popover-project-table .project-tree-row.expanded::before {
+  content: "";
+  position: absolute;
+  left: -5px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: color-mix(in srgb, var(--accent) 58%, transparent);
 }
 
 body[data-view="popover"] .popover-project-table .project-tree-head {
-  grid-template-columns: 18px minmax(72px, 1fr) minmax(116px, auto) minmax(46px, auto);
-  min-height: 22px;
-  gap: 5px;
-  padding: 2px 0;
+  grid-template-columns: 16px 14px minmax(70px, 1fr) minmax(108px, auto) minmax(38px, auto);
+  min-height: 19px;
+  gap: 4px;
+  padding: 1px 0 1px 6px;
 }
 
 body[data-view="popover"] .popover-project-table .project-select {
-  gap: 4px;
+  gap: 3px;
 }
 
 body[data-view="popover"] .popover-project-table .project-select svg {
@@ -6560,30 +6573,30 @@ body[data-view="popover"] .popover-project-table .project-select svg {
 }
 
 body[data-view="popover"] .popover-project-table .project-select span {
-  font-size: 9.8px;
+  font-size: 9.4px;
   font-weight: 690;
 }
 
 body[data-view="popover"] .popover-project-table .project-select small {
   color: var(--console-text-faint);
-  font-size: 8px;
+  font-size: 7.6px;
 }
 
 body[data-view="popover"] .popover-project-table .project-compact-metrics {
   display: grid;
-  grid-template-columns: minmax(86px, auto) auto;
+  grid-template-columns: minmax(80px, auto) auto;
   align-items: center;
   justify-self: end;
-  gap: 4px;
+  gap: 3px;
   min-width: 0;
   color: var(--console-text-faint);
 }
 
 body[data-view="popover"] .popover-project-table .project-compact-table {
   display: grid;
-  grid-template-columns: 16px repeat(3, 14px);
+  grid-template-columns: 15px repeat(3, 13px);
   align-items: center;
-  gap: 1px 3px;
+  gap: 0 3px;
   font-family: var(--font-mono);
   line-height: 1;
 }
@@ -6591,7 +6604,7 @@ body[data-view="popover"] .popover-project-table .project-compact-table {
 body[data-view="popover"] .popover-project-table .project-compact-table b,
 body[data-view="popover"] .popover-project-table .project-compact-table em {
   color: var(--console-text-faint);
-  font-size: 6.8px;
+  font-size: 6.4px;
   font-style: normal;
   font-weight: 760;
   letter-spacing: 0;
@@ -6602,7 +6615,7 @@ body[data-view="popover"] .popover-project-table .project-compact-table em {
 
 body[data-view="popover"] .popover-project-table .project-compact-table strong {
   color: var(--fg);
-  font-size: 9px;
+  font-size: 8.6px;
   font-weight: 780;
   text-align: right;
 }
@@ -6636,13 +6649,13 @@ body[data-view="popover"] .popover-project-table .project-compact-proc i {
 }
 
 body[data-view="popover"] .popover-project-table .project-compact-proc strong {
-  font-size: 10px;
+  font-size: 9.2px;
 }
 
 body[data-view="popover"] .popover-project-table .tool-strip {
   display: flex;
   justify-self: end;
-  max-width: 82px;
+  max-width: 38px;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
@@ -6651,34 +6664,34 @@ body[data-view="popover"] .popover-project-table .tool-strip {
 }
 
 body[data-view="popover"] .popover-project-table .tool-mark {
-  min-height: 16px;
+  min-height: 14px;
   gap: 1px;
-  padding: 0 2px;
+  padding: 0 1px;
   border-left: 0;
 }
 
 body[data-view="popover"] .popover-project-table .tool-mark .tool-icon,
 body[data-view="popover"] .popover-project-table .tool-mark .tool-fallback {
-  width: 13px;
-  height: 13px;
+  width: 12px;
+  height: 12px;
   border-radius: 3px;
 }
 
 body[data-view="popover"] .popover-project-table .tool-mark strong,
 body[data-view="popover"] .popover-project-table .tool-mark small {
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: 7.5px;
   line-height: 1;
 }
 
 body[data-view="popover"] .popover-project-table .session-tree {
   gap: 0;
-  padding: 0 0 4px 18px;
+  padding: 0 0 3px 18px;
 }
 
 body[data-view="popover"] .popover-project-table .session-tool-block {
   gap: 0;
-  padding: 2px 0;
+  padding: 1px 0;
   border-top: 1px solid color-mix(in srgb, var(--console-line-soft) 72%, transparent);
 }
 
@@ -6688,9 +6701,9 @@ body[data-view="popover"] .popover-project-table .session-tool-block:first-child
 
 body[data-view="popover"] .popover-project-table .session-tool-head {
   justify-content: flex-start;
-  gap: 5px;
-  min-height: 17px;
-  padding: 1px 0;
+  gap: 4px;
+  min-height: 15px;
+  padding: 0;
   color: var(--console-text-faint);
   font-family: var(--font-mono);
   font-size: 8px;
@@ -6713,15 +6726,15 @@ body[data-view="popover"] .popover-project-table .session-tool-head strong {
 body[data-view="popover"] .popover-project-table .session-branch {
   position: relative;
   gap: 0;
-  padding-left: 8px;
+  padding-left: 6px;
 }
 
 body[data-view="popover"] .popover-project-table .session-branch::before {
   content: "";
   position: absolute;
-  left: 1px;
-  top: 13px;
-  bottom: 6px;
+  left: 0;
+  top: 5px;
+  bottom: 3px;
   width: 1px;
   background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 34%, transparent), color-mix(in srgb, var(--console-line) 72%, transparent));
 }
@@ -6750,10 +6763,10 @@ body[data-view="popover"] .popover-project-table .session-group-head strong {
 
 body[data-view="popover"] .popover-project-table .session-line {
   position: relative;
-  grid-template-columns: 14px 31px minmax(0, 1fr);
-  min-height: 18px;
-  gap: 4px;
-  padding: 0 0 0 8px;
+  grid-template-columns: 13px 29px minmax(0, 1fr);
+  min-height: 16px;
+  gap: 3px;
+  padding: 0 0 0 6px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -6762,16 +6775,16 @@ body[data-view="popover"] .popover-project-table .session-line {
 body[data-view="popover"] .popover-project-table .session-line::before {
   content: "";
   position: absolute;
-  left: 1px;
+  left: 0;
   top: 50%;
-  width: 6px;
+  width: 5px;
   height: 1px;
   border: 0;
   background: color-mix(in srgb, var(--console-line) 86%, transparent);
 }
 
 body[data-view="popover"] .popover-project-table .session-line.is-child {
-  margin-left: 7px;
+  margin-left: 5px;
 }
 
 body[data-view="popover"] .popover-project-table .session-line.is-selected {
@@ -6805,7 +6818,7 @@ body[data-view="popover"] .popover-project-table .session-title {
   display: flex;
   align-items: center;
   flex-wrap: nowrap;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
@@ -6816,9 +6829,9 @@ body[data-view="popover"] .popover-project-table .session-id-control {
   position: relative;
   display: inline-flex;
   align-items: center;
-  flex: 0 1 17ch;
+  flex: 0 1 15ch;
   min-width: 0;
-  max-width: min(17ch, 100%);
+  max-width: min(15ch, 100%);
   height: 13px;
   padding-right: 15px;
   overflow: hidden;
@@ -6881,7 +6894,7 @@ body[data-view="popover"] .popover-project-table .session-copy-inline:focus-visi
 body[data-view="popover"] .popover-project-table .session-meta-button {
   display: block;
   flex: 0 1 auto;
-  max-width: 86px;
+  max-width: 74px;
   min-width: 0;
   cursor: pointer;
   text-align: left;
@@ -7197,17 +7210,20 @@ body[data-view="dashboard"] .project-disclosure:focus-visible {
 }
 
 body[data-view="popover"] .popover-project-table .project-tree-head {
-  grid-template-columns: 18px 16px minmax(0, 1fr) minmax(96px, auto);
+  grid-template-columns: 16px 14px minmax(70px, 1fr) minmax(108px, auto) minmax(38px, auto);
+  min-height: 19px;
+  gap: 4px;
+  padding: 1px 0 1px 6px;
 }
 
 body[data-view="popover"] .popover-project-table .project-disclosure {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
 }
 
 body[data-view="popover"] .popover-project-table .project-disclosure svg {
-  width: 12px;
-  height: 12px;
+  width: 11px;
+  height: 11px;
 }
 
 @media (max-width: 920px) {
