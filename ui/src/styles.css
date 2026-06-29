@@ -1294,6 +1294,57 @@ kbd {
 .empty-title { margin: 0; font-size: 15px; font-weight: 600; color: var(--fg); }
 .empty-sub { margin: 0; max-width: 460px; font-size: 12.5px; color: var(--fg-muted); line-height: 1.6; }
 
+.warning-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 8px 11px;
+  border: 1px solid color-mix(in srgb, var(--bad) 28%, var(--border));
+  border-radius: var(--r-sm);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--bad) 11%, transparent), transparent 62%),
+    color-mix(in srgb, var(--bad-dim) 72%, transparent);
+  color: var(--bad);
+  font-size: 12px;
+  font-weight: 620;
+  line-height: 1.35;
+}
+
+.warning-banner::before {
+  content: "";
+  flex: 0 0 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 13%, transparent);
+}
+
+.warning-banner span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.warning-banner.compact {
+  min-height: 25px;
+  padding: 5px 8px;
+  font-size: 10.5px;
+}
+
+body[data-view="dashboard"] .warning-banner {
+  margin: 0;
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
+}
+
+body[data-view="popover"] .warning-banner {
+  margin: 0 0 6px;
+}
+
 *::-webkit-scrollbar { width: 10px; height: 10px; }
 *::-webkit-scrollbar-thumb {
   background: var(--border-strong);

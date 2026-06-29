@@ -40,6 +40,9 @@ agent evidence.
   show the Agent Load brand, current observation state, generated time,
   refresh cadence, and refresh action without becoming a marketing hero or
   pushing runtime evidence below the fold.
+- Snapshot load or refresh failures must appear in the active surface as a
+  compact warning banner. The top bar status chip is useful ambient state, but
+  it is not enough for dashboard or popover error recovery.
 
 ## Visual Rules
 

@@ -447,6 +447,7 @@ function App() {
           <PopoverSurface
             t={t}
             snapshot={snapshot}
+            error={error}
             selection={selection}
             setSelection={setSelection}
             popoverView={popoverView}
@@ -468,6 +469,7 @@ function App() {
         <DashboardSurface
           t={t}
           snapshot={snapshot}
+          error={error}
           running={running}
           refreshSnapshot={refreshSnapshot}
           refreshInterval={refreshInterval}
@@ -491,6 +493,7 @@ function App() {
 function PopoverSurface({
   t,
   snapshot,
+  error,
   selection,
   setSelection,
   popoverView,
@@ -501,6 +504,7 @@ function PopoverSurface({
 }: {
   t: (key: string) => string;
   snapshot: Snapshot | null;
+  error: string | null;
   selection: Selection;
   setSelection: (value: Selection) => void;
   popoverView: PopoverView;
@@ -509,11 +513,12 @@ function PopoverSurface({
   trendSelection: Record<TrendLane, string | undefined>;
   setTrendSelection: React.Dispatch<React.SetStateAction<Record<TrendLane, string | undefined>>>;
 }) {
-  if (!snapshot) return <EmptySurface t={t} compact />;
+  if (!snapshot) return <EmptySurface t={t} compact error={error} />;
   return (
     <main className="popover-surface">
       <div className="popover-current-surface">
         <div className="popover-current-scroll">
+          <ErrorBanner t={t} error={error} compact />
           <div className="popover-view-shell">
             <section
               className="popover-view-panel online"
@@ -605,6 +610,7 @@ function PopoverFooter({
 function DashboardSurface({
   t,
   snapshot,
+  error,
   running,
   refreshSnapshot,
   refreshInterval,
@@ -622,6 +628,7 @@ function DashboardSurface({
 }: {
   t: (key: string) => string;
   snapshot: Snapshot | null;
+  error: string | null;
   running: boolean;
   refreshSnapshot: () => void;
   refreshInterval: number;
@@ -637,10 +644,11 @@ function DashboardSurface({
   trendSelection: Record<TrendLane, string | undefined>;
   setTrendSelection: React.Dispatch<React.SetStateAction<Record<TrendLane, string | undefined>>>;
 }) {
-  if (!snapshot) return <EmptySurface t={t} />;
+  if (!snapshot) return <EmptySurface t={t} error={error} />;
   const railItems = buildRailItems(snapshot, railTab, query);
   return (
     <main className="dashboard-surface">
+      <ErrorBanner t={t} error={error} />
       <DashboardMasthead
         t={t}
         snapshot={snapshot}
@@ -882,13 +890,25 @@ function DashboardFieldGrid({ t, snapshot }: { t: (key: string) => string; snaps
   );
 }
 
-function EmptySurface({ t, compact = false }: { t: (key: string) => string; compact?: boolean }) {
+function ErrorBanner({ t, error, compact = false }: { t: (key: string) => string; error: string | null; compact?: boolean }) {
+  if (!error) return null;
+  return (
+    <div className={`warning-banner snapshot-error ${compact ? "compact" : ""}`} role="status" aria-live="polite">
+      <span>{t("failedSnapshot").replace("{message}", error)}</span>
+    </div>
+  );
+}
+
+function EmptySurface({ t, compact = false, error = null }: { t: (key: string) => string; compact?: boolean; error?: string | null }) {
+  const title = error ? t("noCurrentSnapshotTitle") : t("noData");
+  const detail = error ? t("noCurrentSnapshotDetail") : t("emptySub");
   return (
     <main className={compact ? "popover-surface" : "dashboard-surface"}>
+      <ErrorBanner t={t} error={error} compact={compact} />
       <section className="empty-pane">
         <div className="empty-glyph"><Terminal size={34} /></div>
-        <p className="empty-title">{t("noData")}</p>
-        <p className="empty-sub">{t("emptySub")}</p>
+        <p className="empty-title">{title}</p>
+        <p className="empty-sub">{detail}</p>
       </section>
     </main>
   );
