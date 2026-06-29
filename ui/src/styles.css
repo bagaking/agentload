@@ -1730,6 +1730,10 @@ kbd {
   background: color-mix(in srgb, var(--surface) 78%, transparent);
 }
 
+.confidence-grid span.warn {
+  border: 1px solid color-mix(in srgb, var(--bad) 24%, transparent);
+}
+
 .confidence-grid b {
   color: var(--fg-faint);
   font-size: 10px;
@@ -1739,6 +1743,76 @@ kbd {
 .confidence-grid strong {
   color: var(--fg);
   font-family: var(--font-mono);
+}
+
+.confidence-grid span.warn strong {
+  color: var(--bad);
+}
+
+.candidate-rail {
+  display: grid;
+  gap: 6px;
+}
+
+.candidate-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--surface) 76%, transparent);
+}
+
+.candidate-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.candidate-main span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.candidate-main strong,
+.candidate-main em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.candidate-main strong {
+  color: var(--fg);
+  font-size: 12px;
+}
+
+.candidate-main em {
+  color: var(--fg-faint);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-style: normal;
+}
+
+.candidate-mix {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--fg-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.candidate-mix b:first-child {
+  color: var(--ok);
+}
+
+.candidate-mix b:last-child {
+  color: var(--run);
 }
 
 .process-ledger {

@@ -74,6 +74,8 @@ type CoordinationRisk = {
   recent_window_minutes?: number;
   load_ratio_pct?: number;
   load_peak_value?: number;
+  candidate_workitem_coverage_pct?: number;
+  candidate_workitem_covered_session_count?: number;
   signals?: Array<{ kind?: string; severity?: string; evidence?: string }>;
 };
 
@@ -316,6 +318,11 @@ const copy: Record<Lang, Record<string, string>> = {
     activeThinkingCaveat: "A live session can be idle; fresh movement means the transcript moved recently.",
     evidenceHealth: "Evidence health",
     mappingHealth: "Mapping health",
+    candidateWorkitems: "Candidate workitems",
+    candidateCoverage: "Candidate coverage",
+    lowConfidence: "Low confidence",
+    workitems: "Workitems",
+    sessionProcessMix: "Session / process mix",
     scanState: "Scan state",
     evidenceNote: "Evidence note",
     transcriptsParsed: "transcripts parsed",
@@ -446,6 +453,11 @@ const copy: Record<Lang, Record<string, string>> = {
     activeThinkingCaveat: "会话存活不等于正在输出；最近动作表示活动记录刚发生变化。",
     evidenceHealth: "证据健康",
     mappingHealth: "映射健康",
+    candidateWorkitems: "候选工作项",
+    candidateCoverage: "候选覆盖",
+    lowConfidence: "低置信",
+    workitems: "工作项",
+    sessionProcessMix: "会话 / 进程",
     scanState: "扫描状态",
     evidenceNote: "证据说明",
     transcriptsParsed: "条活动记录已解析",
@@ -576,6 +588,11 @@ const copy: Record<Lang, Record<string, string>> = {
     activeThinkingCaveat: "A live session can be idle; fresh movement means the transcript moved recently.",
     evidenceHealth: "Evidence health",
     mappingHealth: "Mapping health",
+    candidateWorkitems: "Candidate workitems",
+    candidateCoverage: "Candidate coverage",
+    lowConfidence: "Low confidence",
+    workitems: "Workitems",
+    sessionProcessMix: "Session / process mix",
     scanState: "Scan state",
     evidenceNote: "Evidence note",
     transcriptsParsed: "transcripts parsed",
@@ -1148,6 +1165,10 @@ function DashboardSideRails({ t, snapshot }: { t: (key: string) => string; snaps
         <div className="dash-mini-head"><h3>{t("evidenceConfidence")}</h3><span>{t("confidence")}</span></div>
         <ConfidenceGrid t={t} snapshot={snapshot} />
       </section>
+      <section className="dash-side-module">
+        <div className="dash-mini-head"><h3>{t("candidateWorkitems")}</h3><span>{t("workitems")}</span></div>
+        <CandidateWorkitemsRail t={t} snapshot={snapshot} />
+      </section>
     </aside>
   );
 }
@@ -1199,10 +1220,48 @@ function ConfidenceGrid({ t, snapshot }: { t: (key: string) => string; snapshot:
       counts.set(level, (counts.get(level) ?? 0) + 1);
     });
   }
+  const risk = snapshot.coordination_risk ?? {};
+  const summary = snapshot.summary ?? {};
+  const facts = [
+    { label: t("candidateCoverage"), value: formatPct(risk.candidate_workitem_coverage_pct), warn: false },
+    { label: t("lowConfidence"), value: String(risk.low_confidence_session_count ?? 0), warn: (risk.low_confidence_session_count ?? 0) > 0 },
+    { label: t("stale"), value: String(risk.stale_session_count ?? 0), warn: (risk.stale_session_count ?? 0) > 0 },
+    { label: t("unmatched"), value: String(risk.orphan_process_count ?? summary.unmapped_processes ?? 0), warn: (risk.orphan_process_count ?? summary.unmapped_processes ?? 0) > 0 },
+  ];
   return (
     <div className="confidence-grid">
+      {facts.map((fact) => (
+        <span className={fact.warn ? "warn" : ""} key={fact.label}><b>{fact.label}</b><strong>{fact.value}</strong></span>
+      ))}
       {Array.from(counts.entries()).map(([level, count]) => (
         <span key={level}><b>{level}</b><strong>{count}</strong></span>
+      ))}
+    </div>
+  );
+}
+
+function CandidateWorkitemsRail({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot }) {
+  const rows = [...(snapshot.candidate_workitems ?? [])]
+    .sort((a, b) => (b.session_count ?? 0) - (a.session_count ?? 0))
+    .slice(0, 5);
+  if (!rows.length) return <span className="muted-inline">{t("unavailable")}</span>;
+  return (
+    <div className="candidate-rail">
+      {rows.map((item, index) => (
+        <article className="candidate-row" key={item.key || `${item.project}-${item.tool}-${index}`}>
+          <div className="candidate-main">
+            <ToolIcon tool={item.tool || "unknown"} />
+            <span>
+              <strong>{item.project || t("unassigned")}</strong>
+              <em>{item.freshness_bucket || t("unavailable")} · {item.confidence || t("unavailable")}</em>
+            </span>
+          </div>
+          <div className="candidate-mix" title={t("sessionProcessMix")}>
+            <b>{item.session_count ?? 0}</b>
+            <i>/</i>
+            <b>{item.process_count ?? 0}</b>
+          </div>
+        </article>
       ))}
     </div>
   );
