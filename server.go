@@ -219,7 +219,126 @@ func sanitizeSnapshotForClient(snapshot Snapshot) Snapshot {
 	snapshot.Config.TraeRoots = []string{}
 	snapshot.Config.HistoryFile = ""
 	snapshot.History.StorePath = ""
+	snapshot.TranscriptStats.Errors = sanitizeTextListForClient(snapshot.TranscriptStats.Errors)
+	snapshot.LiveProcesses = sanitizeLiveProcessesForClient(snapshot.LiveProcesses)
+	snapshot.LiveSessions = sanitizeLiveSessionsForClient(snapshot.LiveSessions)
+	snapshot.Notes = sanitizeTextListForClient(snapshot.Notes)
 	return snapshot
+}
+
+func sanitizeLiveProcessesForClient(processes []LiveProcessSnapshot) []LiveProcessSnapshot {
+	if len(processes) == 0 {
+		return processes
+	}
+	out := append([]LiveProcessSnapshot(nil), processes...)
+	for i := range out {
+		out[i].Command = sanitizeCommandForClient(out[i].Command)
+		out[i].SessionIDs = append([]string(nil), out[i].SessionIDs...)
+		out[i].SessionPaths = nil
+		if out[i].HostApp != nil {
+			host := *out[i].HostApp
+			host.BundlePath = ""
+			out[i].HostApp = &host
+		}
+	}
+	return out
+}
+
+func sanitizeLiveSessionsForClient(sessions []LiveSessionSnapshot) []LiveSessionSnapshot {
+	if len(sessions) == 0 {
+		return sessions
+	}
+	out := append([]LiveSessionSnapshot(nil), sessions...)
+	for i := range out {
+		out[i].Path = ""
+		out[i].RoleReasons = sanitizeTextListForClient(out[i].RoleReasons)
+		out[i].ConfidenceReasons = sanitizeTextListForClient(out[i].ConfidenceReasons)
+		out[i].ProjectAttributionReasons = sanitizeTextListForClient(out[i].ProjectAttributionReasons)
+		out[i].Provenance = append([]string(nil), out[i].Provenance...)
+		if len(out[i].HostApps) > 0 {
+			hosts := append([]HostApp(nil), out[i].HostApps...)
+			for j := range hosts {
+				hosts[j].BundlePath = ""
+			}
+			out[i].HostApps = hosts
+		}
+	}
+	return out
+}
+
+func sanitizeTextListForClient(items []string) []string {
+	if len(items) == 0 {
+		return items
+	}
+	out := append([]string(nil), items...)
+	for i, item := range out {
+		out[i] = sanitizeTextForClient(item)
+	}
+	return out
+}
+
+func sanitizeCommandForClient(command string) string {
+	fields := strings.Fields(strings.TrimSpace(command))
+	if len(fields) == 0 {
+		return ""
+	}
+	for i, field := range fields {
+		fields[i] = sanitizeTokenForClient(field)
+	}
+	return strings.Join(fields, " ")
+}
+
+func sanitizeTextForClient(text string) string {
+	fields := strings.Fields(strings.TrimSpace(text))
+	if len(fields) == 0 {
+		return text
+	}
+	changed := false
+	for i, field := range fields {
+		next := sanitizeTokenForClient(field)
+		if next != field {
+			changed = true
+		}
+		fields[i] = next
+	}
+	if !changed {
+		return text
+	}
+	return strings.Join(fields, " ")
+}
+
+func sanitizeTokenForClient(token string) string {
+	prefix, core, suffix := splitTokenPunctuation(token)
+	if core == "" {
+		return token
+	}
+	if key, value, ok := strings.Cut(core, "="); ok {
+		return prefix + key + "=" + sanitizePathLikeValue(value) + suffix
+	}
+	return prefix + sanitizePathLikeValue(core) + suffix
+}
+
+func sanitizePathLikeValue(value string) string {
+	if !filepath.IsAbs(value) {
+		return value
+	}
+	base := filepath.Base(filepath.Clean(value))
+	if base == "." || base == string(filepath.Separator) || base == "" {
+		return "local-path"
+	}
+	return base
+}
+
+func splitTokenPunctuation(token string) (string, string, string) {
+	start := 0
+	end := len(token)
+	for start < end && strings.ContainsRune("\"'([{<", rune(token[start])) {
+		start++
+	}
+	for end > start && strings.ContainsRune("\"')]}>,;:", rune(token[end-1])) {
+		end--
+	}
+	return token[:start], token[start:end], token[end:]
 }
 
 func serveEmbeddedFile(w http.ResponseWriter, r *http.Request, path, ctype string, noCache bool) {

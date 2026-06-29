@@ -138,6 +138,13 @@ For Codex CLI specifically, the coding-agent mark uses the embedded
 OpenAI-style Codex CLI glyph. A local `Codex.app` icon belongs only to the host
 application mark when process ancestry shows that app as the host.
 
+Client-facing snapshots should summarize local evidence without exposing local
+filesystem paths. Keep absolute transcript paths, executable paths, app bundle
+paths, and cache/history files in the internal snapshot so host icons,
+open-host actions, and diagnostics can still use them. The `/api/snapshot`
+projection should keep stable identifiers, tool names, host app names, counts,
+and sanitized command identity only.
+
 Trend charts should expose exact sampled values without requiring the user to
 open a detail card first. The selected point should show a compact date/time and
 count label in the chart, while the expanded detail remains the place for

@@ -244,6 +244,87 @@ func TestHandleSnapshotAPIRedactsConfigPaths(t *testing.T) {
 	}
 }
 
+func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
+	root := t.TempDir()
+	executablePath := filepath.Join(root, "bin", "codex")
+	workspacePath := filepath.Join(root, "workspace", "agentload")
+	sessionPath := filepath.Join(root, "sessions", "session.jsonl")
+	bundlePath := filepath.Join(root, "Terminal.app")
+	app := &trayApp{cfg: Config{RefreshInterval: 5 * time.Minute}}
+	app.lastSnapshot = Snapshot{
+		GeneratedAt: "2026-06-28T12:00:00Z",
+		TranscriptStats: TranscriptStats{
+			Errors: []string{sessionPath + ": parse failed"},
+		},
+		LiveProcesses: []LiveProcessSnapshot{
+			{
+				PID:            42,
+				Tool:           "codex",
+				Command:        executablePath + " --cwd=" + workspacePath + " resume " + sessionPath,
+				HostApp:        &HostApp{PID: 7, Name: "Terminal", BundlePath: bundlePath},
+				SessionIDs:     []string{"session"},
+				SessionPaths:   []string{sessionPath},
+				MappedSessions: 1,
+			},
+		},
+		LiveSessions: []LiveSessionSnapshot{
+			{
+				Tool:                      "codex",
+				SessionID:                 "session",
+				Path:                      sessionPath,
+				HostApps:                  []HostApp{{PID: 7, Name: "Terminal", BundlePath: bundlePath}},
+				RoleReasons:               []string{sessionPath + ": role metadata"},
+				ConfidenceReasons:         []string{"read " + sessionPath},
+				ProjectAttributionReasons: []string{"cwd=" + workspacePath},
+				Provenance:                []string{"transcript_path"},
+			},
+		},
+		Notes: []string{"checked " + sessionPath},
+	}
+	app.haveSnapshot = true
+	handler := app.handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/snapshot", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d with body %q", rec.Code, rec.Body.String())
+	}
+	var got Snapshot
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode snapshot response: %v", err)
+	}
+	body := rec.Body.String()
+	for _, leaked := range []string{root, executablePath, workspacePath, sessionPath, bundlePath} {
+		if strings.Contains(body, leaked) {
+			t.Fatalf("expected client snapshot to redact %q, got body %q", leaked, body)
+		}
+	}
+	if len(got.LiveProcesses) != 1 || got.LiveProcesses[0].Command == "" || !strings.Contains(got.LiveProcesses[0].Command, "codex") {
+		t.Fatalf("expected sanitized command to keep executable identity, got %+v", got.LiveProcesses)
+	}
+	if len(got.LiveProcesses[0].SessionPaths) != 0 {
+		t.Fatalf("expected client session paths to be removed, got %+v", got.LiveProcesses[0].SessionPaths)
+	}
+	if got.LiveProcesses[0].HostApp == nil || got.LiveProcesses[0].HostApp.BundlePath != "" || got.LiveProcesses[0].HostApp.Name != "Terminal" {
+		t.Fatalf("expected client host app name without bundle path, got %+v", got.LiveProcesses[0].HostApp)
+	}
+	if len(got.LiveSessions) != 1 || got.LiveSessions[0].Path != "" {
+		t.Fatalf("expected client session path to be removed, got %+v", got.LiveSessions)
+	}
+	if len(got.LiveSessions[0].HostApps) != 1 || got.LiveSessions[0].HostApps[0].BundlePath != "" {
+		t.Fatalf("expected client session host bundle path to be removed, got %+v", got.LiveSessions[0].HostApps)
+	}
+	if app.lastSnapshot.LiveProcesses[0].Command != executablePath+" --cwd="+workspacePath+" resume "+sessionPath ||
+		len(app.lastSnapshot.LiveProcesses[0].SessionPaths) != 1 ||
+		app.lastSnapshot.LiveProcesses[0].HostApp.BundlePath != bundlePath ||
+		app.lastSnapshot.LiveSessions[0].Path != sessionPath ||
+		app.lastSnapshot.LiveSessions[0].HostApps[0].BundlePath != bundlePath {
+		t.Fatalf("expected internal cached snapshot to retain local evidence paths, got %+v", app.lastSnapshot)
+	}
+}
+
 func TestHandleSnapshotAPIRedactsFreshObserverConfigPaths(t *testing.T) {
 	originalDiscover := discoverLiveProcessesFunc
 	discoverLiveProcessesFunc = func(context.Context) ([]LiveProcess, []string) {
