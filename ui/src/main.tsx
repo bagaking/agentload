@@ -72,6 +72,7 @@ type SnapshotSummary = {
 type CoordinationRisk = {
   top_project?: string;
   top_project_attention_share_pct?: number;
+  active_project_count?: number;
   duplicate_overlap_suspicion_count?: number;
   candidate_workitem_count?: number;
   stale_session_count?: number;
@@ -1182,7 +1183,7 @@ function PopoverRuntimeInstrument({ t, snapshot }: { t: (key: string) => string;
 function CurrentMeaningStrip({ t, snapshot, compact = false }: { t: (key: string) => string; snapshot: Snapshot; compact?: boolean }) {
   const detailsId = useId();
   const [expanded, setExpanded] = useState(!compact);
-  const lead = primaryEvidenceNote(t, snapshot);
+  const lead = currentMeaningLead(t, snapshot);
   const points = currentMeaningPoints(t, snapshot).slice(0, compact ? 2 : 3);
   const stats = snapshot.transcript_stats ?? {};
   const activeWindow = activeWindowLabel(t, snapshot);
@@ -1209,15 +1210,15 @@ function CurrentMeaningStrip({ t, snapshot, compact = false }: { t: (key: string
       <div className="meaning-detail-grid" id={detailsId} hidden={!expanded}>
         <span>
           <b>{t("metricExplanation")}</b>
-          <em>{t("metricLegend")}</em>
+          <em>{`${lead} ${t("metricLegend")} ${t("activeThinkingCaveat")}`}</em>
         </span>
         <span>
           <b>{t("evidenceNote")}</b>
-          <em>{t("activeThinkingCaveat")}</em>
+          <em>{primaryEvidenceNote(t, snapshot)}</em>
         </span>
         <span>
           <b><TermLabel label={t("scanState")} tip={t("tipScanner")} /></b>
-          <em>{transcriptScanNote(t, stats)}</em>
+          <em>{`${transcriptScanSummary(t, stats)} · ${transcriptScanNote(t, stats)}`}</em>
         </span>
       </div>
       {points.length ? (
@@ -2891,14 +2892,40 @@ function selectionMetrics(t: (key: string) => string, snapshot: Snapshot, select
 }
 
 function currentMeaningPoints(t: (key: string) => string, snapshot: Snapshot): string[] {
+  const risk = snapshot.coordination_risk ?? {};
   const current = snapshot.current ?? {};
   const summary = snapshot.summary ?? {};
-  const projectCount = summary.project_count ?? snapshot.project_focus?.length ?? 0;
-  return [
-    `${current.active_burst_concurrency ?? 0} ${t("active")} / ${current.session_concurrency ?? 0} ${t("sessions")}`,
-    `${summary.mapped_processes ?? 0} ${t("mapped")} / ${summary.unmapped_processes ?? 0} ${t("unmatched")}`,
-    `${projectCount} ${t("projects")} / ${summary.hot_project_count ?? 0} ${t("active")}`,
-  ];
+  const points: string[] = [];
+  const topProjectShare = risk.top_project_attention_share_pct;
+  if (risk.top_project && typeof topProjectShare === "number" && topProjectShare > 0) {
+    points.push(formatCopy(t("currentMeaningTopProject"), { project: risk.top_project, pct: formatPct(topProjectShare) }));
+  } else if ((risk.active_project_count ?? 0) > 1) {
+    points.push(formatCopy(t("currentMeaningProjectSpread"), { count: risk.active_project_count ?? 0 }));
+  }
+  const unmatched = risk.orphan_process_count ?? summary.unmapped_processes ?? 0;
+  if (unmatched > 0) {
+    points.push(formatCopy(t("currentMeaningOrphans"), { count: unmatched }));
+  } else if ((risk.low_confidence_session_count ?? 0) > 0) {
+    points.push(formatCopy(t("currentMeaningLowConfidence"), { count: risk.low_confidence_session_count ?? 0 }));
+  } else if ((risk.stale_session_count ?? 0) > 0) {
+    points.push(formatCopy(t("currentMeaningStale"), { count: risk.stale_session_count ?? 0 }));
+  }
+  const hasProcessEvidence = (summary.mapped_processes ?? 0) > 0 || (summary.unmapped_processes ?? 0) > 0 || (current.pid_concurrency ?? 0) > 0;
+  if (hasProcessEvidence && typeof summary.mapping_coverage_pct === "number" && summary.mapping_coverage_pct < 100) {
+    points.push(formatCopy(t("currentMeaningCoverage"), { pct: formatPct(summary.mapping_coverage_pct) }));
+  }
+  return points;
+}
+
+function currentMeaningLead(t: (key: string) => string, snapshot: Snapshot): string {
+  const current = snapshot.current ?? {};
+  const hasMetric = typeof current.active_burst_concurrency === "number" || typeof current.session_concurrency === "number" || typeof current.pid_concurrency === "number";
+  if (!hasMetric) return t("currentMeaningIdleLead");
+  return formatCopy(t("currentMeaningExactLead"), {
+    active: current.active_burst_concurrency ?? 0,
+    sessions: current.session_concurrency ?? 0,
+    pids: current.pid_concurrency ?? 0,
+  });
 }
 
 function activeWindowLabel(t: (key: string) => string, snapshot: Snapshot): string {
@@ -3717,6 +3744,10 @@ function formatRefreshInterval(ms: number, t: (key: string) => string): string {
 
 function countLabel(t: (key: string) => string, key: string, count: number): string {
   return t(key).replace("{count}", String(count));
+}
+
+function formatCopy(template: string, values: Record<string, string | number>): string {
+  return Object.entries(values).reduce((text, [key, value]) => text.split(`{${key}}`).join(String(value)), template);
 }
 
 function shortID(value?: string): string {
