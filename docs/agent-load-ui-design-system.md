@@ -90,6 +90,10 @@ agent evidence.
   process count, and observed tool coverage before expansion. Expansion is for
   relationship inspection, not the first moment when distribution becomes
   visible.
+- Compact project rows should not compress repeated counts into tiny matrix
+  walls. When role/session/process numbers become dense, group them into a few
+  readable ledger chips, use modest row breathing room, and add subtle staggered
+  planes or tonal rhythm instead of adding more grid labels.
 - Project lists must not silently hide known projects. The compact popover
   should preserve the current project set, and any intentionally capped project
   list must expose a dense open/close overflow control with the hidden count.

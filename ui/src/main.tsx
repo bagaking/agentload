@@ -2450,24 +2450,19 @@ function ProjectCompactMetrics({ t, counts, processCount }: { t: (key: string) =
   const allTitle = projectMetricGroupTitle(t, "all", counts);
   const mainTitle = projectMetricObjectTitle(t, "main");
   const subagentTitle = projectMetricObjectTitle(t, "subagent");
-  const totalTitle = projectMetricObjectTitle(t, "total");
   const processTitle = projectMetricProcessTitle(t, processCount);
   return (
     <div className="project-compact-metrics" aria-label={t("metricSessions")}>
-      <div className="project-compact-table">
-        <span />
-        <b title={mainTitle} aria-label={mainTitle}>{t("mainShort")}</b>
-        <b title={subagentTitle} aria-label={subagentTitle}>{t("subagentShort")}</b>
-        <b title={totalTitle} aria-label={totalTitle}>{t("totalShort")}</b>
-        <em title={activeTitle} aria-label={activeTitle}>{t("activeShort")}</em>
-        <ProjectMetricNumber t={t} scope="active" metric="main" value={counts.activeMain} />
-        <ProjectMetricNumber t={t} scope="active" metric="subagent" value={counts.activeSub} />
-        <ProjectMetricNumber t={t} scope="active" metric="total" value={counts.activeTotal} />
-        <em title={allTitle} aria-label={allTitle}>{t("allShort")}</em>
-        <ProjectMetricNumber t={t} scope="all" metric="main" value={counts.main} />
-        <ProjectMetricNumber t={t} scope="all" metric="subagent" value={counts.sub} />
-        <ProjectMetricNumber t={t} scope="all" metric="total" value={counts.total} />
-      </div>
+      <span className="project-compact-cluster active" title={`${activeTitle} · ${mainTitle} ${counts.activeMain} / ${subagentTitle} ${counts.activeSub}`} aria-label={activeTitle}>
+        <b>{t("activeShort")}</b>
+        <strong>{counts.activeTotal}</strong>
+        <em>{t("mainShort")}{counts.activeMain} · {t("subagentShort")}{counts.activeSub}</em>
+      </span>
+      <span className="project-compact-cluster all" title={`${allTitle} · ${mainTitle} ${counts.main} / ${subagentTitle} ${counts.sub}`} aria-label={allTitle}>
+        <b>{t("allShort")}</b>
+        <strong>{counts.total}</strong>
+        <em>{t("mainShort")}{counts.main} · {t("subagentShort")}{counts.sub}</em>
+      </span>
       <span className="project-compact-proc" title={processTitle} aria-label={processTitle}>
         <i>{t("processShort")}</i>
         <strong>{processCount}</strong>
