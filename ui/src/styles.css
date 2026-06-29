@@ -232,6 +232,51 @@ kbd {
   box-shadow: 0 1px 0 rgba(0, 0, 0, .3);
 }
 
+.term-label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  border-radius: 3px;
+  color: inherit;
+  cursor: help;
+  outline: none;
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: color-mix(in srgb, currentColor 48%, transparent);
+  text-underline-offset: 3px;
+}
+
+.term-label::after {
+  content: attr(data-tip);
+  position: absolute;
+  z-index: 60;
+  left: 0;
+  bottom: calc(100% + 8px);
+  width: max-content;
+  max-width: min(280px, 72vw);
+  padding: 7px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--elevated) 96%, var(--bg));
+  color: var(--fg);
+  box-shadow: var(--sh-md);
+  font: 500 11px/1.35 var(--font-sans);
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: normal;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(3px);
+  transition: opacity .12s ease, transform .12s ease;
+}
+
+.term-label:hover::after,
+.term-label:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .icon-btn {
   display: grid;
   place-items: center;

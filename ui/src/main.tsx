@@ -414,6 +414,13 @@ const copy: Record<Lang, Record<string, string>> = {
     refreshPaused: "off",
     auto: "auto",
     toggleTheme: "Toggle theme",
+    languageOption: "Switch language to {label}",
+    tipActiveBurst: "Sessions whose local activity log received a new event inside the movement window.",
+    tipSessions: "Distinct local sessions found from activity logs or process hints. Some can be idle while still open.",
+    tipPids: "Visible local agent process IDs running on this Mac.",
+    tipMapped: "Visible processes confidently matched to local session or transcript evidence.",
+    tipMappingHealth: "How much of the raw process count currently maps back to local session evidence.",
+    tipScanner: "Local activity-log scan state. Agent Load reads local files only.",
   },
   zh: {
     sub: "本地 Agent 控制台",
@@ -564,6 +571,13 @@ const copy: Record<Lang, Record<string, string>> = {
     refreshPaused: "关闭",
     auto: "自动",
     toggleTheme: "切换主题",
+    languageOption: "切换语言到 {label}",
+    tipActiveBurst: "本地活动记录在动作窗口内收到新事件的会话。",
+    tipSessions: "从本地记录或进程线索识别出的会话。有些会话还开着，但已经暂时没动作。",
+    tipPids: "这台 Mac 上可见的本地 agent 进程 ID。",
+    tipMapped: "已经可靠匹配到本地会话或活动记录证据的可见进程。",
+    tipMappingHealth: "原始进程现场里，当前有多少能回连到本地会话证据。",
+    tipScanner: "本地活动记录扫描状态。Agent Load 只读取本机文件。",
   },
   ja: {
     sub: "ローカル Agent コンソール",
@@ -714,6 +728,13 @@ const copy: Record<Lang, Record<string, string>> = {
     refreshPaused: "off",
     auto: "auto",
     toggleTheme: "Toggle theme",
+    languageOption: "Switch language to {label}",
+    tipActiveBurst: "Sessions with a new local activity-log event inside the movement window.",
+    tipSessions: "Live sessions identified from local logs or process hints. Idle sessions can still be open.",
+    tipPids: "Visible local agent process IDs on this Mac.",
+    tipMapped: "Visible processes matched to local session or transcript evidence.",
+    tipMappingHealth: "Share of raw process evidence explained by local session evidence.",
+    tipScanner: "Local activity-log scan state. Agent Load reads local files only.",
   },
 };
 
@@ -1237,18 +1258,18 @@ function DashboardFieldGrid({ t, snapshot }: { t: (key: string) => string; snaps
   return (
     <div className="dash-field-grid">
       <article className="dash-support-cell burst">
-        <span>{t("metricFresh")}</span>
+        <span><TermLabel label={t("metricFresh")} tip={t("tipActiveBurst")} /></span>
         <strong>{current.active_burst_concurrency ?? 0}</strong>
         <em>{t("activeBurstHint")}</em>
       </article>
       <div className="dash-support-read">
         <article className="dash-support-cell session">
-          <span>{t("metricSessions")}</span>
+          <span><TermLabel label={t("metricSessions")} tip={t("tipSessions")} /></span>
           <strong>{current.session_concurrency ?? 0}</strong>
           <em>{t("liveIdle").replace("{live}", String(summary.active_sessions ?? 0)).replace("{idle}", String(summary.idle_sessions ?? 0))}</em>
         </article>
         <article className="dash-support-cell pid">
-          <span>{t("metricProcesses")}</span>
+          <span><TermLabel label={t("metricProcesses")} tip={t("tipPids")} /></span>
           <strong>{current.pid_concurrency ?? 0}</strong>
           <em>{`${summary.mapped_processes ?? 0} ${t("mapped")} / ${summary.unmapped_processes ?? 0} ${t("unmatched")}`}</em>
         </article>
@@ -1286,9 +1307,9 @@ function FieldIndex({ t, snapshot, compact = false }: { t: (key: string) => stri
   const summary = snapshot.summary ?? {};
   const scale = currentPeerScale(current);
   const items = [
-    { key: "burst", label: t("metricFresh"), value: current.active_burst_concurrency ?? 0, detail: t("active"), tone: "burst", pct: pctPart(current.active_burst_concurrency, scale) },
-    { key: "sessions", label: t("metricSessions"), value: current.session_concurrency ?? 0, detail: `${summary.active_sessions ?? 0} ${t("active")} · ${summary.idle_sessions ?? 0} ${t("idle")}`, tone: "session", pct: pctPart(current.session_concurrency, scale) },
-    { key: "pids", label: t("metricProcesses"), value: current.pid_concurrency ?? 0, detail: `${summary.mapped_processes ?? 0} ${t("mapped")} · ${summary.unmapped_processes ?? 0} ${t("unmatched")}`, tone: "pid", pct: pctPart(current.pid_concurrency, scale) },
+    { key: "burst", label: t("metricFresh"), tip: t("tipActiveBurst"), value: current.active_burst_concurrency ?? 0, detail: t("active"), tone: "burst", pct: pctPart(current.active_burst_concurrency, scale) },
+    { key: "sessions", label: t("metricSessions"), tip: t("tipSessions"), value: current.session_concurrency ?? 0, detail: `${summary.active_sessions ?? 0} ${t("active")} · ${summary.idle_sessions ?? 0} ${t("idle")}`, tone: "session", pct: pctPart(current.session_concurrency, scale) },
+    { key: "pids", label: t("metricProcesses"), tip: t("tipPids"), value: current.pid_concurrency ?? 0, detail: `${summary.mapped_processes ?? 0} ${t("mapped")} · ${summary.unmapped_processes ?? 0} ${t("unmatched")}`, tone: "pid", pct: pctPart(current.pid_concurrency, scale) },
   ];
   return (
     <section className={`field-index ${compact ? "compact" : ""}`}>
@@ -1296,7 +1317,7 @@ function FieldIndex({ t, snapshot, compact = false }: { t: (key: string) => stri
       <div className="field-grid">
         {items.map((item) => (
           <article className={`field-cell ${item.tone}`} key={item.key}>
-            <span>{item.label}</span>
+            <span><TermLabel label={item.label} tip={item.tip} /></span>
             <strong>{item.value}</strong>
             <em>{item.detail}</em>
             <i aria-hidden="true"><b style={{ width: `${clampPct(item.pct, 4)}%` }} /></i>
@@ -1345,6 +1366,7 @@ function PopoverRuntimeInstrument({ t, snapshot }: { t: (key: string) => string;
     {
       key: "burst",
       label: t("metricFresh"),
+      tip: t("tipActiveBurst"),
       value: current.active_burst_concurrency ?? 0,
       detail: t("activeBurstHint"),
       pct: pctPart(current.active_burst_concurrency, scale),
@@ -1352,6 +1374,7 @@ function PopoverRuntimeInstrument({ t, snapshot }: { t: (key: string) => string;
     {
       key: "session",
       label: t("metricSessions"),
+      tip: t("tipSessions"),
       value: current.session_concurrency ?? 0,
       detail: t("liveIdle")
         .replace("{live}", String(summary.active_sessions ?? 0))
@@ -1361,6 +1384,7 @@ function PopoverRuntimeInstrument({ t, snapshot }: { t: (key: string) => string;
     {
       key: "pid",
       label: t("metricProcesses"),
+      tip: t("tipPids"),
       value: current.pid_concurrency ?? 0,
       detail: `${summary.mapped_processes ?? 0} ${t("mapped")} / ${summary.unmapped_processes ?? 0} ${t("unmatched")}`,
       pct: pctPart(current.pid_concurrency, scale),
@@ -1383,7 +1407,7 @@ function PopoverRuntimeInstrument({ t, snapshot }: { t: (key: string) => string;
       <div className="instrument-stat-grid">
         {rows.map((row) => (
           <article className={`instrument-stat ${row.key}`} key={row.key}>
-            <span>{row.label}</span>
+            <span><TermLabel label={row.label} tip={row.tip} /></span>
             <strong>{row.value}</strong>
             <em>{row.detail}</em>
           </article>
@@ -1392,7 +1416,7 @@ function PopoverRuntimeInstrument({ t, snapshot }: { t: (key: string) => string;
       <div className="instrument-scale-rail" aria-label={t("calibration")}>
         {rows.map((row) => (
           <span className={`instrument-scale-row ${row.key}`} key={row.key}>
-            <b>{row.label}</b>
+            <b><TermLabel label={row.label} tip={row.tip} /></b>
             <i aria-hidden="true"><em style={{ width: `${clampPct(row.pct, 3)}%` }} /></i>
           </span>
         ))}
@@ -1423,7 +1447,7 @@ function CurrentMeaningStrip({ t, snapshot, compact = false }: { t: (key: string
           <em>{t("activeThinkingCaveat")}</em>
         </span>
         <span>
-          <b>{t("scanState")}</b>
+          <b><TermLabel label={t("scanState")} tip={t("tipScanner")} /></b>
           <em>{transcriptScanNote(t, stats)}</em>
         </span>
       </div>
@@ -1472,7 +1496,7 @@ function EvidenceHealth({ t, snapshot }: { t: (key: string) => string; snapshot:
     <section className={`evidence-health ${tone}`} aria-label={t("evidenceHealth")}>
       <article className="evidence-note mapping-note">
         <div className="evidence-note-head">
-          <span>{t("mappingHealth")}</span>
+          <span><TermLabel label={t("mappingHealth")} tip={t("tipMappingHealth")} /></span>
           <strong>{formatPct(summary.mapping_coverage_pct)}</strong>
         </div>
         <div className="mapping-meter" style={{ "--coverage": `${coverage}%` } as React.CSSProperties}>
@@ -1482,7 +1506,7 @@ function EvidenceHealth({ t, snapshot }: { t: (key: string) => string; snapshot:
       </article>
       <article className="evidence-note scanner-note">
         <div className="evidence-note-head">
-          <span>{t("scanState")}</span>
+          <span><TermLabel label={t("scanState")} tip={t("tipScanner")} /></span>
           <strong>{stats.cached ? t("cached") : t("fresh")}</strong>
         </div>
         <p>{transcriptScanSummary(t, stats, snapshot.history?.retained_sample_count)}</p>
@@ -2072,7 +2096,7 @@ function Topbar({
         <button className="icon-btn" type="button" onClick={refreshSnapshot} title={t("refresh")} aria-label={t("refresh")}>
           <RefreshCw size={16} className={running ? "spin" : ""} />
         </button>
-        <LanguageControl lang={lang} setLang={setLang} />
+        <LanguageControl t={t} lang={lang} setLang={setLang} />
         <button className="icon-btn" type="button" onClick={() => setTheme(theme === "light" ? "dark" : "light")} title={t("toggleTheme")} aria-label={t("toggleTheme")}>
           {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
         </button>
@@ -2703,16 +2727,34 @@ type RoleCounts = {
   activeTotal: number;
 };
 
-function LanguageControl({ lang, setLang }: { lang: Lang; setLang: (lang: Lang) => void }) {
+function LanguageControl({ t, lang, setLang }: { t: (key: string) => string; lang: Lang; setLang: (lang: Lang) => void }) {
   return (
     <div className="lang-control" aria-label="Language">
       <Languages size={14} />
-      {(["en", "zh", "ja"] as Lang[]).map((item) => (
-        <button key={item} className={lang === item ? "is-active" : ""} type="button" onClick={() => setLang(item)}>
-          {item.toUpperCase()}
-        </button>
-      ))}
+      {(["en", "zh", "ja"] as Lang[]).map((item) => {
+        const label = languageDisplayName(item);
+        return (
+          <button
+            key={item}
+            className={lang === item ? "is-active" : ""}
+            type="button"
+            aria-pressed={lang === item}
+            aria-label={t("languageOption").replace("{label}", label)}
+            onClick={() => setLang(item)}
+          >
+            {item.toUpperCase()}
+          </button>
+        );
+      })}
     </div>
+  );
+}
+
+function TermLabel({ label, tip }: { label: string; tip: string }) {
+  return (
+    <span className="term-label" tabIndex={0} role="button" aria-label={`${label}: ${tip}`} data-tip={tip} title={tip}>
+      {label}
+    </span>
   );
 }
 
@@ -3249,6 +3291,12 @@ function htmlLang(lang: Lang): string {
   if (lang === "zh") return "zh-CN";
   if (lang === "ja") return "ja";
   return "en";
+}
+
+function languageDisplayName(lang: Lang): string {
+  if (lang === "zh") return "中文";
+  if (lang === "ja") return "日本語";
+  return "English";
 }
 
 function initialTheme(): Theme {

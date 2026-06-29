@@ -40,6 +40,9 @@ agent evidence.
   require scrolling past full evidence cards to understand parent/child session
   shape.
 - Use icons for tabs, commands, status, and metrics where they reduce text load.
+- Core runtime terms such as fresh movement, sessions, processes, mapping
+  health, and scan state should expose short hover/focus explanations so dense
+  operator views stay readable without adding permanent copy.
 - Light mode must keep weak labels, icons, tree rails, and control text readable;
   do not rely on very pale gray text for operator-critical controls.
 - Auto refresh defaults to `5m`. A paused refresh state may exist, but it must be
