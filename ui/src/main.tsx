@@ -902,6 +902,7 @@ function DashboardInspectorStrip({
   }, [activeTab, query]);
   const hiddenCount = Math.max(0, items.length - INSPECTOR_INITIAL_LIMIT);
   const visibleItems = showOverflow ? items : items.slice(0, INSPECTOR_INITIAL_LIMIT);
+  const overflowLabel = countLabel(t, showOverflow ? "lessCount" : "moreCount", hiddenCount);
   return (
     <section className="dash-inspector-strip" aria-label={t("inspect")}>
       <div className="dash-inspector-title">
@@ -940,9 +941,9 @@ function DashboardInspectorStrip({
           </button>
         ))}
         {hiddenCount ? (
-          <button className={`session-tree-more inspector-more ${showOverflow ? "is-expanded" : ""}`} type="button" data-focus-key={focusKey("dashboard-inspector-more", activeTab)} onClick={() => setShowOverflow((value) => !value)} aria-expanded={showOverflow}>
+          <button className={`session-tree-more inspector-more ${showOverflow ? "is-expanded" : ""}`} type="button" data-focus-key={focusKey("dashboard-inspector-more", activeTab)} onClick={() => setShowOverflow((value) => !value)} aria-expanded={showOverflow} aria-label={overflowLabel} title={overflowLabel}>
             <ChevronDown size={12} aria-hidden="true" />
-            <span>{t(showOverflow ? "lessCount" : "moreCount").replace("{count}", String(hiddenCount))}</span>
+            <span>{overflowLabel}</span>
           </button>
         ) : null}
       </div>
@@ -1313,23 +1314,9 @@ function ProjectAtlas({
   const clippedProjects = allProjects.slice(0, limit ?? Number.POSITIVE_INFINITY);
   const hiddenProjectCount = Math.max(0, allProjects.length - clippedProjects.length);
   const [showOverflow, setShowOverflow] = useState(false);
+  const overflowLabel = countLabel(t, showOverflow ? "lessCount" : "moreCount", hiddenProjectCount);
   const projects = showOverflow ? allProjects : clippedProjects;
-  const initialOpen = useMemo(() => new Set(allProjects.slice(0, defaultExpandedCount).map((project) => safeID(project.project))), [allProjects, defaultExpandedCount]);
-  const [openProjects, setOpenProjects] = useState<Set<string>>(initialOpen);
-  useEffect(() => {
-    setOpenProjects((current) => {
-      if (current.size) return current;
-      return initialOpen;
-    });
-  }, [initialOpen]);
-  const toggleProject = (id: string) => {
-    setOpenProjects((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
+  const { openProjects, openProject, toggleProject } = useProjectDisclosure(allProjects, defaultExpandedCount);
   return (
     <section className={`project-atlas ${compact ? "compact" : ""}`}>
       {showHead ? <BandHead kicker={compact ? t("liveLedger") : t("projects")} title={t("projectSessionTree")} meta={`${allProjects.length} ${t("projects")}`} /> : null}
@@ -1355,6 +1342,7 @@ function ProjectAtlas({
               compact={compact}
               expanded={openProjects.has(projectId)}
               onToggle={() => toggleProject(projectId)}
+              onOpen={() => openProject(projectId)}
               rank={index + 1}
             />
           );
@@ -1365,9 +1353,9 @@ function ProjectAtlas({
           </section>
         )}
         {hiddenProjectCount ? (
-          <button className={`session-tree-more project-tree-more ${showOverflow ? "is-expanded" : ""}`} type="button" onClick={() => setShowOverflow((value) => !value)} aria-expanded={showOverflow}>
+          <button className={`session-tree-more project-tree-more ${showOverflow ? "is-expanded" : ""}`} type="button" onClick={() => setShowOverflow((value) => !value)} aria-expanded={showOverflow} aria-label={overflowLabel} title={overflowLabel}>
             <ChevronDown size={12} aria-hidden="true" />
-            <span>{t(showOverflow ? "lessCount" : "moreCount").replace("{count}", String(hiddenProjectCount))}</span>
+            <span>{overflowLabel}</span>
           </button>
         ) : null}
       </div>
@@ -1498,6 +1486,53 @@ function ConfidenceGrid({ t, snapshot }: { t: (key: string) => string; snapshot:
   );
 }
 
+function useProjectDisclosure(projects: ProjectSnapshot[], defaultExpandedCount: number) {
+  const projectIds = useMemo(() => projects.map((project) => safeID(project.project)), [projects]);
+  const projectIdKey = projectIds.join("\u0000");
+  const initialOpen = useMemo(() => new Set(projectIds.slice(0, defaultExpandedCount)), [defaultExpandedCount, projectIdKey]);
+  const seededRef = useRef(projectIds.length > 0);
+  const [openProjects, setOpenProjects] = useState<Set<string>>(() => new Set(initialOpen));
+
+  useEffect(() => {
+    const knownProjects = new Set(projectIds);
+    setOpenProjects((current) => {
+      if (!seededRef.current && projectIds.length) {
+        seededRef.current = true;
+        return new Set(initialOpen);
+      }
+      let changed = false;
+      const next = new Set<string>();
+      current.forEach((id) => {
+        if (knownProjects.has(id)) next.add(id);
+        else changed = true;
+      });
+      return changed ? next : current;
+    });
+  }, [initialOpen, projectIdKey, projectIds]);
+
+  const openProject = useCallback((id: string) => {
+    if (!id) return;
+    setOpenProjects((current) => {
+      if (current.has(id)) return current;
+      const next = new Set(current);
+      next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleProject = useCallback((id: string) => {
+    if (!id) return;
+    setOpenProjects((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  return { openProjects, openProject, toggleProject };
+}
+
 function CandidateWorkitemsRail({ t, snapshot, limit = 5 }: { t: (key: string) => string; snapshot: Snapshot; limit?: number }) {
   const rows = [...(snapshot.candidate_workitems ?? [])]
     .sort((a, b) => (b.session_count ?? 0) - (a.session_count ?? 0))
@@ -1530,6 +1565,7 @@ function ProcessLedger({ t, snapshot, selection, setSelection }: { t: (key: stri
   const rows = useMemo(() => [...(snapshot.live_processes ?? [])].sort((a, b) => (b.mapped_sessions ?? 0) - (a.mapped_sessions ?? 0)), [snapshot.live_processes]);
   const hiddenCount = Math.max(0, rows.length - PROCESS_LEDGER_INITIAL_LIMIT);
   const visibleRows = showOverflow ? rows : rows.slice(0, PROCESS_LEDGER_INITIAL_LIMIT);
+  const overflowLabel = countLabel(t, showOverflow ? "lessCount" : "moreCount", hiddenCount);
   return (
     <div className="process-ledger" role="table" aria-label={t("processLedger")}>
       <div className="process-row head" role="row">
@@ -1545,9 +1581,9 @@ function ProcessLedger({ t, snapshot, selection, setSelection }: { t: (key: stri
       ))}
       {hiddenCount ? (
         <div className="process-ledger-more-row" role="row">
-          <button className={`session-tree-more process-ledger-more ${showOverflow ? "is-expanded" : ""}`} type="button" onClick={() => setShowOverflow((value) => !value)} aria-expanded={showOverflow}>
+          <button className={`session-tree-more process-ledger-more ${showOverflow ? "is-expanded" : ""}`} type="button" onClick={() => setShowOverflow((value) => !value)} aria-expanded={showOverflow} aria-label={overflowLabel} title={overflowLabel}>
             <ChevronDown size={12} aria-hidden="true" />
-            <span>{t(showOverflow ? "lessCount" : "moreCount").replace("{count}", String(hiddenCount))}</span>
+            <span>{overflowLabel}</span>
           </button>
         </div>
       ) : null}
@@ -2155,10 +2191,20 @@ function ProjectWorkspace({
   setSelection: (value: Selection) => void;
   compact: boolean;
 }) {
-  const projects = orderedProjects(snapshot);
+  const projects = useMemo(() => orderedProjects(snapshot), [snapshot]);
   const selectedProject = selection.type === "project" ? projects.find((project) => safeID(project.project) === selection.id) : undefined;
   const selectedSession = selection.type === "session" ? (snapshot.live_sessions ?? []).find((session) => safeID(session.session_id) === selection.id) : undefined;
   const selectedProcess = selection.type === "process" ? (snapshot.live_processes ?? []).find((process) => String(process.pid ?? "") === selection.id) : undefined;
+  const { openProjects, openProject, toggleProject } = useProjectDisclosure(projects, compact ? 0 : 2);
+  const selectedProjectId = selectedProject ? safeID(selectedProject.project) : "";
+  const lastSelectedProjectRef = useRef("");
+
+  useEffect(() => {
+    if (selectedProjectId && lastSelectedProjectRef.current !== selectedProjectId) {
+      openProject(selectedProjectId);
+    }
+    lastSelectedProjectRef.current = selectedProjectId;
+  }, [openProject, selectedProjectId]);
 
   if (selection.type === "session" && selectedSession) {
     return <SessionEvidencePanel t={t} session={selectedSession} />;
@@ -2167,6 +2213,7 @@ function ProjectWorkspace({
     return <ProcessEvidencePanel t={t} process={selectedProcess} />;
   }
   if (selectedProject) {
+    const isExpanded = openProjects.has(selectedProjectId);
     return (
       <div className="workspace">
         <ScanBoundary t={t} snapshot={snapshot} compact={compact} />
@@ -2177,7 +2224,9 @@ function ProjectWorkspace({
           selection={selection}
           setSelection={setSelection}
           compact={compact}
-          expanded
+          expanded={isExpanded}
+          onToggle={() => toggleProject(selectedProjectId)}
+          onOpen={() => openProject(selectedProjectId)}
           rank={1}
         />
       </div>
@@ -2187,19 +2236,24 @@ function ProjectWorkspace({
     <div className="workspace">
       <ScanBoundary t={t} snapshot={snapshot} compact={compact} />
       <div className="project-tree-list">
-        {projects.length ? projects.map((project, index) => (
-          <ProjectTreeRow
-            key={safeID(project.project)}
-            t={t}
-            snapshot={snapshot}
-            project={project}
-            selection={selection}
-            setSelection={setSelection}
-            compact={compact}
-            expanded={!compact && index < 2}
-            rank={index + 1}
-          />
-        )) : (
+        {projects.length ? projects.map((project, index) => {
+          const projectId = safeID(project.project);
+          return (
+            <ProjectTreeRow
+              key={projectId}
+              t={t}
+              snapshot={snapshot}
+              project={project}
+              selection={selection}
+              setSelection={setSelection}
+              compact={compact}
+              expanded={openProjects.has(projectId)}
+              onToggle={() => toggleProject(projectId)}
+              onOpen={() => openProject(projectId)}
+              rank={index + 1}
+            />
+          );
+        }) : (
           <section className="empty-inline">
             <Layers size={18} />
             <span>{t("noData")}</span>
@@ -2248,6 +2302,7 @@ function ProjectTreeRow({
   compact,
   expanded,
   onToggle,
+  onOpen,
   rank,
 }: {
   t: (key: string) => string;
@@ -2258,6 +2313,7 @@ function ProjectTreeRow({
   compact: boolean;
   expanded: boolean;
   onToggle?: () => void;
+  onOpen?: () => void;
   rank?: number;
 }) {
   const sessions = sessionsForProject(snapshot, project);
@@ -2270,17 +2326,19 @@ function ProjectTreeRow({
   const selected = selection.type === "project" && selection.id === projectId;
   const selectProject = () => {
     setSelection({ type: "project", id: projectId });
-    if (onToggle) {
-      onToggle();
-      return;
+    if (!expanded) {
+      onOpen?.();
     }
   };
+  const disclosureLabel = expanded ? t("collapseDetails") : t("expandDetails");
   return (
     <article className={`project-tree-row ${expanded ? "expanded" : ""} ${selected ? "is-selected" : ""}`}>
       <div className="project-tree-head">
         <span className="project-rank">{rank ?? "-"}</span>
-        <button className="project-select" type="button" data-focus-key={focusKey("project", projectId)} onClick={selectProject} aria-current={selected ? "true" : undefined} aria-expanded={expanded}>
+        <button className="project-disclosure" type="button" onClick={onToggle} aria-expanded={expanded} aria-label={disclosureLabel} title={disclosureLabel}>
           <ChevronDown size={15} aria-hidden="true" />
+        </button>
+        <button className="project-select" type="button" data-focus-key={focusKey("project", projectId)} onClick={selectProject} aria-current={selected ? "true" : undefined}>
           <span>{title}</span>
           <small>{projectMeta}</small>
         </button>
@@ -2393,6 +2451,7 @@ function SessionTree({
   const hiddenGroups = groups.slice(groupLimit).reduce((total, group) => total + group.sessions.length, 0);
   const hiddenTotal = hiddenGroups + collapsedGroups.reduce((total, group) => total + hiddenToolSessionCount(group, linkedLimit, childLimit, unlinkedLimit), 0);
   const visibleGroups = showOverflow ? groups : collapsedGroups;
+  const overflowLabel = countLabel(t, showOverflow ? "lessCount" : "moreCount", hiddenTotal);
   if (!sessions.length) {
     return <div className="session-tree empty">{t("empty")}</div>;
   }
@@ -2446,9 +2505,9 @@ function SessionTree({
         );
       })}
       {hiddenTotal ? (
-        <button className={`session-tree-more ${showOverflow ? "is-expanded" : ""}`} type="button" onClick={() => setShowOverflow((value) => !value)} aria-expanded={showOverflow}>
+        <button className={`session-tree-more ${showOverflow ? "is-expanded" : ""}`} type="button" onClick={() => setShowOverflow((value) => !value)} aria-expanded={showOverflow} aria-label={overflowLabel} title={overflowLabel}>
           <ChevronDown size={12} aria-hidden="true" />
-          <span>{t(showOverflow ? "lessCount" : "moreCount").replace("{count}", String(hiddenTotal))}</span>
+          <span>{overflowLabel}</span>
         </button>
       ) : null}
     </div>
@@ -3638,6 +3697,10 @@ function formatAge(seconds?: number, t?: (key: string) => string): string {
 function formatRefreshInterval(ms: number, t: (key: string) => string): string {
   if (!ms) return t("refreshPaused");
   return formatAge(ms / 1000, t);
+}
+
+function countLabel(t: (key: string) => string, key: string, count: number): string {
+  return t(key).replace("{count}", String(count));
 }
 
 function shortID(value?: string): string {
