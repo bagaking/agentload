@@ -6566,18 +6566,24 @@ body[data-view="popover"] .popover-project-table .role-glyph svg {
 
 body[data-view="popover"] .popover-project-table .session-title {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
   min-width: 0;
+  overflow: hidden;
   white-space: nowrap;
 }
 
 body[data-view="popover"] .popover-project-table .session-id-control {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  flex: 0 1 17ch;
   min-width: 0;
-  flex: 1 1 auto;
+  max-width: min(17ch, 100%);
+  height: 13px;
+  padding-right: 15px;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 body[data-view="popover"] .popover-project-table .session-id-button,
@@ -6591,31 +6597,38 @@ body[data-view="popover"] .popover-project-table .session-copy-inline {
 }
 
 body[data-view="popover"] .popover-project-table .session-id-button {
-  flex: 0 1 auto;
+  display: block;
+  flex: 1 1 auto;
   min-width: 0;
+  max-width: 100%;
   cursor: pointer;
   text-align: left;
 }
 
 body[data-view="popover"] .popover-project-table .session-id-button strong {
   display: block;
+  max-width: 100%;
 }
 
 body[data-view="popover"] .popover-project-table .session-copy-inline {
-  display: inline-grid;
+  position: absolute;
+  top: 50%;
+  right: 0;
+  z-index: 1;
+  display: grid;
   place-items: center;
-  flex: 0 0 13px;
   width: 13px;
   height: 13px;
   border-radius: 3px;
   color: var(--console-text-faint);
   cursor: pointer;
   opacity: 0;
+  transform: translateY(-50%);
   transition: opacity .12s ease, color .12s ease, background .12s ease;
 }
 
-body[data-view="popover"] .popover-project-table .session-line:hover .session-copy-inline,
-body[data-view="popover"] .popover-project-table .session-line:focus-within .session-copy-inline {
+body[data-view="popover"] .popover-project-table .session-id-control:hover .session-copy-inline,
+body[data-view="popover"] .popover-project-table .session-id-control:focus-within .session-copy-inline {
   opacity: .82;
 }
 
@@ -6627,8 +6640,9 @@ body[data-view="popover"] .popover-project-table .session-copy-inline:focus-visi
 }
 
 body[data-view="popover"] .popover-project-table .session-meta-button {
-  flex: 0 0 auto;
-  max-width: 92px;
+  display: block;
+  flex: 0 1 auto;
+  max-width: 86px;
   min-width: 0;
   cursor: pointer;
   text-align: left;

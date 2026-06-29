@@ -2230,7 +2230,7 @@ function SessionLine({
           {host ? <HostAppButton t={t} host={host} /> : <span className="host-empty" title={t("host")} />}
         </span>
         <span className="session-title">
-          <span className="session-id-control">
+          <span className="session-id-control" title={sid || title}>
             <button className="session-id-button" type="button" aria-current={selected ? "true" : undefined} onClick={() => setSelection({ type: "session", id: safeID(sid) })}>
               <strong>{title}</strong>
             </button>

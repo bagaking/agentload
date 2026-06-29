@@ -60,6 +60,9 @@ agent evidence.
 - Row actions in compact session lists should attach to the identifier they act
   on. Copy controls belong inline with the session id, with hover/focus emphasis
   and reserved width, rather than as a separate grid item that can wrap.
+  Treat the session id and copy affordance as one no-wrap identifier component;
+  reveal the copy control on identifier hover/focus instead of letting it sit
+  after metadata or fall to a second line.
 - Use icons for tabs, commands, status, and metrics where they reduce text load.
 - Core runtime terms such as fresh movement, sessions, processes, mapping
   health, and scan state should expose short hover/focus explanations so dense
