@@ -7,6 +7,7 @@ import "./styles.css";
 const BRAND_NAME = "Agent Load";
 const ACTIVE = new Set(["active", "running", "queued"]);
 const DEFAULT_REFRESH_INTERVAL_MS = 300_000;
+const MANUAL_REFRESH_SETTLE_MS = 450;
 const READER_REFRESH_FLOOR_MS = 60_000;
 const REFRESH_INTERVALS_MS = [30_000, 60_000, 120_000, 300_000, 0] as const;
 const REFRESH_INTERVAL_STORAGE_KEY = "agentload.refreshIntervalMs.v5";
@@ -324,7 +325,9 @@ function App() {
   const refreshSnapshot = useCallback(async () => {
     setRefreshing(true);
     try {
-      await fetch("/api/refresh", { method: "POST", headers: { "Content-Type": "application/json" } });
+      const response = await fetch("/api/refresh", { method: "POST", headers: { "Content-Type": "application/json" } });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      await delay(MANUAL_REFRESH_SETTLE_MS);
       await fetchSnapshot("manual");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -3065,6 +3068,10 @@ function postHostAction(action: "open_dashboard" | "close" | "quit") {
   }
   if (action === "open_dashboard") window.open("/dashboard", "_blank", "noopener,noreferrer");
   if (action === "close") window.close();
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function initialLang(): Lang {
