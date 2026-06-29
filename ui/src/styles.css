@@ -950,6 +950,36 @@ kbd {
   gap: 8px;
   padding: 0 10px 10px;
 }
+.session-tool-block {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.session-tool-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  color: var(--fg-faint);
+  font-size: 11px;
+}
+.session-tool-head span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-tool-head strong {
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 760;
+  white-space: nowrap;
+}
 .session-tree.empty,
 .empty-inline {
   display: flex;
@@ -5004,6 +5034,32 @@ body[data-view="dashboard"] .session-tree {
   padding-bottom: 4px;
 }
 
+body[data-view="dashboard"] .session-tool-block {
+  gap: 0;
+  padding: 3px 0 2px;
+  border-top: 1px solid color-mix(in srgb, var(--console-line-soft) 62%, transparent);
+}
+
+body[data-view="dashboard"] .session-tool-block:first-child {
+  border-top: 0;
+}
+
+body[data-view="dashboard"] .session-tool-head {
+  justify-content: flex-start;
+  min-height: 20px;
+  padding: 1px 0;
+  color: var(--console-text-faint);
+  font-family: var(--font-mono);
+  font-size: 8.8px;
+  letter-spacing: .045em;
+  text-transform: uppercase;
+}
+
+body[data-view="dashboard"] .session-tool-head strong {
+  color: var(--console-text-soft);
+  font-size: 8.8px;
+}
+
 body[data-view="dashboard"] .session-branch {
   position: relative;
   gap: 0;
@@ -5764,6 +5820,36 @@ body[data-view="dashboard"] .project-evidence-strip {
 
 body[data-view="dashboard"] .session-tree {
   padding-bottom: 3px;
+}
+
+body[data-view="dashboard"] .session-tool-block {
+  gap: 0;
+  padding: 2px 0;
+  border-top: 1px solid color-mix(in srgb, var(--console-line-soft) 58%, transparent);
+}
+
+body[data-view="dashboard"] .session-tool-block:first-child {
+  border-top: 0;
+}
+
+body[data-view="dashboard"] .session-tool-head {
+  justify-content: flex-start;
+  min-height: 17px;
+  padding: 1px 0 2px;
+  color: var(--console-text-faint);
+  font-family: var(--font-mono);
+  font-size: 7.8px;
+  letter-spacing: .045em;
+  text-transform: uppercase;
+}
+
+body[data-view="dashboard"] .session-tool-head span {
+  gap: 4px;
+}
+
+body[data-view="dashboard"] .session-tool-head strong {
+  color: var(--console-text-soft);
+  font-size: 7.8px;
 }
 
 body[data-view="dashboard"] .session-branch {

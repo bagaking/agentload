@@ -242,6 +242,15 @@ type RailItem = {
   tags: string[];
   value: string;
 };
+type SessionBranch = { parent: LiveSession; children: LiveSession[] };
+type ToolSessionGroup = {
+  tool: string;
+  sessions: LiveSession[];
+  activeCount: number;
+  linked: SessionBranch[];
+  unlinked: LiveSession[];
+  unknown: LiveSession[];
+};
 
 declare global {
   interface Window {
@@ -2483,44 +2492,66 @@ function SessionTree({
   setSelection: (value: Selection) => void;
   compact: boolean;
 }) {
-  const branches = buildSessionBranches(sessions);
-  const linkedLimit = compact ? 3 : 4;
+  const groups = buildToolSessionGroups(sessions);
+  const groupLimit = compact ? 2 : 4;
+  const linkedLimit = compact ? 2 : 3;
   const childLimit = compact ? 3 : 3;
-  const unlinkedLimit = compact ? 4 : 5;
-  const visibleLinked = branches.linked.slice(0, linkedLimit);
-  const visibleUnlinked = branches.unlinked.slice(0, unlinkedLimit);
-  const hiddenLinked = Math.max(0, branches.linked.length - visibleLinked.length);
-  const hiddenUnlinked = Math.max(0, branches.unlinked.length - visibleUnlinked.length);
-  const hiddenChildren = visibleLinked.reduce((total, branch) => total + Math.max(0, branch.children.length - Math.min(branch.children.length, childLimit)), 0);
-  const hiddenTotal = hiddenLinked + hiddenUnlinked + hiddenChildren;
+  const unlinkedLimit = compact ? 3 : 4;
+  const visibleGroups = groups.slice(0, groupLimit);
+  const hiddenGroups = groups.slice(groupLimit).reduce((total, group) => total + group.sessions.length, 0);
+  const hiddenTotal = hiddenGroups + visibleGroups.reduce((total, group) => total + hiddenToolSessionCount(group, linkedLimit, childLimit, unlinkedLimit), 0);
   if (!sessions.length) {
     return <div className="session-tree empty">{t("empty")}</div>;
   }
   return (
     <div className="session-tree">
-      {visibleLinked.map((branch) => (
-        <section className="session-branch" key={sessionIdentity(branch.parent)}>
-          <div className="session-group-head">
-            <span><ToolIcon tool={branch.parent.tool} />{branch.parent.agent_nickname || shortID(branch.parent.session_id) || t("main")}</span>
-            <strong>{branch.children.length}</strong>
-          </div>
-          <SessionLine t={t} session={branch.parent} setSelection={setSelection} compact={compact} />
-          {branch.children.slice(0, childLimit).map((session) => (
-            <SessionLine key={sessionIdentity(session)} t={t} session={session} setSelection={setSelection} compact={compact} child />
-          ))}
-        </section>
-      ))}
-      {branches.unlinked.length ? (
-        <section className="session-branch unlinked">
-          <div className="session-group-head">
-            <span><GitBranch size={14} />{t("unlinkedSubagents")}</span>
-            <strong>{branches.unlinked.length}</strong>
-          </div>
-          {visibleUnlinked.map((session) => (
-            <SessionLine key={sessionIdentity(session)} t={t} session={session} setSelection={setSelection} compact={compact} />
-          ))}
-        </section>
-      ) : null}
+      {visibleGroups.map((group) => {
+        const visibleLinked = group.linked.slice(0, linkedLimit);
+        const visibleUnlinked = group.unlinked.slice(0, unlinkedLimit);
+        const visibleUnknown = group.unknown.slice(0, Math.max(1, unlinkedLimit - visibleUnlinked.length));
+        return (
+          <section className="session-tool-block" key={group.tool}>
+            <div className="session-tool-head">
+              <span><ToolIcon tool={group.tool} />{toolDisplayName(group.tool)}</span>
+              <strong>{group.activeCount}/{group.sessions.length}</strong>
+            </div>
+            {visibleLinked.map((branch) => (
+              <section className="session-branch" key={sessionIdentity(branch.parent)}>
+                <div className="session-group-head">
+                  <span>{branch.parent.agent_nickname || shortID(branch.parent.session_id) || t("main")}</span>
+                  <strong>{branch.children.length}</strong>
+                </div>
+                <SessionLine t={t} session={branch.parent} setSelection={setSelection} compact={compact} />
+                {branch.children.slice(0, childLimit).map((session) => (
+                  <SessionLine key={sessionIdentity(session)} t={t} session={session} setSelection={setSelection} compact={compact} child />
+                ))}
+              </section>
+            ))}
+            {visibleUnlinked.length ? (
+              <section className="session-branch unlinked">
+                <div className="session-group-head">
+                  <span><GitBranch size={14} />{t("unlinkedSubagents")}</span>
+                  <strong>{group.unlinked.length}</strong>
+                </div>
+                {visibleUnlinked.map((session) => (
+                  <SessionLine key={sessionIdentity(session)} t={t} session={session} setSelection={setSelection} compact={compact} />
+                ))}
+              </section>
+            ) : null}
+            {visibleUnknown.length ? (
+              <section className="session-branch unknown">
+                <div className="session-group-head">
+                  <span><GitBranch size={14} />{t("unknown")}</span>
+                  <strong>{group.unknown.length}</strong>
+                </div>
+                {visibleUnknown.map((session) => (
+                  <SessionLine key={sessionIdentity(session)} t={t} session={session} setSelection={setSelection} compact={compact} />
+                ))}
+              </section>
+            ) : null}
+          </section>
+        );
+      })}
       {hiddenTotal ? <div className="session-tree-more">{t("moreCount").replace("{count}", String(hiddenTotal))}</div> : null}
     </div>
   );
@@ -2955,59 +2986,96 @@ function projectEvidenceItems(t: (key: string) => string, project: ProjectSnapsh
   return compact ? items.slice(0, 4) : items;
 }
 
-function groupSessionsByTool(sessions: LiveSession[]): Array<{ tool: string; sessions: LiveSession[] }> {
-  const groups = new Map<string, LiveSession[]>();
-  sessions.forEach((session) => {
-    const tool = String(session.tool || "unknown").trim() || "unknown";
-    groups.set(tool, [...(groups.get(tool) ?? []), session]);
+function buildToolSessionGroups(sessions: LiveSession[]): ToolSessionGroup[] {
+  const sorted = [...sessions].sort(compareSessionsByFreshness);
+  const byID = new Map<string, LiveSession>();
+  sorted.forEach((session) => {
+    if (session.session_id) byID.set(session.session_id, session);
   });
-  return Array.from(groups.entries())
-    .map(([tool, items]) => ({ tool, sessions: items }))
+
+  type MutableToolSessionGroup = {
+    tool: string;
+    sessions: LiveSession[];
+    activeCount: number;
+    mains: LiveSession[];
+    childrenByParent: Map<string, LiveSession[]>;
+    unlinked: LiveSession[];
+    unknown: LiveSession[];
+  };
+  const groupMap = new Map<string, MutableToolSessionGroup>();
+  const ensureGroup = (tool?: string): MutableToolSessionGroup => {
+    const key = String(tool || "unknown").trim() || "unknown";
+    const existing = groupMap.get(key);
+    if (existing) return existing;
+    const group: MutableToolSessionGroup = {
+      tool: key,
+      sessions: [],
+      activeCount: 0,
+      mains: [],
+      childrenByParent: new Map(),
+      unlinked: [],
+      unknown: [],
+    };
+    groupMap.set(key, group);
+    return group;
+  };
+
+  sorted.forEach((session) => {
+    const group = ensureGroup(session.tool);
+    group.sessions.push(session);
+    if (session.active_burst) group.activeCount++;
+    if (normalizedRole(session.session_role) === "main") group.mains.push(session);
+  });
+
+  sorted.forEach((session) => {
+    const role = normalizedRole(session.session_role);
+    const group = ensureGroup(session.tool);
+    if (role === "subagent") {
+      const parent = session.parent_thread_id ? byID.get(session.parent_thread_id) : undefined;
+      if (parent && normalizedRole(parent.session_role) === "main") {
+        const parentGroup = ensureGroup(parent.tool || session.tool);
+        const parentKey = sessionIdentity(parent);
+        parentGroup.childrenByParent.set(parentKey, [...(parentGroup.childrenByParent.get(parentKey) ?? []), session]);
+      } else {
+        group.unlinked.push(session);
+      }
+      return;
+    }
+    if (role === "unknown") {
+      group.unknown.push(session);
+    }
+  });
+
+  return Array.from(groupMap.values())
+    .map((group) => ({
+      tool: group.tool,
+      sessions: group.sessions,
+      activeCount: group.activeCount,
+      linked: group.mains
+        .sort(compareSessionsByFreshness)
+        .map((parent) => ({
+          parent,
+          children: (group.childrenByParent.get(sessionIdentity(parent)) ?? []).sort(compareSessionsByFreshness),
+        })),
+      unlinked: group.unlinked.sort(compareSessionsByFreshness),
+      unknown: group.unknown.sort(compareSessionsByFreshness),
+    }))
     .sort((a, b) => {
-      const activeDelta = b.sessions.filter((session) => session.active_burst).length - a.sessions.filter((session) => session.active_burst).length;
-      if (activeDelta) return activeDelta;
+      if (a.activeCount !== b.activeCount) return b.activeCount - a.activeCount;
+      if (a.sessions.length !== b.sessions.length) return b.sessions.length - a.sessions.length;
       return a.tool.localeCompare(b.tool);
     });
 }
 
-function buildSessionBranches(sessions: LiveSession[]): { linked: Array<{ parent: LiveSession; children: LiveSession[] }>; unlinked: LiveSession[] } {
-  const byID = new Map<string, LiveSession>();
-  sessions.forEach((session) => {
-    if (session.session_id) byID.set(session.session_id, session);
-  });
-  const childrenByParent = new Map<string, LiveSession[]>();
-  const unlinked: LiveSession[] = [];
-  const parents: LiveSession[] = [];
-  sessions.forEach((session) => {
-    const role = normalizedRole(session.session_role);
-    if (role === "subagent" && session.parent_thread_id) {
-      childrenByParent.set(session.parent_thread_id, [...(childrenByParent.get(session.parent_thread_id) ?? []), session]);
-      return;
-    }
-    if (role === "subagent") {
-      unlinked.push(session);
-      return;
-    }
-    parents.push(session);
-  });
-  childrenByParent.forEach((children, parentID) => {
-    if (!byID.has(parentID)) {
-      unlinked.push(...children);
-    }
-  });
-  const linked = parents.map((parent) => ({
-    parent,
-    children: (childrenByParent.get(parent.session_id || "") ?? []).sort(compareSessionsByFreshness),
-  }));
-  childrenByParent.forEach((children, parentID) => {
-    if (parents.some((parent) => parent.session_id === parentID)) return;
-    const parent = byID.get(parentID);
-    if (parent) linked.push({ parent, children: children.sort(compareSessionsByFreshness) });
-  });
-  return {
-    linked: linked.sort((a, b) => compareSessionsByFreshness(a.parent, b.parent)),
-    unlinked: unlinked.sort(compareSessionsByFreshness),
-  };
+function hiddenToolSessionCount(group: ToolSessionGroup, linkedLimit: number, childLimit: number, unlinkedLimit: number): number {
+  const visibleLinked = group.linked.slice(0, linkedLimit);
+  const hiddenLinked = group.linked.slice(linkedLimit).reduce((total, branch) => total + 1 + branch.children.length, 0);
+  const hiddenChildren = visibleLinked.reduce((total, branch) => total + Math.max(0, branch.children.length - childLimit), 0);
+  const visibleUnlinkedCount = Math.min(group.unlinked.length, unlinkedLimit);
+  const unknownLimit = Math.max(1, unlinkedLimit - visibleUnlinkedCount);
+  const hiddenUnlinked = Math.max(0, group.unlinked.length - visibleUnlinkedCount);
+  const hiddenUnknown = Math.max(0, group.unknown.length - unknownLimit);
+  return hiddenLinked + hiddenChildren + hiddenUnlinked + hiddenUnknown;
 }
 
 function compareSessionsByFreshness(a: LiveSession, b: LiveSession): number {
