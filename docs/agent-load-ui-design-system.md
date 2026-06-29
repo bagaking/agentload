@@ -19,7 +19,9 @@ agent evidence.
 - popover surface with an online/trend switch, current meaning strip, scan
   boundary, compact project/session atlas, and trend suite
 - popover language control remains visible in compact mode; locale switching is
-  a first-class operator control, not a dashboard-only setting
+  a first-class operator control, not a dashboard-only setting. Direct links may
+  specify `?lang=`, and the page-level `lang` attribute should use the resolved
+  locale rather than a generic fallback.
 - dashboard surface with front status, evidence column, project/session atlas,
   calibration rail, age rail, confidence grid, process ledger, and trend suite
 - Project / Sessions / Processes navigation remains available as a dense

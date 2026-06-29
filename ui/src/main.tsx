@@ -826,7 +826,7 @@ function App() {
     document.body.dataset.view = view;
   }, [view]);
   useEffect(() => {
-    document.documentElement.lang = lang;
+    document.documentElement.lang = htmlLang(lang);
     window.localStorage.setItem("agentload.lang", lang);
   }, [lang]);
   useEffect(() => {
@@ -3230,8 +3230,25 @@ function postHostAction(action: "open_dashboard" | "close" | "quit") {
 }
 
 function initialLang(): Lang {
-  const stored = window.localStorage.getItem("agentload.lang");
-  return stored === "zh" || stored === "ja" || stored === "en" ? stored : "en";
+  const requested = normalizeLang(new URLSearchParams(window.location.search).get("lang"));
+  if (requested) return requested;
+  const stored = normalizeLang(window.localStorage.getItem("agentload.lang"));
+  if (stored) return stored;
+  return normalizeLang(window.navigator.language) ?? "en";
+}
+
+function normalizeLang(value?: string | null): Lang | null {
+  const key = String(value || "").trim().toLowerCase();
+  if (key === "zh" || key === "zh-cn" || key === "zh-hans") return "zh";
+  if (key === "ja" || key === "ja-jp") return "ja";
+  if (key === "en" || key === "en-us" || key === "en-gb") return "en";
+  return null;
+}
+
+function htmlLang(lang: Lang): string {
+  if (lang === "zh") return "zh-CN";
+  if (lang === "ja") return "ja";
+  return "en";
 }
 
 function initialTheme(): Theme {
