@@ -664,28 +664,17 @@ func forEachJSONLHeadTailLine(path string, size, maxHeadBytes, maxTailBytes int6
 	if size <= maxHeadBytes+maxTailBytes {
 		return forEachJSONLTailLine(path, size, size, fn)
 	}
+	tailOffset := size - maxTailBytes
+	if err := forEachJSONLHeadSelectedLine(path, tailOffset, maxHeadBytes, fn); err != nil {
+		return err
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 
-	head := make([]byte, maxHeadBytes)
-	headN, err := io.ReadFull(f, head)
-	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
-		return err
-	}
-	for _, line := range bytes.Split(head[:headN], []byte{'\n'}) {
-		line = bytes.TrimSpace(line)
-		if len(line) == 0 {
-			continue
-		}
-		if !fn(line) {
-			return nil
-		}
-	}
-
-	if _, err := f.Seek(size-maxTailBytes, io.SeekStart); err != nil {
+	if _, err := f.Seek(tailOffset, io.SeekStart); err != nil {
 		return err
 	}
 	tail, err := io.ReadAll(f)
@@ -707,6 +696,86 @@ func forEachJSONLHeadTailLine(path string, size, maxHeadBytes, maxTailBytes int6
 		}
 	}
 	return nil
+}
+
+func forEachJSONLHeadSelectedLine(path string, limit, fullBytes int64, fn func([]byte) bool) error {
+	if limit <= 0 {
+		return nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	reader := bufio.NewReaderSize(io.NewSectionReader(f, 0, limit), 64*1024)
+	var offset int64
+	for offset < limit {
+		lineStart := offset
+		line, consumed, err := readBoundedJSONLLine(reader, 1024*1024)
+		offset += consumed
+		line = bytes.TrimSpace(line)
+		if len(line) > 0 && (lineStart < fullBytes || jsonlLineLooksLikeTraceMetadata(line)) {
+			if !fn(line) {
+				return nil
+			}
+		}
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if consumed == 0 {
+			return nil
+		}
+	}
+	return nil
+}
+
+func readBoundedJSONLLine(reader *bufio.Reader, maxLineBytes int) ([]byte, int64, error) {
+	var line []byte
+	var consumed int64
+	truncated := false
+	for {
+		chunk, err := reader.ReadSlice('\n')
+		if len(chunk) > 0 {
+			consumed += int64(len(chunk))
+			if !truncated {
+				if len(line)+len(chunk) <= maxLineBytes {
+					line = append(line, chunk...)
+				} else {
+					truncated = true
+					line = nil
+				}
+			}
+		}
+		if err == bufio.ErrBufferFull {
+			continue
+		}
+		if err == io.EOF && consumed > 0 && (truncated || !bytes.HasSuffix(line, []byte{'\n'})) {
+			return nil, consumed, err
+		}
+		return line, consumed, err
+	}
+}
+
+func jsonlLineLooksLikeTraceMetadata(line []byte) bool {
+	return bytes.Contains(line, []byte(`"session_meta"`)) ||
+		jsonlLineContainsKey(line, "project") ||
+		jsonlLineContainsKey(line, "cwd") ||
+		jsonlLineContainsKey(line, "thread_source") ||
+		jsonlLineContainsKey(line, "parent_thread_id") ||
+		jsonlLineContainsKey(line, "thread_spawn") ||
+		jsonlLineContainsKey(line, "agent_nickname") ||
+		jsonlLineContainsKey(line, "agent_role") ||
+		jsonlLineContainsKey(line, "session_id") ||
+		jsonlLineContainsKey(line, "sessionId")
+}
+
+func jsonlLineContainsKey(line []byte, key string) bool {
+	raw := `"` + key + `"`
+	return bytes.Contains(line, []byte(raw+`:`)) ||
+		bytes.Contains(line, []byte(raw+` :`))
 }
 
 func parseTranscriptFile(file TranscriptFile) (*SessionTrace, error) {
