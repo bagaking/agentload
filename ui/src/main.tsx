@@ -2328,14 +2328,7 @@ function SessionLine({
           {host ? <HostAppButton t={t} host={host} /> : <span className="host-empty" title={t("host")} />}
         </span>
         <span className="session-title">
-          <span className="session-id-control" title={sid || title}>
-            <button className="session-id-button" type="button" aria-current={selected ? "true" : undefined} onClick={() => setSelection({ type: "session", id: safeID(sid) })}>
-              <strong>{title}</strong>
-            </button>
-            <button className="session-copy-inline" type="button" title={t("copySession")} aria-label={t("copySession")} onClick={() => copyText(sid)}>
-              <Copy size={10} />
-            </button>
-          </span>
+          <SessionIdControl t={t} sid={sid} title={title} selected={selected} setSelection={setSelection} />
           <button className="session-meta-button" type="button" onClick={() => setSelection({ type: "session", id: safeID(sid) })}>
             <small>{meta}</small>
           </button>
@@ -2353,20 +2346,19 @@ function SessionLine({
   }
   return (
     <div className={`session-line role-${role} ${session.active_burst ? "is-active" : ""} ${selected ? "is-selected" : ""} ${child ? "is-child" : ""}`}>
-      <button className="session-main" type="button" aria-current={selected ? "true" : undefined} onClick={() => setSelection({ type: "session", id: safeID(sid) })}>
+      <span className="session-main">
         <RoleGlyph t={t} role={role} />
         <span className="session-title">
-          <strong>{title}</strong>
-          <small>{meta}</small>
+          <SessionIdControl t={t} sid={sid} title={title} selected={selected} setSelection={setSelection} />
+          <button className="session-meta-button" type="button" onClick={() => setSelection({ type: "session", id: safeID(sid) })}>
+            <small>{meta}</small>
+          </button>
         </span>
-      </button>
+      </span>
       <span className="session-tool-pair">
         <ToolIcon tool={session.tool || "unknown"} />
         {host ? <HostAppButton t={t} host={host} /> : <span className="host-empty" title={t("host")}>{compact ? "" : t("host")}</span>}
       </span>
-      <button className="mini-icon" type="button" title={t("copySession")} onClick={() => copyText(sid)}>
-        <Copy size={13} />
-      </button>
       <div className="session-evidence-strip" aria-label={t("evidence")}>
         {evidenceItems.map((item) => (
           <span className={`session-evidence-chip ${item.tone ?? ""}`} key={item.label}>
@@ -2376,6 +2368,41 @@ function SessionLine({
         ))}
       </div>
     </div>
+  );
+}
+
+function SessionIdControl({
+  t,
+  sid,
+  title,
+  selected,
+  setSelection,
+}: {
+  t: (key: string) => string;
+  sid: string;
+  title: string;
+  selected: boolean;
+  setSelection: (value: Selection) => void;
+}) {
+  return (
+    <span className="session-id-control" title={sid || title}>
+      <button className="session-id-button" type="button" aria-current={selected ? "true" : undefined} onClick={() => setSelection({ type: "session", id: safeID(sid) })}>
+        <strong>{title}</strong>
+      </button>
+      <button
+        className="session-copy-inline"
+        type="button"
+        title={t("copySession")}
+        aria-label={t("copySession")}
+        disabled={!sid}
+        onClick={(event) => {
+          event.stopPropagation();
+          copyText(sid);
+        }}
+      >
+        <Copy size={10} />
+      </button>
+    </span>
   );
 }
 

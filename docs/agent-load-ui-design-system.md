@@ -65,9 +65,10 @@ agent evidence.
 - Expanded popover session rows should fit role, agent mark, host mark, short id,
   last activity age, process count, and confidence onto one scan line whenever
   the width allows it. Detail panels may carry longer evidence.
-- Row actions in compact session lists should attach to the identifier they act
-  on. Copy controls belong inline with the session id, with hover/focus emphasis
-  and reserved width, rather than as a separate grid item that can wrap.
+- Row actions in compact session lists and dashboard session trees should attach
+  to the identifier they act on. Copy controls belong inline with the session id,
+  with hover/focus emphasis and reserved width, rather than as a separate grid
+  item that can wrap.
   Treat the session id and copy affordance as one no-wrap identifier component;
   reveal the copy control on identifier hover/focus instead of letting it sit
   after metadata or fall to a second line.
