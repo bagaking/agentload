@@ -1551,6 +1551,7 @@ function ProjectAtlas({
               t={t}
               snapshot={snapshot}
               project={project}
+              selection={selection}
               setSelection={setSelection}
               compact={compact}
               expanded={openProjects.has(projectId) || selection.id === projectId}
@@ -2315,6 +2316,7 @@ function ProjectWorkspace({
           t={t}
           snapshot={snapshot}
           project={selectedProject}
+          selection={selection}
           setSelection={setSelection}
           compact={compact}
           expanded
@@ -2333,6 +2335,7 @@ function ProjectWorkspace({
             t={t}
             snapshot={snapshot}
             project={project}
+            selection={selection}
             setSelection={setSelection}
             compact={compact}
             expanded={!compact && index < 2}
@@ -2382,6 +2385,7 @@ function ProjectTreeRow({
   t,
   snapshot,
   project,
+  selection,
   setSelection,
   compact,
   expanded,
@@ -2391,6 +2395,7 @@ function ProjectTreeRow({
   t: (key: string) => string;
   snapshot: Snapshot;
   project: ProjectSnapshot;
+  selection: Selection;
   setSelection: (value: Selection) => void;
   compact: boolean;
   expanded: boolean;
@@ -2433,7 +2438,7 @@ function ProjectTreeRow({
               </span>
             ))}
           </div>
-          <SessionTree t={t} sessions={sessions} setSelection={setSelection} compact={compact} />
+          <SessionTree t={t} sessions={sessions} selection={selection} setSelection={setSelection} compact={compact} />
         </>
       ) : null}
     </article>
@@ -2484,11 +2489,13 @@ function ToolStrip({ t, tools }: { t: (key: string) => string; tools: ProjectToo
 function SessionTree({
   t,
   sessions,
+  selection,
   setSelection,
   compact,
 }: {
   t: (key: string) => string;
   sessions: LiveSession[];
+  selection: Selection;
   setSelection: (value: Selection) => void;
   compact: boolean;
 }) {
@@ -2521,9 +2528,9 @@ function SessionTree({
                   <span>{branch.parent.agent_nickname || shortID(branch.parent.session_id) || t("main")}</span>
                   <strong>{branch.children.length}</strong>
                 </div>
-                <SessionLine t={t} session={branch.parent} setSelection={setSelection} compact={compact} />
+                <SessionLine t={t} session={branch.parent} selection={selection} setSelection={setSelection} compact={compact} />
                 {branch.children.slice(0, childLimit).map((session) => (
-                  <SessionLine key={sessionIdentity(session)} t={t} session={session} setSelection={setSelection} compact={compact} child />
+                  <SessionLine key={sessionIdentity(session)} t={t} session={session} selection={selection} setSelection={setSelection} compact={compact} child />
                 ))}
               </section>
             ))}
@@ -2534,7 +2541,7 @@ function SessionTree({
                   <strong>{group.unlinked.length}</strong>
                 </div>
                 {visibleUnlinked.map((session) => (
-                  <SessionLine key={sessionIdentity(session)} t={t} session={session} setSelection={setSelection} compact={compact} />
+                  <SessionLine key={sessionIdentity(session)} t={t} session={session} selection={selection} setSelection={setSelection} compact={compact} />
                 ))}
               </section>
             ) : null}
@@ -2545,7 +2552,7 @@ function SessionTree({
                   <strong>{group.unknown.length}</strong>
                 </div>
                 {visibleUnknown.map((session) => (
-                  <SessionLine key={sessionIdentity(session)} t={t} session={session} setSelection={setSelection} compact={compact} />
+                  <SessionLine key={sessionIdentity(session)} t={t} session={session} selection={selection} setSelection={setSelection} compact={compact} />
                 ))}
               </section>
             ) : null}
@@ -2560,12 +2567,14 @@ function SessionTree({
 function SessionLine({
   t,
   session,
+  selection,
   setSelection,
   compact,
   child = false,
 }: {
   t: (key: string) => string;
   session: LiveSession;
+  selection: Selection;
   setSelection: (value: Selection) => void;
   compact: boolean;
   child?: boolean;
@@ -2574,9 +2583,10 @@ function SessionLine({
   const sid = session.session_id || "";
   const host = session.host_apps?.[0];
   const evidenceItems = sessionEvidenceItems(t, session, compact);
+  const selected = selection.type === "session" && safeID(sid) === selection.id;
   return (
-    <div className={`session-line role-${role} ${session.active_burst ? "is-active" : ""} ${child ? "is-child" : ""}`}>
-      <button className="session-main" type="button" onClick={() => setSelection({ type: "session", id: safeID(sid) })}>
+    <div className={`session-line role-${role} ${session.active_burst ? "is-active" : ""} ${selected ? "is-selected" : ""} ${child ? "is-child" : ""}`}>
+      <button className="session-main" type="button" aria-current={selected ? "true" : undefined} onClick={() => setSelection({ type: "session", id: safeID(sid) })}>
         <RoleGlyph t={t} role={role} />
         <span className="session-title">
           <strong>{session.agent_nickname || shortID(sid) || "session"}</strong>

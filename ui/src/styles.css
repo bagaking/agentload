@@ -1025,6 +1025,10 @@ kbd {
 .session-line.is-active {
   border-color: color-mix(in srgb, var(--run) 22%, transparent);
 }
+.session-line.is-selected {
+  border-color: color-mix(in srgb, var(--accent) 26%, transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 7%, transparent), color-mix(in srgb, var(--inset) 88%, transparent) 42%);
+}
 .session-line.is-child {
   margin-left: 18px;
 }
@@ -5158,6 +5162,17 @@ body[data-view="dashboard"] .mini-icon {
 
 body[data-view="dashboard"] .session-evidence-strip {
   display: none;
+}
+
+body[data-view="dashboard"] .session-line.is-selected .session-evidence-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-top: 2px;
+}
+
+body[data-view="dashboard"] .session-line.is-selected {
+  border-top-color: color-mix(in srgb, var(--accent) 28%, var(--console-line-soft));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 6.5%, transparent), transparent 46%);
 }
 
 body[data-view="dashboard"] .session-tree-more {
