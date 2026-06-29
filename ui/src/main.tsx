@@ -307,6 +307,7 @@ const copy: Record<Lang, Record<string, string>> = {
     subagent: "sub",
     unknown: "unknown",
     active: "Active",
+    moreCount: "+{count} more",
     all: "All",
     total: "Total",
     host: "Host",
@@ -455,6 +456,7 @@ const copy: Record<Lang, Record<string, string>> = {
     subagent: "子",
     unknown: "未知",
     active: "活跃",
+    moreCount: "还有 {count} 项",
     all: "全部",
     total: "合计",
     host: "宿主",
@@ -603,6 +605,7 @@ const copy: Record<Lang, Record<string, string>> = {
     subagent: "sub",
     unknown: "unknown",
     active: "Active",
+    moreCount: "+{count} more",
     all: "All",
     total: "Total",
     host: "Host",
@@ -905,16 +908,12 @@ function App() {
         <DashboardSurface
           t={t}
           snapshot={snapshot}
-          selected={selected}
           selection={selection}
           setSelection={setSelection}
           railTab={railTab}
           setRailTab={setRailTab}
           query={query}
           setQuery={setQuery}
-          logTab={logTab}
-          setLogTab={setLogTab}
-          refreshSnapshot={refreshSnapshot}
           trendRange={trendRange}
           setTrendRange={setTrendRange}
           trendSelection={trendSelection}
@@ -1041,16 +1040,12 @@ function PopoverFooter({
 function DashboardSurface({
   t,
   snapshot,
-  selected,
   selection,
   setSelection,
   railTab,
   setRailTab,
   query,
   setQuery,
-  logTab,
-  setLogTab,
-  refreshSnapshot,
   trendRange,
   setTrendRange,
   trendSelection,
@@ -1058,16 +1053,12 @@ function DashboardSurface({
 }: {
   t: (key: string) => string;
   snapshot: Snapshot | null;
-  selected: SelectedView;
   selection: Selection;
   setSelection: (value: Selection) => void;
   railTab: RailTab;
   setRailTab: (tab: RailTab) => void;
   query: string;
   setQuery: (value: string) => void;
-  logTab: LogTab;
-  setLogTab: (value: LogTab) => void;
-  refreshSnapshot: () => void;
   trendRange: TrendRange;
   setTrendRange: (value: TrendRange) => void;
   trendSelection: Record<TrendLane, string | undefined>;
@@ -1091,7 +1082,7 @@ function DashboardSurface({
         <DashboardBandHead kicker={t("liveLedger")} title={t("projectSessionTree")} meta={`${snapshot.live_sessions?.length ?? 0} ${t("sessions")}`} />
         <div className="dash-atlas-grid">
           <div className="dash-atlas-panel">
-            <ProjectAtlas t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} limit={10} defaultExpandedCount={2} showHead={false} />
+            <ProjectAtlas t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} limit={14} defaultExpandedCount={0} showHead={false} />
           </div>
           <DashboardSideRails t={t} snapshot={snapshot} />
         </div>
@@ -1111,32 +1102,16 @@ function DashboardSurface({
         setTrendSelection={setTrendSelection}
       />
 
-      <section className="dash-nav-band">
-        <div className="dash-inspector-head">
-          <DashboardBandHead kicker={t("inspect")} title={`${t("projects")} / ${t("sessions")} / ${t("processes")}`} meta={t("emptySub")} />
-        </div>
-        <LedgerNavigation
-          t={t}
-          activeTab={railTab}
-          setActiveTab={setRailTab}
-          query={query}
-          setQuery={setQuery}
-          items={railItems}
-          selection={selection}
-          setSelection={setSelection}
-        />
-        <Pane
-          t={t}
-          snapshot={snapshot}
-          selected={selected}
-          selection={selection}
-          setSelection={setSelection}
-          logTab={logTab}
-          setLogTab={setLogTab}
-          refreshSnapshot={refreshSnapshot}
-          compact={false}
-        />
-      </section>
+      <DashboardInspectorStrip
+        t={t}
+        activeTab={railTab}
+        setActiveTab={setRailTab}
+        query={query}
+        setQuery={setQuery}
+        items={railItems}
+        selection={selection}
+        setSelection={setSelection}
+      />
     </main>
   );
 }
@@ -1150,6 +1125,66 @@ function DashboardBandHead({ kicker, title, meta }: { kicker: string; title: str
       </div>
       {meta ? <span>{meta}</span> : null}
     </div>
+  );
+}
+
+function DashboardInspectorStrip({
+  t,
+  activeTab,
+  setActiveTab,
+  query,
+  setQuery,
+  items,
+  selection,
+  setSelection,
+}: {
+  t: (key: string) => string;
+  activeTab: RailTab;
+  setActiveTab: (tab: RailTab) => void;
+  query: string;
+  setQuery: (value: string) => void;
+  items: RailItem[];
+  selection: Selection;
+  setSelection: (value: Selection) => void;
+}) {
+  return (
+    <section className="dash-inspector-strip" aria-label={t("inspect")}>
+      <div className="dash-inspector-title">
+        <span className="note-kicker">{t("inspect")}</span>
+        <strong>{t("projects")} / {t("sessions")} / {t("processes")}</strong>
+      </div>
+      <div className="dash-inspector-controls">
+        <div className="rail-tabs" role="tablist">
+          {(["projects", "sessions", "processes"] as RailTab[]).map((tab) => (
+            <button key={tab} className={`rail-tab ${activeTab === tab ? "is-active" : ""}`} type="button" role="tab" onClick={() => setActiveTab(tab)}>
+              {tab === "projects" ? <GitBranch size={14} /> : tab === "sessions" ? <Bot size={14} /> : <Server size={14} />}
+              {t(tab)}
+            </button>
+          ))}
+        </div>
+        <div className="rail-search">
+          <Search size={15} />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("search")} autoComplete="off" spellCheck={false} />
+        </div>
+      </div>
+      <div className="dash-inspector-list">
+        <button className={`ledger-chip overview ${selection.type === "overview" ? "is-selected" : ""}`} type="button" onClick={() => setSelection({ type: "overview", id: "overview" })}>
+          <span>{t("overview")}</span>
+          <em>/api</em>
+        </button>
+        {items.slice(0, 12).map((item) => (
+          <button
+            className={`ledger-chip ${selection.id === item.id && selection.type === item.type ? "is-selected" : ""}`}
+            type="button"
+            key={`${item.type}-${item.id}`}
+            onClick={() => setSelection({ type: item.type, id: item.id } as Selection)}
+          >
+            <span>{item.title}</span>
+            <em>{item.value}</em>
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -1490,8 +1525,16 @@ function ProjectAtlas({
   return (
     <section className={`project-atlas ${compact ? "compact" : ""}`}>
       {showHead ? <BandHead kicker={compact ? t("liveLedger") : t("projects")} title={t("projectSessionTree")} meta={`${projects.length} ${t("projects")}`} /> : null}
+      {projects.length ? (
+        <div className="project-columns" aria-hidden="true">
+          <span>#</span>
+          <span>{t("projects")}</span>
+          <span>{t("sessions")}</span>
+          <span>{t("tools")}</span>
+        </div>
+      ) : null}
       <div className="project-tree-list">
-        {projects.length ? projects.map((project) => {
+        {projects.length ? projects.map((project, index) => {
           const projectId = safeID(project.project);
           return (
             <ProjectTreeRow
@@ -1503,6 +1546,7 @@ function ProjectAtlas({
               compact={compact}
               expanded={openProjects.has(projectId) || selection.id === projectId}
               onToggle={() => toggleProject(projectId)}
+              rank={index + 1}
             />
           );
         }) : (
@@ -1663,7 +1707,7 @@ function CandidateWorkitemsRail({ t, snapshot }: { t: (key: string) => string; s
 }
 
 function ProcessLedger({ t, snapshot, setSelection }: { t: (key: string) => string; snapshot: Snapshot; setSelection: (value: Selection) => void }) {
-  const rows = [...(snapshot.live_processes ?? [])].sort((a, b) => (b.mapped_sessions ?? 0) - (a.mapped_sessions ?? 0)).slice(0, 14);
+  const rows = [...(snapshot.live_processes ?? [])].sort((a, b) => (b.mapped_sessions ?? 0) - (a.mapped_sessions ?? 0)).slice(0, 18);
   return (
     <div className="process-ledger" role="table" aria-label={t("processLedger")}>
       <div className="process-row head" role="row">
@@ -2261,6 +2305,7 @@ function ProjectWorkspace({
           setSelection={setSelection}
           compact={compact}
           expanded
+          rank={1}
         />
       </div>
     );
@@ -2278,6 +2323,7 @@ function ProjectWorkspace({
             setSelection={setSelection}
             compact={compact}
             expanded={!compact && index < 2}
+            rank={index + 1}
           />
         )) : (
           <section className="empty-inline">
@@ -2327,6 +2373,7 @@ function ProjectTreeRow({
   compact,
   expanded,
   onToggle,
+  rank,
 }: {
   t: (key: string) => string;
   snapshot: Snapshot;
@@ -2335,35 +2382,45 @@ function ProjectTreeRow({
   compact: boolean;
   expanded: boolean;
   onToggle?: () => void;
+  rank?: number;
 }) {
   const sessions = sessionsForProject(snapshot, project);
   const counts = projectRoleCounts(project, sessions);
   const projectId = safeID(project.project);
   const title = project.project || t("unassigned");
   const evidenceItems = projectEvidenceItems(t, project, compact);
+  const selectProject = () => {
+    if (onToggle) {
+      onToggle();
+      return;
+    }
+    setSelection({ type: "project", id: projectId });
+  };
   return (
     <article className={`project-tree-row ${expanded ? "expanded" : ""}`}>
       <div className="project-tree-head">
-        <button className="project-select" type="button" onClick={onToggle ?? (() => setSelection({ type: "project", id: projectId }))} aria-expanded={expanded}>
+        <span className="project-rank">{rank ?? "-"}</span>
+        <button className="project-select" type="button" onClick={selectProject} aria-expanded={expanded}>
           <ChevronDown size={15} aria-hidden="true" />
           <span>{title}</span>
           <small>{formatAge(project.last_event_age_seconds)}</small>
         </button>
-        <button className="project-pin" type="button" onClick={() => setSelection({ type: "project", id: projectId })}>
-          {t("inspect")}
-        </button>
         <ProjectMetricMatrix t={t} counts={counts} processCount={project.process_count ?? 0} />
         <ToolStrip t={t} tools={project.tools ?? []} />
       </div>
-      <div className="project-evidence-strip" aria-label={t("evidence")}>
-        {evidenceItems.map((item) => (
-          <span className={`project-evidence-chip ${item.tone ?? ""}`} key={item.label}>
-            <b>{item.label}</b>
-            <em>{item.value}</em>
-          </span>
-        ))}
-      </div>
-      {expanded ? <SessionTree t={t} sessions={sessions} setSelection={setSelection} compact={compact} /> : null}
+      {expanded ? (
+        <>
+          <div className="project-evidence-strip" aria-label={t("evidence")}>
+            {evidenceItems.map((item) => (
+              <span className={`project-evidence-chip ${item.tone ?? ""}`} key={item.label}>
+                <b>{item.label}</b>
+                <em>{item.value}</em>
+              </span>
+            ))}
+          </div>
+          <SessionTree t={t} sessions={sessions} setSelection={setSelection} compact={compact} />
+        </>
+      ) : null}
     </article>
   );
 }
@@ -2421,19 +2478,28 @@ function SessionTree({
   compact: boolean;
 }) {
   const branches = buildSessionBranches(sessions);
+  const linkedLimit = compact ? 3 : 5;
+  const childLimit = compact ? 3 : 4;
+  const unlinkedLimit = compact ? 4 : 7;
+  const visibleLinked = branches.linked.slice(0, linkedLimit);
+  const visibleUnlinked = branches.unlinked.slice(0, unlinkedLimit);
+  const hiddenLinked = Math.max(0, branches.linked.length - visibleLinked.length);
+  const hiddenUnlinked = Math.max(0, branches.unlinked.length - visibleUnlinked.length);
+  const hiddenChildren = visibleLinked.reduce((total, branch) => total + Math.max(0, branch.children.length - Math.min(branch.children.length, childLimit)), 0);
+  const hiddenTotal = hiddenLinked + hiddenUnlinked + hiddenChildren;
   if (!sessions.length) {
     return <div className="session-tree empty">{t("empty")}</div>;
   }
   return (
     <div className="session-tree">
-      {branches.linked.map((branch) => (
+      {visibleLinked.map((branch) => (
         <section className="session-branch" key={sessionIdentity(branch.parent)}>
           <div className="session-group-head">
             <span><ToolIcon tool={branch.parent.tool} />{branch.parent.agent_nickname || shortID(branch.parent.session_id) || t("main")}</span>
             <strong>{branch.children.length}</strong>
           </div>
           <SessionLine t={t} session={branch.parent} setSelection={setSelection} compact={compact} />
-          {branch.children.slice(0, compact ? 3 : 10).map((session) => (
+          {branch.children.slice(0, childLimit).map((session) => (
             <SessionLine key={sessionIdentity(session)} t={t} session={session} setSelection={setSelection} compact={compact} child />
           ))}
         </section>
@@ -2444,11 +2510,12 @@ function SessionTree({
             <span><GitBranch size={14} />{t("unlinkedSubagents")}</span>
             <strong>{branches.unlinked.length}</strong>
           </div>
-          {branches.unlinked.slice(0, compact ? 4 : 12).map((session) => (
+          {visibleUnlinked.map((session) => (
             <SessionLine key={sessionIdentity(session)} t={t} session={session} setSelection={setSelection} compact={compact} />
           ))}
         </section>
       ) : null}
+      {hiddenTotal ? <div className="session-tree-more">{t("moreCount").replace("{count}", String(hiddenTotal))}</div> : null}
     </div>
   );
 }
