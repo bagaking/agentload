@@ -109,6 +109,36 @@ func TestHandleRefreshAPIReturnsDedupedSlotID(t *testing.T) {
 	}
 }
 
+func TestHandleRefreshAPIUsesRequestedIntervalSlot(t *testing.T) {
+	app := &trayApp{
+		cfg:       Config{RefreshInterval: 5 * time.Minute},
+		refreshCh: make(chan struct{}, 1),
+	}
+	handler := app.handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/refresh?interval_ms=30000", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected status 202, got %d with body %q", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		RefreshSlotID string `json:"refresh_slot_id"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !strings.HasPrefix(got.RefreshSlotID, "30s:") {
+		t.Fatalf("expected requested 30s refresh slot, got %q", got.RefreshSlotID)
+	}
+	if strings.HasPrefix(got.RefreshSlotID, "300s:") {
+		t.Fatalf("expected requested interval to override app default slot, got %q", got.RefreshSlotID)
+	}
+	if queued := len(app.refreshCh); queued != 1 {
+		t.Fatalf("expected requested interval refresh to queue once, got %d", queued)
+	}
+}
+
 func TestHandleSnapshotAPIReturnsCompactJSONAndRefreshSlotHeader(t *testing.T) {
 	app := &trayApp{}
 	app.rememberSnapshot(Snapshot{

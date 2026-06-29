@@ -193,6 +193,13 @@ func (a *trayApp) requestRefresh() string {
 	return a.requestRefreshForSlot(a.refreshSlotID(time.Now()))
 }
 
+func (a *trayApp) requestRefreshForInterval(interval time.Duration) string {
+	if interval <= 0 {
+		return a.requestRefresh()
+	}
+	return a.requestRefreshForSlot(a.refreshSlotIDForInterval(time.Now(), interval))
+}
+
 func (a *trayApp) requestRefreshForSlot(slotID string) string {
 	slotID = strings.TrimSpace(slotID)
 	if slotID == "" {
@@ -240,7 +247,10 @@ func (a *trayApp) finishRefreshSlot(slotID string) {
 }
 
 func (a *trayApp) refreshSlotID(now time.Time) string {
-	interval := a.cfg.RefreshInterval
+	return a.refreshSlotIDForInterval(now, a.cfg.RefreshInterval)
+}
+
+func (a *trayApp) refreshSlotIDForInterval(now time.Time, interval time.Duration) string {
 	if interval < 30*time.Second {
 		interval = 30 * time.Second
 	}

@@ -88,6 +88,8 @@ agent evidence.
   columns for rank, disclosure, project identity, metrics, and tool coverage so
   tool badges never wrap into a second row. Expanded selection rails should be
   one-pixel guides offset from text, not thick bars over content.
+- Compact project tool coverage must reserve enough right gutter for the visible
+  icon/count pair. Do not use fade masks that make the final count look clipped.
 - Expanded popover session rows should fit role, agent mark, host mark, short id,
   last activity age, process count, and confidence onto one scan line whenever
   the width allows it. Detail panels may carry longer evidence.
@@ -113,6 +115,9 @@ agent evidence.
 - Auto refresh defaults to `5m`. A paused refresh state may exist, but it must be
   labeled as refresh pause/off and must not be conflated with an idle session
   state.
+- The compact top bar should not repeat ambient idle state when the footer
+  already exposes timestamp and refresh cadence. Show top-bar status only when
+  it is actionable or exceptional, such as refreshing or failed.
 - Observation timestamp areas should expose the user-facing refresh cadence as
   a compact click-to-cycle control. Raw refresh slot identifiers belong in
   protocol metadata or diagnostics, not in primary dashboard chrome.

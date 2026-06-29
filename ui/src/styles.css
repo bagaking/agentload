@@ -7405,3 +7405,23 @@ body[data-view="popover"] .scan-readout strong {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+body[data-view="popover"] .popover-project-table .project-tree-list {
+  padding-right: 8px;
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-head {
+  grid-template-columns: 16px 14px minmax(64px, 1fr) minmax(104px, auto) minmax(50px, auto);
+}
+
+body[data-view="popover"] .popover-project-table .tool-strip {
+  max-width: 52px;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+body[data-view="popover"] .popover-project-table .tool-mark {
+  min-width: max-content;
+}

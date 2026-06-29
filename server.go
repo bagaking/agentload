@@ -113,12 +113,24 @@ func (a *trayApp) handleRefreshAPI(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	slotID := a.requestRefresh()
+	slotID := a.requestRefreshForInterval(refreshIntervalFromRequest(r, a.cfg.RefreshInterval))
 	jsonResponse(w, http.StatusAccepted, map[string]any{
 		"ok":              true,
 		"refreshing":      a.isRefreshing(),
 		"refresh_slot_id": slotID,
 	})
+}
+
+func refreshIntervalFromRequest(r *http.Request, fallback time.Duration) time.Duration {
+	raw := strings.TrimSpace(r.URL.Query().Get("interval_ms"))
+	if raw == "" {
+		return fallback
+	}
+	ms, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || ms < 0 {
+		return fallback
+	}
+	return normalizeRefreshInterval(time.Duration(ms) * time.Millisecond)
 }
 
 func (a *trayApp) handleQuitAPI(w http.ResponseWriter, r *http.Request) {

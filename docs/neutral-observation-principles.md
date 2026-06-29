@@ -161,10 +161,11 @@ session evidence row, or explanatory note should preserve scroll and focus so
 the operator can keep reading the same local context.
 
 Auto-refresh is a data-update mechanism, not a navigation event. The refresh
-timestamp can carry a compact click-to-cycle interval control, but changing the
-interval should only affect client polling cadence. It should not reset tabs,
-expanded project/session detail, scroll position, selected trend bucket, or
-keyboard focus.
+timestamp can carry a compact click-to-cycle interval control; changing the
+interval should update the visible client's refresh-slot request cadence and
+then snapshot polling cadence. It should not reset tabs, expanded
+project/session detail, scroll position, selected trend bucket, or keyboard
+focus.
 
 Refresh cadence is also an observation boundary. The fastest automatic refresh
 is 30 seconds; the default automatic refresh is 5 minutes; users may choose

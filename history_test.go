@@ -394,6 +394,17 @@ func TestRefreshSlotIDDedupesSameTimeSlice(t *testing.T) {
 	}
 }
 
+func TestRefreshSlotIDCanUseRequestedInterval(t *testing.T) {
+	app := &trayApp{cfg: Config{RefreshInterval: 5 * time.Minute}}
+	at := time.Date(2026, 6, 28, 12, 34, 41, 0, time.UTC)
+	if got := app.refreshSlotID(at); got != "300s:2026-06-28T12:30:00Z" {
+		t.Fatalf("unexpected default slot id %q", got)
+	}
+	if got := app.refreshSlotIDForInterval(at, 30*time.Second); got != "30s:2026-06-28T12:34:30Z" {
+		t.Fatalf("unexpected requested slot id %q", got)
+	}
+}
+
 func TestReplayHelpersUseObservedSamplesOnly(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
 	samples := []HistorySample{

@@ -8,6 +8,7 @@ const BRAND_NAME = "Agent Load";
 const ACTIVE = new Set(["active", "running", "queued"]);
 const DEFAULT_REFRESH_INTERVAL_MS = 300_000;
 const MANUAL_REFRESH_SETTLE_MS = 450;
+const AUTO_REFRESH_SETTLE_MS = 650;
 const READER_CONTEXT_TTL_MS = 20_000;
 const READER_REFRESH_FLOOR_MS = 60_000;
 const REFRESH_INTERVALS_MS = [30_000, 60_000, 120_000, 300_000, 0] as const;
@@ -353,11 +354,17 @@ function App() {
       if (fetchInFlightRef.current === fetchWork) fetchInFlightRef.current = null;
     }
   }, [view]);
+  const requestRefreshSlot = useCallback(async () => {
+    const params = new URLSearchParams();
+    if (refreshInterval > 0) params.set("interval_ms", String(refreshInterval));
+    const suffix = params.size ? `?${params.toString()}` : "";
+    const response = await fetch(`/api/refresh${suffix}`, { method: "POST", headers: { "Content-Type": "application/json" } });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  }, [refreshInterval]);
   const refreshSnapshot = useCallback(async () => {
     setRefreshing(true);
     try {
-      const response = await fetch("/api/refresh", { method: "POST", headers: { "Content-Type": "application/json" } });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      await requestRefreshSlot();
       await delay(MANUAL_REFRESH_SETTLE_MS);
       await fetchSnapshot("manual");
     } catch (err) {
@@ -365,7 +372,12 @@ function App() {
     } finally {
       setRefreshing(false);
     }
-  }, [fetchSnapshot]);
+  }, [fetchSnapshot, requestRefreshSlot]);
+  const refreshAutomatically = useCallback(async () => {
+    await requestRefreshSlot().catch(() => undefined);
+    await delay(AUTO_REFRESH_SETTLE_MS);
+    await fetchSnapshot("auto").catch(() => undefined);
+  }, [fetchSnapshot, requestRefreshSlot]);
 
   useEffect(() => {
     void fetchSnapshot("initial").catch((err) => setError(err instanceof Error ? err.message : String(err)));
@@ -387,7 +399,7 @@ function App() {
         if (cancelled) return;
         if (!surfaceVisible(view, popoverVisibleRef.current)) return;
         if (!fetchInFlightRef.current) {
-          await fetchSnapshot("auto").catch(() => undefined);
+          await refreshAutomatically();
         }
         if (!cancelled) schedule();
       }, delay);
@@ -397,13 +409,13 @@ function App() {
       cancelled = true;
       clearTimer();
     };
-  }, [fetchSnapshot, popoverView, refreshInterval, surfaceVersion, view]);
+  }, [fetchSnapshot, popoverView, refreshAutomatically, refreshInterval, surfaceVersion, view]);
   useEffect(() => {
     const refreshIfStale = () => {
       if (!refreshInterval || !surfaceVisible(view, popoverVisibleRef.current)) return;
       const staleAfter = Math.max(DEFAULT_REFRESH_INTERVAL_MS, refreshInterval);
       if (!snapshotRef.current || Date.now() - lastSnapshotReceivedAtRef.current >= staleAfter) {
-        void fetchSnapshot("auto").catch(() => undefined);
+        void refreshAutomatically();
       }
     };
     const onVisibilityChange = () => {
@@ -427,7 +439,7 @@ function App() {
       window.removeEventListener("agentLoadPopoverShown", onPopoverShown);
       window.removeEventListener("agentLoadPopoverHidden", onPopoverHidden);
     };
-  }, [fetchSnapshot, refreshInterval, view]);
+  }, [refreshAutomatically, refreshInterval, view]);
   useEffect(() => {
     const shouldMarkReaderEvent = (event: Event) => {
       const target = event.target;
@@ -1945,6 +1957,8 @@ function Topbar({
   refreshInterval: number;
   cycleRefreshInterval: () => void;
 }) {
+  const topbarStatusTone = error ? "bad" : running ? "running" : "idle";
+  const showTopbarStatus = !compact || error || running;
   return (
     <header className="topbar">
       <div className="brand">
@@ -1960,7 +1974,7 @@ function Topbar({
       </div>
       <div className="topbar-meta">
         {compact ? <LocalStatus t={t} /> : <Pill tone="safe">{t("loopback")}</Pill>}
-        <Pill tone={error ? "bad" : running ? "running" : "idle"}>{error ? t("failed") : running ? t("running") : t("idle")}</Pill>
+        {showTopbarStatus ? <Pill tone={topbarStatusTone}>{error ? t("failed") : running ? t("running") : t("idle")}</Pill> : null}
         {!compact ? (
           <button className="kbd-hint" type="button" data-focus-key={focusKey("topbar-refresh-interval")} onClick={cycleRefreshInterval} title={t("autoRefresh")}>
             <kbd>{formatRefreshInterval(refreshInterval, t)}</kbd> {t("auto")}
