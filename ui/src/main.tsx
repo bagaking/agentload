@@ -7,6 +7,7 @@ import "./styles.css";
 const BRAND_NAME = "Agent Load";
 const ACTIVE = new Set(["active", "running", "queued"]);
 const DEFAULT_REFRESH_INTERVAL_MS = 300_000;
+const READER_REFRESH_FLOOR_MS = 60_000;
 const REFRESH_INTERVALS_MS = [30_000, 60_000, 120_000, 300_000, 0] as const;
 const REFRESH_INTERVAL_STORAGE_KEY = "agentload.refreshIntervalMs.v5";
 const TREND_RANGES: TrendRange[] = ["1D", "3D", "7D", "15D", "30D"];
@@ -285,6 +286,8 @@ function App() {
   const snapshotRef = useRef<Snapshot | null>(null);
   const popoverVisibleRef = useRef(true);
   const fetchInFlightRef = useRef<Promise<void> | null>(null);
+  const refreshTimerRef = useRef<number | null>(null);
+  const [surfaceVersion, setSurfaceVersion] = useState(0);
 
   const t = useCallback((key: string) => copy[lang][key] || copy.en[key] || key, [lang]);
   const fetchSnapshot = useCallback(async (reason: RefreshReason = "auto") => {
@@ -334,12 +337,33 @@ function App() {
     void fetchSnapshot("initial").catch((err) => setError(err instanceof Error ? err.message : String(err)));
   }, [fetchSnapshot]);
   useEffect(() => {
-    if (!refreshInterval) return;
-    const id = window.setInterval(() => {
-      if (surfaceVisible(view, popoverVisibleRef.current)) void fetchSnapshot("auto").catch(() => undefined);
-    }, refreshInterval);
-    return () => window.clearInterval(id);
-  }, [fetchSnapshot, refreshInterval, view]);
+    let cancelled = false;
+    const clearTimer = () => {
+      if (refreshTimerRef.current !== null) {
+        window.clearTimeout(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+      }
+    };
+    const schedule = () => {
+      clearTimer();
+      const delay = effectiveAutoRefreshDelay(view, popoverView, refreshInterval, popoverVisibleRef.current, shellRef.current);
+      if (!delay || cancelled) return;
+      refreshTimerRef.current = window.setTimeout(async () => {
+        refreshTimerRef.current = null;
+        if (cancelled) return;
+        if (!surfaceVisible(view, popoverVisibleRef.current)) return;
+        if (!fetchInFlightRef.current) {
+          await fetchSnapshot("auto").catch(() => undefined);
+        }
+        if (!cancelled) schedule();
+      }, delay);
+    };
+    schedule();
+    return () => {
+      cancelled = true;
+      clearTimer();
+    };
+  }, [fetchSnapshot, popoverView, refreshInterval, surfaceVersion, view]);
   useEffect(() => {
     const refreshIfStale = () => {
       if (!refreshInterval || !surfaceVisible(view, popoverVisibleRef.current)) return;
@@ -348,13 +372,18 @@ function App() {
         void fetchSnapshot("auto").catch(() => undefined);
       }
     };
-    const onVisibilityChange = () => refreshIfStale();
+    const onVisibilityChange = () => {
+      setSurfaceVersion((value) => value + 1);
+      refreshIfStale();
+    };
     const onPopoverShown = () => {
       popoverVisibleRef.current = true;
+      setSurfaceVersion((value) => value + 1);
       refreshIfStale();
     };
     const onPopoverHidden = () => {
       popoverVisibleRef.current = false;
+      setSurfaceVersion((value) => value + 1);
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("agentLoadPopoverShown", onPopoverShown);
@@ -3080,6 +3109,29 @@ function initialRefreshInterval(): number {
 function surfaceVisible(view: "popover" | "dashboard", popoverVisible: boolean): boolean {
   if (document.visibilityState && document.visibilityState !== "visible") return false;
   return view !== "popover" || popoverVisible;
+}
+
+function effectiveAutoRefreshDelay(
+  view: "popover" | "dashboard",
+  popoverView: PopoverView,
+  refreshInterval: number,
+  popoverVisible: boolean,
+  shell: HTMLElement | null,
+): number {
+  if (!refreshInterval || !surfaceVisible(view, popoverVisible)) return 0;
+  return readerContextActive(view, popoverView, shell) ? Math.max(refreshInterval, READER_REFRESH_FLOOR_MS) : refreshInterval;
+}
+
+function readerContextActive(view: "popover" | "dashboard", popoverView: PopoverView, shell: HTMLElement | null): boolean {
+  if (document.scrollingElement && document.scrollingElement.scrollTop > 8) return true;
+  const root = shell ?? document;
+  if (root.querySelector('[aria-expanded="true"]')) return true;
+  if (view === "popover") {
+    if (popoverView === "trend") return true;
+    const scroller = root.querySelector<HTMLElement>(".popover-current-scroll");
+    if (scroller && scroller.scrollTop > 8) return true;
+  }
+  return false;
 }
 
 function captureViewportState(shell: HTMLElement | null): ViewportState {
