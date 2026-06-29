@@ -34,6 +34,9 @@ agent evidence.
   the popover is the constrained-height surface.
 - Project / Sessions / Processes navigation remains available as a dense
   inspector band for focused lookup
+- Inspector navigation lists may start compact, but capped Project / Sessions /
+  Processes results must expose an open/close overflow control so focused
+  lookup never silently drops reachable observations.
 - main/detail panes may show result-style headers and evidence text, but should
   not dominate the first dashboard viewport
 - The dashboard masthead is the first report-level identity block. It should

@@ -5531,6 +5531,12 @@ body[data-view="dashboard"] .session-line.is-selected {
   margin-top: 2px;
 }
 
+.inspector-more {
+  align-self: stretch;
+  min-height: 24px;
+  padding: 0 6px;
+}
+
 body[data-view="dashboard"] .session-tree-more {
   min-height: 22px;
   padding: 4px 0 0 15px;

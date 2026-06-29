@@ -13,6 +13,7 @@ const READER_REFRESH_FLOOR_MS = 60_000;
 const REFRESH_INTERVALS_MS = [30_000, 60_000, 120_000, 300_000, 0] as const;
 const REFRESH_INTERVAL_STORAGE_KEY = "agentload.refreshIntervalMs.v5";
 const TREND_RANGES: TrendRange[] = ["1D", "3D", "7D", "15D", "30D"];
+const INSPECTOR_INITIAL_LIMIT = 12;
 const PROCESS_LEDGER_INITIAL_LIMIT = 40;
 
 type Theme = "dark" | "light";
@@ -895,6 +896,12 @@ function DashboardInspectorStrip({
   selection: Selection;
   setSelection: (value: Selection) => void;
 }) {
+  const [showOverflow, setShowOverflow] = useState(false);
+  useEffect(() => {
+    setShowOverflow(false);
+  }, [activeTab, query]);
+  const hiddenCount = Math.max(0, items.length - INSPECTOR_INITIAL_LIMIT);
+  const visibleItems = showOverflow ? items : items.slice(0, INSPECTOR_INITIAL_LIMIT);
   return (
     <section className="dash-inspector-strip" aria-label={t("inspect")}>
       <div className="dash-inspector-title">
@@ -920,7 +927,7 @@ function DashboardInspectorStrip({
           <span>{t("overview")}</span>
           <em>/api</em>
         </button>
-        {items.slice(0, 12).map((item) => (
+        {visibleItems.map((item) => (
           <button
             className={`ledger-chip ${selection.id === item.id && selection.type === item.type ? "is-selected" : ""}`}
             type="button"
@@ -932,6 +939,12 @@ function DashboardInspectorStrip({
             <em>{item.value}</em>
           </button>
         ))}
+        {hiddenCount ? (
+          <button className={`session-tree-more inspector-more ${showOverflow ? "is-expanded" : ""}`} type="button" data-focus-key={focusKey("dashboard-inspector-more", activeTab)} onClick={() => setShowOverflow((value) => !value)} aria-expanded={showOverflow}>
+            <ChevronDown size={12} aria-hidden="true" />
+            <span>{t(showOverflow ? "lessCount" : "moreCount").replace("{count}", String(hiddenCount))}</span>
+          </button>
+        ) : null}
       </div>
     </section>
   );
