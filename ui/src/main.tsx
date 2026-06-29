@@ -2267,7 +2267,8 @@ function ProjectWorkspace({
 function ScanBoundary({ t, snapshot, compact }: { t: (key: string) => string; snapshot: Snapshot; compact: boolean }) {
   const stats = snapshot.transcript_stats ?? {};
   const pieces = [
-    { label: t("foreground"), value: `${stats.parsed_files ?? 0}/${stats.scanned_files ?? 0}` },
+    { label: t("parsed"), value: stats.parsed_files ?? 0 },
+    { label: t("candidates"), value: stats.scanned_files ?? 0 },
     { label: t("deferred"), value: deferredScanValue(t, stats) },
     { label: t("tail"), value: stats.tail_parsed_files ?? 0 },
     { label: t("source"), value: stats.cached ? t("cached") : t("fresh") },
@@ -2918,7 +2919,14 @@ function transcriptScanSummary(t: (key: string) => string, stats: TranscriptStat
   const deferred = stats.deferred_files ?? 0;
   const tail = stats.tail_parsed_files ?? 0;
   const retained = typeof retainedSamples === "number" ? ` · ${retainedSamples} ${t("samples")}` : "";
-  return `${parsed}/${scanned} ${t("transcriptsParsed")} · ${deferred} ${t("deferred")} · ${tail} ${t("tail")}${retained}`;
+  const boundary = stats.historical_scan_deferred
+    ? t("historicalWalkDeferred")
+    : deferred > 0
+      ? `${deferred} ${t("deferred")}`
+      : tail > 0
+        ? `${tail} ${t("tail")}`
+        : "";
+  return `${parsed}/${scanned} ${t("localLogs")}${boundary ? ` · ${boundary}` : ""}${retained}`;
 }
 
 function transcriptScanNote(t: (key: string) => string, stats: TranscriptStats): string {
