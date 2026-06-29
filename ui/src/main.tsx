@@ -1542,7 +1542,7 @@ function TrendLaneView({
               </g>
             </svg>
           </div>
-          {selected ? <TrendDetail t={t} lane={lane} point={selected} compact={compact} /> : null}
+          {selected ? <TrendDetail t={t} lane={lane} point={selected} trendWindow={trendWindow} compact={compact} /> : null}
         </>
       ) : (
         <section className="empty-inline"><Gauge size={18} /><span>{t("noTrend")}</span></section>
@@ -1551,9 +1551,10 @@ function TrendLaneView({
   );
 }
 
-function TrendDetail({ t, lane, point, compact }: { t: (key: string) => string; lane: TrendLane; point: TrendPoint; compact: boolean }) {
+function TrendDetail({ t, lane, point, trendWindow, compact }: { t: (key: string) => string; lane: TrendLane; point: TrendPoint; trendWindow?: TrendWindow; compact: boolean }) {
   const detailsId = useId();
   const [expanded, setExpanded] = useState(!compact);
+  const contextMetrics = trendContextMetrics(t, trendWindow);
   const metrics = trendDetailMetrics(t, lane, point);
   const sections = trendExplanationSections(t, lane, point);
   return (
@@ -1585,6 +1586,14 @@ function TrendDetail({ t, lane, point, compact }: { t: (key: string) => string; 
         </div>
       ) : null}
       <div className="trend-detail-details" id={detailsId} hidden={!expanded}>
+        <div className="trend-detail-grid trend-context-grid">
+          {contextMetrics.map((metric) => (
+            <span className="trend-detail-metric context" key={metric.label}>
+              <b>{metric.label}</b>
+              <strong>{metric.value}</strong>
+            </span>
+          ))}
+        </div>
         <div className="trend-detail-grid">
           {metrics.map((metric) => (
             <span className="trend-detail-metric" key={metric.label}>
@@ -1645,7 +1654,7 @@ function Topbar({
         </div>
       </div>
       <div className="topbar-meta">
-        <Pill tone="safe">{compact ? t("loopbackShort") : t("loopback")}</Pill>
+        {compact ? <LocalStatus t={t} /> : <Pill tone="safe">{t("loopback")}</Pill>}
         <Pill tone={error ? "bad" : running ? "running" : "idle"}>{error ? t("failed") : running ? t("running") : t("idle")}</Pill>
         {!compact ? (
           <button className="kbd-hint" type="button" onClick={cycleRefreshInterval} title={t("autoRefresh")}>
@@ -1671,6 +1680,14 @@ function Topbar({
         ) : null}
       </div>
     </header>
+  );
+}
+
+function LocalStatus({ t }: { t: (key: string) => string }) {
+  return (
+    <span className="local-status-chip" role="status" title={t("loopback")} aria-label={t("loopback")}>
+      <span className="state-dot observed" aria-hidden="true" />
+    </span>
   );
 }
 
@@ -2173,14 +2190,47 @@ function SessionLine({
   const sid = session.session_id || "";
   const host = session.host_apps?.[0];
   const evidenceItems = sessionEvidenceItems(t, session, compact);
+  const processText = compact ? `${session.process_count ?? 0}p` : `${session.process_count ?? 0} ${t("pid")}`;
   const selected = selection.type === "session" && safeID(sid) === selection.id;
+  const title = session.agent_nickname || shortID(sid) || "session";
+  const meta = `${formatAge(session.last_event_age_seconds)} · ${processText} · ${session.confidence || t("unavailable")}`;
+  if (compact) {
+    return (
+      <div className={`session-line role-${role} ${session.active_burst ? "is-active" : ""} ${selected ? "is-selected" : ""} ${child ? "is-child" : ""}`}>
+        <span className="session-role-slot">
+          <RoleGlyph t={t} role={role} />
+        </span>
+        <span className="session-tool-pair">
+          <ToolIcon tool={session.tool || "unknown"} />
+          {host ? <HostAppButton t={t} host={host} /> : <span className="host-empty" title={t("host")} />}
+        </span>
+        <button className="session-main" type="button" aria-current={selected ? "true" : undefined} onClick={() => setSelection({ type: "session", id: safeID(sid) })}>
+          <span className="session-title">
+            <strong>{title}</strong>
+            <small>{meta}</small>
+          </span>
+        </button>
+        <button className="mini-icon" type="button" title={t("copySession")} onClick={() => copyText(sid)}>
+          <Copy size={13} />
+        </button>
+        <div className="session-evidence-strip" aria-label={t("evidence")}>
+          {evidenceItems.map((item) => (
+            <span className={`session-evidence-chip ${item.tone ?? ""}`} key={item.label}>
+              <b>{item.label}</b>
+              <em>{item.value}</em>
+            </span>
+          ))}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className={`session-line role-${role} ${session.active_burst ? "is-active" : ""} ${selected ? "is-selected" : ""} ${child ? "is-child" : ""}`}>
       <button className="session-main" type="button" aria-current={selected ? "true" : undefined} onClick={() => setSelection({ type: "session", id: safeID(sid) })}>
         <RoleGlyph t={t} role={role} />
         <span className="session-title">
-          <strong>{session.agent_nickname || shortID(sid) || "session"}</strong>
-          <small>{formatAge(session.last_event_age_seconds)} · {session.process_count ?? 0} {t("pid")} · {session.confidence || t("unavailable")}</small>
+          <strong>{title}</strong>
+          <small>{meta}</small>
         </span>
       </button>
       <span className="session-tool-pair">
@@ -2958,6 +3008,20 @@ function trendSelectedReadout(t: (key: string) => string, lane: TrendLane, point
     return `${trendMetricValue(t, point.active_burst_concurrency)} / ${trendMetricValue(t, point.session_concurrency)}`;
   }
   return `${trendMetricValue(t, point.pid_concurrency)} / ${typeof point.mapping_coverage_pct === "number" ? formatPct(point.mapping_coverage_pct) : t("unavailable")}`;
+}
+
+function trendContextMetrics(t: (key: string) => string, window?: TrendWindow): Array<{ label: string; value: string }> {
+  const granularity = typeof window?.granularity_seconds === "number" && window.granularity_seconds > 0 ? formatAge(window.granularity_seconds) : t("unavailable");
+  const sourceLookback = typeof window?.source_lookback_hours === "number" && Number.isFinite(window.source_lookback_hours) ? `${window.source_lookback_hours}h` : "";
+  const source = window?.source_from ? `${formatDateTime(window.source_from)}${sourceLookback ? ` · ${sourceLookback}` : ""}` : sourceLookback || t("unavailable");
+  const completeness = window?.history_complete === true ? t("complete") : window?.history_complete === false ? t("partial") : t("unavailable");
+  return [
+    { label: t("trendRange"), value: window?.range || t("unavailable") },
+    { label: t("trendBucket"), value: granularity },
+    { label: t("trendWindow"), value: formatTrendWindow(window) },
+    { label: t("trendSourceWindow"), value: source },
+    { label: t("trendCompleteness"), value: completeness },
+  ];
 }
 
 function trendExplanationSections(t: (key: string) => string, lane: TrendLane, point: TrendPoint): Array<{ label: string; text: string }> {

@@ -23,6 +23,9 @@ agent evidence.
   a first-class operator control, not a dashboard-only setting. Direct links may
   specify `?lang=`, and the page-level `lang` attribute should use the resolved
   locale rather than a generic fallback.
+- Compact popover chrome should not spend primary horizontal space on the full
+  loopback address; keep local-only status available through a small status mark,
+  tooltip, or detail surface.
 - dashboard surface with front status, evidence column, project/session atlas,
   calibration rail, age rail, confidence grid, process ledger, and trend suite
 - Project / Sessions / Processes navigation remains available as a dense
@@ -36,10 +39,17 @@ agent evidence.
 - Keep padding tight enough for repeated operational use.
 - Use thin separators and depth changes; avoid heavy line-box scaffolding and
   oversized framed logs.
+- Favor scan-line density for audit lists. Primary rows should expose only the
+  fields needed to understand global state; secondary identifiers such as full
+  local addresses, long paths, and verbose evidence belong in tooltips, detail
+  panes, or disclosure surfaces.
 - Expanded project rows must keep sessions in a compact tree outline. Avoid
   block-level evidence stacks inside the popover; global audit should not
   require scrolling past full evidence cards to understand parent/child session
   shape.
+- Expanded popover session rows should fit role, agent mark, host mark, short id,
+  last activity age, process count, and confidence onto one scan line whenever
+  the width allows it. Detail panels may carry longer evidence.
 - Use icons for tabs, commands, status, and metrics where they reduce text load.
 - Core runtime terms such as fresh movement, sessions, processes, mapping
   health, and scan state should expose short hover/focus explanations so dense
