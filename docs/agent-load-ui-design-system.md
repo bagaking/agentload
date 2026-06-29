@@ -3,7 +3,8 @@ title: Agent Load UI Design System
 sop:
   - When changing `ui/src`, preserve the popover/dashboard split and keep Project / Sessions / Processes available as navigation, not as the only visual shell.
   - Keep visual tokens aligned with the console design language: dark material surfaces, blue primary accent, green/yellow/red semantic states, compact bands, and dense evidence panes.
-  - Before committing UI changes, run `npm --prefix ui run build` and `go test ./...`.
+  - Before committing UI changes, run `node scripts/validate_locales.js` and `go test ./...`.
+  - When review feedback reveals a missing durable UI rule, update this design system in the same change.
 ---
 
 # Agent Load UI Design System
@@ -51,6 +52,11 @@ agent evidence.
 - Auto refresh defaults to `5m`. A paused refresh state may exist, but it must be
   labeled as refresh pause/off and must not be conflated with an idle session
   state.
+- Multilingual UI copy is part of the design surface. New operator-facing text
+  must be added to every supported locale with matching placeholder tokens.
+- Review feedback is design input. If a critique exposes a reusable rule about
+  hierarchy, density, contrast, controls, terminology, or auditability, fold it
+  back into this document instead of leaving it only in chat history.
 - Use the token family in `ui/src/styles.css` as the source of truth:
   - primary accent: blue
   - active/running: yellow

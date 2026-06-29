@@ -18,7 +18,8 @@ Do not hand-edit it directly.
 Source: `docs/agent-load-ui-design-system.md`
 - When changing `ui/src`, preserve the popover/dashboard split and keep Project / Sessions / Processes available as navigation, not as the only visual shell.
 - Keep visual tokens aligned with the console design language: dark material surfaces, blue primary accent, green/yellow/red semantic states, compact bands, and dense evidence panes.
-- Before committing UI changes, run `npm --prefix ui run build` and `go test ./...`.
+- Before committing UI changes, run `node scripts/validate_locales.js` and `go test ./...`.
+- When review feedback reveals a missing durable UI rule, update this design system in the same change.
 
 ### Maintaining Reusable Items
 Source: `docs/norms-maintaining-reusable-items.md`
