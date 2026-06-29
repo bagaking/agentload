@@ -128,12 +128,21 @@ func TestTranscriptScanSkipsUnchangedFileContent(t *testing.T) {
 	}
 
 	var reads atomic.Int32
+	var tailReads atomic.Int32
 	original := parseTranscriptFileFunc
+	originalTail := parseTranscriptFileTailFunc
 	parseTranscriptFileFunc = func(file TranscriptFile) (*SessionTrace, error) {
 		reads.Add(1)
 		return original(file)
 	}
-	t.Cleanup(func() { parseTranscriptFileFunc = original })
+	parseTranscriptFileTailFunc = func(file TranscriptFile) (*SessionTrace, error) {
+		tailReads.Add(1)
+		return originalTail(file)
+	}
+	t.Cleanup(func() {
+		parseTranscriptFileFunc = original
+		parseTranscriptFileTailFunc = originalTail
+	})
 
 	first := observer.scanTranscripts(nil, nil, nil, []TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
 	if reads.Load() != 1 {
@@ -162,6 +171,9 @@ func TestTranscriptScanSkipsUnchangedFileContent(t *testing.T) {
 	second := observer.scanTranscripts(nil, nil, nil, []TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
 	if reads.Load() != 1 {
 		t.Fatalf("expected unchanged mtime/size scan to reuse cached parse without rereading content, got %d parses", reads.Load())
+	}
+	if tailReads.Load() != 0 {
+		t.Fatalf("expected unchanged mtime/size scan to avoid tail parsing, got %d tail parses", tailReads.Load())
 	}
 	if second.ParsedFiles != 1 {
 		t.Fatalf("expected second scan to reuse parsed trace, got %+v", second)
