@@ -26,8 +26,9 @@ agent evidence.
 - Compact popover chrome should not spend primary horizontal space on the full
   loopback address; keep local-only status available through a small status mark,
   tooltip, or detail surface.
-- dashboard surface with front status, evidence column, project/session atlas,
-  calibration rail, age rail, confidence grid, process ledger, and trend suite
+- dashboard surface with a compact report masthead, front status, evidence
+  column, project/session atlas, calibration rail, age rail, confidence grid,
+  process ledger, and trend suite
 - dashboard uses document-level scrolling as a full report surface. Do not lock
   it to a single viewport or hide lower audit bands behind nested panel scroll;
   the popover is the constrained-height surface.
@@ -35,6 +36,10 @@ agent evidence.
   inspector band for focused lookup
 - main/detail panes may show result-style headers and evidence text, but should
   not dominate the first dashboard viewport
+- The dashboard masthead is the first report-level identity block. It should
+  show the Agent Load brand, current observation state, generated time,
+  refresh cadence, and refresh action without becoming a marketing hero or
+  pushing runtime evidence below the fold.
 
 ## Visual Rules
 

@@ -468,6 +468,10 @@ function App() {
         <DashboardSurface
           t={t}
           snapshot={snapshot}
+          running={running}
+          refreshSnapshot={refreshSnapshot}
+          refreshInterval={refreshInterval}
+          cycleRefreshInterval={cycleRefreshInterval}
           selection={selection}
           setSelection={setSelection}
           railTab={railTab}
@@ -601,6 +605,10 @@ function PopoverFooter({
 function DashboardSurface({
   t,
   snapshot,
+  running,
+  refreshSnapshot,
+  refreshInterval,
+  cycleRefreshInterval,
   selection,
   setSelection,
   railTab,
@@ -614,6 +622,10 @@ function DashboardSurface({
 }: {
   t: (key: string) => string;
   snapshot: Snapshot | null;
+  running: boolean;
+  refreshSnapshot: () => void;
+  refreshInterval: number;
+  cycleRefreshInterval: () => void;
   selection: Selection;
   setSelection: (value: Selection) => void;
   railTab: RailTab;
@@ -629,6 +641,14 @@ function DashboardSurface({
   const railItems = buildRailItems(snapshot, railTab, query);
   return (
     <main className="dashboard-surface">
+      <DashboardMasthead
+        t={t}
+        snapshot={snapshot}
+        running={running}
+        refreshSnapshot={refreshSnapshot}
+        refreshInterval={refreshInterval}
+        cycleRefreshInterval={cycleRefreshInterval}
+      />
       <section className="dash-front-band">
         <DashboardFrontTopline t={t} snapshot={snapshot} />
         <section className="dash-field-index">
@@ -674,6 +694,64 @@ function DashboardSurface({
         setSelection={setSelection}
       />
     </main>
+  );
+}
+
+function DashboardMasthead({
+  t,
+  snapshot,
+  running,
+  refreshSnapshot,
+  refreshInterval,
+  cycleRefreshInterval,
+}: {
+  t: (key: string) => string;
+  snapshot: Snapshot;
+  running: boolean;
+  refreshSnapshot: () => void;
+  refreshInterval: number;
+  cycleRefreshInterval: () => void;
+}) {
+  const stats = snapshot.transcript_stats ?? {};
+  const generated = snapshot.generated_at ? formatDateTime(snapshot.generated_at) : t("unavailable");
+  const sourceState = stats.cached ? t("cached") : t("fresh");
+  const subtitle = [sourceState, formatRefreshInterval(refreshInterval, t), generated].join(" · ");
+  return (
+    <section className="dashboard-masthead" aria-label={t("dashboard")}>
+      <div className="dashboard-masthead-copy">
+        <div className="dashboard-masthead-kicker">
+          <span className={`field-status ${statusTone(snapshot)}`}>{metricState(snapshot, t)}</span>
+          <span>{t("dashboard")}</span>
+        </div>
+        <h1>{BRAND_NAME}</h1>
+        <p>{subtitle}</p>
+      </div>
+      <div className="dashboard-masthead-side">
+        <div className="dashboard-masthead-actions">
+          <button className="ghost-btn dashboard-refresh-action" type="button" onClick={refreshSnapshot} disabled={running} aria-label={t("refresh")}>
+            <RefreshCw size={14} className={running ? "spin" : ""} />
+            <span>{running ? t("running") : t("refresh")}</span>
+          </button>
+          <button className={`refresh-interval dashboard-refresh-interval ${refreshInterval ? "" : "is-paused"}`} type="button" onClick={cycleRefreshInterval} title={t("autoRefresh")} aria-label={t("autoRefresh")}>
+            <span>{formatRefreshInterval(refreshInterval, t)}</span>
+          </button>
+        </div>
+        <div className="dashboard-masthead-meta">
+          <span>
+            <b>{t("observed")}</b>
+            <strong>{generated}</strong>
+          </span>
+          <span>
+            <b>{t("localSource")}</b>
+            <strong>{sourceState}</strong>
+          </span>
+          <span>
+            <b>{t("projectCounts")}</b>
+            <strong>{dashboardProjectMeta(t, snapshot)}</strong>
+          </span>
+        </div>
+      </div>
+    </section>
   );
 }
 
