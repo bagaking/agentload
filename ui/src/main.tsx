@@ -13,6 +13,7 @@ const READER_REFRESH_FLOOR_MS = 60_000;
 const REFRESH_INTERVALS_MS = [30_000, 60_000, 120_000, 300_000, 0] as const;
 const REFRESH_INTERVAL_STORAGE_KEY = "agentload.refreshIntervalMs.v5";
 const TREND_RANGES: TrendRange[] = ["1D", "3D", "7D", "15D", "30D"];
+const PROCESS_LEDGER_INITIAL_LIMIT = 40;
 
 type Theme = "dark" | "light";
 type RailTab = "projects" | "sessions" | "processes";
@@ -1512,7 +1513,10 @@ function CandidateWorkitemsRail({ t, snapshot, limit = 5 }: { t: (key: string) =
 }
 
 function ProcessLedger({ t, snapshot, selection, setSelection }: { t: (key: string) => string; snapshot: Snapshot; selection: Selection; setSelection: (value: Selection) => void }) {
-  const rows = [...(snapshot.live_processes ?? [])].sort((a, b) => (b.mapped_sessions ?? 0) - (a.mapped_sessions ?? 0)).slice(0, 18);
+  const [showOverflow, setShowOverflow] = useState(false);
+  const rows = useMemo(() => [...(snapshot.live_processes ?? [])].sort((a, b) => (b.mapped_sessions ?? 0) - (a.mapped_sessions ?? 0)), [snapshot.live_processes]);
+  const hiddenCount = Math.max(0, rows.length - PROCESS_LEDGER_INITIAL_LIMIT);
+  const visibleRows = showOverflow ? rows : rows.slice(0, PROCESS_LEDGER_INITIAL_LIMIT);
   return (
     <div className="process-ledger" role="table" aria-label={t("processLedger")}>
       <div className="process-row head" role="row">
@@ -1523,9 +1527,17 @@ function ProcessLedger({ t, snapshot, selection, setSelection }: { t: (key: stri
         <span>{t("command")}</span>
         <span>{t("host")}</span>
       </div>
-      {rows.map((process) => (
+      {visibleRows.map((process) => (
         <ProcessLedgerRow t={t} process={process} selection={selection} setSelection={setSelection} key={process.pid ?? process.command} />
       ))}
+      {hiddenCount ? (
+        <div className="process-ledger-more-row" role="row">
+          <button className={`session-tree-more process-ledger-more ${showOverflow ? "is-expanded" : ""}`} type="button" onClick={() => setShowOverflow((value) => !value)} aria-expanded={showOverflow}>
+            <ChevronDown size={12} aria-hidden="true" />
+            <span>{t(showOverflow ? "lessCount" : "moreCount").replace("{count}", String(hiddenCount))}</span>
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

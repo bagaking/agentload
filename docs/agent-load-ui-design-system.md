@@ -54,6 +54,9 @@ agent evidence.
   fields needed to understand global state; secondary identifiers such as full
   local addresses, long paths, and verbose evidence belong in tooltips, detail
   panes, or disclosure surfaces.
+- Dashboard process ledgers may keep a compact initial row window, but any cap
+  must expose the hidden count through an open/close overflow control; observed
+  process totals must never imply a fuller table than the operator can reach.
 - Compact project rows should expose role mix, active/all session totals,
   process count, and observed tool coverage before expansion. Expansion is for
   relationship inspection, not the first moment when distribution becomes

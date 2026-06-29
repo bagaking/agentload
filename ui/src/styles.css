@@ -5527,6 +5527,10 @@ body[data-view="dashboard"] .session-line.is-selected {
   margin-left: 22px;
 }
 
+.process-ledger-more {
+  margin-top: 2px;
+}
+
 body[data-view="dashboard"] .session-tree-more {
   min-height: 22px;
   padding: 4px 0 0 15px;
