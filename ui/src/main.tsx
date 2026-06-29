@@ -2590,7 +2590,7 @@ function SessionLine({
         </span>
         <span className="session-tool-pair">
           <ToolIcon tool={session.tool || "unknown"} />
-          {host ? <HostAppButton t={t} host={host} /> : <span className="host-empty" title={t("host")} />}
+          {host ? <HostAppButton t={t} host={host} /> : <HostAppEmpty t={t} />}
         </span>
         <span className="session-title">
           <SessionIdControl t={t} sid={sid} title={title} selected={selected} setSelection={setSelection} />
@@ -2622,7 +2622,7 @@ function SessionLine({
       </span>
       <span className="session-tool-pair">
         <ToolIcon tool={session.tool || "unknown"} />
-        {host ? <HostAppButton t={t} host={host} /> : <span className="host-empty" title={t("host")}>{compact ? "" : t("host")}</span>}
+        {host ? <HostAppButton t={t} host={host} /> : <HostAppEmpty t={t} label={!compact} />}
       </span>
       <div className="session-evidence-strip" aria-label={t("evidence")}>
         {evidenceItems.map((item) => (
@@ -2735,14 +2735,25 @@ function ToolIcon({ tool }: { tool?: string }) {
 }
 
 function HostAppButton({ t, host }: { t: (key: string) => string; host: HostApp }) {
+  const title = hostAppTitle(t, host);
   return (
-    <button className="host-app" type="button" data-focus-key={focusKey("host-app", host.pid ?? host.bundle_path ?? host.name ?? "")} title={`${t("openHost")}: ${host.name || host.pid}`} onClick={() => openHostApp(host)}>
+    <button className="host-app" type="button" data-focus-key={focusKey("host-app", host.pid ?? host.bundle_path ?? host.name ?? "")} title={title} aria-label={title} onClick={() => openHostApp(host)}>
       <span className="host-icon">
         <img src={`/api/host-app-icon/${encodeURIComponent(String(host.pid ?? ""))}`} alt="" loading="lazy" decoding="async" />
       </span>
       <ExternalLink size={12} />
     </button>
   );
+}
+
+function HostAppEmpty({ t, label = false }: { t: (key: string) => string; label?: boolean }) {
+  const title = t("hostAppUnknown");
+  return <span className="host-empty" title={title} aria-label={title}>{label ? t("host") : ""}</span>;
+}
+
+function hostAppTitle(t: (key: string) => string, host: HostApp): string {
+  const app = host.name || String(host.pid ?? t("unavailable"));
+  return formatCopy(t(host.pid ? "hostAppOpenTooltip" : "hostAppObservedTooltip"), { app });
 }
 
 type RoleCounts = {
