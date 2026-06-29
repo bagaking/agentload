@@ -1185,11 +1185,13 @@ function CurrentMeaningStrip({ t, snapshot, compact = false }: { t: (key: string
   const lead = primaryEvidenceNote(t, snapshot);
   const points = currentMeaningPoints(t, snapshot).slice(0, compact ? 2 : 3);
   const stats = snapshot.transcript_stats ?? {};
+  const activeWindow = activeWindowLabel(t, snapshot);
   return (
     <section className={`meaning-strip ${compact ? "compact" : ""} ${expanded ? "is-expanded" : ""}`}>
       <div className="meaning-head">
         <Activity size={15} />
         <strong>{t("currentMeaning")}</strong>
+        <em title={`${t("activeDefinitionLabel")}: ${activeWindow}`}>{activeWindow}</em>
         <button
           className="disclosure-icon-btn"
           type="button"
@@ -2897,6 +2899,12 @@ function currentMeaningPoints(t: (key: string) => string, snapshot: Snapshot): s
     `${summary.mapped_processes ?? 0} ${t("mapped")} / ${summary.unmapped_processes ?? 0} ${t("unmatched")}`,
     `${projectCount} ${t("projects")} / ${summary.hot_project_count ?? 0} ${t("active")}`,
   ];
+}
+
+function activeWindowLabel(t: (key: string) => string, snapshot: Snapshot): string {
+  const seconds = snapshot.config?.idle_gap_seconds;
+  if (typeof seconds !== "number" || !Number.isFinite(seconds)) return t("activeWindowUnknown");
+  return t("activeWindowDefinition").replace("{window}", formatAge(seconds, t));
 }
 
 function dashboardProjectMeta(t: (key: string) => string, snapshot: Snapshot): string {

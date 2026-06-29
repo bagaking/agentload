@@ -1708,6 +1708,19 @@ body[data-view="popover"] .warning-banner {
   text-transform: uppercase;
 }
 
+.meaning-head em {
+  min-width: 0;
+  max-width: 190px;
+  overflow: hidden;
+  color: var(--fg-faint);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-style: normal;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .meaning-strip p {
   margin: 0;
   color: var(--fg-muted);
@@ -5822,6 +5835,11 @@ body[data-view="popover"] .meaning-strip > p {
   -webkit-box-orient: vertical;
 }
 
+body[data-view="popover"] .meaning-head em {
+  max-width: 148px;
+  font-size: 8px;
+}
+
 body[data-view="popover"] .meaning-strip.compact .meaning-detail-grid {
   display: none;
 }
@@ -6055,6 +6073,11 @@ body[data-view="dashboard"] .meaning-strip div {
 
 body[data-view="dashboard"] .meaning-strip strong {
   font-size: 9px;
+}
+
+body[data-view="dashboard"] .meaning-head em {
+  max-width: 138px;
+  font-size: 8px;
 }
 
 body[data-view="dashboard"] .meaning-strip > div:first-child {
