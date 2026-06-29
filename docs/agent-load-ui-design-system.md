@@ -75,6 +75,8 @@ agent evidence.
   session must not make it impossible to collapse the row, and overflow labels
   such as `more` counts must be interactive open/close controls instead of dead
   summary text.
+  Compact previews that show `+n` or hidden-item counts must use the same
+  open/close behavior, including process-to-session preview chips.
 - Expanded popover session rows should fit role, agent mark, host mark, short id,
   last activity age, process count, and confidence onto one scan line whenever
   the width allows it. Detail panels may carry longer evidence.

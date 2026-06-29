@@ -2247,6 +2247,11 @@ body[data-view="popover"] .warning-banner {
   overflow: hidden;
 }
 
+.process-session-preview.is-expanded {
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
 .session-chip {
   display: inline-flex;
   align-items: center;
@@ -2272,8 +2277,13 @@ body[data-view="popover"] .warning-banner {
 }
 
 .session-chip.more {
-  cursor: default;
+  cursor: pointer;
   color: var(--fg-faint);
+}
+
+.session-chip.more.is-expanded {
+  color: var(--fg);
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
 }
 
 .process-command {

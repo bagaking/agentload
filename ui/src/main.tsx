@@ -1597,8 +1597,12 @@ function ProcessLedger({ t, snapshot, selection, setSelection }: { t: (key: stri
 function ProcessLedgerRow({ t, process, selection, setSelection }: { t: (key: string) => string; process: LiveProcess; selection: Selection; setSelection: (value: Selection) => void }) {
   const processID = String(process.pid ?? "");
   const sessions = process.session_ids ?? [];
+  const [showAllSessions, setShowAllSessions] = useState(false);
   const host = process.host_app;
   const selected = selection.type === "process" && selection.id === processID;
+  const hiddenSessionCount = Math.max(0, sessions.length - 3);
+  const visibleSessions = showAllSessions ? sessions : sessions.slice(0, 3);
+  const sessionOverflowLabel = countLabel(t, showAllSessions ? "lessCount" : "moreCount", hiddenSessionCount);
   return (
     <div className={`process-row process-detail-row ${selected ? "is-selected" : ""}`} role="row">
       <span className="process-cell process-main-cell" role="cell">
@@ -1609,13 +1613,24 @@ function ProcessLedgerRow({ t, process, selection, setSelection }: { t: (key: st
       </span>
       <span className="process-cell tool-cell" role="cell"><ToolIcon tool={process.tool || "unknown"} />{toolDisplayName(process.tool)}</span>
       <span className={`process-map ${(process.mapped_sessions ?? 0) > 0 ? "mapped" : "unmapped"}`} role="cell">{process.mapped_sessions ?? 0}</span>
-      <div className="process-session-preview" role="cell" aria-label={t("sessions")}>
-        {sessions.length ? sessions.slice(0, 3).map((sessionID) => (
+      <div className={`process-session-preview ${showAllSessions ? "is-expanded" : ""}`} role="cell" aria-label={t("sessions")}>
+        {sessions.length ? visibleSessions.map((sessionID) => (
           <button className="session-chip" type="button" key={sessionID} data-focus-key={focusKey("process-session", processID, sessionID)} onClick={() => setSelection({ type: "session", id: safeID(sessionID) })}>
             {shortID(sessionID)}
           </button>
         )) : <span className="muted-inline">{t("unavailable")}</span>}
-        {sessions.length > 3 ? <span className="session-chip more">+{sessions.length - 3}</span> : null}
+        {hiddenSessionCount ? (
+          <button
+            className={`session-chip more ${showAllSessions ? "is-expanded" : ""}`}
+            type="button"
+            onClick={() => setShowAllSessions((value) => !value)}
+            aria-expanded={showAllSessions}
+            aria-label={sessionOverflowLabel}
+            title={sessionOverflowLabel}
+          >
+            {showAllSessions ? countLabel(t, "lessCount", hiddenSessionCount) : `+${hiddenSessionCount}`}
+          </button>
+        ) : null}
       </div>
       <code className="process-command" role="cell" title={process.command || ""}>{compactCommand(process.command) || t("unavailable")}</code>
       <span className="process-host-cell" role="cell">
@@ -2329,6 +2344,10 @@ function ProjectTreeRow({
   const projectMeta = projectAge;
   const selected = selection.type === "project" && selection.id === projectId;
   const selectProject = () => {
+    if (selected) {
+      onToggle?.();
+      return;
+    }
     setSelection({ type: "project", id: projectId });
     if (!expanded) {
       onOpen?.();
@@ -2342,7 +2361,7 @@ function ProjectTreeRow({
         <button className="project-disclosure" type="button" onClick={onToggle} aria-expanded={expanded} aria-label={disclosureLabel} title={disclosureLabel}>
           <ChevronDown size={15} aria-hidden="true" />
         </button>
-        <button className="project-select" type="button" data-focus-key={focusKey("project", projectId)} onClick={selectProject} aria-current={selected ? "true" : undefined}>
+        <button className="project-select" type="button" data-focus-key={focusKey("project", projectId)} onClick={selectProject} aria-current={selected ? "true" : undefined} aria-expanded={expanded} title={selected ? disclosureLabel : title}>
           <span>{title}</span>
           <small>{projectMeta}</small>
         </button>
