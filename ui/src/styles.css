@@ -3339,3 +3339,566 @@ body[data-view="dashboard"] .trend-suite.dashboard {
     grid-template-columns: 1fr;
   }
 }
+
+body[data-view="popover"] .popover-surface {
+  gap: 8px;
+  padding: 8px;
+}
+
+body[data-view="popover"] .popover-panel {
+  gap: 8px;
+}
+
+body[data-view="popover"] .popover-panel > .field-index {
+  padding: 8px;
+}
+
+body[data-view="popover"] .field-grid {
+  grid-template-columns: 1.05fr .95fr .95fr;
+  gap: 1px;
+  overflow: hidden;
+  background: var(--console-line-soft);
+}
+
+body[data-view="popover"] .field-cell {
+  min-height: 108px;
+  padding: 9px 10px;
+  border-radius: 0;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--fg) 2.5%, transparent), transparent 48%),
+    color-mix(in srgb, var(--console-material-2) 70%, transparent);
+}
+
+body[data-view="popover"] .field-cell span {
+  font-size: 9.5px;
+  line-height: 1.15;
+}
+
+body[data-view="popover"] .field-cell strong {
+  font-size: 27px;
+}
+
+body[data-view="popover"] .field-cell em {
+  min-height: 28px;
+  white-space: normal;
+  line-height: 1.3;
+}
+
+body[data-view="popover"] .field-cell i {
+  height: 5px;
+}
+
+body[data-view="popover"] .meaning-strip.compact {
+  padding-top: 7px;
+}
+
+body[data-view="popover"] .meaning-strip.compact .meaning-detail-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+body[data-view="popover"] .meaning-detail-grid span {
+  padding: 7px;
+}
+
+body[data-view="popover"] .meaning-detail-grid em {
+  display: -webkit-box;
+  overflow: hidden;
+  line-height: 1.28;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+body[data-view="popover"] .scan-boundary {
+  align-items: flex-start;
+  padding: 7px 8px;
+}
+
+body[data-view="popover"] .scan-boundary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  flex: 1;
+  background: var(--console-line-soft);
+}
+
+body[data-view="popover"] .scan-readout {
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  background: color-mix(in srgb, var(--console-material-2) 64%, transparent);
+}
+
+body[data-view="popover"] .scan-readout b,
+body[data-view="popover"] .scan-readout strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body[data-view="popover"] {
+  background:
+    linear-gradient(180deg, #070806 0%, #0a0f13 44%, #06080b 100%);
+}
+
+:root[data-theme="light"] body[data-view="popover"] {
+  background:
+    linear-gradient(180deg, #f8fafc 0%, #eef2f6 48%, #f7f8fa 100%);
+}
+
+body[data-view="popover"] .topbar {
+  min-height: 40px;
+  padding: 7px 10px;
+  background: color-mix(in srgb, var(--console-material) 82%, transparent);
+  border-bottom-color: var(--console-line-soft);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--fg) 2%, transparent);
+}
+
+body[data-view="popover"] .brand-mark {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
+}
+
+body[data-view="popover"] .brand-text span,
+body[data-view="popover"] .topbar-meta .kbd-hint,
+body[data-view="popover"] .lang-control {
+  display: none;
+}
+
+body[data-view="popover"] .brand-text strong {
+  font-size: 12px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+body[data-view="popover"] .topbar-meta {
+  gap: 5px;
+}
+
+body[data-view="popover"] .icon-btn,
+body[data-view="popover"] .refresh-interval {
+  min-width: 25px;
+  height: 25px;
+  border-radius: var(--r-sm);
+}
+
+body[data-view="popover"] .popover-surface {
+  gap: 8px;
+  padding: 8px 9px 10px;
+  overflow: auto;
+}
+
+body[data-view="popover"] .popover-view-switch {
+  align-self: flex-end;
+  width: 132px;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--r-sm);
+  border-color: var(--console-line-soft);
+  background: color-mix(in srgb, var(--fg) 3.2%, transparent);
+}
+
+body[data-view="popover"] .popover-view-switch button {
+  min-height: 23px;
+  gap: 4px;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 720;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+body[data-view="popover"] .popover-view-switch button.is-active {
+  color: var(--fg);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--ok) 9%, transparent), color-mix(in srgb, var(--accent) 5%, transparent)),
+    color-mix(in srgb, var(--console-material-2) 82%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--fg) 6%, transparent);
+}
+
+body[data-view="popover"] .audit-shell {
+  display: grid;
+  gap: 8px;
+}
+
+body[data-view="popover"] .popover-instrument,
+body[data-view="popover"] .popover-project-table,
+body[data-view="popover"] .scan-boundary {
+  position: relative;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  border-top: 1px solid var(--console-line);
+  border-bottom: 1px solid var(--console-line-soft);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--fg) 2.6%, transparent), transparent 42%),
+    var(--console-material);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--fg) 2.5%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--console-line) 38%, transparent);
+}
+
+body[data-view="popover"] .popover-instrument {
+  min-height: 210px;
+  padding: 10px 10px 10px 20px;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--ok) 8%, transparent), transparent 44%),
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 5%, transparent), transparent 58%),
+    var(--console-material);
+}
+
+body[data-view="popover"] .popover-instrument::before {
+  content: "";
+  position: absolute;
+  inset: 80px 10px 82px 20px;
+  pointer-events: none;
+  opacity: .32;
+  background:
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--fg) 12%, transparent) 0 1px, transparent 1px 10px),
+    linear-gradient(90deg, transparent, color-mix(in srgb, var(--ok) 8%, transparent), transparent);
+}
+
+body[data-view="popover"] .instrument-spine {
+  position: absolute;
+  inset: 19px auto 12px 8px;
+  width: 8px;
+  pointer-events: none;
+}
+
+body[data-view="popover"] .instrument-spine::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 8px;
+  bottom: 24px;
+  width: 1px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ok) 38%, transparent), var(--console-line-soft));
+}
+
+body[data-view="popover"] .instrument-spine span {
+  position: absolute;
+  left: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  border: 1px solid color-mix(in srgb, var(--ok) 62%, transparent);
+  background: color-mix(in srgb, var(--ok) 78%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 9%, transparent);
+}
+
+body[data-view="popover"] .instrument-spine span:first-child { top: 5px; }
+body[data-view="popover"] .instrument-spine span:last-child { top: 118px; }
+
+body[data-view="popover"] .instrument-topline {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+body[data-view="popover"] .instrument-window {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--console-text-soft);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+body[data-view="popover"] .instrument-window span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .instrument-window strong {
+  color: var(--fg);
+  font-weight: 680;
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .instrument-stat-grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 10px;
+  overflow: hidden;
+  background: var(--console-line-soft);
+}
+
+body[data-view="popover"] .instrument-stat {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  min-width: 0;
+  min-height: 88px;
+  padding: 10px 9px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--fg) 2.8%, transparent), transparent 50%),
+    color-mix(in srgb, var(--console-material-2) 74%, transparent);
+}
+
+body[data-view="popover"] .instrument-stat span {
+  color: var(--console-text-faint);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 780;
+  letter-spacing: .055em;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+
+body[data-view="popover"] .instrument-stat strong {
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 31px;
+  line-height: .9;
+}
+
+body[data-view="popover"] .instrument-stat em {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--console-text-soft);
+  font-size: 10.5px;
+  font-style: normal;
+  line-height: 1.28;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+body[data-view="popover"] .instrument-stat.burst span,
+body[data-view="popover"] .instrument-stat.burst strong { color: var(--ok); }
+body[data-view="popover"] .instrument-stat.session span,
+body[data-view="popover"] .instrument-stat.session strong { color: var(--accent); }
+body[data-view="popover"] .instrument-stat.pid span,
+body[data-view="popover"] .instrument-stat.pid strong { color: var(--run); }
+
+body[data-view="popover"] .instrument-scale-rail {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+body[data-view="popover"] .instrument-scale-row {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--ok);
+}
+
+body[data-view="popover"] .instrument-scale-row.session { color: var(--accent); }
+body[data-view="popover"] .instrument-scale-row.pid { color: var(--run); }
+
+body[data-view="popover"] .instrument-scale-row b {
+  overflow: hidden;
+  color: currentColor;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 760;
+  letter-spacing: .055em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .instrument-scale-row i {
+  display: block;
+  height: 5px;
+  overflow: hidden;
+  background:
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--fg) 11%, transparent) 0 1px, transparent 1px 9px),
+    var(--console-track);
+}
+
+body[data-view="popover"] .instrument-scale-row i em {
+  display: block;
+  height: 100%;
+  background: currentColor;
+  box-shadow: 0 0 12px color-mix(in srgb, currentColor 16%, transparent);
+}
+
+body[data-view="popover"] .popover-instrument .meaning-strip {
+  position: relative;
+  z-index: 1;
+  margin-top: 9px;
+  padding: 7px 0 0;
+  border-width: 1px 0 0;
+  background: transparent;
+}
+
+body[data-view="popover"] .popover-instrument .meaning-strip > div:first-child {
+  padding-left: 0;
+}
+
+body[data-view="popover"] .popover-instrument .meaning-strip > p {
+  padding-right: 0;
+}
+
+body[data-view="popover"] .popover-instrument .meaning-point-row {
+  display: none;
+}
+
+body[data-view="popover"] .scan-boundary {
+  gap: 8px;
+  min-height: 36px;
+  padding: 7px 10px 7px 20px;
+}
+
+body[data-view="popover"] .scan-boundary-main {
+  color: var(--ok);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: .055em;
+}
+
+body[data-view="popover"] .scan-readout {
+  min-width: 0;
+  min-height: 26px;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--console-material-2) 70%, transparent);
+}
+
+body[data-view="popover"] .scan-readout b {
+  color: var(--console-text-faint);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: .045em;
+}
+
+body[data-view="popover"] .scan-readout strong {
+  color: var(--fg);
+  font-size: 10.5px;
+}
+
+body[data-view="popover"] .popover-project-table {
+  padding: 8px 10px 8px 20px;
+}
+
+body[data-view="popover"] .popover-project-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding-bottom: 7px;
+}
+
+body[data-view="popover"] .popover-project-head > div {
+  min-width: 0;
+}
+
+body[data-view="popover"] .popover-project-head h2 {
+  margin: 2px 0 0;
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 670;
+  line-height: 1.15;
+}
+
+body[data-view="popover"] .popover-project-head > span {
+  overflow: hidden;
+  color: var(--console-text-faint);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-list {
+  gap: 0;
+  max-height: none;
+  padding-bottom: 0;
+  border-top: 1px solid var(--console-line-soft);
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-row {
+  border: 0;
+  border-radius: 0;
+  border-bottom: 1px solid var(--console-line-soft);
+  background: transparent;
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-row.expanded {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 5%, transparent), transparent 34%),
+    color-mix(in srgb, var(--fg) 1.6%, transparent);
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-head {
+  grid-template-columns: minmax(0, 1fr) auto minmax(96px, auto);
+  min-height: 36px;
+  gap: 7px;
+  padding: 6px 0;
+}
+
+body[data-view="popover"] .popover-project-table .project-select {
+  gap: 5px;
+}
+
+body[data-view="popover"] .popover-project-table .project-select span {
+  font-size: 11.5px;
+  line-height: 1.18;
+}
+
+body[data-view="popover"] .popover-project-table .project-select small,
+body[data-view="popover"] .popover-project-table .project-pin {
+  font-size: 9.5px;
+}
+
+body[data-view="popover"] .popover-project-table .tool-strip {
+  display: none;
+}
+
+body[data-view="popover"] .popover-project-table .project-evidence-strip,
+body[data-view="popover"] .popover-project-table .session-evidence-strip {
+  gap: 1px;
+  padding: 0 0 6px;
+  background: var(--console-line-soft);
+}
+
+body[data-view="popover"] .popover-project-table .project-evidence-chip,
+body[data-view="popover"] .popover-project-table .session-evidence-chip {
+  min-height: 25px;
+  border: 0;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--console-material-2) 60%, transparent);
+}
+
+body[data-view="popover"] .popover-project-table .session-tree {
+  gap: 0;
+  padding-bottom: 6px;
+}
+
+body[data-view="popover"] .popover-project-table .session-line {
+  gap: 6px;
+  padding: 6px 0;
+  border: 0;
+  border-top: 1px solid var(--console-line-soft);
+  border-radius: 0;
+  background: transparent;
+}
+
+body[data-view="popover"] .trend-suite.compact {
+  border-radius: 0;
+  border-top: 1px solid var(--console-line);
+  border-bottom: 1px solid var(--console-line-soft);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 6%, transparent), transparent 32%),
+    var(--console-material);
+}
+
+body[data-view="dashboard"] .dash-nav-band {
+  opacity: .94;
+}

@@ -853,12 +853,7 @@ function PopoverSurface({
         ))}
       </div>
       {popoverView === "online" ? (
-        <section className="popover-panel">
-          <FieldIndex t={t} snapshot={snapshot} compact />
-          <CurrentMeaningStrip t={t} snapshot={snapshot} compact />
-          <ScanBoundary t={t} snapshot={snapshot} compact />
-          <ProjectAtlas t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} compact limit={5} defaultExpandedCount={0} />
-        </section>
+        <PopoverAuditShell t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} />
       ) : (
         <TrendSuite
           t={t}
@@ -938,6 +933,15 @@ function DashboardSurface({
         <ProcessLedger t={t} snapshot={snapshot} setSelection={setSelection} />
       </section>
 
+      <TrendSuite
+        t={t}
+        snapshot={snapshot}
+        range={trendRange}
+        setRange={setTrendRange}
+        trendSelection={trendSelection}
+        setTrendSelection={setTrendSelection}
+      />
+
       <section className="dash-nav-band">
         <LedgerNavigation
           t={t}
@@ -961,15 +965,6 @@ function DashboardSurface({
           compact={false}
         />
       </section>
-
-      <TrendSuite
-        t={t}
-        snapshot={snapshot}
-        range={trendRange}
-        setRange={setTrendRange}
-        trendSelection={trendSelection}
-        setTrendSelection={setTrendSelection}
-      />
     </main>
   );
 }
@@ -1087,6 +1082,101 @@ function FieldIndex({ t, snapshot, compact = false }: { t: (key: string) => stri
           </article>
         ))}
       </div>
+    </section>
+  );
+}
+
+function PopoverAuditShell({
+  t,
+  snapshot,
+  selection,
+  setSelection,
+}: {
+  t: (key: string) => string;
+  snapshot: Snapshot;
+  selection: Selection;
+  setSelection: (value: Selection) => void;
+}) {
+  return (
+    <section className="popover-panel audit-shell">
+      <PopoverRuntimeInstrument t={t} snapshot={snapshot} />
+      <ScanBoundary t={t} snapshot={snapshot} compact />
+      <section className="popover-project-table">
+        <div className="popover-project-head">
+          <div>
+            <span className="note-kicker">{t("liveLedger")}</span>
+            <h2>{t("projectSessionTree")}</h2>
+          </div>
+          <span>{dashboardProjectMeta(t, snapshot)}</span>
+        </div>
+        <ProjectAtlas t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} compact limit={6} defaultExpandedCount={0} showHead={false} />
+      </section>
+    </section>
+  );
+}
+
+function PopoverRuntimeInstrument({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot }) {
+  const current = snapshot.current ?? {};
+  const summary = snapshot.summary ?? {};
+  const stats = snapshot.transcript_stats ?? {};
+  const scale = currentPeerScale(current);
+  const rows = [
+    {
+      key: "burst",
+      label: t("metricFresh"),
+      value: current.active_burst_concurrency ?? 0,
+      detail: t("activeBurstHint"),
+      pct: pctPart(current.active_burst_concurrency, scale),
+    },
+    {
+      key: "session",
+      label: t("metricSessions"),
+      value: current.session_concurrency ?? 0,
+      detail: t("liveIdle")
+        .replace("{live}", String(summary.active_sessions ?? 0))
+        .replace("{idle}", String(summary.idle_sessions ?? 0)),
+      pct: pctPart(current.session_concurrency, scale),
+    },
+    {
+      key: "pid",
+      label: t("metricProcesses"),
+      value: current.pid_concurrency ?? 0,
+      detail: `${summary.mapped_processes ?? 0} ${t("mapped")} / ${summary.unmapped_processes ?? 0} ${t("unmatched")}`,
+      pct: pctPart(current.pid_concurrency, scale),
+    },
+  ];
+  return (
+    <section className="popover-instrument" aria-label={t("runtimeField")}>
+      <div className="instrument-spine" aria-hidden="true">
+        <span />
+        <span />
+      </div>
+      <div className="instrument-topline">
+        <span className={`field-status ${statusTone(snapshot)}`}>{metricState(snapshot, t)}</span>
+        <span className="instrument-window" title={transcriptScanNote(t, stats)}>
+          <Activity size={13} />
+          <span>{t("scanWindow")}</span>
+          <strong>{formatAge(stats.foreground_scan_lookback_seconds)}</strong>
+        </span>
+      </div>
+      <div className="instrument-stat-grid">
+        {rows.map((row) => (
+          <article className={`instrument-stat ${row.key}`} key={row.key}>
+            <span>{row.label}</span>
+            <strong>{row.value}</strong>
+            <em>{row.detail}</em>
+          </article>
+        ))}
+      </div>
+      <div className="instrument-scale-rail" aria-label={t("calibration")}>
+        {rows.map((row) => (
+          <span className={`instrument-scale-row ${row.key}`} key={row.key}>
+            <b>{row.label}</b>
+            <i aria-hidden="true"><em style={{ width: `${clampPct(row.pct, 3)}%` }} /></i>
+          </span>
+        ))}
+      </div>
+      <CurrentMeaningStrip t={t} snapshot={snapshot} compact />
     </section>
   );
 }
