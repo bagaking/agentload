@@ -9,7 +9,7 @@ import (
 )
 
 func TestJSONStringField(t *testing.T) {
-	line := []byte(`{"type":"assistant","timestamp":"2026-06-27T12:00:00Z","message":{"cwd":"/tmp/project"},"cwd":"/tmp/root","sessionId":"abc-123"}`)
+	line := []byte(`{"type":"assistant","timestamp":"2026-06-27T12:00:00Z","message":{"cwd":"workspace/project"},"cwd":"workspace/root","sessionId":"abc-123"}`)
 
 	if got := jsonStringField(line, "timestamp"); got != "2026-06-27T12:00:00Z" {
 		t.Fatalf("unexpected timestamp: %q", got)
@@ -17,15 +17,15 @@ func TestJSONStringField(t *testing.T) {
 	if got := jsonStringField(line, "sessionId"); got != "abc-123" {
 		t.Fatalf("unexpected session id: %q", got)
 	}
-	if got := jsonNestedStringField(line, "message", "cwd"); got != "/tmp/project" {
+	if got := jsonNestedStringField(line, "message", "cwd"); got != "workspace/project" {
 		t.Fatalf("unexpected nested cwd: %q", got)
 	}
 }
 
 func TestJSONStringFieldEscaped(t *testing.T) {
-	line := []byte(`{"cwd":"/tmp/project \"quoted\"","timestamp":"2026-06-27T12:00:00Z"}`)
+	line := []byte(`{"cwd":"workspace/project \"quoted\"","timestamp":"2026-06-27T12:00:00Z"}`)
 
-	if got := jsonStringField(line, "cwd"); got != `/tmp/project "quoted"` {
+	if got := jsonStringField(line, "cwd"); got != `workspace/project "quoted"` {
 		t.Fatalf("unexpected escaped string: %q", got)
 	}
 }
@@ -33,7 +33,7 @@ func TestJSONStringFieldEscaped(t *testing.T) {
 func TestParseCodexTraceCapturesProjectSourceFromCWD(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "session.jsonl")
-	if err := os.WriteFile(path, []byte("{\"timestamp\":\"2026-06-27T12:00:00Z\",\"payload\":{\"id\":\"codex-session\",\"cwd\":\"/tmp/agentload\"}}\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("{\"timestamp\":\"2026-06-27T12:00:00Z\",\"payload\":{\"id\":\"codex-session\",\"cwd\":\"workspace/agentload\"}}\n"), 0o644); err != nil {
 		t.Fatalf("write transcript: %v", err)
 	}
 
@@ -102,7 +102,7 @@ func TestParseCodexLaneTraceFallsBackToConfigRootParent(t *testing.T) {
 func TestParseTraeTraceCapturesSessionRoleAndProject(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "session.jsonl")
-	body := `{"timestamp":"2026-06-27T12:00:00Z","type":"session_meta","payload":{"id":"trae-session","cwd":"/tmp/agentload","thread_source":"subagent","source":{"subagent":{"thread_spawn":{"parent_thread_id":"parent-session","agent_nickname":"Review lane","agent_role":"worker"}}},"agent_nickname":"Review lane","agent_role":"worker"}}` + "\n"
+	body := `{"timestamp":"2026-06-27T12:00:00Z","type":"session_meta","payload":{"id":"trae-session","cwd":"workspace/agentload","thread_source":"subagent","source":{"subagent":{"thread_spawn":{"parent_thread_id":"parent-session","agent_nickname":"Review lane","agent_role":"worker"}}},"agent_nickname":"Review lane","agent_role":"worker"}}` + "\n"
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("write transcript: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestParseTraeTraceCapturesSessionRoleAndProject(t *testing.T) {
 func TestParseCodexTraceCapturesUserThreadSource(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "session.jsonl")
-	body := `{"timestamp":"2026-06-27T12:00:00Z","type":"session_meta","payload":{"id":"codex-session","cwd":"/tmp/agentload","thread_source":"user"}}` + "\n"
+	body := `{"timestamp":"2026-06-27T12:00:00Z","type":"session_meta","payload":{"id":"codex-session","cwd":"workspace/agentload","thread_source":"user"}}` + "\n"
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("write transcript: %v", err)
 	}

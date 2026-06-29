@@ -127,12 +127,12 @@ func TestTranscriptFileFromPath(t *testing.T) {
 		wantTool string
 		wantOK   bool
 	}{
-		{path: filepath.Join("/tmp", "alice", ".codex", "sessions", "abc.jsonl"), wantTool: "codex", wantOK: true},
-		{path: filepath.Join("/tmp", "alice", ".codex", "archived_sessions", "abc.jsonl"), wantTool: "codex", wantOK: true},
-		{path: filepath.Join("/tmp", "alice", ".codex", ".codexl", "asagent", "lane-1", "events.jsonl"), wantTool: "codex", wantOK: true},
-		{path: filepath.Join("/tmp", "alice", ".claude", "projects", "project-a", "trace.jsonl"), wantTool: "claude", wantOK: true},
-		{path: filepath.Join("/tmp", "alice", ".trae", "cli", "sessions", "2026", "06", "28", "trace.jsonl"), wantTool: "trae", wantOK: true},
-		{path: filepath.Join("/tmp", "alice", ".codex", "sessions", "abc.txt"), wantTool: "", wantOK: false},
+		{path: filepath.Join("fixtures", "alice", ".codex", "sessions", "abc.jsonl"), wantTool: "codex", wantOK: true},
+		{path: filepath.Join("fixtures", "alice", ".codex", "archived_sessions", "abc.jsonl"), wantTool: "codex", wantOK: true},
+		{path: filepath.Join("fixtures", "alice", ".codex", ".codexl", "asagent", "lane-1", "events.jsonl"), wantTool: "codex", wantOK: true},
+		{path: filepath.Join("fixtures", "alice", ".claude", "projects", "project-a", "trace.jsonl"), wantTool: "claude", wantOK: true},
+		{path: filepath.Join("fixtures", "alice", ".trae", "cli", "sessions", "2026", "06", "28", "trace.jsonl"), wantTool: "trae", wantOK: true},
+		{path: filepath.Join("fixtures", "alice", ".codex", "sessions", "abc.txt"), wantTool: "", wantOK: false},
 	}
 	for _, tc := range cases {
 		got, ok := transcriptFileFromPath(tc.path)

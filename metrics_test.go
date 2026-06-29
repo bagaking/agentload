@@ -12,7 +12,7 @@ func TestBuildBurstSpansSplitsOnIdleGap(t *testing.T) {
 		"one": {
 			Tool:      "codex",
 			SessionID: "s1",
-			Path:      "/tmp/s1.jsonl",
+			Path:      "fixtures/s1.jsonl",
 			EventTimes: []time.Time{
 				base,
 				base.Add(10 * time.Second),
@@ -139,7 +139,7 @@ func TestBuildTranscriptTrendWindowsUsesActualEvidenceStart(t *testing.T) {
 			"one": {
 				Tool:      "codex",
 				SessionID: "s1",
-				Path:      "/tmp/s1.jsonl",
+				Path:      "fixtures/s1.jsonl",
 				EventTimes: []time.Time{
 					evidenceStart,
 					evidenceStart.Add(2 * time.Hour),
@@ -298,7 +298,7 @@ func TestBuildTranscriptTrendWindowsUsesEvidenceAtConfiguredSourceStart(t *testi
 			"one": {
 				Tool:      "codex",
 				SessionID: "s1",
-				Path:      "/tmp/s1.jsonl",
+				Path:      "fixtures/s1.jsonl",
 				EventTimes: []time.Time{
 					evidenceStart,
 					evidenceStart.Add(3 * time.Hour),

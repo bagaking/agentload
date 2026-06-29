@@ -107,7 +107,7 @@ func TestSnapshotNotesDescribeDeferredHistoricalParsing(t *testing.T) {
 func TestTranscriptScanSkipsUnchangedFileContent(t *testing.T) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "session.jsonl")
-	firstLine := `{"timestamp":"2026-06-28T12:00:00Z","payload":{"id":"session-1","cwd":"/tmp/agentload"}}` + "\n"
+	firstLine := `{"timestamp":"2026-06-28T12:00:00Z","payload":{"id":"session-1","cwd":"workspace/agentload"}}` + "\n"
 	if err := os.WriteFile(path, []byte(firstLine), 0o644); err != nil {
 		t.Fatalf("write transcript: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestTranscriptScanSkipsUnchangedFileContent(t *testing.T) {
 		t.Fatalf("expected first scan to parse one file, got %+v", first)
 	}
 
-	secondLine := `{"timestamp":"2026-06-28T12:00:00Z","payload":{"id":"session-2","cwd":"/tmp/agentload"}}` + "\n"
+	secondLine := `{"timestamp":"2026-06-28T12:00:00Z","payload":{"id":"session-2","cwd":"workspace/agentload"}}` + "\n"
 	if len(secondLine) != len(firstLine) {
 		t.Fatalf("test fixture lines should keep equal size")
 	}
@@ -167,7 +167,7 @@ func TestTranscriptScanSkipsUnchangedFileContent(t *testing.T) {
 func TestTranscriptScanUsesAppendParserForAppendOnlyGrowth(t *testing.T) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "session.jsonl")
-	firstLine := `{"timestamp":"2026-06-28T12:00:00Z","payload":{"id":"session-1","cwd":"/tmp/agentload"}}` + "\n"
+	firstLine := `{"timestamp":"2026-06-28T12:00:00Z","payload":{"id":"session-1","cwd":"workspace/agentload"}}` + "\n"
 	if err := os.WriteFile(path, []byte(firstLine), 0o644); err != nil {
 		t.Fatalf("write transcript: %v", err)
 	}
@@ -245,7 +245,7 @@ func TestTranscriptScanUsesAppendParserForAppendOnlyGrowth(t *testing.T) {
 func TestTranscriptScanFallsBackWhenCachedFileEndedWithoutNewline(t *testing.T) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "session.jsonl")
-	firstLine := `{"timestamp":"2026-06-28T12:00:00Z","payload":{"id":"session-1","cwd":"/tmp/agentload"}}`
+	firstLine := `{"timestamp":"2026-06-28T12:00:00Z","payload":{"id":"session-1","cwd":"workspace/agentload"}}`
 	if err := os.WriteFile(path, []byte(firstLine), 0o644); err != nil {
 		t.Fatalf("write transcript: %v", err)
 	}
@@ -342,13 +342,13 @@ func TestForegroundTranscriptScanDefersOlderNonPriorityFiles(t *testing.T) {
 			t.Fatalf("mkdir transcript dir: %v", err)
 		}
 	}
-	if err := os.WriteFile(recentPath, []byte(`{"timestamp":"2026-06-28T12:00:00Z","payload":{"id":"recent","cwd":"/tmp/agentload"}}`+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(recentPath, []byte(`{"timestamp":"2026-06-28T12:00:00Z","payload":{"id":"recent","cwd":"workspace/agentload"}}`+"\n"), 0o644); err != nil {
 		t.Fatalf("write recent transcript: %v", err)
 	}
-	if err := os.WriteFile(oldPath, []byte(`{"timestamp":"2026-06-28T09:00:00Z","payload":{"id":"old","cwd":"/tmp/agentload"}}`+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(oldPath, []byte(`{"timestamp":"2026-06-28T09:00:00Z","payload":{"id":"old","cwd":"workspace/agentload"}}`+"\n"), 0o644); err != nil {
 		t.Fatalf("write old transcript: %v", err)
 	}
-	if err := os.WriteFile(priorityPath, []byte(`{"timestamp":"2026-06-28T09:10:00Z","payload":{"id":"priority","cwd":"/tmp/agentload"}}`+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(priorityPath, []byte(`{"timestamp":"2026-06-28T09:10:00Z","payload":{"id":"priority","cwd":"workspace/agentload"}}`+"\n"), 0o644); err != nil {
 		t.Fatalf("write priority transcript: %v", err)
 	}
 	oldTime := time.Date(2026, 6, 28, 9, 30, 0, 0, time.UTC)
@@ -424,13 +424,13 @@ func TestForegroundTranscriptScanCanDeferHistoryWalk(t *testing.T) {
 			t.Fatalf("mkdir transcript dir: %v", err)
 		}
 	}
-	if err := os.WriteFile(recentPath, []byte(`{"timestamp":"2026-06-28T12:00:00Z","payload":{"id":"recent","cwd":"/tmp/agentload"}}`+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(recentPath, []byte(`{"timestamp":"2026-06-28T12:00:00Z","payload":{"id":"recent","cwd":"workspace/agentload"}}`+"\n"), 0o644); err != nil {
 		t.Fatalf("write recent transcript: %v", err)
 	}
-	if err := os.WriteFile(oldPath, []byte(`{"timestamp":"2026-06-28T09:00:00Z","payload":{"id":"old","cwd":"/tmp/agentload"}}`+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(oldPath, []byte(`{"timestamp":"2026-06-28T09:00:00Z","payload":{"id":"old","cwd":"workspace/agentload"}}`+"\n"), 0o644); err != nil {
 		t.Fatalf("write old transcript: %v", err)
 	}
-	if err := os.WriteFile(priorityPath, []byte(`{"timestamp":"2026-06-28T09:10:00Z","payload":{"id":"priority","cwd":"/tmp/agentload"}}`+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(priorityPath, []byte(`{"timestamp":"2026-06-28T09:10:00Z","payload":{"id":"priority","cwd":"workspace/agentload"}}`+"\n"), 0o644); err != nil {
 		t.Fatalf("write priority transcript: %v", err)
 	}
 	oldTime := time.Date(2026, 6, 28, 9, 30, 0, 0, time.UTC)
@@ -476,7 +476,7 @@ func TestForegroundTranscriptScanDefersFreshMTimeWhenTailIsOlder(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("mkdir transcript dir: %v", err)
 	}
-	body := `{"timestamp":"2026-06-28T09:00:00Z","payload":{"id":"old-tail","cwd":"/tmp/agentload"}}` + "\n"
+	body := `{"timestamp":"2026-06-28T09:00:00Z","payload":{"id":"old-tail","cwd":"workspace/agentload"}}` + "\n"
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("write transcript: %v", err)
 	}

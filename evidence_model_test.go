@@ -11,8 +11,8 @@ import (
 
 func TestBuildLiveSessionsTracksMappingEvidence(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	tracePath := "/tmp/trace-session.jsonl"
-	fallbackPath := "/tmp/rollout-2026-06-28T10-00-00-fallback-session.jsonl"
+	tracePath := "fixtures/trace-session.jsonl"
+	fallbackPath := "fixtures/rollout-2026-06-28T10-00-00-fallback-session.jsonl"
 	data := &TranscriptData{
 		Traces: map[string]*SessionTrace{
 			tracePath: {
@@ -79,7 +79,7 @@ func TestBuildLiveSessionsTracksMappingEvidence(t *testing.T) {
 }
 
 func TestBuildLiveSessionsMergesFallbackTranscriptAndMatchingHint(t *testing.T) {
-	fallbackPath := "/tmp/rollout-2026-06-28T10-00-00-fallback-session.jsonl"
+	fallbackPath := "fixtures/rollout-2026-06-28T10-00-00-fallback-session.jsonl"
 	processes := []LiveProcess{
 		{
 			PID:          101,
@@ -111,7 +111,7 @@ func TestBuildLiveSessionsMergesFallbackTranscriptAndMatchingHint(t *testing.T) 
 
 func TestBuildLiveSessionsParsedTranscriptIDWinsOverConflictingHint(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	tracePath := "/tmp/trace-session.jsonl"
+	tracePath := "fixtures/trace-session.jsonl"
 	data := &TranscriptData{
 		Traces: map[string]*SessionTrace{
 			tracePath: {
@@ -163,8 +163,8 @@ func TestBuildLiveSessionsParsedTranscriptIDWinsOverConflictingHint(t *testing.T
 
 func TestBuildLiveSessionsParsedTranscriptIDSuppressesConflictingHintFromSiblingFallbackFile(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	tracePath := "/tmp/trace-session.jsonl"
-	fallbackPath := "/tmp/rollout-2026-06-28T10-00-00-fallback-session.jsonl"
+	tracePath := "fixtures/trace-session.jsonl"
+	fallbackPath := "fixtures/rollout-2026-06-28T10-00-00-fallback-session.jsonl"
 	data := &TranscriptData{
 		Traces: map[string]*SessionTrace{
 			tracePath: {
@@ -218,7 +218,7 @@ func TestBuildLiveSessionsParsedTranscriptIDSuppressesConflictingHintFromSibling
 }
 
 func TestBuildLiveSessionsPrefersCommandHintOverFilenameFallback(t *testing.T) {
-	fallbackPath := "/tmp/rollout-2026-06-28T10-00-00-fallback-session.jsonl"
+	fallbackPath := "fixtures/rollout-2026-06-28T10-00-00-fallback-session.jsonl"
 	processes := []LiveProcess{
 		{
 			PID:          202,
@@ -249,7 +249,7 @@ func TestBuildLiveSessionsPrefersCommandHintOverFilenameFallback(t *testing.T) {
 	if session.Trace != nil {
 		t.Fatalf("expected command-hint mapping without parsed trace to remain untraced")
 	}
-	if !slices.Contains(notes, `PID 202 codex ignored weaker filename-derived fallback session id "fallback-session" from /tmp/rollout-2026-06-28T10-00-00-fallback-session.jsonl in favor of command hint "hint-session".`) {
+	if !slices.Contains(notes, `PID 202 codex ignored weaker filename-derived fallback session id "fallback-session" from fixtures/rollout-2026-06-28T10-00-00-fallback-session.jsonl in favor of command hint "hint-session".`) {
 		t.Fatalf("expected fallback conflict note, got %#v", notes)
 	}
 
@@ -267,7 +267,7 @@ func TestBuildLiveSessionsPrefersCommandHintOverFilenameFallback(t *testing.T) {
 
 func TestBuildLiveSessionsIncludesRecentTranscriptOnlySubagents(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	tracePath := "/tmp/subagent.jsonl"
+	tracePath := "fixtures/subagent.jsonl"
 	data := &TranscriptData{
 		Traces: map[string]*SessionTrace{
 			tracePath: {
@@ -333,8 +333,8 @@ func TestBuildLiveSessionsIncludesRecentTranscriptOnlySubagents(t *testing.T) {
 
 func TestBuildLiveSessionsPropagatesHostApps(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	tracePath := "/tmp/host-session.jsonl"
-	host := &HostApp{PID: 200, Name: "Terminal", BundlePath: "/Applications/Terminal.app"}
+	tracePath := "fixtures/host-session.jsonl"
+	host := &HostApp{PID: 200, Name: "Terminal", BundlePath: filepath.Join("fixtures", "Terminal.app")}
 	data := &TranscriptData{
 		Traces: map[string]*SessionTrace{
 			tracePath: {
@@ -392,9 +392,9 @@ func TestBuildLiveSessionsExcludesOldTranscriptOnlySessions(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
 	data := &TranscriptData{
 		Traces: map[string]*SessionTrace{
-			"/tmp/old.jsonl": {
+			"fixtures/old.jsonl": {
 				Tool:       "trae",
-				Path:       "/tmp/old.jsonl",
+				Path:       "fixtures/old.jsonl",
 				SessionID:  "old-session",
 				EventTimes: []time.Time{now.Add(-2 * time.Hour)},
 				FirstEvent: now.Add(-2 * time.Hour),
@@ -439,7 +439,7 @@ func TestObserveProjectAttributionUsesTrustedEvidenceOnly(t *testing.T) {
 			session: LiveSession{
 				Tool:      "codex",
 				SessionID: "trace-project",
-				Path:      "/tmp/rollout-2026-06-28T10-00-00-trace-project.jsonl",
+				Path:      "fixtures/rollout-2026-06-28T10-00-00-trace-project.jsonl",
 				Processes: map[int]struct{}{1: {}},
 				Trace: &SessionTrace{
 					Project:       "alpha",
@@ -510,7 +510,7 @@ func TestObserveProjectAttributionUsesTrustedEvidenceOnly(t *testing.T) {
 			session: LiveSession{
 				Tool:      "codex",
 				SessionID: "tmp-project",
-				Path:      "/tmp/rollout-2026-06-28T10-00-00-tmp-project.jsonl",
+				Path:      filepath.Join(os.TempDir(), "rollout-2026-06-28T10-00-00-tmp-project.jsonl"),
 				Processes: map[int]struct{}{6: {}},
 			},
 			wantProject:    "",
@@ -555,7 +555,7 @@ func TestProjectLiveSessionsExposeFreshnessConfidenceAndProvenance(t *testing.T)
 		{
 			Tool:      "codex",
 			SessionID: "trace-session",
-			Path:      "/tmp/trace-session.jsonl",
+			Path:      "fixtures/trace-session.jsonl",
 			Processes: map[int]struct{}{1: {}},
 			Trace: &SessionTrace{
 				Project:       "alpha",
@@ -568,7 +568,7 @@ func TestProjectLiveSessionsExposeFreshnessConfidenceAndProvenance(t *testing.T)
 		{
 			Tool:      "claude",
 			SessionID: "hint-session",
-			Path:      "/tmp/hint-session.jsonl",
+			Path:      "fixtures/hint-session.jsonl",
 			Processes: map[int]struct{}{2: {}},
 			Trace: &SessionTrace{
 				Project:       "beta",
@@ -588,14 +588,14 @@ func TestProjectLiveSessionsExposeFreshnessConfidenceAndProvenance(t *testing.T)
 		{
 			Tool:      "codex",
 			SessionID: "fallback-session",
-			Path:      "/tmp/fallback-session.jsonl",
+			Path:      filepath.Join(os.TempDir(), "fallback-session.jsonl"),
 			Processes: map[int]struct{}{4: {}},
 			Mapping:   LiveSessionMapping{TranscriptPath: true, FallbackSessionID: true},
 		},
 		{
 			Tool:      "codex",
 			SessionID: "stale-session",
-			Path:      "/tmp/stale-session.jsonl",
+			Path:      "fixtures/stale-session.jsonl",
 			Processes: map[int]struct{}{5: {}},
 			Trace: &SessionTrace{
 				Project:       "gamma",
