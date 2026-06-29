@@ -288,6 +288,7 @@ function App() {
   const [refreshInterval, setRefreshInterval] = useState<number>(() => initialRefreshInterval());
   const shellRef = useRef<HTMLDivElement | null>(null);
   const lastRenderTokenRef = useRef("");
+  const lastSnapshotETagRef = useRef("");
   const lastSnapshotReceivedAtRef = useRef(0);
   const snapshotRef = useRef<Snapshot | null>(null);
   const popoverVisibleRef = useRef(true);
@@ -312,9 +313,22 @@ function App() {
       await fetchInFlightRef.current.catch(() => undefined);
     }
     const fetchWork = (async () => {
-      const response = await fetch("/api/snapshot", { cache: "no-store" });
+      const headers: HeadersInit = {};
+      if (reason === "auto" && lastSnapshotETagRef.current) {
+        headers["If-None-Match"] = lastSnapshotETagRef.current;
+      }
+      const response = await fetch("/api/snapshot", {
+        cache: "no-store",
+        headers,
+      });
+      if (response.status === 304) {
+        lastSnapshotReceivedAtRef.current = Date.now();
+        setError(null);
+        return;
+      }
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const next = (await response.json()) as Snapshot;
+      lastSnapshotETagRef.current = response.headers.get("ETag") || "";
       lastSnapshotReceivedAtRef.current = Date.now();
       const token = next.refresh_slot_id || next.generated_at || "";
       if (reason === "auto" && token && token === lastRenderTokenRef.current) {
