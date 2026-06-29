@@ -1121,6 +1121,7 @@ kbd {
 .role-subagent .role-glyph { color: var(--ok); background: var(--ok-dim); }
 .session-title {
   min-width: 0;
+  max-width: 100%;
   display: grid;
   gap: 2px;
 }
@@ -1150,6 +1151,7 @@ kbd {
   height: 18px;
   padding-right: 18px;
   overflow: hidden;
+  vertical-align: top;
   white-space: nowrap;
 }
 .session-id-button,
@@ -1172,6 +1174,9 @@ kbd {
 .session-id-button strong {
   display: block;
   max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .session-meta-button {
   display: block;
@@ -1184,6 +1189,7 @@ kbd {
   top: 50%;
   right: 0;
   z-index: 1;
+  flex: none;
   display: grid;
   place-items: center;
   width: 16px;
@@ -6695,8 +6701,10 @@ body[data-view="popover"] .popover-project-table .role-glyph svg {
 body[data-view="popover"] .popover-project-table .session-title {
   display: flex;
   align-items: center;
+  flex-wrap: nowrap;
   gap: 6px;
   min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   white-space: nowrap;
 }

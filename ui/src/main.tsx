@@ -1106,7 +1106,7 @@ function DashboardEvidenceColumn({ t, snapshot }: { t: (key: string) => string; 
       <div className="dash-evidence-block">
         <div className="evidence-grid">
           <Readout label={t("scan")} value={`${stats.parsed_files ?? 0}/${stats.scanned_files ?? 0}`} />
-          <Readout label={t("deferred")} value={String(stats.deferred_files ?? 0)} />
+          <Readout label={t("deferred")} value={deferredScanValue(t, stats)} />
           <Readout label={t("tail")} value={String(stats.tail_parsed_files ?? 0)} />
           <Readout label={t("metricMatched")} value={formatPct(summary.mapping_coverage_pct)} />
         </div>
@@ -2060,7 +2060,7 @@ function ScanBoundary({ t, snapshot, compact }: { t: (key: string) => string; sn
   const stats = snapshot.transcript_stats ?? {};
   const pieces = [
     { label: t("foreground"), value: `${stats.parsed_files ?? 0}/${stats.scanned_files ?? 0}` },
-    { label: t("deferred"), value: stats.historical_scan_deferred ? "walk" : String(stats.deferred_files ?? 0) },
+    { label: t("deferred"), value: deferredScanValue(t, stats) },
     { label: t("tail"), value: stats.tail_parsed_files ?? 0 },
     { label: t("source"), value: stats.cached ? t("cached") : t("fresh") },
   ];
@@ -2708,6 +2708,10 @@ function transcriptScanNote(t: (key: string) => string, stats: TranscriptStats):
     return `${stats.deferred_files ?? 0} ${t("deferred")} · ${t("foregroundWindow")} ${window}`;
   }
   return `${t("foregroundWindowOnly")} · ${t("foregroundWindow")} ${window}`;
+}
+
+function deferredScanValue(t: (key: string) => string, stats?: TranscriptStats): string {
+  return stats?.historical_scan_deferred ? t("historicalWalkShort") : String(stats?.deferred_files ?? 0);
 }
 
 function mappingHealthText(t: (key: string) => string, snapshot: Snapshot): string {
