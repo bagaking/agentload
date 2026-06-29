@@ -619,6 +619,64 @@ func TestObservedHostAppFromRequestRequiresCachedSnapshotEvidence(t *testing.T) 
 	}
 }
 
+func TestObservedHostAppFromRequestUsesInternalFreshSnapshot(t *testing.T) {
+	root := t.TempDir()
+	bundlePath := filepath.Join(root, "Terminal.app")
+	if err := os.MkdirAll(bundlePath, 0o755); err != nil {
+		t.Fatalf("mkdir bundle: %v", err)
+	}
+	originalDiscover := discoverLiveProcessesFunc
+	discoverLiveProcessesFunc = func(context.Context) ([]LiveProcess, []string) {
+		return []LiveProcess{
+			{
+				PID:     42,
+				Tool:    "codex",
+				Command: "codex resume",
+				HostApp: &HostApp{
+					PID:        42,
+					Name:       "Terminal",
+					BundlePath: bundlePath,
+				},
+			},
+		}, nil
+	}
+	t.Cleanup(func() {
+		discoverLiveProcessesFunc = originalDiscover
+	})
+	cfg := Config{
+		IdleGap:            90 * time.Second,
+		MinInterval:        15 * time.Second,
+		Lookback:           time.Hour,
+		TranscriptCacheTTL: time.Minute,
+		RefreshInterval:    5 * time.Minute,
+		HistoryFile:        filepath.Join(root, "history.jsonl"),
+	}
+	app := &trayApp{
+		cfg:      cfg,
+		observer: newObserver(cfg),
+		history:  localHistoryState{path: cfg.HistoryFile},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/host-app-icon/42", nil)
+	got, ok := app.observedHostAppFromRequest(req, "/api/host-app-icon/")
+	if !ok {
+		t.Fatalf("expected observed host app from fresh internal snapshot")
+	}
+	if got.Name != "Terminal" || got.BundlePath != bundlePath {
+		t.Fatalf("unexpected host app: %#v", got)
+	}
+	if !app.haveSnapshot {
+		t.Fatalf("expected fresh internal snapshot to be cached")
+	}
+	if app.lastSnapshot.LiveProcesses[0].HostApp == nil || app.lastSnapshot.LiveProcesses[0].HostApp.BundlePath != bundlePath {
+		t.Fatalf("expected cached internal snapshot to retain bundle path, got %+v", app.lastSnapshot.LiveProcesses)
+	}
+	clientSnapshot := app.snapshotForClient(context.Background())
+	if clientSnapshot.LiveProcesses[0].HostApp == nil || clientSnapshot.LiveProcesses[0].HostApp.BundlePath != "" {
+		t.Fatalf("expected client snapshot to redact bundle path, got %+v", clientSnapshot.LiveProcesses)
+	}
+}
+
 func TestHandleHostAppIconAPIGuardsMethodAndPath(t *testing.T) {
 	app := &trayApp{}
 	handler := app.handler()

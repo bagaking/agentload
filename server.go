@@ -198,11 +198,25 @@ func (a *trayApp) handleOpenHostAppAPI(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *trayApp) snapshotForClient(ctx context.Context) Snapshot {
+	snapshot, ok := a.snapshotForInternalUse(ctx)
+	if !ok {
+		return Snapshot{}
+	}
+	return sanitizeSnapshotForClient(snapshot)
+}
+
+func (a *trayApp) snapshotForInternalUse(ctx context.Context) (Snapshot, bool) {
+	if a == nil {
+		return Snapshot{}, false
+	}
 	if snapshot, ok := a.cachedSnapshot(); ok {
 		if snapshot.RefreshSlotID == "" {
 			snapshot.RefreshSlotID = a.refreshSlotID(time.Now())
 		}
-		return sanitizeSnapshotForClient(snapshot)
+		return snapshot, true
+	}
+	if a.observer == nil {
+		return Snapshot{}, false
 	}
 	ctx, cancel := context.WithTimeout(ctx, maxDuration(45*time.Second, a.cfg.Lookback/10))
 	defer cancel()
@@ -210,7 +224,7 @@ func (a *trayApp) snapshotForClient(ctx context.Context) Snapshot {
 	if snapshot.RefreshSlotID == "" {
 		snapshot.RefreshSlotID = a.refreshSlotID(time.Now())
 	}
-	return sanitizeSnapshotForClient(a.rememberSnapshot(snapshot))
+	return a.rememberSnapshot(snapshot), true
 }
 
 func sanitizeSnapshotForClient(snapshot Snapshot) Snapshot {
@@ -378,10 +392,11 @@ func (a *trayApp) observedHostAppFromRequest(r *http.Request, prefix string) (Ho
 	}
 	snapshot, ok := a.cachedSnapshot()
 	if !ok {
-		if a == nil || a.observer == nil {
+		var loaded bool
+		snapshot, loaded = a.snapshotForInternalUse(r.Context())
+		if !loaded {
 			return HostApp{}, false
 		}
-		snapshot = a.snapshotForClient(r.Context())
 	}
 	for _, process := range snapshot.LiveProcesses {
 		if app := process.HostApp; app != nil && app.PID == pid && validObservedHostApp(*app) {
