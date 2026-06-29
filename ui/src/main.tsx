@@ -2453,11 +2453,16 @@ function ProjectMetricNumber({ t, scope, metric, value }: { t: (key: string) => 
 function ToolStrip({ t, tools }: { t: (key: string) => string; tools: ProjectTool[] }) {
   if (!tools.length) return null;
   return (
-    <div className="tool-strip" aria-label={t("tools")}>
+    <div className="tool-strip" aria-label={t("projectToolStripLabel")}>
       {tools.map((tool) => {
         const toolName = tool.tool || "unknown";
+        const title = formatCopy(t("projectToolBadgeTooltip"), {
+          tool: toolDisplayName(toolName),
+          active: tool.active_burst_count ?? 0,
+          sessions: tool.session_count ?? 0,
+        });
         return (
-          <span className="tool-mark" key={toolName} title={`${toolDisplayName(toolName)} · ${tool.active_burst_count ?? 0}/${tool.session_count ?? 0} ${t("metricSessions")}`}>
+          <span className="tool-mark" key={toolName} title={title} aria-label={title}>
             <ToolIcon tool={toolName} />
             <strong>{tool.active_burst_count ?? 0}</strong>
             <small>/{tool.session_count ?? 0}</small>

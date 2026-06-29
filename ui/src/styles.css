@@ -910,9 +910,12 @@ kbd {
   min-width: 0;
   max-width: 210px;
   overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
   -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent);
   mask-image: linear-gradient(90deg, #000 88%, transparent);
 }
+.tool-strip::-webkit-scrollbar { display: none; }
 .tool-mark {
   display: inline-flex;
   align-items: center;
@@ -6639,10 +6642,12 @@ body[data-view="popover"] .popover-project-table .project-compact-proc strong {
 body[data-view="popover"] .popover-project-table .tool-strip {
   display: flex;
   justify-self: end;
-  max-width: 62px;
-  overflow: hidden;
-  -webkit-mask-image: none;
-  mask-image: none;
+  max-width: 82px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 10px), transparent 100%);
+  mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 10px), transparent 100%);
 }
 
 body[data-view="popover"] .popover-project-table .tool-mark {
@@ -6650,10 +6655,6 @@ body[data-view="popover"] .popover-project-table .tool-mark {
   gap: 1px;
   padding: 0 2px;
   border-left: 0;
-}
-
-body[data-view="popover"] .popover-project-table .tool-mark:nth-child(n+2) {
-  display: none;
 }
 
 body[data-view="popover"] .popover-project-table .tool-mark .tool-icon,
