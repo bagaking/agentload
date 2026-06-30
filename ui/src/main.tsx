@@ -697,7 +697,7 @@ function PopoverFooter({
   const active = (snapshot?.current?.active_burst_concurrency ?? 0) > 0;
   const stateLabel = snapshot ? metricState(snapshot, t) : t("noData");
   return (
-    <footer className="popover-footer">
+    <footer className={`popover-footer ${active ? "is-active" : ""}`}>
       <div className={`footer-meta ${active ? "is-active" : ""}`} role="status" title={stateLabel} aria-label={`${stateLabel} ${generated}`}>
         <span className={`state-dot footer-state-dot ${snapshot ? "observed" : "idle"} ${active ? "is-active" : ""}`} aria-hidden="true" />
         <span className="footer-time">{generated}</span>

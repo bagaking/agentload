@@ -8636,6 +8636,280 @@ body[data-view="popover"] .footer-link:focus-visible {
   color: #101826;
 }
 
+/* Popover lower plane pass: the tail should read as one graphic surface. */
+body[data-view="popover"] .popover-current-surface {
+  position: relative;
+  isolation: isolate;
+}
+
+body[data-view="popover"] .popover-current-surface::before,
+body[data-view="popover"] .popover-current-surface::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  pointer-events: none;
+}
+
+body[data-view="popover"] .popover-current-surface::before {
+  left: -12px;
+  right: -12px;
+  bottom: -1px;
+  height: 96px;
+  background:
+    radial-gradient(ellipse at 17% 100%, color-mix(in srgb, var(--ok) 15%, transparent), transparent 56%),
+    radial-gradient(ellipse at 74% 86%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 58%),
+    linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--bg) 36%, transparent) 46%, color-mix(in srgb, var(--console-material) 74%, transparent) 100%);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, .76) 40%, #000 100%);
+  mask-image: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, .76) 40%, #000 100%);
+  opacity: .78;
+}
+
+body[data-view="popover"] .popover-current-surface::after {
+  left: 6px;
+  right: 6px;
+  bottom: 10px;
+  height: 44px;
+  background:
+    linear-gradient(104deg, transparent 0 7%, color-mix(in srgb, var(--ok) 28%, transparent) 7% 7.4%, transparent 7.4% 34%, color-mix(in srgb, var(--accent) 20%, transparent) 34% 34.35%, transparent 34.35% 100%),
+    linear-gradient(90deg, transparent, color-mix(in srgb, var(--console-line-soft) 78%, transparent) 18%, transparent 18.7% 52%, color-mix(in srgb, var(--console-line-soft) 62%, transparent) 52% 52.5%, transparent),
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--fg) 8%, transparent) 0 1px, transparent 1px 12px);
+  clip-path: polygon(0 44%, 47% 44%, 53% 68%, 100% 68%, 100% 100%, 0 100%);
+  opacity: .34;
+}
+
+body[data-view="popover"] .popover-current-scroll {
+  position: relative;
+  z-index: 1;
+}
+
+body[data-view="popover"] .popover-footer {
+  --footer-plane: var(--accent);
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  min-height: 40px;
+  padding: 6px 8px 7px;
+  overflow: hidden;
+  border-top: 1px solid color-mix(in srgb, var(--console-line-soft) 34%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--fg) 3.4%, transparent), transparent 48%),
+    linear-gradient(111deg, color-mix(in srgb, var(--ok) 9%, transparent) 0 20%, transparent 20.5% 58%, color-mix(in srgb, var(--accent) 8%, transparent) 58% 76%, transparent 76.5%),
+    color-mix(in srgb, var(--console-material) 95%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--fg) 3.5%, transparent),
+    0 -14px 34px color-mix(in srgb, var(--bg) 56%, transparent);
+  backdrop-filter: blur(18px) saturate(1.28);
+  -webkit-backdrop-filter: blur(18px) saturate(1.28);
+}
+
+body[data-view="popover"] .popover-footer.is-active {
+  --footer-plane: var(--ok);
+}
+
+body[data-view="popover"] .popover-footer::before {
+  inset: 5px 58px 5px 5px;
+  width: auto;
+  height: auto;
+  background:
+    linear-gradient(98deg, color-mix(in srgb, var(--footer-plane) 22%, transparent), transparent 43%),
+    linear-gradient(118deg, transparent 0 54%, color-mix(in srgb, var(--accent) 18%, transparent) 54% 56%, transparent 56%),
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--fg) 7%, transparent) 0 1px, transparent 1px 14px);
+  clip-path: polygon(0 0, 74% 0, 83% 100%, 0 100%);
+  opacity: .38;
+  transform: translate3d(0, 0, 0);
+}
+
+body[data-view="popover"] .popover-footer.is-active::before {
+  opacity: .55;
+  animation: footerPlaneDrift 8.6s ease-in-out infinite;
+}
+
+body[data-view="popover"] .popover-footer::after {
+  left: 8px;
+  right: 8px;
+  top: 4px;
+  bottom: auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--footer-plane) 38%, transparent) 18%, transparent 42%, color-mix(in srgb, var(--accent) 28%, transparent) 74%, transparent);
+  opacity: .74;
+}
+
+body[data-view="popover"] .footer-meta {
+  display: grid;
+  grid-template-columns: auto minmax(0, max-content) auto;
+  align-items: center;
+  gap: 7px;
+  height: 27px;
+  min-width: 0;
+  padding: 0 9px 0 15px;
+  overflow: hidden;
+  color: color-mix(in srgb, var(--console-text-soft) 88%, var(--fg));
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--footer-plane) 11%, transparent), transparent 62%),
+    color-mix(in srgb, var(--console-material-2) 17%, transparent);
+  clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 100%, 7px 100%);
+}
+
+body[data-view="popover"] .footer-meta::before {
+  left: 6px;
+  top: 6px;
+  bottom: 6px;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--footer-plane) 68%, transparent), transparent);
+}
+
+body[data-view="popover"] .footer-meta::after {
+  content: "";
+  position: absolute;
+  left: 18px;
+  right: 8px;
+  bottom: 4px;
+  height: 1px;
+  background: repeating-linear-gradient(90deg, currentColor 0 1px, transparent 1px 8px);
+  opacity: .16;
+  pointer-events: none;
+}
+
+body[data-view="popover"] .footer-meta.is-active > span:not(.state-dot),
+body[data-view="popover"] .footer-meta.is-active .footer-time {
+  color: color-mix(in srgb, var(--console-text-soft) 68%, var(--ok));
+}
+
+body[data-view="popover"] .footer-time,
+body[data-view="popover"] .footer-meta > span.footer-time {
+  position: relative;
+  z-index: 1;
+  max-width: 122px;
+}
+
+body[data-view="popover"] .footer-interval {
+  position: relative;
+  z-index: 1;
+  height: 21px;
+  min-height: 21px;
+  min-width: 38px;
+  padding: 0 0 0 8px;
+  border-left-color: color-mix(in srgb, var(--console-line-soft) 60%, transparent);
+  color: color-mix(in srgb, var(--accent) 78%, var(--fg));
+}
+
+body[data-view="popover"] .popover-footer-controls {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  justify-content: end;
+  gap: 3px;
+  min-width: 0;
+}
+
+body[data-view="popover"] .popover-view-switch {
+  width: 128px;
+  height: 27px;
+  padding: 0 2px;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--console-material-2) 34%, transparent), transparent),
+    linear-gradient(105deg, transparent 0 62%, color-mix(in srgb, var(--accent) 9%, transparent) 62% 82%, transparent 82%);
+  clip-path: polygon(5px 0, 100% 0, calc(100% - 7px) 100%, 0 100%);
+}
+
+body[data-view="popover"] .popover-view-switch::before {
+  left: 5px;
+  right: 7px;
+  bottom: 3px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--console-line-soft) 58%, transparent), transparent);
+}
+
+body[data-view="popover"] .popover-view-switch button {
+  min-width: 0;
+  height: 27px;
+  min-height: 27px;
+  padding: 0 7px;
+  color: color-mix(in srgb, var(--console-text-faint) 88%, var(--fg));
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .popover-view-switch button.is-active {
+  color: var(--fg);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 12%, transparent), color-mix(in srgb, var(--footer-plane) 8%, transparent));
+  clip-path: polygon(4px 0, 100% 0, calc(100% - 5px) 100%, 0 100%);
+}
+
+body[data-view="popover"] .popover-view-switch button.is-active::after {
+  right: 8px;
+  left: 8px;
+  bottom: 3px;
+  background: color-mix(in srgb, var(--accent) 64%, var(--footer-plane));
+}
+
+body[data-view="popover"] .footer-link {
+  height: 27px;
+  min-height: 27px;
+  padding: 0 2px 0 10px;
+  color: color-mix(in srgb, var(--console-text-faint) 88%, var(--fg));
+  white-space: nowrap;
+}
+
+@keyframes footerPlaneDrift {
+  0%, 100% {
+    transform: translate3d(-1.5%, 0, 0);
+  }
+  50% {
+    transform: translate3d(2.5%, 0, 0);
+  }
+}
+
+:root[data-theme="light"] body[data-view="popover"] .popover-current-surface::before {
+  background:
+    radial-gradient(ellipse at 17% 100%, color-mix(in srgb, var(--ok) 12%, transparent), transparent 56%),
+    radial-gradient(ellipse at 74% 86%, color-mix(in srgb, var(--accent) 11%, transparent), transparent 58%),
+    linear-gradient(180deg, transparent 0%, rgba(226, 235, 240, .38) 46%, rgba(246, 250, 251, .72) 100%);
+  opacity: .86;
+}
+
+:root[data-theme="light"] body[data-view="popover"] .popover-current-surface::after {
+  opacity: .42;
+}
+
+:root[data-theme="light"] body[data-view="popover"] .popover-footer {
+  border-top-color: rgba(82, 96, 111, .12);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .7), rgba(245, 249, 251, .36) 48%),
+    linear-gradient(111deg, rgba(31, 159, 118, .08) 0 20%, transparent 20.5% 58%, rgba(79, 127, 218, .08) 58% 76%, transparent 76.5%),
+    rgba(248, 251, 252, .94);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .82),
+    0 -14px 34px rgba(218, 228, 233, .52);
+}
+
+:root[data-theme="light"] body[data-view="popover"] .footer-meta {
+  color: rgba(38, 49, 60, .78);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--footer-plane) 9%, transparent), transparent 64%),
+    rgba(255, 255, 255, .24);
+}
+
+:root[data-theme="light"] body[data-view="popover"] .popover-view-switch {
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, .3), transparent),
+    linear-gradient(105deg, transparent 0 62%, rgba(79, 127, 218, .08) 62% 82%, transparent 82%);
+}
+
+:root[data-theme="light"] body[data-view="popover"] .footer-interval {
+  color: #2b6e9c;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body[data-view="popover"] .popover-footer.is-active::before {
+    animation: none;
+  }
+}
+
 @media (max-width: 340px) {
   body[data-view="popover"] .popover-footer {
     grid-template-columns: minmax(0, 1fr);

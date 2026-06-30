@@ -84,6 +84,10 @@ agent evidence.
   Avoid separate chunky pills in the footer; use one-pixel dividers, planar
   accents, restrained hover states, and theme-specific contrast so the strip
   feels like an intentional control artifact rather than leftover chrome.
+- When a compact popover leaves vertical slack below the audit list, treat the
+  lower area as a quiet composed tail plane, not dead empty space. Use subtle
+  fades, one-pixel rhythm marks, and the footer's state color to connect the
+  content area to the control plane without adding fake data or new frames.
 - Compact explanatory rows should avoid decorative icons when the label and
   adjacent controls already identify the row. Compact scan readouts should stay
   on one row whenever the available width can hold the observed fields.
