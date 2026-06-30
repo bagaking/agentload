@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -380,17 +381,18 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 	sessionPath := filepath.Join(root, "sessions", "session.jsonl")
 	bundlePath := filepath.Join(root, "Terminal.app")
 	projectPath := filepath.Join(root, "projects", "agentload")
+	sessionFileURI := (&url.URL{Scheme: "file", Path: sessionPath}).String()
 	app := &trayApp{cfg: Config{RefreshInterval: 5 * time.Minute}}
 	app.lastSnapshot = Snapshot{
 		GeneratedAt: "2026-06-28T12:00:00Z",
 		TranscriptStats: TranscriptStats{
-			Errors: []string{sessionPath + ": parse failed"},
+			Errors: []string{sessionPath + ": parse failed", "opened " + sessionFileURI},
 		},
 		LiveProcesses: []LiveProcessSnapshot{
 			{
 				PID:            42,
 				Tool:           "codex",
-				Command:        executablePath + " --cwd=" + workspacePath + " resume " + sessionPath,
+				Command:        executablePath + " --cwd=" + workspacePath + " resume " + sessionPath + " --source=" + sessionFileURI,
 				HostApp:        &HostApp{PID: 7, Name: "Terminal", BundlePath: bundlePath},
 				SessionIDs:     []string{"session"},
 				SessionPaths:   []string{sessionPath},
@@ -413,7 +415,7 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 		ProjectFocus: []ProjectSnapshot{
 			{
 				Project:                   projectPath,
-				ConfidenceReasons:         []string{"read " + sessionPath},
+				ConfidenceReasons:         []string{"read " + sessionFileURI},
 				ProjectAttributionReasons: []string{"cwd=" + workspacePath},
 			},
 		},
@@ -422,7 +424,7 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 				Key:                       "project=" + projectPath + "|tool=codex|freshness=active",
 				Project:                   projectPath,
 				Tool:                      "codex",
-				ConfidenceReasons:         []string{"group includes " + sessionPath},
+				ConfidenceReasons:         []string{"group includes " + sessionFileURI},
 				ProjectAttributionReasons: []string{"cwd=" + workspacePath},
 			},
 		},
@@ -432,7 +434,7 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 				{Kind: "evidence_note", Severity: "observed", Evidence: "checked " + sessionPath},
 			},
 		},
-		Notes: []string{"checked " + sessionPath},
+		Notes: []string{"checked " + sessionPath, "opened " + sessionFileURI},
 	}
 	app.haveSnapshot = true
 	handler := app.handler()
@@ -449,7 +451,7 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 		t.Fatalf("decode snapshot response: %v", err)
 	}
 	body := rec.Body.String()
-	for _, leaked := range []string{root, executablePath, workspacePath, sessionPath, bundlePath, projectPath} {
+	for _, leaked := range []string{root, executablePath, workspacePath, sessionPath, sessionFileURI, bundlePath, projectPath} {
 		if strings.Contains(body, leaked) {
 			t.Fatalf("expected client snapshot to redact %q, got body %q", leaked, body)
 		}
@@ -476,7 +478,7 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 	if len(got.LiveSessions[0].HostApps) != 1 || got.LiveSessions[0].HostApps[0].BundlePath != "" {
 		t.Fatalf("expected client session host bundle path to be removed, got %+v", got.LiveSessions[0].HostApps)
 	}
-	if app.lastSnapshot.LiveProcesses[0].Command != executablePath+" --cwd="+workspacePath+" resume "+sessionPath ||
+	if app.lastSnapshot.LiveProcesses[0].Command != executablePath+" --cwd="+workspacePath+" resume "+sessionPath+" --source="+sessionFileURI ||
 		len(app.lastSnapshot.LiveProcesses[0].SessionPaths) != 1 ||
 		app.lastSnapshot.LiveProcesses[0].HostApp.BundlePath != bundlePath ||
 		app.lastSnapshot.LiveSessions[0].Path != sessionPath ||
@@ -494,6 +496,10 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 		!strings.Contains(app.lastSnapshot.CandidateWorkitems[0].ConfidenceReasons[0], sessionPath) ||
 		!strings.Contains(app.lastSnapshot.CoordinationRisk.Signals[0].Evidence, sessionPath) {
 		t.Fatalf("expected internal aggregate evidence to retain local paths, got projects=%+v candidates=%+v risk=%+v", app.lastSnapshot.ProjectFocus, app.lastSnapshot.CandidateWorkitems, app.lastSnapshot.CoordinationRisk)
+	}
+	if !strings.Contains(app.lastSnapshot.TranscriptStats.Errors[1], sessionFileURI) ||
+		!strings.Contains(app.lastSnapshot.Notes[1], sessionFileURI) {
+		t.Fatalf("expected internal file URI evidence to remain, got errors=%+v notes=%+v", app.lastSnapshot.TranscriptStats.Errors, app.lastSnapshot.Notes)
 	}
 }
 

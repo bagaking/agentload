@@ -412,6 +412,9 @@ func sanitizeTokenForClient(token string) string {
 }
 
 func sanitizePathLikeValue(value string) string {
+	if parsed, err := url.Parse(value); err == nil && strings.EqualFold(parsed.Scheme, "file") && parsed.Path != "" {
+		return sanitizePathLikeValue(filepath.FromSlash(parsed.Path))
+	}
 	if !filepath.IsAbs(value) {
 		return value
 	}
