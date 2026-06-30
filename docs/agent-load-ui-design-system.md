@@ -15,8 +15,9 @@ agent evidence.
 
 ## Required Structure
 
-- top bar with brand, loopback/no-upload status, live state, refresh, language,
-  and theme controls
+- top bar with brand, refresh, language, and theme controls. Dashboard chrome may
+  expose loopback/no-upload status, but compact popover live state belongs in the
+  footer timestamp/cadence area so the title cluster stays action-focused.
 - popover surface with an online/trend switch, current meaning strip, scan
   boundary, compact project/session atlas, and trend suite
 - popover language control remains visible in compact mode; locale switching is
@@ -65,17 +66,19 @@ agent evidence.
   If activity needs visual atmosphere, use a faint background motion layer whose
   color follows the active state while leaving the data and labels unobstructed.
 - Popover primary metrics should not reserve a full line for duplicated ambient
-  state. The compact top status mark owns live/active hover text; foreground
-  scan-window duration belongs with scan-boundary metadata unless it becomes an
-  exceptional warning.
+  state. The compact footer status mark owns live/active hover text next to the
+  observation timestamp and cadence; foreground scan-window duration belongs
+  with scan-boundary metadata unless it becomes an exceptional warning.
 - Compact status hover text should state the current observation state only.
   Loopback address and no-upload reassurance are detail metadata; do not show
   them in default hover text where they can cover primary readings.
-- In compact popover chrome, live state and manual refresh are primary status
-  controls and should sit with the brand/title cluster. The right control group
-  should stay focused on language, theme, dashboard, and window actions.
+- In compact popover chrome, manual refresh may sit with the brand/title cluster,
+  but live state should not duplicate the footer status mark. The right control
+  group should stay focused on language, theme, dashboard, and window actions.
 - Active live-state marks should breathe subtly when local movement is present.
-  The animation must read as state feedback, not a decorative loading spinner.
+  Prefer slow, soft core-and-ring motion from the footer mark; the animation must
+  read as ambient state feedback, not a decorative loading spinner or loading
+  control.
 - Compact explanatory rows should avoid decorative icons when the label and
   adjacent controls already identify the row. Compact scan readouts should stay
   on one row whenever the available width can hold the observed fields.

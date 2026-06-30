@@ -221,25 +221,6 @@ code, kbd, pre { font-family: var(--font-mono); }
 .pill-running .dot { animation: pulse 1.1s ease-in-out infinite; }
 .pill-bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 35%, var(--border)); background: var(--bad-dim); }
 
-.local-status-chip {
-  display: inline-grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border: 1px solid color-mix(in srgb, var(--ok) 24%, var(--border));
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--ok) 8%, transparent);
-}
-
-.local-status-chip .state-dot {
-  width: 7px;
-  height: 7px;
-}
-
-.local-status-chip.is-active .state-dot {
-  animation: pulse 1.25s ease-in-out infinite;
-}
-
 .kbd-hint {
   display: inline-flex;
   align-items: center;
@@ -347,12 +328,14 @@ kbd {
 }
 
 .state-dot {
+  position: relative;
   width: 7px;
   height: 7px;
   border-radius: var(--r-pill);
   background: var(--fg-faint);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--fg-faint) 12%, transparent);
   flex: none;
+  isolation: isolate;
 }
 
 .state-dot.observed {
@@ -7575,7 +7558,6 @@ body[data-view="popover"] .topbar {
   box-shadow: none;
 }
 
-body[data-view="popover"] .local-status-chip,
 body[data-view="popover"] .pill,
 body[data-view="popover"] .icon-btn,
 body[data-view="popover"] .refresh-interval,
@@ -7584,12 +7566,6 @@ body[data-view="popover"] .popover-view-switch,
 body[data-view="popover"] .footer-link {
   border-color: transparent;
   box-shadow: none;
-}
-
-body[data-view="popover"] .local-status-chip {
-  background:
-    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--ok) 22%, transparent), transparent 58%),
-    color-mix(in srgb, var(--ok) 7%, var(--console-material-2));
 }
 
 body[data-view="popover"] .pill,
@@ -7717,7 +7693,6 @@ body[data-view="popover"] .scan-readout + .scan-readout::before {
   background: color-mix(in srgb, var(--console-line-soft) 58%, transparent);
 }
 
-:root[data-theme="light"] body[data-view="popover"] .local-status-chip,
 :root[data-theme="light"] body[data-view="popover"] .pill,
 :root[data-theme="light"] body[data-view="popover"] .icon-btn,
 :root[data-theme="light"] body[data-view="popover"] .refresh-interval,
@@ -7831,14 +7806,6 @@ body[data-view="popover"] .scan-readout strong {
   filter: drop-shadow(0 0 5px color-mix(in srgb, var(--ok) 58%, transparent));
 }
 
-.local-status-chip.is-active {
-  animation: statusBreathe 2.4s ease-in-out infinite;
-}
-
-.local-status-chip.is-active .state-dot {
-  animation: dotBreathe 2.4s ease-in-out infinite;
-}
-
 body[data-view="popover"] .topbar {
   min-height: 36px;
   padding: 4px 8px;
@@ -7872,7 +7839,22 @@ body[data-view="popover"] .brand-actions {
   margin-left: 2px;
 }
 
-body[data-view="popover"] .brand-actions .local-status-chip,
+body[data-view="popover"] .brand-actions .topbar-refresh-action {
+  color: var(--console-text-soft);
+  transition: background-color .18s ease, color .18s ease, transform .18s ease;
+}
+
+body[data-view="popover"] .brand-actions .topbar-refresh-action.is-refreshing {
+  color: var(--run);
+  background:
+    radial-gradient(circle at 50% 52%, color-mix(in srgb, var(--run) 18%, transparent), transparent 58%),
+    color-mix(in srgb, var(--console-material-2) 82%, transparent);
+}
+
+body[data-view="popover"] .brand-actions .topbar-refresh-action.is-refreshing svg {
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--run) 32%, transparent));
+}
+
 body[data-view="popover"] .brand-actions .icon-btn {
   width: 27px;
   min-width: 27px;
@@ -7888,15 +7870,64 @@ body[data-view="popover"] .topbar-meta {
   flex: 1 1 auto;
 }
 
-body[data-view="popover"] .topbar-meta .local-status-chip,
 body[data-view="popover"] .topbar-meta .topbar-refresh-action {
   display: none;
 }
 
-body[data-view="popover"] .local-status-chip {
+body[data-view="popover"] .footer-meta {
+  overflow: visible;
+}
+
+body[data-view="popover"] .footer-meta.is-active > span:not(.state-dot) {
+  color: color-mix(in srgb, var(--console-text-soft) 86%, var(--ok));
+}
+
+body[data-view="popover"] .footer-state-dot {
+  width: 9px;
+  height: 9px;
   background:
-    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--ok) 30%, transparent), transparent 56%),
-    color-mix(in srgb, var(--ok) 10%, var(--console-material-2));
+    radial-gradient(circle at 42% 34%, color-mix(in srgb, white 62%, var(--ok)), transparent 28%),
+    var(--ok);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--ok) 30%, transparent),
+    0 0 11px color-mix(in srgb, var(--ok) 22%, transparent);
+}
+
+body[data-view="popover"] .footer-state-dot::before,
+body[data-view="popover"] .footer-state-dot::after {
+  content: "";
+  position: absolute;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+body[data-view="popover"] .footer-state-dot::before {
+  inset: -5px;
+  z-index: -1;
+  border: 1px solid color-mix(in srgb, var(--ok) 32%, transparent);
+  opacity: 0;
+  transform: scale(.56);
+}
+
+body[data-view="popover"] .footer-state-dot::after {
+  inset: -8px;
+  z-index: -2;
+  background: radial-gradient(circle, color-mix(in srgb, var(--ok) 26%, transparent), transparent 64%);
+  filter: blur(4px);
+  opacity: .34;
+  transform: scale(.78);
+}
+
+body[data-view="popover"] .footer-state-dot.is-active {
+  animation: footerStateCore 3.8s cubic-bezier(.45, 0, .2, 1) infinite;
+}
+
+body[data-view="popover"] .footer-state-dot.is-active::before {
+  animation: footerStateRing 3.8s cubic-bezier(.45, 0, .2, 1) infinite;
+}
+
+body[data-view="popover"] .footer-state-dot.is-active::after {
+  animation: footerStateBloom 3.8s cubic-bezier(.45, 0, .2, 1) infinite;
 }
 
 body[data-view="popover"] .popover-instrument {
@@ -7933,38 +7964,62 @@ body[data-view="popover"] .instrument-spine {
   display: none;
 }
 
-@keyframes statusBreathe {
-  0%, 100% {
-    box-shadow:
-      0 0 0 0 color-mix(in srgb, var(--ok) 0%, transparent),
-      inset 0 0 0 1px color-mix(in srgb, var(--ok) 22%, transparent);
-    transform: translateZ(0);
-  }
-  50% {
-    box-shadow:
-      0 0 0 7px color-mix(in srgb, var(--ok) 11%, transparent),
-      0 0 18px color-mix(in srgb, var(--ok) 24%, transparent),
-      inset 0 0 0 1px color-mix(in srgb, var(--ok) 38%, transparent);
-  }
-}
-
-@keyframes dotBreathe {
-  0%, 100% {
-    opacity: .82;
-    transform: scale(.86);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.12);
-  }
-}
-
 @keyframes instrumentAmbient {
   0%, 100% {
     transform: translate3d(-2%, -1%, 0) scale(1);
   }
   50% {
     transform: translate3d(5%, 3%, 0) scale(1.05);
+  }
+}
+
+@keyframes footerStateCore {
+  0%, 100% {
+    opacity: .9;
+    transform: scale(.92);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--ok) 26%, transparent),
+      0 0 8px color-mix(in srgb, var(--ok) 18%, transparent);
+  }
+  46% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--ok) 38%, transparent),
+      0 0 14px color-mix(in srgb, var(--ok) 34%, transparent);
+  }
+}
+
+@keyframes footerStateRing {
+  0% {
+    opacity: 0;
+    transform: scale(.54);
+  }
+  22% {
+    opacity: .5;
+  }
+  72%, 100% {
+    opacity: 0;
+    transform: scale(1.72);
+  }
+}
+
+@keyframes footerStateBloom {
+  0%, 100% {
+    opacity: .18;
+    transform: scale(.74);
+  }
+  48% {
+    opacity: .42;
+    transform: scale(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body[data-view="popover"] .footer-state-dot.is-active,
+  body[data-view="popover"] .footer-state-dot.is-active::before,
+  body[data-view="popover"] .footer-state-dot.is-active::after {
+    animation: none;
   }
 }
 

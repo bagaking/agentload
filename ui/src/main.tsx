@@ -558,7 +558,6 @@ function App() {
         theme={theme}
         setTheme={setTheme}
         compact={compact}
-        snapshot={snapshot}
         running={running}
         error={error}
         refreshSnapshot={refreshSnapshot}
@@ -692,10 +691,12 @@ function PopoverFooter({
   cycleRefreshInterval: () => void;
 }) {
   const generated = snapshot?.generated_at ? formatDateTime(snapshot.generated_at) : t("noData");
+  const active = (snapshot?.current?.active_burst_concurrency ?? 0) > 0;
+  const stateLabel = snapshot ? metricState(snapshot, t) : t("noData");
   return (
     <footer className="popover-footer">
-      <div className="footer-meta">
-        <span className={`state-dot ${snapshot ? "observed" : "idle"}`} aria-hidden="true" />
+      <div className={`footer-meta ${active ? "is-active" : ""}`} role="status" title={stateLabel} aria-label={`${stateLabel} ${generated}`}>
+        <span className={`state-dot footer-state-dot ${snapshot ? "observed" : "idle"} ${active ? "is-active" : ""}`} aria-hidden="true" />
         <span>{generated}</span>
         <button className={`refresh-interval footer-interval ${refreshInterval ? "" : "is-paused"}`} type="button" data-focus-key={focusKey("refresh-interval", "popover")} onClick={cycleRefreshInterval} title={t("autoRefresh")} aria-label={t("autoRefresh")}>
           <RefreshCw size={11} aria-hidden="true" />
@@ -1976,7 +1977,6 @@ function Topbar({
   theme,
   setTheme,
   compact,
-  snapshot,
   running,
   error,
   refreshSnapshot,
@@ -1989,7 +1989,6 @@ function Topbar({
   theme: Theme;
   setTheme: (theme: Theme) => void;
   compact: boolean;
-  snapshot: Snapshot | null;
   running: boolean;
   error: string | null;
   refreshSnapshot: () => void;
@@ -1997,7 +1996,7 @@ function Topbar({
   cycleRefreshInterval: () => void;
 }) {
   const topbarStatusTone = error ? "bad" : running ? "running" : "idle";
-  const showTopbarStatus = !compact || error || running;
+  const showTopbarStatus = !compact || !!error;
   return (
     <header className="topbar">
       <div className="brand">
@@ -2016,8 +2015,8 @@ function Topbar({
           <span className="brand-sub">{t("sub")}</span>
         </div>
         <div className="brand-actions">
-          {compact ? <LocalStatus t={t} snapshot={snapshot} /> : <Pill tone="safe">{t("loopback")}</Pill>}
-          <button className="icon-btn topbar-refresh-action" type="button" data-focus-key={focusKey("topbar-refresh")} onClick={refreshSnapshot} title={t("refresh")} aria-label={t("refresh")}>
+          {compact ? null : <Pill tone="safe">{t("loopback")}</Pill>}
+          <button className={`icon-btn topbar-refresh-action ${running ? "is-refreshing" : ""}`} type="button" data-focus-key={focusKey("topbar-refresh")} onClick={refreshSnapshot} title={running ? t("running") : t("refresh")} aria-label={running ? t("running") : t("refresh")} aria-busy={running}>
             <RefreshCw size={16} className={running ? "spin" : ""} />
           </button>
           {showTopbarStatus ? <Pill tone={topbarStatusTone}>{error ? t("failed") : running ? t("running") : t("idle")}</Pill> : null}
@@ -2045,16 +2044,6 @@ function Topbar({
         ) : null}
       </div>
     </header>
-  );
-}
-
-function LocalStatus({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot | null }) {
-  const state = snapshot ? metricState(snapshot, t) : t("noData");
-  const active = (snapshot?.current?.active_burst_concurrency ?? 0) > 0;
-  return (
-    <span className={`local-status-chip ${active ? "is-active" : ""}`} role="status" title={state} aria-label={state}>
-      <span className="state-dot observed" aria-hidden="true" />
-    </span>
   );
 }
 
