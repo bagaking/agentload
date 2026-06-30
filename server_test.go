@@ -322,6 +322,7 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 	workspacePath := filepath.Join(root, "workspace", "agentload")
 	sessionPath := filepath.Join(root, "sessions", "session.jsonl")
 	bundlePath := filepath.Join(root, "Terminal.app")
+	projectPath := filepath.Join(root, "projects", "agentload")
 	app := &trayApp{cfg: Config{RefreshInterval: 5 * time.Minute}}
 	app.lastSnapshot = Snapshot{
 		GeneratedAt: "2026-06-28T12:00:00Z",
@@ -343,6 +344,7 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 			{
 				Tool:                      "codex",
 				SessionID:                 "session",
+				Project:                   projectPath,
 				Path:                      sessionPath,
 				HostApps:                  []HostApp{{PID: 7, Name: "Terminal", BundlePath: bundlePath}},
 				RoleReasons:               []string{sessionPath + ": role metadata"},
@@ -353,21 +355,22 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 		},
 		ProjectFocus: []ProjectSnapshot{
 			{
-				Project:                   "agentload",
+				Project:                   projectPath,
 				ConfidenceReasons:         []string{"read " + sessionPath},
 				ProjectAttributionReasons: []string{"cwd=" + workspacePath},
 			},
 		},
 		CandidateWorkitems: []CandidateWorkitemSnapshot{
 			{
-				Key:                       "agentload|codex|active",
-				Project:                   "agentload",
+				Key:                       "project=" + projectPath + "|tool=codex|freshness=active",
+				Project:                   projectPath,
 				Tool:                      "codex",
 				ConfidenceReasons:         []string{"group includes " + sessionPath},
 				ProjectAttributionReasons: []string{"cwd=" + workspacePath},
 			},
 		},
 		CoordinationRisk: CoordinationRiskSnapshot{
+			TopProject: projectPath,
 			Signals: []RiskSignalSnapshot{
 				{Kind: "evidence_note", Severity: "observed", Evidence: "checked " + sessionPath},
 			},
@@ -389,7 +392,7 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 		t.Fatalf("decode snapshot response: %v", err)
 	}
 	body := rec.Body.String()
-	for _, leaked := range []string{root, executablePath, workspacePath, sessionPath, bundlePath} {
+	for _, leaked := range []string{root, executablePath, workspacePath, sessionPath, bundlePath, projectPath} {
 		if strings.Contains(body, leaked) {
 			t.Fatalf("expected client snapshot to redact %q, got body %q", leaked, body)
 		}
@@ -406,6 +409,13 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 	if len(got.LiveSessions) != 1 || got.LiveSessions[0].Path != "" {
 		t.Fatalf("expected client session path to be removed, got %+v", got.LiveSessions)
 	}
+	if got.LiveSessions[0].Project != "agentload" ||
+		got.ProjectFocus[0].Project != "agentload" ||
+		got.CandidateWorkitems[0].Project != "agentload" ||
+		got.CandidateWorkitems[0].Key != "project=agentload|tool=codex|freshness=active" ||
+		got.CoordinationRisk.TopProject != "agentload" {
+		t.Fatalf("expected client project labels to be path-safe, got sessions=%+v projects=%+v candidates=%+v risk=%+v", got.LiveSessions, got.ProjectFocus, got.CandidateWorkitems, got.CoordinationRisk)
+	}
 	if len(got.LiveSessions[0].HostApps) != 1 || got.LiveSessions[0].HostApps[0].BundlePath != "" {
 		t.Fatalf("expected client session host bundle path to be removed, got %+v", got.LiveSessions[0].HostApps)
 	}
@@ -415,6 +425,13 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 		app.lastSnapshot.LiveSessions[0].Path != sessionPath ||
 		app.lastSnapshot.LiveSessions[0].HostApps[0].BundlePath != bundlePath {
 		t.Fatalf("expected internal cached snapshot to retain local evidence paths, got %+v", app.lastSnapshot)
+	}
+	if app.lastSnapshot.LiveSessions[0].Project != projectPath ||
+		app.lastSnapshot.ProjectFocus[0].Project != projectPath ||
+		app.lastSnapshot.CandidateWorkitems[0].Project != projectPath ||
+		app.lastSnapshot.CandidateWorkitems[0].Key != "project="+projectPath+"|tool=codex|freshness=active" ||
+		app.lastSnapshot.CoordinationRisk.TopProject != projectPath {
+		t.Fatalf("expected internal project labels to retain local paths, got sessions=%+v projects=%+v candidates=%+v risk=%+v", app.lastSnapshot.LiveSessions, app.lastSnapshot.ProjectFocus, app.lastSnapshot.CandidateWorkitems, app.lastSnapshot.CoordinationRisk)
 	}
 	if !strings.Contains(app.lastSnapshot.ProjectFocus[0].ConfidenceReasons[0], sessionPath) ||
 		!strings.Contains(app.lastSnapshot.CandidateWorkitems[0].ConfidenceReasons[0], sessionPath) ||

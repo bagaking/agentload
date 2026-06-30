@@ -256,6 +256,7 @@ func sanitizeSnapshotForClient(snapshot Snapshot) Snapshot {
 }
 
 func sanitizeCoordinationRiskForClient(risk CoordinationRiskSnapshot) CoordinationRiskSnapshot {
+	risk.TopProject = sanitizeProjectNameForClient(risk.TopProject)
 	if len(risk.Signals) == 0 {
 		return risk
 	}
@@ -273,6 +274,7 @@ func sanitizeProjectFocusForClient(projects []ProjectSnapshot) []ProjectSnapshot
 	}
 	out := append([]ProjectSnapshot(nil), projects...)
 	for i := range out {
+		out[i].Project = sanitizeProjectNameForClient(out[i].Project)
 		out[i].ConfidenceReasons = sanitizeTextListForClient(out[i].ConfidenceReasons)
 		out[i].ProjectAttributionReasons = sanitizeTextListForClient(out[i].ProjectAttributionReasons)
 		out[i].Tools = append([]ProjectToolSnapshot(nil), out[i].Tools...)
@@ -286,11 +288,34 @@ func sanitizeCandidateWorkitemsForClient(items []CandidateWorkitemSnapshot) []Ca
 	}
 	out := append([]CandidateWorkitemSnapshot(nil), items...)
 	for i := range out {
+		out[i].Key = sanitizeCandidateWorkitemKeyForClient(out[i].Key)
+		out[i].Project = sanitizeProjectNameForClient(out[i].Project)
 		out[i].SessionIDs = append([]string(nil), out[i].SessionIDs...)
 		out[i].ConfidenceReasons = sanitizeTextListForClient(out[i].ConfidenceReasons)
 		out[i].ProjectAttributionReasons = sanitizeTextListForClient(out[i].ProjectAttributionReasons)
 	}
 	return out
+}
+
+func sanitizeProjectNameForClient(project string) string {
+	return sanitizePathLikeValue(strings.TrimSpace(project))
+}
+
+func sanitizeCandidateWorkitemKeyForClient(key string) string {
+	if key == "" {
+		return key
+	}
+	parts := strings.Split(key, "|")
+	for i, part := range parts {
+		name, value, ok := strings.Cut(part, "=")
+		if !ok {
+			continue
+		}
+		if name == "project" {
+			parts[i] = name + "=" + sanitizeProjectNameForClient(value)
+		}
+	}
+	return strings.Join(parts, "|")
 }
 
 func sanitizeLiveProcessesForClient(processes []LiveProcessSnapshot) []LiveProcessSnapshot {
@@ -317,6 +342,7 @@ func sanitizeLiveSessionsForClient(sessions []LiveSessionSnapshot) []LiveSession
 	}
 	out := append([]LiveSessionSnapshot(nil), sessions...)
 	for i := range out {
+		out[i].Project = sanitizeProjectNameForClient(out[i].Project)
 		out[i].Path = ""
 		out[i].RoleReasons = sanitizeTextListForClient(out[i].RoleReasons)
 		out[i].ConfidenceReasons = sanitizeTextListForClient(out[i].ConfidenceReasons)
