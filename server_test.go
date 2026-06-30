@@ -139,6 +139,48 @@ func TestHandleRefreshAPIUsesRequestedIntervalSlot(t *testing.T) {
 	}
 }
 
+func TestHandleRefreshAPINormalizesRequestedIntervalSlot(t *testing.T) {
+	tests := []struct {
+		name       string
+		query      string
+		wantPrefix string
+	}{
+		{name: "floors subminimum interval", query: "?interval_ms=5000", wantPrefix: "30s:"},
+		{name: "paused interval uses default cadence", query: "?interval_ms=0", wantPrefix: "300s:"},
+		{name: "invalid interval uses default cadence", query: "?interval_ms=not-a-number", wantPrefix: "300s:"},
+		{name: "negative interval uses default cadence", query: "?interval_ms=-1", wantPrefix: "300s:"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := &trayApp{
+				cfg:       Config{RefreshInterval: 5 * time.Minute},
+				refreshCh: make(chan struct{}, 1),
+			}
+			handler := app.handler()
+
+			req := httptest.NewRequest(http.MethodPost, "/api/refresh"+tt.query, nil)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusAccepted {
+				t.Fatalf("expected status 202, got %d with body %q", rec.Code, rec.Body.String())
+			}
+			var got struct {
+				RefreshSlotID string `json:"refresh_slot_id"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if !strings.HasPrefix(got.RefreshSlotID, tt.wantPrefix) {
+				t.Fatalf("expected refresh slot prefix %q, got %q", tt.wantPrefix, got.RefreshSlotID)
+			}
+			if queued := len(app.refreshCh); queued != 1 {
+				t.Fatalf("expected refresh to queue once, got %d", queued)
+			}
+		})
+	}
+}
+
 func TestHandleSnapshotAPIReturnsCompactJSONAndRefreshSlotHeader(t *testing.T) {
 	app := &trayApp{}
 	app.rememberSnapshot(Snapshot{
