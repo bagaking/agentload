@@ -2258,6 +2258,7 @@ body[data-view="popover"] .warning-banner {
 .session-chip {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   min-width: 0;
   max-width: 88px;
   min-height: 22px;
@@ -2269,6 +2270,14 @@ body[data-view="popover"] .warning-banner {
   font-family: var(--font-mono);
   font-size: 10px;
   cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-chip > span {
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -7665,6 +7674,10 @@ body[data-view="popover"] .instrument-stat::after {
 body[data-view="popover"] .instrument-stat > * {
   position: relative;
   z-index: 1;
+}
+
+body[data-view="popover"] .instrument-stat .term-label::after {
+  content: none;
 }
 
 body[data-view="popover"] .instrument-stat.burst { color: var(--ok); }

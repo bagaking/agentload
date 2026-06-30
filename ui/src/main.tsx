@@ -1629,7 +1629,7 @@ function ProcessLedgerRow({ t, process, selection, setSelection }: { t: (key: st
       <div className={`process-session-preview ${showAllSessions ? "is-expanded" : ""}`} role="cell" aria-label={t("sessions")}>
         {sessions.length ? visibleSessions.map((sessionID) => (
           <button className="session-chip" type="button" key={sessionID} data-focus-key={focusKey("process-session", processID, sessionID)} onClick={() => setSelection({ type: "session", id: safeID(sessionID) })}>
-            {shortID(sessionID)}
+            <span>{shortID(sessionID)}</span>
           </button>
         )) : <span className="muted-inline">{t("unavailable")}</span>}
         {hiddenSessionCount ? (
