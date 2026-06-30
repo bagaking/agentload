@@ -180,6 +180,11 @@ agent evidence.
   lane titles, sample metadata, selected time, and selected values need one
   clear step above axis and callout microtext; do not shrink them to the point
   where the chart becomes legible but its controls feel like footnotes.
+- Trend lane headers sit above the plot and carry the first actionable reading.
+  In compact popovers, lane title, sample count, selected timestamp, and selected
+  numeric value must remain visibly larger than axis labels and chart callouts;
+  prefer spending a little more vertical height over making these labels feel
+  like captions.
 - Trend charts should read as composed planes, not dense point clouds. Keep all
   samples interactive through invisible hit targets, but only render anchor and
   selected point marks by default; use smooth continuous strokes, quiet fills,

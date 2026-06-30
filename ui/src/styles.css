@@ -9725,3 +9725,51 @@ body[data-view="popover"] .trend-suite.compact .trend-chart {
     linear-gradient(90deg, color-mix(in srgb, var(--ok) 2.8%, transparent), transparent 44%, transparent 78%, color-mix(in srgb, var(--run) 2.2%, transparent)),
     color-mix(in srgb, var(--fg) .3%, transparent);
 }
+
+/* Compact trend header legibility pass: chart labels should read before the operator studies the plot. */
+body[data-view="popover"] .trend-suite.compact .trend-suite-copy h2 {
+  font-size: 19px;
+  line-height: 1.02;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-suite-copy span {
+  font-size: 13.2px;
+  line-height: 1.2;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-lane {
+  gap: 8px;
+  padding-top: 10px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-lane-head {
+  min-height: 48px;
+  align-items: start;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-kicker {
+  font-size: 17px;
+  line-height: 1.08;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-lane-head small {
+  margin-top: 3px;
+  font-size: 13px;
+  line-height: 1.15;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-lane-readout {
+  min-width: 132px;
+  min-height: 44px;
+  padding-left: 15px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-lane-readout span {
+  font-size: 13.2px;
+  line-height: 1.15;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-lane-readout strong {
+  font-size: 19px;
+  line-height: 1.08;
+}
