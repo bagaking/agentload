@@ -247,6 +247,63 @@ func TestHandleSnapshotAPIHonorsRefreshSlotValidators(t *testing.T) {
 	}
 }
 
+func TestHandleSnapshotAPIHonorsETagLists(t *testing.T) {
+	app := &trayApp{}
+	app.rememberSnapshot(Snapshot{
+		GeneratedAt:   "2026-06-28T12:00:00Z",
+		RefreshSlotID: "30s:2026-06-28T12:00:00Z",
+	})
+	handler := app.handler()
+
+	tests := []struct {
+		name          string
+		ifNoneMatch   string
+		wantStatus    int
+		wantEmptyBody bool
+	}{
+		{
+			name:          "matches one validator in list",
+			ifNoneMatch:   `"stale", "30s:2026-06-28T12:00:00Z"`,
+			wantStatus:    http.StatusNotModified,
+			wantEmptyBody: true,
+		},
+		{
+			name:          "wildcard validator matches",
+			ifNoneMatch:   "*",
+			wantStatus:    http.StatusNotModified,
+			wantEmptyBody: true,
+		},
+		{
+			name:        "stale validator returns snapshot",
+			ifNoneMatch: `"stale"`,
+			wantStatus:  http.StatusOK,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/snapshot", nil)
+			req.Header.Set("If-None-Match", tt.ifNoneMatch)
+			rec := httptest.NewRecorder()
+
+			handler.ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("expected status %d, got %d with body %q", tt.wantStatus, rec.Code, rec.Body.String())
+			}
+			if got := rec.Header().Get("X-Refresh-Slot-ID"); got != "30s:2026-06-28T12:00:00Z" {
+				t.Fatalf("expected refresh slot header on validator response, got %q", got)
+			}
+			if tt.wantEmptyBody && rec.Body.Len() != 0 {
+				t.Fatalf("expected empty body, got %q", rec.Body.String())
+			}
+			if !tt.wantEmptyBody && !strings.Contains(rec.Body.String(), `"refresh_slot_id":"30s:2026-06-28T12:00:00Z"`) {
+				t.Fatalf("expected snapshot body with refresh slot, got %q", rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestHandleSnapshotAPIFillsRefreshSlotForCachedSnapshot(t *testing.T) {
 	app := &trayApp{cfg: Config{RefreshInterval: 5 * time.Minute}}
 	app.lastSnapshot = Snapshot{GeneratedAt: "2026-06-28T12:00:00Z"}
