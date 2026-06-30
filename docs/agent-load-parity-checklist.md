@@ -25,9 +25,16 @@ machine paths, outside provenance labels, or prior product identifiers.
 
 ## Backend Observation
 
-- [unimplemented] Transcript scanning preserves early session metadata while
+- [verified] Transcript scanning preserves early session metadata while
   reading recent tail activity.
   Evidence refs: `transcripts.go`, `transcripts_test.go`, `observer_test.go`
+  Verified by: `transcripts.go:602`, `transcripts.go:654`,
+  `transcripts.go:701`, `transcripts.go:762`, `transcripts.go:796`,
+  `transcripts_test.go:160`, `transcripts_test.go:191`,
+  `transcripts_test.go:223`, `transcripts_test.go:255`,
+  `transcripts_test.go:277`, `transcripts_test.go:295`,
+  `observer_test.go:130`, `observer_test.go:489`.
+  Check: `go test ./... -run 'TestParseTranscriptFileTail|TestFileMayContainEventsAfterCutoff|TestForegroundTranscriptScan.*Tail|TestForegroundTranscriptScanUsesTailParser'`.
 
 - [unimplemented] Foreground snapshot work can defer historical parsing while
   still including live process files and foreground-window transcripts.
