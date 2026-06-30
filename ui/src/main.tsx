@@ -3029,7 +3029,7 @@ function buildRailItems(t: (key: string) => string, snapshot: Snapshot | null, t
       kind: "query",
       title: session.project || shortID(session.session_id) || t("session"),
       description: `${session.tool || t("tool")} · ${roleLabel(t, normalizedRole(session.session_role))} · ${freshnessLabel(t, session.freshness)}`,
-      command: session.path || shortID(session.session_id) || t("session"),
+      command: session.session_id ? `session:${session.session_id}` : session.path || shortID(session.session_id) || t("session"),
       status: session.active_burst ? "active" : "done",
       tags: [session.tool || t("tool"), roleLabel(t, normalizedRole(session.session_role))],
       value: formatAge(session.last_event_age_seconds, t),

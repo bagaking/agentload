@@ -123,10 +123,36 @@ machine paths, outside provenance labels, or prior product identifiers.
   trend hit targets, no compact chart callouts, and one continuous primary
   path per lane.
 
-- [unimplemented] Dashboard covers front status, evidence, atlas, calibration,
-  age, confidence, process ledger, detail, and trend bands without relying on
+- [verified] Dashboard covers front status, evidence, atlas, calibration, age,
+  confidence, process ledger, detail, and trend bands without relying on
   Project / Sessions / Processes as the only visual shell.
   Evidence refs: `ui/src/main.tsx`, `ui/src/styles.css`
+  Verified by: `ui/src/main.tsx:738`, `ui/src/main.tsx:780`,
+  `ui/src/main.tsx:788`, `ui/src/main.tsx:790`,
+  `ui/src/main.tsx:795`, `ui/src/main.tsx:798`,
+  `ui/src/main.tsx:804`, `ui/src/main.tsx:808`,
+  `ui/src/main.tsx:813`, `ui/src/main.tsx:822`,
+  `ui/src/main.tsx:906`, `ui/src/main.tsx:980`,
+  `ui/src/main.tsx:1022`, `ui/src/main.tsx:1246`,
+  `ui/src/main.tsx:1272`, `ui/src/main.tsx:1382`,
+  `ui/src/main.tsx:1407`, `ui/src/main.tsx:1457`,
+  `ui/src/main.tsx:1472`, `ui/src/main.tsx:1579`,
+  `ui/src/main.tsx:1725`, `ui/src/main.tsx:3008`,
+  `ui/src/main.tsx:3025`, `ui/src/main.tsx:3032`,
+  `ui/src/styles.css:5274`, `ui/src/styles.css:5292`,
+  `ui/src/styles.css:5438`, `ui/src/styles.css:5539`,
+  `ui/src/styles.css:5551`, `ui/src/styles.css:5917`,
+  `ui/src/styles.css:5942`, `ui/src/styles.css:5994`,
+  `ui/src/styles.css:7361`.
+  Check: dashboard browser smoke with mocked full snapshot covered dark and
+  light themes. It confirmed the masthead, front status band, 3 current metric
+  cells, current meaning text, evidence column, 4 scan readouts, evidence
+  health, 4 project atlas rows, 14 visible session tree rows, 4 side modules,
+  3 calibration rows, 3 candidate rows, 4 age rows, 6 confidence facts, a
+  capped 40-row process ledger with expansion control, 2 trend charts with
+  120 raw sample hit targets, 3 inspector tabs, no horizontal overflow, compact
+  project/session/process row heights, and session inspector search by complete
+  session id.
 
 - [verified] Project rows, expanded session trees, process previews, and
   copy affordances stay compact, aligned, collapsible, and readable in dark and

@@ -155,6 +155,10 @@ agent evidence.
   Treat the session id and copy affordance as one no-wrap identifier component;
   reveal the copy control on identifier hover/focus instead of letting it sit
   after metadata or fall to a second line.
+- Dense inspector and rail search may display short ids or project labels, but
+  the searchable index must still include the complete local object identity for
+  sessions and processes. Compact presentation must not make audit lookup by
+  full session id impossible.
 - Use icons for tabs, commands, status, and metrics where they reduce text load.
 - Core runtime terms such as fresh movement, sessions, processes, mapping
   health, and scan state should expose short hover/focus explanations so dense
