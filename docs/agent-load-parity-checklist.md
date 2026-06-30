@@ -114,10 +114,21 @@ machine paths, outside provenance labels, or prior product identifiers.
   Evidence refs: `ui/src/main.tsx`, `ui/src/styles.css`,
   `docs/agent-load-ui-design-system.md`
 
-- [unimplemented] Frontend remains TypeScript, React, Tailwind, and Vite, and
+- [verified] Frontend remains TypeScript, React, Tailwind, and Vite, and
   keeps explicit light/dark mode plus visible locale switching.
   Evidence refs: `ui/package.json`, `ui/src/main.tsx`, `ui/src/i18n.ts`,
   `ui/src/styles.css`
+  Verified by: `ui/package.json:5`, `ui/package.json:8`,
+  `ui/package.json:12`, `ui/package.json:20`, `ui/src/main.tsx:1`,
+  `ui/src/main.tsx:20`, `ui/src/main.tsx:294`,
+  `ui/src/main.tsx:472`, `ui/src/main.tsx:479`,
+  `ui/src/main.tsx:2037`, `ui/src/main.tsx:2038`,
+  `ui/src/main.tsx:2887`, `ui/src/main.tsx:3555`,
+  `ui/src/main.tsx:3583`, `ui/src/i18n.ts:1`, `ui/src/i18n.ts:3`,
+  `ui/src/i18n.ts:245`, `ui/src/i18n.ts:472`,
+  `ui/src/styles.css:1`, `ui/src/styles.css:57`,
+  `ui/src/styles.css:6780`, `ui/src/styles.css:6800`.
+  Check: `node scripts/validate_locales.js`; `npm --prefix ui run build`.
 
 ## Packaging And Hygiene
 
