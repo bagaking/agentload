@@ -92,10 +92,36 @@ machine paths, outside provenance labels, or prior product identifiers.
 
 ## Frontend Surfaces
 
-- [unimplemented] Popover keeps compact online and trend surfaces with current
+- [verified] Popover keeps compact online and trend surfaces with current
   meaning, scan boundary, project/session atlas, and trend suite.
   Evidence refs: `ui/src/main.tsx`, `ui/src/styles.css`,
   `docs/agent-load-ui-design-system.md`
+  Verified by: `ui/src/main.tsx:643`, `ui/src/main.tsx:648`,
+  `ui/src/main.tsx:657`, `ui/src/main.tsx:664`,
+  `ui/src/main.tsx:710`, `ui/src/main.tsx:1110`,
+  `ui/src/main.tsx:1123`, `ui/src/main.tsx:1124`,
+  `ui/src/main.tsx:1125`, `ui/src/main.tsx:1133`,
+  `ui/src/main.tsx:1139`, `ui/src/main.tsx:1173`,
+  `ui/src/main.tsx:1196`, `ui/src/main.tsx:1725`,
+  `ui/src/main.tsx:1753`, `ui/src/main.tsx:1767`,
+  `ui/src/main.tsx:1782`, `ui/src/main.tsx:1791`,
+  `ui/src/main.tsx:1921`, `ui/src/main.tsx:2343`,
+  `ui/src/styles.css:4021`, `ui/src/styles.css:4031`,
+  `ui/src/styles.css:4084`, `ui/src/styles.css:4165`,
+  `ui/src/styles.css:4493`, `ui/src/styles.css:4567`,
+  `ui/src/styles.css:9238`,
+  `docs/agent-load-ui-design-system.md:129`,
+  `docs/agent-load-ui-design-system.md:132`,
+  `docs/agent-load-ui-design-system.md:162`,
+  `docs/agent-load-ui-design-system.md:171`,
+  `docs/agent-load-ui-design-system.md:205`.
+  Check: popover browser smoke with mocked data covered dark and light themes.
+  It confirmed 3 current metric cells, visible current-meaning copy, 6 scan
+  readouts, project atlas rendering, project disclosure expanding to 3 compact
+  session rows at 21px, 2 footer tabs switching online/trend panels, 5 trend
+  range buttons, 2 trend lanes/charts, one shared trend inspector, 24 raw
+  trend hit targets, no compact chart callouts, and one continuous primary
+  path per lane.
 
 - [unimplemented] Dashboard covers front status, evidence, atlas, calibration,
   age, confidence, process ledger, detail, and trend bands without relying on
