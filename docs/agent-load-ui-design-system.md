@@ -114,6 +114,9 @@ agent evidence.
   trailing edges must stay on the same grid. Do not stagger row planes when the
   list is behaving like a ledger; rank, disclosure, project identity, tool
   coverage, and all large metric numerals must remain column-aligned.
+  Background tint may indicate state, but the tint must fill the same row track
+  instead of fading at different horizontal stops or ending behind the project
+  label like a variable-width chip.
 - When compact project/session rows start reading as a continuous text wall,
   restore rhythm with small vertical breathing room, alternating plane offsets,
   and quieter metric surfaces before shrinking typography further. The target is

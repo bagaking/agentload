@@ -8936,6 +8936,9 @@ body[data-view="popover"] .popover-project-table .project-tree-list {
 body[data-view="popover"] .popover-project-table .project-tree-row {
   position: relative;
   isolation: isolate;
+  --project-row-tint: var(--fg);
+  --project-row-tint-alpha: 2.8%;
+  --project-row-plane-alpha: 18%;
   min-height: 31px;
   overflow: visible;
   border: 0;
@@ -8946,6 +8949,9 @@ body[data-view="popover"] .popover-project-table .project-tree-row {
 
 body[data-view="popover"] .popover-project-table .project-tree-row:nth-child(2n) {
   background: transparent;
+  --project-row-tint: var(--accent);
+  --project-row-tint-alpha: 3.2%;
+  --project-row-plane-alpha: 15%;
 }
 
 body[data-view="popover"] .popover-project-table .project-tree-row::after {
@@ -8955,8 +8961,12 @@ body[data-view="popover"] .popover-project-table .project-tree-row::after {
   z-index: -1;
   border-radius: 4px;
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--fg) 3.2%, transparent), transparent 52%),
-    linear-gradient(180deg, color-mix(in srgb, var(--console-material-2) 24%, transparent), transparent);
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--project-row-tint) var(--project-row-tint-alpha), transparent),
+      color-mix(in srgb, var(--project-row-tint) var(--project-row-tint-alpha), transparent)
+    ),
+    linear-gradient(180deg, color-mix(in srgb, var(--console-material-2) var(--project-row-plane-alpha), transparent), transparent);
   opacity: .5;
   pointer-events: none;
 }
@@ -8964,16 +8974,13 @@ body[data-view="popover"] .popover-project-table .project-tree-row::after {
 body[data-view="popover"] .popover-project-table .project-tree-row:nth-child(2n)::after {
   left: 31px;
   right: 0;
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--accent) 3.4%, transparent), transparent 58%),
-    linear-gradient(180deg, color-mix(in srgb, var(--console-material-2) 16%, transparent), transparent);
   opacity: .56;
 }
 
 body[data-view="popover"] .popover-project-table .project-tree-row.has-active::after {
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--ok) 6.6%, transparent), transparent 56%),
-    linear-gradient(180deg, color-mix(in srgb, var(--console-material-2) 24%, transparent), transparent);
+  --project-row-tint: var(--ok);
+  --project-row-tint-alpha: 4.8%;
+  --project-row-plane-alpha: 18%;
   opacity: .68;
 }
 
@@ -9157,12 +9164,15 @@ body[data-view="popover"] .popover-project-table .project-compact-cluster strong
 body[data-view="popover"] .popover-project-table .project-compact-proc strong {
   align-self: end;
   color: currentColor;
+  display: block;
   font-family: var(--font-mono);
   font-size: 12.8px;
   font-weight: 780;
+  font-variant-numeric: tabular-nums;
   line-height: .92;
   min-width: 2ch;
   text-align: right;
+  width: 2ch;
 }
 
 body[data-view="popover"] .popover-project-table .project-compact-cluster em {
@@ -9180,20 +9190,20 @@ body[data-view="popover"] .popover-project-table .project-compact-cluster em {
 
 :root[data-theme="light"] body[data-view="popover"] .popover-project-table .project-tree-row::after {
   background:
-    linear-gradient(90deg, rgba(28, 39, 50, .035), transparent 52%),
+    linear-gradient(90deg, rgba(28, 39, 50, .035), rgba(28, 39, 50, .035)),
     linear-gradient(180deg, rgba(255, 255, 255, .64), rgba(255, 255, 255, .12));
   opacity: .8;
 }
 
 :root[data-theme="light"] body[data-view="popover"] .popover-project-table .project-tree-row:nth-child(2n)::after {
   background:
-    linear-gradient(90deg, rgba(79, 127, 218, .055), transparent 58%),
+    linear-gradient(90deg, rgba(79, 127, 218, .045), rgba(79, 127, 218, .045)),
     linear-gradient(180deg, rgba(255, 255, 255, .48), rgba(255, 255, 255, .08));
 }
 
 :root[data-theme="light"] body[data-view="popover"] .popover-project-table .project-tree-row.has-active::after {
   background:
-    linear-gradient(90deg, rgba(31, 159, 118, .075), transparent 56%),
+    linear-gradient(90deg, rgba(31, 159, 118, .06), rgba(31, 159, 118, .06)),
     linear-gradient(180deg, rgba(255, 255, 255, .62), rgba(255, 255, 255, .12));
 }
 
