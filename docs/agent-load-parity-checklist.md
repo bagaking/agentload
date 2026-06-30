@@ -63,10 +63,15 @@ machine paths, outside provenance labels, or prior product identifiers.
   `tray.go:398`, `server_test.go:618`.
   Check: `go test ./... -run 'TestFormatTrayMetaTitleIncludesScanCoverage'`.
 
-- [unimplemented] Client snapshot output removes local roots, session paths,
+- [verified] Client snapshot output removes local roots, session paths,
   bundle paths, command arguments, history store paths, and path-like evidence
   while internal cached snapshots retain local evidence for diagnostics.
   Evidence refs: `server.go`, `server_test.go`
+  Verified by: `server.go:212`, `server.go:242`, `server.go:321`,
+  `server.go:339`, `server.go:373`, `server.go:417`,
+  `server_test.go:335`, `server_test.go:377`, `server_test.go:506`,
+  `server_test.go:525`, `server_test.go:550`, `server_test.go:846`.
+  Check: `go test ./... -run 'TestHandleSnapshotAPIRedacts(ConfigPaths|ClientEvidencePaths|FreshObserverConfigPaths)|TestSanitize(TextForClient|CommandForClient)|TestObservedHostAppFromRequestUsesInternalFreshSnapshot'`.
 
 - [unimplemented] Process, session, project, candidate workitem, risk, and
   evidence models expose the fields needed by the popover and dashboard.
