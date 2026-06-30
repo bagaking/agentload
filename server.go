@@ -246,10 +246,51 @@ func sanitizeSnapshotForClient(snapshot Snapshot) Snapshot {
 	snapshot.Config.HistoryFile = ""
 	snapshot.History.StorePath = ""
 	snapshot.TranscriptStats.Errors = sanitizeTextListForClient(snapshot.TranscriptStats.Errors)
+	snapshot.CoordinationRisk = sanitizeCoordinationRiskForClient(snapshot.CoordinationRisk)
+	snapshot.ProjectFocus = sanitizeProjectFocusForClient(snapshot.ProjectFocus)
+	snapshot.CandidateWorkitems = sanitizeCandidateWorkitemsForClient(snapshot.CandidateWorkitems)
 	snapshot.LiveProcesses = sanitizeLiveProcessesForClient(snapshot.LiveProcesses)
 	snapshot.LiveSessions = sanitizeLiveSessionsForClient(snapshot.LiveSessions)
 	snapshot.Notes = sanitizeTextListForClient(snapshot.Notes)
 	return snapshot
+}
+
+func sanitizeCoordinationRiskForClient(risk CoordinationRiskSnapshot) CoordinationRiskSnapshot {
+	if len(risk.Signals) == 0 {
+		return risk
+	}
+	signals := append([]RiskSignalSnapshot(nil), risk.Signals...)
+	for i := range signals {
+		signals[i].Evidence = sanitizeTextForClient(signals[i].Evidence)
+	}
+	risk.Signals = signals
+	return risk
+}
+
+func sanitizeProjectFocusForClient(projects []ProjectSnapshot) []ProjectSnapshot {
+	if len(projects) == 0 {
+		return projects
+	}
+	out := append([]ProjectSnapshot(nil), projects...)
+	for i := range out {
+		out[i].ConfidenceReasons = sanitizeTextListForClient(out[i].ConfidenceReasons)
+		out[i].ProjectAttributionReasons = sanitizeTextListForClient(out[i].ProjectAttributionReasons)
+		out[i].Tools = append([]ProjectToolSnapshot(nil), out[i].Tools...)
+	}
+	return out
+}
+
+func sanitizeCandidateWorkitemsForClient(items []CandidateWorkitemSnapshot) []CandidateWorkitemSnapshot {
+	if len(items) == 0 {
+		return items
+	}
+	out := append([]CandidateWorkitemSnapshot(nil), items...)
+	for i := range out {
+		out[i].SessionIDs = append([]string(nil), out[i].SessionIDs...)
+		out[i].ConfidenceReasons = sanitizeTextListForClient(out[i].ConfidenceReasons)
+		out[i].ProjectAttributionReasons = sanitizeTextListForClient(out[i].ProjectAttributionReasons)
+	}
+	return out
 }
 
 func sanitizeLiveProcessesForClient(processes []LiveProcessSnapshot) []LiveProcessSnapshot {

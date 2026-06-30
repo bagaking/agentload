@@ -351,6 +351,27 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 				Provenance:                []string{"transcript_path"},
 			},
 		},
+		ProjectFocus: []ProjectSnapshot{
+			{
+				Project:                   "agentload",
+				ConfidenceReasons:         []string{"read " + sessionPath},
+				ProjectAttributionReasons: []string{"cwd=" + workspacePath},
+			},
+		},
+		CandidateWorkitems: []CandidateWorkitemSnapshot{
+			{
+				Key:                       "agentload|codex|active",
+				Project:                   "agentload",
+				Tool:                      "codex",
+				ConfidenceReasons:         []string{"group includes " + sessionPath},
+				ProjectAttributionReasons: []string{"cwd=" + workspacePath},
+			},
+		},
+		CoordinationRisk: CoordinationRiskSnapshot{
+			Signals: []RiskSignalSnapshot{
+				{Kind: "evidence_note", Severity: "observed", Evidence: "checked " + sessionPath},
+			},
+		},
 		Notes: []string{"checked " + sessionPath},
 	}
 	app.haveSnapshot = true
@@ -394,6 +415,11 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 		app.lastSnapshot.LiveSessions[0].Path != sessionPath ||
 		app.lastSnapshot.LiveSessions[0].HostApps[0].BundlePath != bundlePath {
 		t.Fatalf("expected internal cached snapshot to retain local evidence paths, got %+v", app.lastSnapshot)
+	}
+	if !strings.Contains(app.lastSnapshot.ProjectFocus[0].ConfidenceReasons[0], sessionPath) ||
+		!strings.Contains(app.lastSnapshot.CandidateWorkitems[0].ConfidenceReasons[0], sessionPath) ||
+		!strings.Contains(app.lastSnapshot.CoordinationRisk.Signals[0].Evidence, sessionPath) {
+		t.Fatalf("expected internal aggregate evidence to retain local paths, got projects=%+v candidates=%+v risk=%+v", app.lastSnapshot.ProjectFocus, app.lastSnapshot.CandidateWorkitems, app.lastSnapshot.CoordinationRisk)
 	}
 }
 
