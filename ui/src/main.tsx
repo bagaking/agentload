@@ -2441,22 +2441,26 @@ function ProjectTreeRow({
 }
 
 function ProjectCompactMetrics({ t, counts, processCount }: { t: (key: string) => string; counts: RoleCounts; processCount: number }) {
-  const activeTitle = projectMetricGroupTitle(t, "active", counts);
-  const allTitle = projectMetricGroupTitle(t, "all", counts);
-  const mainTitle = projectMetricObjectTitle(t, "main");
-  const subagentTitle = projectMetricObjectTitle(t, "subagent");
+  const activeMainTitle = projectMetricCellTitle(t, "active", "main", counts.activeMain);
+  const activeSubagentTitle = projectMetricCellTitle(t, "active", "subagent", counts.activeSub);
+  const activeTotalTitle = projectMetricCellTitle(t, "active", "total", counts.activeTotal);
+  const allMainTitle = projectMetricCellTitle(t, "all", "main", counts.main);
+  const allSubagentTitle = projectMetricCellTitle(t, "all", "subagent", counts.sub);
+  const allTotalTitle = projectMetricCellTitle(t, "all", "total", counts.total);
+  const activeTitle = `${activeTotalTitle} · ${activeMainTitle} · ${activeSubagentTitle}`;
+  const allTitle = `${allTotalTitle} · ${allMainTitle} · ${allSubagentTitle}`;
   const processTitle = projectMetricProcessTitle(t, processCount);
   return (
     <div className="project-compact-metrics" aria-label={t("metricSessions")}>
-      <span className="project-compact-cluster active" title={`${activeTitle} · ${mainTitle} ${counts.activeMain} / ${subagentTitle} ${counts.activeSub}`} aria-label={activeTitle}>
+      <span className="project-compact-cluster active" title={activeTitle} aria-label={activeTitle}>
         <b>{t("activeShort")}</b>
-        <strong>{counts.activeTotal}</strong>
-        <em>{t("mainShort")}{counts.activeMain} · {t("subagentShort")}{counts.activeSub}</em>
+        <strong title={activeTotalTitle} aria-label={activeTotalTitle}>{counts.activeTotal}</strong>
+        <em title={`${activeMainTitle} · ${activeSubagentTitle}`} aria-label={`${activeMainTitle} · ${activeSubagentTitle}`}>{t("mainShort")}{counts.activeMain} · {t("subagentShort")}{counts.activeSub}</em>
       </span>
-      <span className="project-compact-cluster all" title={`${allTitle} · ${mainTitle} ${counts.main} / ${subagentTitle} ${counts.sub}`} aria-label={allTitle}>
+      <span className="project-compact-cluster all" title={allTitle} aria-label={allTitle}>
         <b>{t("allShort")}</b>
-        <strong>{counts.total}</strong>
-        <em>{t("mainShort")}{counts.main} · {t("subagentShort")}{counts.sub}</em>
+        <strong title={allTotalTitle} aria-label={allTotalTitle}>{counts.total}</strong>
+        <em title={`${allMainTitle} · ${allSubagentTitle}`} aria-label={`${allMainTitle} · ${allSubagentTitle}`}>{t("mainShort")}{counts.main} · {t("subagentShort")}{counts.sub}</em>
       </span>
       <span className="project-compact-proc" title={processTitle} aria-label={processTitle}>
         <i>{t("processShort")}</i>
