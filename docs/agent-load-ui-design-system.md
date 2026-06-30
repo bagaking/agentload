@@ -94,6 +94,10 @@ agent evidence.
   walls. When role/session/process numbers become dense, group them into a few
   readable ledger chips, use modest row breathing room, and add subtle staggered
   planes or tonal rhythm instead of adding more grid labels.
+- When compact project/session rows start reading as a continuous text wall,
+  restore rhythm with small vertical breathing room, alternating plane offsets,
+  and quieter metric surfaces before shrinking typography further. The target is
+  still scan density, not card-like looseness.
 - Project lists must not silently hide known projects. The compact popover
   should preserve the current project set, and any intentionally capped project
   list must expose a dense open/close overflow control with the hidden count.

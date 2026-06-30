@@ -7990,18 +7990,19 @@ body[data-view="popover"] .popover-project-table .tool-mark {
 
 /* Project ledger comfort pass: keep scan density while avoiding numeric clutter. */
 body[data-view="popover"] .popover-project-table .project-tree-list {
-  gap: 2px;
-  padding: 2px 8px 8px 0;
+  gap: 5px;
+  padding: 4px 6px 10px 0;
   border-top-color: color-mix(in srgb, var(--console-line-soft) 68%, transparent);
 }
 
 body[data-view="popover"] .popover-project-table .project-tree-row {
   isolation: isolate;
-  min-height: 31px;
+  min-height: 38px;
   overflow: hidden;
-  border-bottom-color: color-mix(in srgb, var(--console-line-soft) 54%, transparent);
+  border-bottom-color: transparent;
+  border-radius: 8px;
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--fg) 2.6%, transparent), transparent 42%),
+    linear-gradient(90deg, color-mix(in srgb, var(--fg) 2.8%, transparent), transparent 42%),
     transparent;
 }
 
@@ -8014,33 +8015,35 @@ body[data-view="popover"] .popover-project-table .project-tree-row:nth-child(2n)
 body[data-view="popover"] .popover-project-table .project-tree-row::after {
   content: "";
   position: absolute;
-  inset: 4px 8px 4px 36px;
+  inset: 3px 8px 3px 34px;
   z-index: -1;
-  border-radius: 7px;
+  border-radius: 8px;
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--console-material-2) 28%, transparent), transparent 74%),
-    linear-gradient(180deg, color-mix(in srgb, var(--fg) 3%, transparent), transparent);
-  opacity: .55;
+    radial-gradient(ellipse at 8% 50%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 42%),
+    linear-gradient(90deg, color-mix(in srgb, var(--console-material-2) 34%, transparent), transparent 74%),
+    linear-gradient(180deg, color-mix(in srgb, var(--fg) 3.6%, transparent), transparent);
+  opacity: .66;
   pointer-events: none;
 }
 
 body[data-view="popover"] .popover-project-table .project-tree-row:nth-child(2n)::after {
-  left: 48px;
-  opacity: .38;
+  left: 46px;
+  right: 4px;
+  opacity: .48;
 }
 
 body[data-view="popover"] .popover-project-table .project-tree-row.is-selected::before,
 body[data-view="popover"] .popover-project-table .project-tree-row.expanded::before {
   left: 0;
-  top: 5px;
-  bottom: 5px;
+  top: 7px;
+  bottom: 7px;
 }
 
 body[data-view="popover"] .popover-project-table .project-tree-head {
-  grid-template-columns: 20px 18px minmax(112px, 1fr) minmax(150px, auto) minmax(58px, auto);
-  min-height: 31px;
-  gap: 6px;
-  padding: 3px 4px 3px 8px;
+  grid-template-columns: 18px 16px minmax(0, 1fr) minmax(118px, auto);
+  min-height: 38px;
+  gap: 5px;
+  padding: 5px 3px 5px 7px;
 }
 
 body[data-view="popover"] .popover-project-table .project-rank {
@@ -8055,24 +8058,30 @@ body[data-view="popover"] .popover-project-table .project-disclosure {
 }
 
 body[data-view="popover"] .popover-project-table .project-select {
+  grid-column: 3;
+  grid-row: 1;
   gap: 5px;
   min-width: 0;
+  width: 100%;
+  padding-right: 48px;
 }
 
 body[data-view="popover"] .popover-project-table .project-select span {
-  font-size: 10.6px;
+  font-size: 11px;
   font-weight: 735;
 }
 
 body[data-view="popover"] .popover-project-table .project-select small {
-  font-size: 8.2px;
+  font-size: 8.5px;
 }
 
 body[data-view="popover"] .popover-project-table .project-compact-metrics {
-  grid-template-columns: repeat(2, minmax(52px, 1fr)) minmax(24px, auto);
+  grid-column: 4;
+  grid-row: 1;
+  grid-template-columns: repeat(2, minmax(42px, 1fr)) minmax(18px, auto);
   gap: 3px;
   justify-self: end;
-  min-width: 150px;
+  min-width: 118px;
 }
 
 body[data-view="popover"] .popover-project-table .project-compact-cluster,
@@ -8080,29 +8089,35 @@ body[data-view="popover"] .popover-project-table .project-compact-proc {
   position: relative;
   display: grid;
   align-content: center;
-  min-height: 24px;
-  padding: 2px 5px;
-  border-radius: 6px;
+  min-height: 27px;
+  padding: 3px 4px;
+  border-radius: 7px;
   background:
     linear-gradient(90deg, color-mix(in srgb, currentColor 14%, transparent) 0 1px, transparent 1px),
-    color-mix(in srgb, var(--console-material-2) 15%, transparent);
+    radial-gradient(ellipse at 12% 30%, color-mix(in srgb, currentColor 10%, transparent), transparent 48%),
+    color-mix(in srgb, var(--console-material-2) 18%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--fg) 3.2%, transparent),
+    0 1px 0 color-mix(in srgb, var(--bg) 12%, transparent);
 }
 
 body[data-view="popover"] .popover-project-table .project-compact-cluster {
   grid-template-columns: auto auto;
-  gap: 0 5px;
-  color: var(--accent);
+  gap: 0 4px;
+  color: var(--ok);
+  transform: translateY(-1px);
 }
 
 body[data-view="popover"] .popover-project-table .project-compact-cluster.all {
-  color: var(--ok);
+  color: var(--accent);
+  transform: translateY(1px);
 }
 
 body[data-view="popover"] .popover-project-table .project-compact-cluster b,
 body[data-view="popover"] .popover-project-table .project-compact-proc i {
   color: color-mix(in srgb, var(--console-text-faint) 88%, transparent);
   font-family: var(--font-mono);
-  font-size: 6.8px;
+  font-size: 6.4px;
   font-style: normal;
   font-weight: 760;
   line-height: 1;
@@ -8124,7 +8139,7 @@ body[data-view="popover"] .popover-project-table .project-compact-cluster em {
   overflow: hidden;
   color: color-mix(in srgb, currentColor 66%, var(--console-text-faint));
   font-family: var(--font-mono);
-  font-size: 6.8px;
+  font-size: 6.4px;
   font-style: normal;
   line-height: 1.1;
   text-overflow: ellipsis;
@@ -8132,24 +8147,120 @@ body[data-view="popover"] .popover-project-table .project-compact-cluster em {
 }
 
 body[data-view="popover"] .popover-project-table .project-compact-proc {
-  min-width: 24px;
+  min-width: 18px;
   color: var(--run);
   text-align: right;
+  transform: translateY(-.5px);
 }
 
 body[data-view="popover"] .popover-project-table .tool-strip {
-  max-width: 62px;
-  gap: 2px;
+  grid-column: 3;
+  grid-row: 1;
+  align-self: end;
+  justify-self: end;
+  max-width: 44px;
+  gap: 3px;
+  margin-right: 2px;
+  transform: translateY(1px);
 }
 
 body[data-view="popover"] .popover-project-table .tool-mark {
-  min-height: 17px;
+  min-height: 19px;
   gap: 2px;
-  padding: 1px 2px;
+  padding: 1px 3px;
 }
 
 body[data-view="popover"] .popover-project-table .tool-mark .tool-icon,
 body[data-view="popover"] .popover-project-table .tool-mark .tool-fallback {
   width: 14px;
   height: 14px;
+}
+
+body[data-view="popover"] .popover-project-table .session-tree {
+  gap: 2px;
+  padding: 4px 0 8px 24px;
+}
+
+body[data-view="popover"] .popover-project-table .session-tool-block {
+  gap: 3px;
+  padding: 4px 0 3px;
+  border-top-color: color-mix(in srgb, var(--console-line-soft) 48%, transparent);
+}
+
+body[data-view="popover"] .popover-project-table .session-tool-head {
+  min-height: 18px;
+  gap: 5px;
+  font-size: 8.5px;
+}
+
+body[data-view="popover"] .popover-project-table .session-tool-head .tool-icon,
+body[data-view="popover"] .popover-project-table .session-tool-head .tool-fallback {
+  width: 14px;
+  height: 14px;
+}
+
+body[data-view="popover"] .popover-project-table .session-branch {
+  gap: 2px;
+  padding-left: 9px;
+}
+
+body[data-view="popover"] .popover-project-table .session-branch::before {
+  left: 1px;
+  top: 7px;
+  bottom: 5px;
+  opacity: .72;
+}
+
+body[data-view="popover"] .popover-project-table .session-group-head {
+  min-height: 18px;
+  padding: 2px 0;
+  font-size: 8.4px;
+}
+
+body[data-view="popover"] .popover-project-table .session-line {
+  grid-template-columns: 14px 32px minmax(0, 1fr);
+  min-height: 21px;
+  gap: 4px;
+  padding: 2px 0 2px 7px;
+}
+
+body[data-view="popover"] .popover-project-table .session-line::before {
+  width: 6px;
+}
+
+body[data-view="popover"] .popover-project-table .session-line.is-child {
+  margin-left: 7px;
+}
+
+body[data-view="popover"] .popover-project-table .session-title {
+  gap: 5px;
+}
+
+body[data-view="popover"] .popover-project-table .session-id-control {
+  height: 14px;
+  max-width: min(16ch, 100%);
+}
+
+body[data-view="popover"] .popover-project-table .session-title strong {
+  font-size: 9.8px;
+}
+
+body[data-view="popover"] .popover-project-table .session-title small {
+  font-size: 8.3px;
+}
+
+:root[data-theme="light"] body[data-view="popover"] .popover-project-table .project-tree-row::after {
+  background:
+    radial-gradient(ellipse at 8% 50%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 42%),
+    linear-gradient(90deg, color-mix(in srgb, var(--console-material-2) 58%, transparent), transparent 74%),
+    linear-gradient(180deg, color-mix(in srgb, var(--fg) 4.5%, transparent), transparent);
+  opacity: .78;
+}
+
+:root[data-theme="light"] body[data-view="popover"] .popover-project-table .project-compact-cluster,
+:root[data-theme="light"] body[data-view="popover"] .popover-project-table .project-compact-proc {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, currentColor 16%, transparent) 0 1px, transparent 1px),
+    radial-gradient(ellipse at 12% 30%, color-mix(in srgb, currentColor 12%, transparent), transparent 48%),
+    color-mix(in srgb, var(--surface) 72%, transparent);
 }
