@@ -503,6 +503,25 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 	}
 }
 
+func TestSanitizeTextForClientRedactsColonSeparatedPaths(t *testing.T) {
+	root := t.TempDir()
+	workspacePath := filepath.Join(root, "workspace", "agentload")
+	sessionPath := filepath.Join(root, "sessions", "session.jsonl")
+	sessionFileURI := (&url.URL{Scheme: "file", Path: sessionPath}).String()
+
+	got := sanitizeTextForClient("codex cwd:" + workspacePath + " source:" + sessionFileURI + " --session=" + sessionPath + " " + workspacePath + ":")
+	for _, leaked := range []string{root, workspacePath, sessionPath, sessionFileURI} {
+		if strings.Contains(got, leaked) {
+			t.Fatalf("expected sanitized text to redact %q, got %q", leaked, got)
+		}
+	}
+	for _, want := range []string{"cwd:agentload", "source:session.jsonl", "--session=session.jsonl", "agentload:"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected sanitized text %q to preserve %q", got, want)
+		}
+	}
+}
+
 func TestHandleSnapshotAPIRedactsFreshObserverConfigPaths(t *testing.T) {
 	originalDiscover := discoverLiveProcessesFunc
 	discoverLiveProcessesFunc = func(context.Context) ([]LiveProcess, []string) {

@@ -408,6 +408,9 @@ func sanitizeTokenForClient(token string) string {
 	if key, value, ok := strings.Cut(core, "="); ok {
 		return prefix + key + "=" + sanitizePathLikeValue(value) + suffix
 	}
+	if key, value, ok := strings.Cut(core, ":"); ok && key != "" && value != "" {
+		return prefix + key + ":" + sanitizePathLikeValue(value) + suffix
+	}
 	return prefix + sanitizePathLikeValue(core) + suffix
 }
 
