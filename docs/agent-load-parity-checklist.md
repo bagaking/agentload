@@ -169,11 +169,27 @@ machine paths, outside provenance labels, or prior product identifiers.
   `GET / -> 200 text/html; charset=utf-8` and
   `GET /api/snapshot -> 200 application/json; charset=utf-8`.
 
-- [unimplemented] Locale validation, UI build, Go tests, and source-trace scans
+- [verified] Locale validation, UI build, Go tests, and source-trace scans
   pass before any parity closeout.
   Evidence refs: `scripts/validate_locales.js`, `ui/package.json`, `go test ./...`
+  Verified by: `scripts/validate_locales.js:113`,
+  `scripts/validate_locales.js:153`, `scripts/validate_locales.js:171`,
+  `scripts/validate_locales.js:172`, `scripts/validate_locales.js:173`,
+  `ui/package.json:8`, `server.go:26`, `server.go:49`,
+  `server.go:57`, `build_macos_app.sh:13`,
+  `build_macos_app.sh:18`.
+  Check: `node scripts/validate_locales.js`;
+  `npm --prefix ui run build`; `go test ./...`; source-trace scan for
+  forbidden provenance, legacy naming, and local-path terms returned no matches.
 
-- [unimplemented] Durable repository surfaces contain no absolute local paths,
+- [verified] Durable repository surfaces contain no absolute local paths,
   outside provenance wording, prior product identifiers, or retired app
   identifiers.
   Evidence refs: `AGENTS.md`, `docs`, `ui/src`, `*.go`, `ui/dist`
+  Verified by: `AGENTS.md:1`, `AGENTS.md:20`, `AGENTS.md:22`,
+  `AGENTS.md:47`, `docs/must-authority.md:21`,
+  `docs/must-authority.md:28`, `docs/must-authority.md:30`,
+  `docs/agent-load-parity-checklist.md:22`.
+  Check: durable-surface scan over `AGENTS.md`, `docs`, `ui/src`,
+  `ui/dist`, Go files, and `scripts` returned no forbidden local-path,
+  provenance, prior-product, or retired-identifier matches.
