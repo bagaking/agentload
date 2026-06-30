@@ -110,6 +110,10 @@ agent evidence.
   button-like metric blocks. Use fixed columns, one-pixel dividers, faint
   alternating planes, and restrained state color so row separation is legible
   without making the list look chunky.
+- Compact project-row backgrounds may vary by tone, but their leading and
+  trailing edges must stay on the same grid. Do not stagger row planes when the
+  list is behaving like a ledger; rank, disclosure, project identity, tool
+  coverage, and all large metric numerals must remain column-aligned.
 - When compact project/session rows start reading as a continuous text wall,
   restore rhythm with small vertical breathing room, alternating plane offsets,
   and quieter metric surfaces before shrinking typography further. The target is
