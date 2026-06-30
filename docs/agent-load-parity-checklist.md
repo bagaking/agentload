@@ -102,11 +102,35 @@ machine paths, outside provenance labels, or prior product identifiers.
   Project / Sessions / Processes as the only visual shell.
   Evidence refs: `ui/src/main.tsx`, `ui/src/styles.css`
 
-- [unimplemented] Project rows, expanded session trees, process previews, and
+- [verified] Project rows, expanded session trees, process previews, and
   copy affordances stay compact, aligned, collapsible, and readable in dark and
   light mode.
   Evidence refs: `ui/src/main.tsx`, `ui/src/styles.css`,
   `docs/agent-load-ui-design-system.md`
+  Verified by: `ui/src/main.tsx:1310`, `ui/src/main.tsx:1335`,
+  `ui/src/main.tsx:1360`, `ui/src/main.tsx:1579`,
+  `ui/src/main.tsx:1629`, `ui/src/main.tsx:1635`,
+  `ui/src/main.tsx:2423`, `ui/src/main.tsx:2426`,
+  `ui/src/main.tsx:2537`, `ui/src/main.tsx:2577`,
+  `ui/src/main.tsx:2584`, `ui/src/main.tsx:2615`,
+  `ui/src/main.tsx:2648`, `ui/src/main.tsx:2702`,
+  `ui/src/main.tsx:2720`, `ui/src/styles.css:6891`,
+  `ui/src/styles.css:6902`, `ui/src/styles.css:6998`,
+  `ui/src/styles.css:7030`, `ui/src/styles.css:7069`,
+  `ui/src/styles.css:7107`, `ui/src/styles.css:7160`,
+  `ui/src/styles.css:7171`, `ui/src/styles.css:7208`,
+  `ui/src/styles.css:7526`, `ui/src/styles.css:7539`,
+  `docs/agent-load-ui-design-system.md:132`,
+  `docs/agent-load-ui-design-system.md:136`,
+  `docs/agent-load-ui-design-system.md:142`,
+  `docs/agent-load-ui-design-system.md:148`,
+  `docs/agent-load-ui-design-system.md:151`.
+  Check: browser smoke with mocked dense project/session/process data covered
+  popover and dashboard in dark and light themes. It confirmed project
+  disclosure opens and closes, compact popover session rows stay at 21px
+  without wrapping, dashboard session rows stay within the 46px budget, session
+  id copy buttons remain inside their identifier controls, and process session
+  preview chips expand from `+n` into the full mapped-session set.
 
 - [verified] Trend charts keep all samples interactive while rendering a
   quieter composed plane with selected/anchor marks, readable range labels, and
