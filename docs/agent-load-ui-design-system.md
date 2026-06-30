@@ -188,6 +188,10 @@ agent evidence.
   sampling stripes. Secondary series are contextual ghosts; avoid giving them
   their own visible point marks unless the secondary metric is the selected
   object.
+- Sparse trend windows should still read as one composed signal plane. Do not
+  split the visible primary series into many short disconnected strokes during
+  ordinary low-sample periods; keep bucket precision in hit targets, axis labels,
+  and selected readouts instead of shattering the chart silhouette.
 - Trend charts are audit controls, not presentation cards. Use flat chart
   planes, thin separators, short range controls, and dense click targets so the
   operator can compare lanes without scrolling through repeated explanation

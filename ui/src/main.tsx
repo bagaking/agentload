@@ -3804,11 +3804,9 @@ function trendChart(window: TrendWindow | undefined, points: TrendPoint[], lane:
   });
   const primary = coordinates(primaryKey);
   const secondary = coordinates(secondaryKey, lane === "runtime" && secondaryKey === "mapping_coverage_pct" ? 100 : max);
-  const gapMs = Math.max(1, (window?.granularity_seconds ?? 0) * 1000 * 1.7);
-  const visualTarget = compact ? 18 : 14;
-  const visualGapMs = Math.max(gapMs, frame ? frame.spanMs / visualTarget * 1.9 : gapMs);
+  const visualTarget = compact ? 12 : 14;
   const visualPrimary = trendVisualPoints(primary, selectedAt, visualTarget);
-  const visualSecondary = trendVisualPoints(secondary, selectedAt, Math.max(8, visualTarget - 4));
+  const visualSecondary = trendVisualPoints(secondary, selectedAt, Math.max(6, visualTarget - 5));
   const selected = selectedAt ? points.find((point) => point.at === selectedAt) ?? points[points.length - 1] : points[points.length - 1];
   const firstAt = points[0]?.at;
   const lastAt = points[points.length - 1]?.at;
@@ -3816,10 +3814,10 @@ function trendChart(window: TrendWindow | undefined, points: TrendPoint[], lane:
     width: chartWidth,
     plotMinX,
     plotMaxX,
-    primaryPath: segmentedLinePath(visualPrimary, visualGapMs),
-    secondaryPath: segmentedLinePath(visualSecondary, visualGapMs),
-    primaryAreaPath: segmentedAreaPath(visualPrimary, visualGapMs),
-    secondaryAreaPath: segmentedAreaPath(visualSecondary, visualGapMs),
+    primaryPath: linePath(visualPrimary),
+    secondaryPath: linePath(visualSecondary),
+    primaryAreaPath: trendAreaPath(visualPrimary),
+    secondaryAreaPath: trendAreaPath(visualSecondary),
     points: primary,
     secondaryPoints: secondary,
     timeBands: trendTimeBands(frame, plotMinX, plotMaxX, compact ? 4 : 6),
@@ -3967,38 +3965,11 @@ function linePath(points: TrendPlotPoint[]): string {
   return path;
 }
 
-function segmentedLinePath(points: TrendPlotPoint[], gapMs: number): string {
-  return trendPointSegments(points, gapMs).map(linePath).join(" ");
-}
-
-function segmentedAreaPath(points: TrendPlotPoint[], gapMs: number): string {
-  return trendPointSegments(points, gapMs)
-    .filter((segment) => segment.length >= 2)
-    .map((segment) => {
-      const first = segment[0];
-      const last = segment[segment.length - 1];
-      return `${linePath(segment)} L${last.x.toFixed(1)} 92 L${first.x.toFixed(1)} 92 Z`;
-    })
-    .join(" ");
-}
-
-function trendPointSegments(points: TrendPlotPoint[], gapMs: number): TrendPlotPoint[][] {
-  if (!points.length) return [];
-  if (!gapMs || !Number.isFinite(gapMs)) return [points];
-  const segments: TrendPlotPoint[][] = [];
-  let current: TrendPlotPoint[] = [];
-  let previousTime: number | null = null;
-  points.forEach((point) => {
-    const time = pointTimeMs(point.at);
-    if (time !== null && previousTime !== null && time - previousTime > gapMs && current.length) {
-      segments.push(current);
-      current = [];
-    }
-    current.push(point);
-    previousTime = time;
-  });
-  if (current.length) segments.push(current);
-  return segments;
+function trendAreaPath(points: TrendPlotPoint[]): string {
+  if (points.length < 2) return "";
+  const first = points[0];
+  const last = points[points.length - 1];
+  return `${linePath(points)} L${last.x.toFixed(1)} 92 L${first.x.toFixed(1)} 92 Z`;
 }
 
 function trendTimeBands(frame: { fromMs: number; toMs: number; spanMs: number } | null, minX = 8, maxX = 312, maxBands = 6): TrendTimeBand[] {

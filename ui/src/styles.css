@@ -9518,3 +9518,67 @@ body[data-view="popover"] .trend-suite.compact .trend-chart .time-band {
 .chart-axis-labels .axis-segment text {
   opacity: .72;
 }
+
+/* Trend signal-plane pass: keep sparse samples selectable without turning the chart into visual shards. */
+.trend-chart {
+  background:
+    radial-gradient(circle at 18% 14%, color-mix(in srgb, var(--ok) 5.5%, transparent), transparent 38%),
+    linear-gradient(180deg, color-mix(in srgb, var(--fg) 1.8%, transparent), transparent 58%),
+    color-mix(in srgb, var(--fg) .65%, transparent);
+}
+
+.trend-chart .grid {
+  opacity: .2;
+  stroke: color-mix(in srgb, var(--console-line) 28%, transparent);
+}
+
+.trend-chart .time-band {
+  opacity: .035;
+}
+
+.trend-chart .series {
+  stroke-width: 3.65;
+}
+
+.trend-chart .series.primary {
+  opacity: .98;
+}
+
+.trend-chart .series.secondary {
+  stroke-width: 1;
+  opacity: .07;
+}
+
+.trend-lane.runtime .series.secondary,
+body[data-view="popover"] .trend-suite.compact .series.secondary {
+  opacity: .055;
+}
+
+.trend-chart .series-area {
+  opacity: .34;
+}
+
+.trend-lane.history .series-area.secondary,
+.trend-lane.runtime .series-area.secondary {
+  opacity: .012;
+}
+
+.trend-chart .trend-point.is-anchor {
+  opacity: .16;
+}
+
+.trend-chart .trend-point.is-selected {
+  opacity: 1;
+  stroke-width: 1.55;
+}
+
+.trend-selection-line {
+  opacity: .62;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-chart {
+  background:
+    radial-gradient(circle at 18% 14%, color-mix(in srgb, var(--ok) 5%, transparent), transparent 40%),
+    linear-gradient(180deg, color-mix(in srgb, var(--fg) 1.45%, transparent), transparent 60%),
+    color-mix(in srgb, var(--fg) .55%, transparent);
+}
