@@ -106,6 +106,10 @@ agent evidence.
   walls. When role/session/process numbers become dense, group them into a few
   readable ledger chips, use modest row breathing room, and add subtle staggered
   planes or tonal rhythm instead of adding more grid labels.
+- Compact project ledgers should read as aligned scan rows, not rows of
+  button-like metric blocks. Use fixed columns, one-pixel dividers, faint
+  alternating planes, and restrained state color so row separation is legible
+  without making the list look chunky.
 - When compact project/session rows start reading as a continuous text wall,
   restore rhythm with small vertical breathing room, alternating plane offsets,
   and quieter metric surfaces before shrinking typography further. The target is
@@ -156,6 +160,10 @@ agent evidence.
   first reading pass. Do not repeat bulky selected-bucket cards under every
   lane; use one shared inspector strip and keep per-lane readouts inline with
   the lane header.
+- Compact trend typography should stay readable at popover size. Range controls,
+  lane titles, sample metadata, selected time, and selected values need one
+  clear step above axis and callout microtext; do not shrink them to the point
+  where the chart becomes legible but its controls feel like footnotes.
 - Trend charts are audit controls, not presentation cards. Use flat chart
   planes, thin separators, short range controls, and dense click targets so the
   operator can compare lanes without scrolling through repeated explanation

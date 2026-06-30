@@ -2398,6 +2398,12 @@ function ProjectTreeRow({
   const projectAge = formatAge(project.last_event_age_seconds, t);
   const projectMeta = projectAge;
   const selected = selection.type === "project" && selection.id === projectId;
+  const rowClassName = [
+    "project-tree-row",
+    expanded ? "expanded" : "",
+    selected ? "is-selected" : "",
+    counts.activeTotal > 0 ? "has-active" : "",
+  ].filter(Boolean).join(" ");
   const selectProject = () => {
     if (selected) {
       onToggle?.();
@@ -2410,7 +2416,7 @@ function ProjectTreeRow({
   };
   const disclosureLabel = expanded ? t("collapseDetails") : t("expandDetails");
   return (
-    <article className={`project-tree-row ${expanded ? "expanded" : ""} ${selected ? "is-selected" : ""}`}>
+    <article className={rowClassName}>
       <div className="project-tree-head">
         <span className="project-rank">{rank ?? "-"}</span>
         <button className="project-disclosure" type="button" onClick={onToggle} aria-expanded={expanded} aria-label={disclosureLabel} title={disclosureLabel}>
