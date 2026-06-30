@@ -1810,6 +1810,8 @@ function TrendLaneView({
   const selectedReadout = selected ? trendSelectedReadout(t, lane, selected) : "";
   const selectedAxisLabel = selected?.at ? formatChartAxisLabel(selected.at) : t("selectedValues");
   const visibleAxisTicks = selectedPlot ? chart.axis.ticks.filter((tick) => Math.abs(tick.x - selectedPlot.x) > 30) : chart.axis.ticks;
+  const primaryMarks = trendEmphasisPoints(chart.points, selected?.at);
+  const secondaryMarks = trendEmphasisPoints(chart.secondaryPoints, selected?.at);
   const selectPoint = (at?: string) => {
     setFocusedLane(lane);
     if (at) setTrendSelection((current) => ({ ...current, [lane]: at }));
@@ -1861,8 +1863,8 @@ function TrendLaneView({
               <path className="series primary" d={chart.primaryPath} />
               <path className="series secondary" d={chart.secondaryPath} />
               {selectedPlot ? <line className="trend-selection-line" x1={selectedPlot.x} y1="10" x2={selectedPlot.x} y2="94" aria-hidden="true" /> : null}
-              {chart.secondaryPoints.map((item) => (
-                <circle className={`trend-point secondary ${selected?.at === item.at ? "is-selected" : ""}`} key={`${lane}-secondary-${item.at}`} cx={item.x} cy={item.y} r="2.5" />
+              {secondaryMarks.map((item) => (
+                <circle className={`trend-point secondary ${item.emphasis} ${selected?.at === item.at ? "is-selected" : ""}`} key={`${lane}-secondary-${item.at}`} cx={item.x} cy={item.y} r="2.5" />
               ))}
               {chart.points.map((item) => (
                 <g
@@ -1883,9 +1885,11 @@ function TrendLaneView({
                     }
                   }}
                 >
-                  <circle className={`trend-point primary ${selected?.at === item.at ? "is-selected" : ""}`} cx={item.x} cy={item.y} r="3" />
                   <circle className={`trend-point-hit ${selected?.at === item.at ? "is-selected" : ""}`} cx={item.x} cy={item.y} r="8" />
                 </g>
+              ))}
+              {primaryMarks.map((item) => (
+                <circle className={`trend-point primary ${item.emphasis} ${selected?.at === item.at ? "is-selected" : ""}`} key={`${lane}-primary-${item.at}`} cx={item.x} cy={item.y} r={item.emphasis === "is-selected" ? "3.2" : "2.3"} />
               ))}
               <g className="chart-axis-labels" aria-hidden="true">
                 <text x={chart.plotMinX} y="108">{chart.axis.start}</text>
@@ -3775,11 +3779,11 @@ function trendExplanationSections(t: (key: string) => string, lane: TrendLane, p
 
 function formatTrendWindow(t: (key: string) => string, window: TrendWindow | undefined): string {
   const points = window?.points ?? [];
-  if (!points.length) return t("unavailable");
-  const firstAt = points[0]?.at;
-  const lastAt = points[points.length - 1]?.at;
-  const first = firstAt ? formatDateTime(firstAt) : "";
-  const last = lastAt ? formatDateTime(lastAt) : "";
+  const firstAt = window?.from || points[0]?.at;
+  const lastAt = window?.to || points[points.length - 1]?.at;
+  if (!firstAt && !lastAt) return t("unavailable");
+  const first = firstAt ? formatChartAxisLabel(firstAt) : "";
+  const last = lastAt ? formatChartAxisLabel(lastAt) : "";
   return first && last ? `${first} -> ${last}` : window?.range || t("unavailable");
 }
 
@@ -3874,9 +3878,37 @@ function trendAxisTicks(frame: { fromMs: number; spanMs: number } | null, minX =
   });
 }
 
+function trendEmphasisPoints(points: TrendPlotPoint[], selectedAt?: string): Array<TrendPlotPoint & { emphasis: string }> {
+  const firstAt = points[0]?.at;
+  const lastAt = points[points.length - 1]?.at;
+  const selected = selectedAt ?? lastAt;
+  const keys = new Set([firstAt, lastAt, selected].filter(Boolean));
+  return points
+    .filter((point) => keys.has(point.at))
+    .map((point) => ({
+      ...point,
+      emphasis: selected && point.at === selected ? "is-selected" : "is-anchor",
+    }));
+}
+
 function linePath(points: TrendPlotPoint[]): string {
   if (!points.length) return "";
-  return points.map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join("");
+  if (points.length < 3) {
+    return points.map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join("");
+  }
+  let path = `M${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const previous = points[index - 1] ?? points[index];
+    const current = points[index];
+    const next = points[index + 1];
+    const after = points[index + 2] ?? next;
+    const c1x = current.x + (next.x - previous.x) / 6;
+    const c1y = clampNumber(current.y + (next.y - previous.y) / 6, 12, 92);
+    const c2x = next.x - (after.x - current.x) / 6;
+    const c2y = clampNumber(next.y - (after.y - current.y) / 6, 12, 92);
+    path += ` C${c1x.toFixed(1)} ${c1y.toFixed(1)} ${c2x.toFixed(1)} ${c2y.toFixed(1)} ${next.x.toFixed(1)} ${next.y.toFixed(1)}`;
+  }
+  return path;
 }
 
 function segmentedLinePath(points: TrendPlotPoint[], gapMs: number): string {

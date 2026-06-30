@@ -8957,9 +8957,9 @@ body[data-view="popover"] .popover-project-table .project-tree-row:nth-child(2n)
 body[data-view="popover"] .popover-project-table .project-tree-row::after {
   content: "";
   position: absolute;
-  inset: 1px 0 1px 31px;
+  inset: 1px 0;
   z-index: -1;
-  border-radius: 4px;
+  border-radius: 3px;
   background:
     linear-gradient(
       90deg,
@@ -8972,8 +8972,6 @@ body[data-view="popover"] .popover-project-table .project-tree-row::after {
 }
 
 body[data-view="popover"] .popover-project-table .project-tree-row:nth-child(2n)::after {
-  left: 31px;
-  right: 0;
   opacity: .56;
 }
 
@@ -9006,7 +9004,7 @@ body[data-view="popover"] .popover-project-table .project-tree-row.expanded::bef
 }
 
 body[data-view="popover"] .popover-project-table .project-tree-head {
-  grid-template-columns: 20px 15px minmax(0, 1fr) 44px 132px;
+  grid-template-columns: 20px 15px minmax(0, 1fr) 44px 136px;
   min-height: 31px;
   gap: 5px;
   padding: 2px 2px 2px 4px;
@@ -9094,15 +9092,16 @@ body[data-view="popover"] .popover-project-table .project-compact-metrics {
   grid-column: 5;
   grid-row: 1;
   display: grid;
-  grid-template-columns: 52px 52px 28px;
+  grid-template-columns: 52px 52px 32px;
   align-items: stretch;
   justify-self: stretch;
-  min-width: 132px;
-  width: 132px;
+  min-width: 136px;
+  width: 136px;
   height: 23px;
   gap: 0;
   color: var(--console-text-faint);
   font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
 }
 
 body[data-view="popover"] .popover-project-table .project-compact-cluster,
@@ -9131,10 +9130,11 @@ body[data-view="popover"] .popover-project-table .project-compact-proc::before {
 }
 
 body[data-view="popover"] .popover-project-table .project-compact-cluster {
-  grid-template-columns: 12px 2ch;
+  grid-template-columns: minmax(0, 1fr) 2.4ch;
   gap: 0 4px;
   color: var(--ok);
-  justify-content: end;
+  justify-content: stretch;
+  justify-items: end;
 }
 
 body[data-view="popover"] .popover-project-table .project-compact-cluster.all {
@@ -9142,8 +9142,9 @@ body[data-view="popover"] .popover-project-table .project-compact-cluster.all {
 }
 
 body[data-view="popover"] .popover-project-table .project-compact-proc {
-  grid-template-columns: 10px 2ch;
-  justify-content: end;
+  grid-template-columns: minmax(0, 1fr) 2.4ch;
+  justify-content: stretch;
+  justify-items: end;
   color: var(--run);
   text-align: right;
 }
@@ -9169,10 +9170,11 @@ body[data-view="popover"] .popover-project-table .project-compact-proc strong {
   font-size: 12.8px;
   font-weight: 780;
   font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
   line-height: .92;
-  min-width: 2ch;
+  min-width: 2.4ch;
   text-align: right;
-  width: 2ch;
+  width: 2.4ch;
 }
 
 body[data-view="popover"] .popover-project-table .project-compact-cluster em {
@@ -9209,7 +9211,7 @@ body[data-view="popover"] .popover-project-table .project-compact-cluster em {
 
 @media (max-width: 430px) {
   body[data-view="popover"] .popover-project-table .project-tree-head {
-    grid-template-columns: 18px 14px minmax(0, 1fr) 32px 116px;
+    grid-template-columns: 18px 14px minmax(0, 1fr) 32px 120px;
     gap: 4px;
   }
 
@@ -9218,9 +9220,9 @@ body[data-view="popover"] .popover-project-table .project-compact-cluster em {
   }
 
   body[data-view="popover"] .popover-project-table .project-compact-metrics {
-    grid-template-columns: 46px 46px 24px;
-    min-width: 116px;
-    width: 116px;
+    grid-template-columns: 46px 46px 28px;
+    min-width: 120px;
+    width: 120px;
   }
 
   body[data-view="popover"] .popover-project-table .project-compact-cluster,
@@ -9317,4 +9319,114 @@ body[data-view="popover"] .trend-suite.compact .trend-callout text.value {
 
 body[data-view="popover"] .trend-suite.compact .chart-axis-labels text {
   font-size: 7.8px;
+}
+
+/* Trend quieting pass: keep all samples interactive, but make the plot read as one composed plane. */
+.trend-chart {
+  border-top-color: color-mix(in srgb, var(--console-line-soft) 58%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--console-line-soft) 58%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--fg) 2.8%, transparent), transparent 46%),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 95px,
+      color-mix(in srgb, var(--fg) 3.2%, transparent) 95px 96px,
+      transparent 96px 190px
+    ),
+    color-mix(in srgb, var(--fg) 1.15%, transparent);
+}
+
+.trend-chart .grid {
+  stroke: color-mix(in srgb, var(--console-line) 42%, transparent);
+}
+
+.trend-chart .time-band {
+  opacity: .18;
+}
+
+.trend-chart .series {
+  stroke-width: 2.75;
+}
+
+.trend-chart .series.secondary {
+  stroke-width: 1.65;
+  opacity: .46;
+}
+
+.trend-lane.runtime .series.secondary {
+  stroke-dasharray: none;
+  opacity: .32;
+}
+
+.trend-chart .series-area {
+  opacity: .2;
+}
+
+.trend-lane.history .series-area.secondary,
+.trend-lane.runtime .series-area.secondary {
+  opacity: .065;
+}
+
+.trend-chart .trend-point {
+  opacity: .58;
+}
+
+.trend-chart .trend-point.is-selected {
+  opacity: 1;
+  stroke: color-mix(in srgb, var(--fg) 92%, transparent);
+  stroke-width: 2;
+}
+
+.trend-hit:hover .trend-point-hit,
+.trend-hit:focus-visible .trend-point-hit,
+.trend-chart .trend-point-hit.is-selected {
+  fill: color-mix(in srgb, var(--fg) 4%, transparent);
+  stroke: color-mix(in srgb, var(--fg) 14%, transparent);
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-chart {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--fg) 2.6%, transparent), transparent 45%),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 106px,
+      color-mix(in srgb, var(--fg) 3%, transparent) 106px 107px,
+      transparent 107px 212px
+    ),
+    color-mix(in srgb, var(--fg) 1%, transparent);
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-chart .grid {
+  opacity: .5;
+}
+
+body[data-view="popover"] .popover-view-shell,
+body[data-view="popover"] .popover-view-panel.trend {
+  height: 100%;
+  min-height: 100%;
+}
+
+body[data-view="popover"] .popover-view-panel.trend:not([hidden]) {
+  display: grid;
+}
+
+body[data-view="popover"] .trend-suite.compact {
+  height: 100%;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 100%;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-duo {
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  min-height: 0;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-lane {
+  grid-template-rows: auto minmax(126px, 1fr);
+  min-height: 0;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-chart {
+  height: auto;
+  min-height: 126px;
 }

@@ -108,8 +108,8 @@ agent evidence.
   visible.
 - Compact project rows should not compress repeated counts into tiny matrix
   walls. When role/session/process numbers become dense, group them into a few
-  readable ledger chips, use modest row breathing room, and add subtle staggered
-  planes or tonal rhythm instead of adding more grid labels.
+  readable ledger chips, use modest row breathing room, and add subtle tonal
+  rhythm instead of adding more grid labels.
 - Compact project ledgers should read as aligned scan rows, not rows of
   button-like metric blocks. Use fixed columns, one-pixel dividers, faint
   alternating planes, and restrained state color so row separation is legible
@@ -120,9 +120,10 @@ agent evidence.
   coverage, and all large metric numerals must remain column-aligned.
   Background tint may indicate state, but the tint must fill the same row track
   instead of fading at different horizontal stops or ending behind the project
-  label like a variable-width chip.
+  label like a variable-width chip. Large row numerals must live in fixed
+  tabular columns with shared right edges across every visible project row.
 - When compact project/session rows start reading as a continuous text wall,
-  restore rhythm with small vertical breathing room, alternating plane offsets,
+  restore rhythm with small vertical breathing room, alternating plane tones,
   and quieter metric surfaces before shrinking typography further. The target is
   still scan density, not card-like looseness.
 - Project lists must not silently hide known projects. The compact popover
@@ -175,6 +176,11 @@ agent evidence.
   lane titles, sample metadata, selected time, and selected values need one
   clear step above axis and callout microtext; do not shrink them to the point
   where the chart becomes legible but its controls feel like footnotes.
+- Trend charts should read as composed planes, not dense point clouds. Keep all
+  samples interactive through invisible hit targets, but only render anchor and
+  selected point marks by default; use smooth continuous strokes, quiet fills,
+  and low-frequency grid rhythm so the operator sees the trend shape before the
+  sampling mechanics.
 - Trend charts are audit controls, not presentation cards. Use flat chart
   planes, thin separators, short range controls, and dense click targets so the
   operator can compare lanes without scrolling through repeated explanation
@@ -192,6 +198,9 @@ agent evidence.
   sampled series. Do not let incomplete source windows reserve large blank
   horizontal ranges that make the plotted trend look artificially narrow; keep
   full-window context in labels and detail metrics instead.
+- Trend window labels must use the API window bounds when available and include
+  date-qualified endpoints for cross-day ranges. A 1D trend must not render as
+  the same clock time on both sides when the chart axis spans different dates.
 - Light mode must keep weak labels, icons, tree rails, and control text readable;
   do not rely on very pale gray text for operator-critical controls.
 - Auto refresh defaults to `5m`. A paused refresh state may exist, but it must be
