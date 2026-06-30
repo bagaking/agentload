@@ -36,9 +36,15 @@ machine paths, outside provenance labels, or prior product identifiers.
   `observer_test.go:130`, `observer_test.go:489`.
   Check: `go test ./... -run 'TestParseTranscriptFileTail|TestFileMayContainEventsAfterCutoff|TestForegroundTranscriptScan.*Tail|TestForegroundTranscriptScanUsesTailParser'`.
 
-- [unimplemented] Foreground snapshot work can defer historical parsing while
+- [verified] Foreground snapshot work can defer historical parsing while
   still including live process files and foreground-window transcripts.
   Evidence refs: `observer.go`, `transcripts.go`, `observer_test.go`
+  Verified by: `transcripts.go:92`, `transcripts.go:155`,
+  `transcripts.go:253`, `transcripts.go:411`, `transcripts.go:429`,
+  `observer.go:71`, `observer.go:110`, `observer.go:116`,
+  `observer_test.go:351`, `observer_test.go:433`,
+  `observer_test.go:489`.
+  Check: `go test ./... -run 'TestForegroundTranscriptScan|TestSnapshotNotesDescribeDeferredHistoricalParsing'`.
 
 - [verified] Snapshot API returns consistent refresh-slot metadata for
   cached snapshots, first on-demand snapshots, manual refreshes, HEAD requests,
