@@ -28,6 +28,7 @@ This guidebook is the reading map for the shared knowledge root.
 
 ## Current Shared Pages
 
+- `docs/agent-load-parity-checklist.md` — Agent Load Parity Checklist
 - `docs/agent-load-ui-design-system.md` — Agent Load UI Design System
 - `docs/neutral-observation-principles.md` — Neutral Observation Principles
 - `docs/norms-maintaining-reusable-items.md` — Maintaining Reusable Items
