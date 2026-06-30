@@ -132,13 +132,26 @@ machine paths, outside provenance labels, or prior product identifiers.
 
 ## Packaging And Hygiene
 
-- [unimplemented] Vite output under `ui/dist` is current and embedded by the Go
+- [verified] Vite output under `ui/dist` is current and embedded by the Go
   app for tests, local serving, and packaged app builds.
   Evidence refs: `ui/dist`, `server.go`, `build_macos_app.sh`
+  Verified by: `ui/dist/index.html:1`, `ui/dist/index.html:9`,
+  `ui/dist/index.html:10`, `server.go:26`, `server.go:29`,
+  `server.go:49`, `server.go:57`, `server.go:65`,
+  `build_macos_app.sh:13`, `build_macos_app.sh:18`,
+  `build_macos_app.sh:23`, `server_test.go:18`,
+  `server_test.go:45`.
+  Check: `npm --prefix ui run build`; `go test ./... -run 'TestHandleUIAsset(ServesViteAssets|RejectsInvalidAssetPaths)' -count=1`.
 
-- [unimplemented] Local app build and install smoke prove the packaged app can
+- [verified] Local app build and install smoke prove the packaged app can
   serve `/` and `/api/snapshot` from the installed bundle.
   Evidence refs: `build_macos_app.sh`, `server.go`
+  Verified by: `build_macos_app.sh:13`, `build_macos_app.sh:18`,
+  `build_macos_app.sh:23`, `server.go:49`, `server.go:75`,
+  `server_test.go:185`.
+  Check: `./build_macos_app.sh`; installed-app smoke returned
+  `GET / -> 200 text/html; charset=utf-8` and
+  `GET /api/snapshot -> 200 application/json; charset=utf-8`.
 
 - [unimplemented] Locale validation, UI build, Go tests, and source-trace scans
   pass before any parity closeout.
