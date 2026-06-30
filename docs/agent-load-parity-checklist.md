@@ -56,9 +56,12 @@ machine paths, outside provenance labels, or prior product identifiers.
   `server_test.go:251`, `server_test.go:308`, `history_test.go:349`.
   Check: `go test ./... -run 'TestHandleRefreshAPI|TestHandleSnapshotAPI|TestRefreshSlotID'`.
 
-- [unimplemented] Tray metadata exposes parsed, scanned, deferred, tail,
+- [verified] Tray metadata exposes parsed, scanned, deferred, tail,
   foreground-window, and deferred-history scan coverage.
   Evidence refs: `tray.go`, `server_test.go`
+  Verified by: `tray.go:377`, `tray.go:386`, `tray.go:391`,
+  `tray.go:398`, `server_test.go:618`.
+  Check: `go test ./... -run 'TestFormatTrayMetaTitleIncludesScanCoverage'`.
 
 - [unimplemented] Client snapshot output removes local roots, session paths,
   bundle paths, command arguments, history store paths, and path-like evidence
