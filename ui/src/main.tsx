@@ -1473,12 +1473,12 @@ function ConfidenceGrid({ t, snapshot }: { t: (key: string) => string; snapshot:
   const fromProjects = (snapshot.project_focus ?? []).flatMap((project) => project.confidence_breakdown ?? []);
   const counts = new Map<string, number>();
   fromProjects.forEach((item) => {
-    const level = item.level || t("unknown");
+    const level = confidenceLabel(t, item.level);
     counts.set(level, (counts.get(level) ?? 0) + (item.count ?? 0));
   });
   if (!counts.size) {
     (snapshot.live_sessions ?? []).forEach((session) => {
-      const level = session.confidence || t("unknown");
+      const level = confidenceLabel(t, session.confidence);
       counts.set(level, (counts.get(level) ?? 0) + 1);
     });
   }
@@ -1562,7 +1562,7 @@ function CandidateWorkitemsRail({ t, snapshot, limit = 5 }: { t: (key: string) =
             <ToolIcon t={t} tool={item.tool || "unknown"} />
             <span>
               <strong>{item.project || t("unassigned")}</strong>
-              <em>{item.freshness_bucket || t("unavailable")} · {item.confidence || t("unavailable")}</em>
+              <em>{freshnessLabel(t, item.freshness_bucket)} · {confidenceLabel(t, item.confidence)}</em>
             </span>
           </div>
           <div className="candidate-mix" title={t("sessionProcessMix")}>
@@ -2643,7 +2643,7 @@ function SessionLine({
   const processText = compact ? `${session.process_count ?? 0}p` : `${session.process_count ?? 0} ${t("pid")}`;
   const selected = selection.type === "session" && safeID(sid) === selection.id;
   const title = session.agent_nickname || shortID(sid) || "session";
-  const meta = `${formatAge(session.last_event_age_seconds, t)} · ${processText} · ${session.confidence || t("unavailable")}`;
+  const meta = `${formatAge(session.last_event_age_seconds, t)} · ${processText} · ${confidenceLabel(t, session.confidence)}`;
   if (compact) {
     return (
       <div className={`session-line role-${role} ${session.active_burst ? "is-active" : ""} ${selected ? "is-selected" : ""} ${child ? "is-child" : ""}`}>
@@ -2745,12 +2745,12 @@ function SessionEvidencePanel({ t, session }: { t: (key: string) => string; sess
       <div className="entity-grid">
         <Readout label={t("sessionID")} value={session.session_id || t("unavailable")} />
         <Readout label={t("role")} value={roleLabel(t, normalizedRole(session.session_role))} />
-        <Readout label={t("roleConfidence")} value={session.role_confidence || t("unavailable")} />
-        <Readout label={t("mappingMethod")} value={session.mapping_method || t("unavailable")} />
-        <Readout label={t("threadSource")} value={session.thread_source || t("unavailable")} />
+        <Readout label={t("roleConfidence")} value={confidenceLabel(t, session.role_confidence)} />
+        <Readout label={t("mappingMethod")} value={mappingMethodLabel(t, session.mapping_method)} />
+        <Readout label={t("threadSource")} value={threadSourceLabel(t, session.thread_source)} />
         <Readout label={t("parentThread")} value={session.parent_thread_id || t("unavailable")} />
-        <Readout label={t("roleHint")} value={session.role_hint_source || session.agent_role || t("unavailable")} />
-        <Readout label={t("freshness")} value={session.freshness || (session.active_burst ? t("active") : t("idle"))} />
+        <Readout label={t("roleHint")} value={roleHintLabel(t, session.role_hint_source) || agentRoleLabel(t, session.agent_role) || session.agent_nickname || t("unavailable")} />
+        <Readout label={t("freshness")} value={freshnessLabel(t, session.freshness || (session.active_burst ? "active" : "idle"))} />
         <Readout label={t("tools")} value={toolDisplayName(session.tool)} />
         <Readout label={t("host")} value={(session.host_apps ?? []).map((app) => app.name).join(", ") || t("unavailable")} />
         <Readout label={t("command")} value={session.path || t("unavailable")} />
@@ -3027,10 +3027,10 @@ function buildRailItems(t: (key: string) => string, snapshot: Snapshot | null, t
       type: "session",
       kind: "query",
       title: session.project || shortID(session.session_id) || t("session"),
-      description: `${session.tool || t("tool")} · ${session.session_role || t("unknown")} · ${session.freshness || t("unknown")}`,
+      description: `${session.tool || t("tool")} · ${roleLabel(t, normalizedRole(session.session_role))} · ${freshnessLabel(t, session.freshness)}`,
       command: session.path || shortID(session.session_id) || t("session"),
       status: session.active_burst ? "active" : "done",
-      tags: [session.tool || t("tool"), session.session_role || t("unknown")],
+      tags: [session.tool || t("tool"), roleLabel(t, normalizedRole(session.session_role))],
       value: formatAge(session.last_event_age_seconds, t),
     }));
   } else {
@@ -3246,8 +3246,8 @@ function projectEvidenceItems(t: (key: string) => string, project: ProjectSnapsh
   const items = [
     { label: t("attention"), value: formatPct(project.attention_share_pct), tone: (project.attention_share_pct ?? 0) > 50 ? "active" : "" },
     { label: t("basis"), value: project.attention_basis || t("unavailable") },
-    { label: t("confidence"), value: project.confidence || t("unavailable"), tone: project.confidence === "high" ? "good" : "" },
-    { label: t("attribution"), value: project.project_attribution_confidence || t("unavailable"), tone: project.project_attribution_confidence === "high" ? "good" : "" },
+    { label: t("confidence"), value: confidenceLabel(t, project.confidence), tone: project.confidence === "high" ? "good" : "" },
+    { label: t("attribution"), value: confidenceLabel(t, project.project_attribution_confidence), tone: project.project_attribution_confidence === "high" ? "good" : "" },
     { label: t("recent"), value: String(recent), tone: recent > 0 ? "active" : "" },
     { label: t("stale"), value: String(stale), tone: stale > 0 ? "warn" : "" },
     { label: t("lastEvent"), value: formatAge(project.last_event_age_seconds, t) },
@@ -3366,6 +3366,73 @@ function roleLabel(t: (key: string) => string, role: "main" | "subagent" | "unkn
   return role === "main" ? t("main") : role === "subagent" ? t("subagent") : t("unknown");
 }
 
+function confidenceLabel(t: (key: string) => string, value?: string): string {
+  const raw = enumToken(value);
+  if (!raw) return t("unavailable");
+  if (raw === "high") return t("confidenceHigh");
+  if (raw === "medium") return t("confidenceMedium");
+  if (raw === "low") return t("confidenceLow");
+  if (raw === "unknown") return t("unknown");
+  return enumDisplayValue(value);
+}
+
+function freshnessLabel(t: (key: string) => string, value?: string): string {
+  const raw = enumToken(value);
+  if (!raw) return t("unavailable");
+  if (raw === "active") return t("active");
+  if (raw === "idle") return t("idle");
+  if (raw === "stale") return t("stale");
+  if (raw === "fresh") return t("fresh");
+  if (raw === "unknown") return t("unknown");
+  return enumDisplayValue(value);
+}
+
+function mappingMethodLabel(t: (key: string) => string, value?: string): string {
+  const raw = enumToken(value);
+  if (!raw) return t("unavailable");
+  if (raw === "transcript_path") return t("mappingTranscriptPath");
+  if (raw === "transcript_activity") return t("mappingTranscriptActivity");
+  if (raw === "command_hint") return t("mappingCommandHint");
+  if (raw === "fallback_session_id") return t("mappingFallbackSession");
+  if (raw === "unknown") return t("unknown");
+  return enumDisplayValue(value);
+}
+
+function threadSourceLabel(t: (key: string) => string, value?: string): string {
+  const raw = enumToken(value);
+  if (!raw) return t("unavailable");
+  if (raw === "user") return t("threadSourceUser");
+  if (raw === "subagent") return t("subagent");
+  if (raw === "unknown") return t("unknown");
+  return enumDisplayValue(value);
+}
+
+function roleHintLabel(t: (key: string) => string, value?: string): string {
+  const raw = enumToken(value);
+  if (!raw) return "";
+  if (raw === "thread_source") return t("threadSource");
+  if (raw === "agent_role") return t("role");
+  if (raw === "unknown") return t("unknown");
+  return enumDisplayValue(value);
+}
+
+function agentRoleLabel(t: (key: string) => string, value?: string): string {
+  const raw = enumToken(value);
+  if (!raw) return "";
+  if (raw === "worker") return t("agentRoleWorker");
+  if (raw === "explorer") return t("agentRoleExplorer");
+  if (raw === "unknown") return t("unknown");
+  return enumDisplayValue(value);
+}
+
+function enumToken(value?: string): string {
+  return String(value || "").trim().toLowerCase();
+}
+
+function enumDisplayValue(value?: string): string {
+  return String(value || "").trim().replace(/_/g, " ");
+}
+
 function RoleGlyph({ t, role }: { t: (key: string) => string; role: "main" | "subagent" | "unknown" }) {
   const label = roleLabel(t, role);
   const icon = role === "main" ? <Terminal size={12} /> : role === "subagent" ? <Bot size={12} /> : <GitBranch size={12} />;
@@ -3382,13 +3449,13 @@ function sessionEvidenceItems(t: (key: string) => string, session: LiveSession, 
   const items = [
     {
       label: t("confidence"),
-      value: session.confidence || session.role_confidence || t("unavailable"),
+      value: confidenceLabel(t, session.confidence || session.role_confidence),
       tone: session.confidence === "high" || session.role_confidence === "high" ? "good" : "",
     },
-    { label: t("mappingMethod"), value: session.mapping_method || t("unavailable") },
-    { label: session.parent_thread_id ? t("parentThread") : t("threadSource"), value: session.thread_source || relationship },
-    { label: t("roleHint"), value: session.role_hint_source || session.agent_role || session.agent_nickname || t("unavailable") },
-    { label: t("freshness"), value: session.freshness || (session.active_burst ? t("active") : t("idle")), tone: session.active_burst ? "active" : "" },
+    { label: t("mappingMethod"), value: mappingMethodLabel(t, session.mapping_method) },
+    { label: session.parent_thread_id ? t("parentThread") : t("threadSource"), value: session.thread_source ? threadSourceLabel(t, session.thread_source) : relationship },
+    { label: t("roleHint"), value: roleHintLabel(t, session.role_hint_source) || agentRoleLabel(t, session.agent_role) || session.agent_nickname || t("unavailable") },
+    { label: t("freshness"), value: freshnessLabel(t, session.freshness || (session.active_burst ? "active" : "idle")), tone: session.active_burst ? "active" : "" },
   ];
   return compact ? items.slice(0, 3) : items;
 }

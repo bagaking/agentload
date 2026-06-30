@@ -24,6 +24,10 @@ agent evidence.
   a first-class operator control, not a dashboard-only setting. Direct links may
   specify `?lang=`, and the page-level `lang` attribute should use the resolved
   locale rather than a generic fallback.
+- Compact rows and dashboard readouts must localize visible enum values such as
+  confidence, freshness, mapping method, thread source, and agent role. Raw API
+  tokens may remain in evidence/log contexts, but scan rows should not expose
+  values such as `high` or `transcript_path` when a locale label exists.
 - Compact popover chrome should not spend primary horizontal space on the full
   loopback address; keep local-only status available through a small status mark,
   tooltip, or detail surface.
