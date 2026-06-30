@@ -9582,3 +9582,89 @@ body[data-view="popover"] .trend-suite.compact .trend-chart {
     linear-gradient(180deg, color-mix(in srgb, var(--fg) 1.45%, transparent), transparent 60%),
     color-mix(in srgb, var(--fg) .55%, transparent);
 }
+
+/* Trend broad-signal pass: precision remains in hidden buckets, the visible layer reads as one signal surface. */
+.trend-chart {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--fg) 1.15%, transparent), transparent 62%),
+    linear-gradient(90deg, color-mix(in srgb, var(--ok) 3.8%, transparent), transparent 34%, transparent 74%, color-mix(in srgb, var(--run) 3%, transparent)),
+    color-mix(in srgb, var(--fg) .46%, transparent);
+}
+
+.trend-chart .grid {
+  opacity: .14;
+}
+
+.trend-chart .time-band {
+  opacity: .018;
+}
+
+.trend-selection-band {
+  fill: color-mix(in srgb, var(--accent-hi) 13%, transparent);
+  opacity: .42;
+  pointer-events: none;
+}
+
+.trend-selection-line {
+  display: none;
+}
+
+.trend-chart .series {
+  vector-effect: non-scaling-stroke;
+}
+
+.trend-chart .series.primary {
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--accent-hi) 18%, transparent));
+  stroke-width: 4.15;
+}
+
+.trend-chart .series.secondary {
+  opacity: .032;
+  stroke-width: .85;
+}
+
+.trend-lane.runtime .series.secondary,
+body[data-view="popover"] .trend-suite.compact .series.secondary {
+  opacity: .026;
+}
+
+.trend-chart .series-area {
+  opacity: .42;
+}
+
+.trend-lane.history .series-area.secondary,
+.trend-lane.runtime .series-area.secondary {
+  opacity: 0;
+}
+
+.trend-chart .trend-point.is-anchor {
+  opacity: .075;
+}
+
+.trend-chart .trend-point.is-selected {
+  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--fg) 20%, transparent));
+  opacity: 1;
+  stroke-width: 1.35;
+}
+
+.trend-chart .trend-point-hit.is-selected,
+.trend-hit:hover .trend-point-hit,
+.trend-hit:focus-visible .trend-point-hit {
+  fill: color-mix(in srgb, var(--fg) 1.6%, transparent);
+  stroke: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+
+.chart-axis-labels .axis-segment line {
+  opacity: 0;
+}
+
+.chart-axis-labels .axis-segment text {
+  opacity: .48;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-chart {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--fg) 1%, transparent), transparent 64%),
+    linear-gradient(90deg, color-mix(in srgb, var(--ok) 3.4%, transparent), transparent 38%, transparent 76%, color-mix(in srgb, var(--run) 2.6%, transparent)),
+    color-mix(in srgb, var(--fg) .4%, transparent);
+}

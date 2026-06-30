@@ -1807,6 +1807,7 @@ function TrendLaneView({
   const chart = trendChart(trendWindow, points, lane, compact, selected?.at);
   const selectedPlot = selected ? chart.points.find((point) => point.at === selected.at) : undefined;
   const calloutX = selectedPlot ? clampNumber(selectedPlot.x > chart.width - 124 ? selectedPlot.x - 122 : selectedPlot.x + 8, 10, chart.width - 122) : 0;
+  const selectionBandX = selectedPlot ? clampNumber(selectedPlot.x - 5.5, chart.plotMinX, chart.plotMaxX - 11) : 0;
   const selectedReadout = selected ? trendSelectedReadout(t, lane, selected) : "";
   const selectedAxisLabel = selected?.at ? formatChartAxisLabel(selected.at) : t("selectedValues");
   const visibleAxisTicks = selectedPlot ? chart.axis.ticks.filter((tick) => Math.abs(tick.x - selectedPlot.x) > 30) : chart.axis.ticks;
@@ -1857,11 +1858,11 @@ function TrendLaneView({
                 ))}
               </g>
               <path className="grid" d={`M${chart.plotMinX} 52H${chart.plotMaxX}`} />
+              {selectedPlot ? <rect className="trend-selection-band" x={selectionBandX} y="12" width="11" height="80" rx="5.5" aria-hidden="true" /> : null}
               <path className="series-area primary" d={chart.primaryAreaPath} />
               <path className="series-area secondary" d={chart.secondaryAreaPath} />
               <path className="series primary" d={chart.primaryPath} />
               <path className="series secondary" d={chart.secondaryPath} />
-              {selectedPlot ? <line className="trend-selection-line" x1={selectedPlot.x} y1="10" x2={selectedPlot.x} y2="94" aria-hidden="true" /> : null}
               {chart.points.map((item) => (
                 <g
                   key={`${lane}-${item.at}`}
@@ -1900,7 +1901,7 @@ function TrendLaneView({
                 ) : null}
                 <text x={chart.plotMaxX} y="108" textAnchor="end">{chart.axis.end}</text>
               </g>
-              {selectedPlot ? (
+              {selectedPlot && !compact ? (
                 <g className="trend-callout" transform={`translate(${calloutX.toFixed(1)} 13)`} aria-hidden="true">
                   <rect width="112" height="40" rx="5" />
                   <text x="7" y="13">{selectedAxisLabel}</text>
@@ -3790,23 +3791,25 @@ function trendChart(window: TrendWindow | undefined, points: TrendPoint[], lane:
   const plotMinX = 8;
   const plotMaxX = chartWidth - 8;
   const frame = trendChartFrame(window, points, compact ? [primaryKey, secondaryKey] : undefined);
-  const max = Math.max(
-    1,
-    ...points.map((point) => trendNumericValue(point, primaryKey) ?? 0),
-    ...points.map((point) => lane === "runtime" && secondaryKey === "mapping_coverage_pct" ? 100 : trendNumericValue(point, secondaryKey) ?? 0),
-  );
-  const coordinates = (key: keyof TrendPoint, fixedMax = max): TrendPlotPoint[] => points.flatMap((point, index) => {
+  const valuesFor = (key: keyof TrendPoint): number[] => points
+    .map((point) => trendNumericValue(point, key))
+    .filter((value): value is number => value !== null);
+  const primaryMax = Math.max(1, ...valuesFor(primaryKey));
+  const secondaryMetricMax = lane === "runtime" && secondaryKey === "mapping_coverage_pct" ? 100 : Math.max(1, ...valuesFor(secondaryKey));
+  const primaryScaleMax = primaryMax * 1.18;
+  const secondaryScaleMax = secondaryMetricMax * 1.12;
+  const coordinates = (key: keyof TrendPoint, fixedMax: number): TrendPlotPoint[] => points.flatMap((point, index) => {
     const x = trendPointX(frame, point, index, points.length, plotMinX, plotMaxX);
     const value = trendNumericValue(point, key);
     if (value === null) return [];
     const y = 92 - Math.max(0, Math.min(1, value / fixedMax)) * 80;
     return [{ at: point.at || String(index), x, y, value }];
   });
-  const primary = coordinates(primaryKey);
-  const secondary = coordinates(secondaryKey, lane === "runtime" && secondaryKey === "mapping_coverage_pct" ? 100 : max);
-  const visualTarget = compact ? 12 : 14;
+  const primary = coordinates(primaryKey, primaryScaleMax);
+  const secondary = coordinates(secondaryKey, secondaryScaleMax);
+  const visualTarget = compact ? 9 : 8;
   const visualPrimary = trendVisualPoints(primary, selectedAt, visualTarget);
-  const visualSecondary = trendVisualPoints(secondary, selectedAt, Math.max(6, visualTarget - 5));
+  const visualSecondary = trendVisualPoints(secondary, selectedAt, Math.max(4, visualTarget - 5));
   const selected = selectedAt ? points.find((point) => point.at === selectedAt) ?? points[points.length - 1] : points[points.length - 1];
   const firstAt = points[0]?.at;
   const lastAt = points[points.length - 1]?.at;

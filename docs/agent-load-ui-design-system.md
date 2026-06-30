@@ -188,6 +188,16 @@ agent evidence.
   sampling stripes. Secondary series are contextual ghosts; avoid giving them
   their own visible point marks unless the secondary metric is the selected
   object.
+- Trend charts should not compress count-based primary signals against
+  percentage-based context metrics on a shared 0-100 scale. Scale mixed-unit
+  series independently, keep the primary signal visually legible, and let the
+  selected readout carry the exact mixed-unit values. Even when both series are
+  counts, secondary context should not determine the primary line's vertical
+  scale unless the interaction explicitly selects that secondary metric.
+- Trend selection should use a soft band or other broad focus treatment before
+  resorting to tiny dashed guides, dense point labels, or card-like callouts.
+  In compact popover views, prefer the lane header and shared inspector for
+  selected values so the chart plane stays continuous.
 - Sparse trend windows should still read as one composed signal plane. Do not
   split the visible primary series into many short disconnected strokes during
   ordinary low-sample periods; keep bucket precision in hit targets, axis labels,

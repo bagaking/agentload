@@ -108,11 +108,27 @@ machine paths, outside provenance labels, or prior product identifiers.
   Evidence refs: `ui/src/main.tsx`, `ui/src/styles.css`,
   `docs/agent-load-ui-design-system.md`
 
-- [unimplemented] Trend charts keep all samples interactive while rendering a
+- [verified] Trend charts keep all samples interactive while rendering a
   quieter composed plane with selected/anchor marks, readable range labels, and
   accurate SVG-coordinate pointer selection.
   Evidence refs: `ui/src/main.tsx`, `ui/src/styles.css`,
   `docs/agent-load-ui-design-system.md`
+  Verified by: `ui/src/main.tsx:1807`, `ui/src/main.tsx:1819`,
+  `ui/src/main.tsx:1861`, `ui/src/main.tsx:1866`,
+  `ui/src/main.tsx:1888`, `ui/src/main.tsx:1891`,
+  `ui/src/main.tsx:3794`, `ui/src/main.tsx:3808`,
+  `ui/src/main.tsx:3810`, `ui/src/styles.css:9586`,
+  `ui/src/styles.css:9602`, `ui/src/styles.css:9616`,
+  `ui/src/styles.css:9621`, `ui/src/styles.css:9635`,
+  `ui/src/styles.css:9657`,
+  `docs/agent-load-ui-design-system.md:179`,
+  `docs/agent-load-ui-design-system.md:184`,
+  `docs/agent-load-ui-design-system.md:191`,
+  `docs/agent-load-ui-design-system.md:197`.
+  Check: `npm --prefix ui run build`; browser smoke with mocked trend data
+  confirmed 2 charts, 60 hidden sample hit targets for 60 raw samples, one
+  continuous primary path per lane, compact callouts suppressed, two soft
+  selection bands, and pointer selection updating the lane readout.
 
 - [verified] Frontend remains TypeScript, React, Tailwind, and Vite, and
   keeps explicit light/dark mode plus visible locale switching.
