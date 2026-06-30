@@ -160,6 +160,10 @@ agent evidence.
 - Trend chart pointer selection must use the SVG viewBox coordinate transform,
   not raw element width ratios, so clicked positions match plotted points even
   when the SVG letterboxes or scales responsively.
+- Compact trend charts should use the available popover width for the visible
+  sampled series. Do not let incomplete source windows reserve large blank
+  horizontal ranges that make the plotted trend look artificially narrow; keep
+  full-window context in labels and detail metrics instead.
 - Light mode must keep weak labels, icons, tree rails, and control text readable;
   do not rely on very pale gray text for operator-critical controls.
 - Auto refresh defaults to `5m`. A paused refresh state may exist, but it must be

@@ -4093,6 +4093,7 @@ body[data-view="popover"] .popover-current-scroll {
 
 body[data-view="popover"] .popover-view-shell,
 body[data-view="popover"] .popover-view-panel {
+  width: 100%;
   min-width: 0;
 }
 
@@ -4555,6 +4556,8 @@ body[data-view="popover"] .popover-project-table .session-line {
 }
 
 body[data-view="popover"] .trend-suite.compact {
+  width: 100%;
+  min-width: 0;
   gap: 7px;
   padding: 8px 9px 9px;
   border-radius: 0;
@@ -4596,11 +4599,15 @@ body[data-view="popover"] .trend-suite.compact .trend-range-switch button {
 }
 
 body[data-view="popover"] .trend-suite.compact .trend-duo {
+  width: 100%;
+  min-width: 0;
   gap: 1px;
   background: var(--console-line-soft);
 }
 
 body[data-view="popover"] .trend-suite.compact .trend-lane {
+  width: 100%;
+  min-width: 0;
   gap: 5px;
   padding: 6px 7px;
 }
@@ -4632,9 +4639,17 @@ body[data-view="popover"] .trend-suite.compact .trend-lane-readout strong {
 }
 
 body[data-view="popover"] .trend-suite.compact .trend-chart {
-  height: 86px;
+  width: 100%;
+  height: clamp(126px, 17vw, 144px);
   min-height: 0;
   aspect-ratio: auto;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-inspector,
+body[data-view="popover"] .trend-suite.compact .trend-inspector-lead,
+body[data-view="popover"] .trend-suite.compact .trend-inspector-readouts {
+  width: 100%;
+  min-width: 0;
 }
 
 body[data-view="popover"] .trend-suite.compact .trend-chart .grid {
