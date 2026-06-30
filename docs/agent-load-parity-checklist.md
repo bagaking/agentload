@@ -73,10 +73,22 @@ machine paths, outside provenance labels, or prior product identifiers.
   `server_test.go:525`, `server_test.go:550`, `server_test.go:846`.
   Check: `go test ./... -run 'TestHandleSnapshotAPIRedacts(ConfigPaths|ClientEvidencePaths|FreshObserverConfigPaths)|TestSanitize(TextForClient|CommandForClient)|TestObservedHostAppFromRequestUsesInternalFreshSnapshot'`.
 
-- [unimplemented] Process, session, project, candidate workitem, risk, and
+- [verified] Process, session, project, candidate workitem, risk, and
   evidence models expose the fields needed by the popover and dashboard.
   Evidence refs: `types.go`, `metrics.go`, `evidence_model_test.go`,
   `metrics_test.go`
+  Verified by: `types.go:8`, `types.go:64`, `types.go:78`,
+  `types.go:155`, `types.go:220`, `types.go:232`, `types.go:268`,
+  `types.go:284`, `types.go:314`, `observer.go:703`,
+  `observer.go:753`, `observer.go:996`, `observer.go:1121`,
+  `observer.go:1197`, `observer.go:1386`, `observer.go:1531`,
+  `metrics.go:181`, `metrics.go:285`, `metrics.go:409`,
+  `evidence_model_test.go:12`, `evidence_model_test.go:268`,
+  `evidence_model_test.go:334`, `evidence_model_test.go:610`,
+  `evidence_model_test.go:707`, `evidence_model_test.go:889`,
+  `metrics_test.go:180`, `metrics_test.go:230`,
+  `metrics_test.go:481`.
+  Check: `go test ./... -run 'TestBuildLiveSessions(TracksMappingEvidence|IncludesRecentTranscriptOnlySubagents|PropagatesHostApps)|TestProjectLiveSessionsExposeFreshnessConfidenceAndProvenance|TestBuildProjectFocus(AddsAllocationRiskAndConfidenceSummary|KeepsTranscriptProjectAndCWDHighConfidence)|TestBuildCandidateWorkitemsAndCoordinationRisk|TestBuildCoordinationRisk(CountsMissingTranscriptSessionsInLowConfidenceSignal|IgnoresUnassignedBucketsForProjectSpread|CountsDuplicateOverlapConservatively|SummarizesCandidateCoverageAndConfidence)|TestBuildTranscriptTrendWindowsMarksSampledMetricPresence|TestTrendPointMarshalJSON(KeepsSampledHistoryZeroMetrics|KeepsSampledRuntimeZeroMetrics|OmitsMissingSampledHistoryMetric|OmitsMissingSampledRuntimeMetric)|TestMergeRuntimeTrendsMarksSampledMetricPresence' -count=1`.
 
 ## Frontend Surfaces
 
