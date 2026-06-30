@@ -181,6 +181,13 @@ agent evidence.
   selected point marks by default; use smooth continuous strokes, quiet fills,
   and low-frequency grid rhythm so the operator sees the trend shape before the
   sampling mechanics.
+- Trend chart rendering should separate audit precision from visual frequency.
+  Keep raw sampled buckets available for pointer and keyboard selection, but draw
+  the visible series from a reduced, softened path and collapse long-window
+  time-of-day bands into a few broad planes so the chart does not fragment into
+  sampling stripes. Secondary series are contextual ghosts; avoid giving them
+  their own visible point marks unless the secondary metric is the selected
+  object.
 - Trend charts are audit controls, not presentation cards. Use flat chart
   planes, thin separators, short range controls, and dense click targets so the
   operator can compare lanes without scrolling through repeated explanation

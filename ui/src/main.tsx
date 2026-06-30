@@ -1804,14 +1804,13 @@ function TrendLaneView({
   setTrendSelection: React.Dispatch<React.SetStateAction<Record<TrendLane, string | undefined>>>;
 }) {
   const { lane, title, trendWindow, points, selected } = summary;
-  const chart = trendChart(trendWindow, points, lane, compact);
+  const chart = trendChart(trendWindow, points, lane, compact, selected?.at);
   const selectedPlot = selected ? chart.points.find((point) => point.at === selected.at) : undefined;
   const calloutX = selectedPlot ? clampNumber(selectedPlot.x > chart.width - 124 ? selectedPlot.x - 122 : selectedPlot.x + 8, 10, chart.width - 122) : 0;
   const selectedReadout = selected ? trendSelectedReadout(t, lane, selected) : "";
   const selectedAxisLabel = selected?.at ? formatChartAxisLabel(selected.at) : t("selectedValues");
   const visibleAxisTicks = selectedPlot ? chart.axis.ticks.filter((tick) => Math.abs(tick.x - selectedPlot.x) > 30) : chart.axis.ticks;
   const primaryMarks = trendEmphasisPoints(chart.points, selected?.at);
-  const secondaryMarks = trendEmphasisPoints(chart.secondaryPoints, selected?.at);
   const selectPoint = (at?: string) => {
     setFocusedLane(lane);
     if (at) setTrendSelection((current) => ({ ...current, [lane]: at }));
@@ -1857,15 +1856,12 @@ function TrendLaneView({
                   <rect className={`time-band ${band.tone}`} key={`${band.tone}-${index}`} x={band.x} y="12" width={band.width} height="80" />
                 ))}
               </g>
-              <path className="grid" d={`M${chart.plotMinX} 12H${chart.plotMaxX}M${chart.plotMinX} 52H${chart.plotMaxX}M${chart.plotMinX} 92H${chart.plotMaxX}`} />
+              <path className="grid" d={`M${chart.plotMinX} 52H${chart.plotMaxX}`} />
               <path className="series-area primary" d={chart.primaryAreaPath} />
               <path className="series-area secondary" d={chart.secondaryAreaPath} />
               <path className="series primary" d={chart.primaryPath} />
               <path className="series secondary" d={chart.secondaryPath} />
               {selectedPlot ? <line className="trend-selection-line" x1={selectedPlot.x} y1="10" x2={selectedPlot.x} y2="94" aria-hidden="true" /> : null}
-              {secondaryMarks.map((item) => (
-                <circle className={`trend-point secondary ${item.emphasis} ${selected?.at === item.at ? "is-selected" : ""}`} key={`${lane}-secondary-${item.at}`} cx={item.x} cy={item.y} r="2.5" />
-              ))}
               {chart.points.map((item) => (
                 <g
                   key={`${lane}-${item.at}`}
@@ -3787,7 +3783,7 @@ function formatTrendWindow(t: (key: string) => string, window: TrendWindow | und
   return first && last ? `${first} -> ${last}` : window?.range || t("unavailable");
 }
 
-function trendChart(window: TrendWindow | undefined, points: TrendPoint[], lane: TrendLane, compact = false): TrendChartModel {
+function trendChart(window: TrendWindow | undefined, points: TrendPoint[], lane: TrendLane, compact = false, selectedAt?: string): TrendChartModel {
   const primaryKey = lane === "history" ? "active_burst_concurrency" : "pid_concurrency";
   const secondaryKey = lane === "history" ? "session_concurrency" : "mapping_coverage_pct";
   const chartWidth = compact ? 640 : 320;
@@ -3809,25 +3805,29 @@ function trendChart(window: TrendWindow | undefined, points: TrendPoint[], lane:
   const primary = coordinates(primaryKey);
   const secondary = coordinates(secondaryKey, lane === "runtime" && secondaryKey === "mapping_coverage_pct" ? 100 : max);
   const gapMs = Math.max(1, (window?.granularity_seconds ?? 0) * 1000 * 1.7);
-  const selected = points[points.length - 1];
+  const visualTarget = compact ? 18 : 14;
+  const visualGapMs = Math.max(gapMs, frame ? frame.spanMs / visualTarget * 1.9 : gapMs);
+  const visualPrimary = trendVisualPoints(primary, selectedAt, visualTarget);
+  const visualSecondary = trendVisualPoints(secondary, selectedAt, Math.max(8, visualTarget - 4));
+  const selected = selectedAt ? points.find((point) => point.at === selectedAt) ?? points[points.length - 1] : points[points.length - 1];
   const firstAt = points[0]?.at;
   const lastAt = points[points.length - 1]?.at;
   return {
     width: chartWidth,
     plotMinX,
     plotMaxX,
-    primaryPath: segmentedLinePath(primary, gapMs),
-    secondaryPath: segmentedLinePath(secondary, gapMs),
-    primaryAreaPath: segmentedAreaPath(primary, gapMs),
-    secondaryAreaPath: segmentedAreaPath(secondary, gapMs),
+    primaryPath: segmentedLinePath(visualPrimary, visualGapMs),
+    secondaryPath: segmentedLinePath(visualSecondary, visualGapMs),
+    primaryAreaPath: segmentedAreaPath(visualPrimary, visualGapMs),
+    secondaryAreaPath: segmentedAreaPath(visualSecondary, visualGapMs),
     points: primary,
     secondaryPoints: secondary,
-    timeBands: trendTimeBands(frame, plotMinX, plotMaxX),
+    timeBands: trendTimeBands(frame, plotMinX, plotMaxX, compact ? 4 : 6),
     axis: {
       start: frame ? formatChartAxisLabel(new Date(frame.fromMs).toISOString()) : firstAt ? formatChartAxisLabel(firstAt) : "",
       selected: selected?.at ? formatChartHour(selected.at) : undefined,
       end: frame ? formatChartAxisLabel(new Date(frame.toMs).toISOString()) : lastAt ? formatChartAxisLabel(lastAt) : "",
-      ticks: trendAxisTicks(frame, plotMinX, plotMaxX),
+      ticks: trendAxisTicks(frame, plotMinX, plotMaxX, compact ? [0.5] : [0.33, 0.66]),
     },
   };
 }
@@ -3867,9 +3867,9 @@ function trendPointX(frame: { fromMs: number; spanMs: number } | null, point: Tr
   return total <= 1 ? minX + (maxX - minX) / 2 : minX + (index / (total - 1)) * (maxX - minX);
 }
 
-function trendAxisTicks(frame: { fromMs: number; spanMs: number } | null, minX = 8, maxX = 312): TrendAxisTick[] {
+function trendAxisTicks(frame: { fromMs: number; spanMs: number } | null, minX = 8, maxX = 312, ratios = [0.25, 0.5, 0.75]): TrendAxisTick[] {
   if (!frame) return [];
-  return [0.25, 0.5, 0.75].map((ratio) => {
+  return ratios.map((ratio) => {
     const atMs = frame.fromMs + frame.spanMs * ratio;
     return {
       x: minX + ratio * (maxX - minX),
@@ -3889,6 +3889,62 @@ function trendEmphasisPoints(points: TrendPlotPoint[], selectedAt?: string): Arr
       ...point,
       emphasis: selected && point.at === selected ? "is-selected" : "is-anchor",
     }));
+}
+
+function trendVisualPoints(points: TrendPlotPoint[], selectedAt: string | undefined, maxCount: number): TrendPlotPoint[] {
+  if (points.length <= maxCount) return softenTrendPoints(points, selectedAt);
+  const selectedPoint = selectedAt ? points.find((point) => point.at === selectedAt) : undefined;
+  const bucketCount = Math.max(3, Math.min(maxCount, points.length));
+  const buckets = Array.from({ length: bucketCount }, () => [] as TrendPlotPoint[]);
+  points.forEach((point, index) => {
+    const bucketIndex = Math.min(bucketCount - 1, Math.floor((index / Math.max(1, points.length - 1)) * bucketCount));
+    buckets[bucketIndex].push(point);
+  });
+  const coarse = buckets.flatMap((bucket, index): TrendPlotPoint[] => {
+    if (!bucket.length) return [];
+    if (index === 0) return [bucket[0]];
+    if (index === buckets.length - 1) return [bucket[bucket.length - 1]];
+    if (selectedPoint && bucket.some((point) => point.at === selectedPoint.at)) return [selectedPoint];
+    const middle = bucket[Math.floor(bucket.length / 2)];
+    const average = bucket.reduce(
+      (total, point) => ({
+        x: total.x + point.x,
+        y: total.y + point.y,
+        value: total.value + point.value,
+      }),
+      { x: 0, y: 0, value: 0 },
+    );
+    return [{
+      at: middle.at,
+      x: average.x / bucket.length,
+      y: average.y / bucket.length,
+      value: average.value / bucket.length,
+    }];
+  });
+  return softenTrendPoints(dedupeTrendPlotPoints(coarse, selectedPoint), selectedAt);
+}
+
+function dedupeTrendPlotPoints(points: TrendPlotPoint[], selectedPoint?: TrendPlotPoint): TrendPlotPoint[] {
+  const byAt = new Map<string, TrendPlotPoint>();
+  points.forEach((point) => byAt.set(point.at, point));
+  if (selectedPoint) byAt.set(selectedPoint.at, selectedPoint);
+  return Array.from(byAt.values()).sort((a, b) => a.x - b.x);
+}
+
+function softenTrendPoints(points: TrendPlotPoint[], selectedAt?: string): TrendPlotPoint[] {
+  if (points.length < 4) return points;
+  const firstAt = points[0]?.at;
+  const lastAt = points[points.length - 1]?.at;
+  return points.map((point, index) => {
+    if (point.at === firstAt || point.at === lastAt || point.at === selectedAt) return point;
+    const previous = points[index - 1] ?? point;
+    const next = points[index + 1] ?? point;
+    return {
+      ...point,
+      y: clampNumber((previous.y + point.y * 2 + next.y) / 4, 12, 92),
+      value: (previous.value + point.value * 2 + next.value) / 4,
+    };
+  });
 }
 
 function linePath(points: TrendPlotPoint[]): string {
@@ -3945,8 +4001,9 @@ function trendPointSegments(points: TrendPlotPoint[], gapMs: number): TrendPlotP
   return segments;
 }
 
-function trendTimeBands(frame: { fromMs: number; toMs: number; spanMs: number } | null, minX = 8, maxX = 312): TrendTimeBand[] {
+function trendTimeBands(frame: { fromMs: number; toMs: number; spanMs: number } | null, minX = 8, maxX = 312, maxBands = 6): TrendTimeBand[] {
   if (!frame) return [];
+  if (frame.spanMs > 36 * 60 * 60 * 1000) return trendBroadTimeBands(frame, minX, maxX, maxBands);
   const bands: TrendTimeBand[] = [];
   const plotWidth = maxX - minX;
   let cursor = new Date(frame.fromMs);
@@ -3964,6 +4021,21 @@ function trendTimeBands(frame: { fromMs: number; toMs: number; spanMs: number } 
     guard += 1;
   }
   return bands;
+}
+
+function trendBroadTimeBands(frame: { fromMs: number; toMs: number; spanMs: number }, minX = 8, maxX = 312, maxBands = 6): TrendTimeBand[] {
+  const plotWidth = maxX - minX;
+  const count = Math.max(2, Math.min(maxBands, Math.ceil(frame.spanMs / (24 * 60 * 60 * 1000))));
+  return Array.from({ length: count }, (_, index) => {
+    const startRatio = index / count;
+    const endRatio = (index + 1) / count;
+    const middleMs = frame.fromMs + frame.spanMs * ((startRatio + endRatio) / 2);
+    return {
+      tone: timeOfDayTone(new Date(middleMs)),
+      x: minX + startRatio * plotWidth,
+      width: Math.max(.5, (endRatio - startRatio) * plotWidth),
+    };
+  });
 }
 
 function timeOfDayTone(date: Date): TrendTimeBand["tone"] {

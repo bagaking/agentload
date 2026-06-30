@@ -9430,3 +9430,91 @@ body[data-view="popover"] .trend-suite.compact .trend-chart {
   height: auto;
   min-height: 126px;
 }
+
+/* Trend plane reduction pass: show the movement shape before sampling mechanics. */
+.trend-chart {
+  background:
+    radial-gradient(circle at 18% 12%, color-mix(in srgb, var(--ok) 8%, transparent), transparent 34%),
+    linear-gradient(180deg, color-mix(in srgb, var(--fg) 2.4%, transparent), transparent 54%),
+    linear-gradient(90deg, color-mix(in srgb, var(--fg) 1.4%, transparent), transparent 22%, transparent 78%, color-mix(in srgb, var(--fg) 1.8%, transparent)),
+    color-mix(in srgb, var(--fg) .9%, transparent);
+}
+
+.trend-chart .grid {
+  opacity: .32;
+  stroke: color-mix(in srgb, var(--console-line) 34%, transparent);
+}
+
+.trend-chart .time-band {
+  opacity: .075;
+}
+
+.trend-chart .series {
+  stroke-width: 3.15;
+}
+
+.trend-chart .series.primary {
+  opacity: .94;
+}
+
+.trend-chart .series.secondary {
+  stroke-width: 1.1;
+  opacity: .12;
+}
+
+.trend-lane.runtime .series.secondary,
+body[data-view="popover"] .trend-suite.compact .series.secondary {
+  opacity: .085;
+}
+
+.trend-chart .series-area {
+  opacity: .24;
+}
+
+.trend-lane.history .series-area.secondary,
+.trend-lane.runtime .series-area.secondary {
+  opacity: .025;
+}
+
+.trend-chart .trend-point {
+  opacity: .34;
+}
+
+.trend-chart .trend-point.secondary {
+  opacity: .22;
+}
+
+.trend-chart .trend-point.is-selected {
+  opacity: 1;
+  stroke-width: 1.7;
+}
+
+.trend-chart .trend-point-hit.is-selected,
+.trend-hit:hover .trend-point-hit,
+.trend-hit:focus-visible .trend-point-hit {
+  fill: color-mix(in srgb, var(--fg) 2.2%, transparent);
+  stroke: color-mix(in srgb, var(--fg) 10%, transparent);
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-chart {
+  background:
+    radial-gradient(circle at 16% 14%, color-mix(in srgb, var(--ok) 7%, transparent), transparent 32%),
+    linear-gradient(180deg, color-mix(in srgb, var(--fg) 2%, transparent), transparent 56%),
+    color-mix(in srgb, var(--fg) .8%, transparent);
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-chart .grid {
+  opacity: .28;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-chart .time-band {
+  opacity: .055;
+}
+
+.chart-axis-labels .axis-segment line {
+  opacity: .42;
+}
+
+.chart-axis-labels .axis-segment text {
+  opacity: .72;
+}
