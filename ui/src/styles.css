@@ -9726,50 +9726,11 @@ body[data-view="popover"] .trend-suite.compact .trend-chart {
     color-mix(in srgb, var(--fg) .3%, transparent);
 }
 
-/* Compact trend header legibility pass: chart labels should read before the operator studies the plot. */
-body[data-view="popover"] .trend-suite.compact .trend-suite-copy h2 {
-  font-size: 19px;
-  line-height: 1.02;
-}
-
-body[data-view="popover"] .trend-suite.compact .trend-suite-copy span {
-  font-size: 13.2px;
-  line-height: 1.2;
-}
-
-body[data-view="popover"] .trend-suite.compact .trend-lane {
-  gap: 8px;
-  padding-top: 10px;
-}
-
-body[data-view="popover"] .trend-suite.compact .trend-lane-head {
-  min-height: 48px;
-  align-items: start;
-}
-
-body[data-view="popover"] .trend-suite.compact .trend-kicker {
-  font-size: 17px;
-  line-height: 1.08;
-}
-
-body[data-view="popover"] .trend-suite.compact .trend-lane-head small {
-  margin-top: 3px;
-  font-size: 13px;
-  line-height: 1.15;
-}
-
-body[data-view="popover"] .trend-suite.compact .trend-lane-readout {
-  min-width: 132px;
-  min-height: 44px;
-  padding-left: 15px;
-}
-
-body[data-view="popover"] .trend-suite.compact .trend-lane-readout span {
-  font-size: 13.2px;
-  line-height: 1.15;
-}
-
-body[data-view="popover"] .trend-suite.compact .trend-lane-readout strong {
-  font-size: 19px;
-  line-height: 1.08;
+/* Compact trend point-label pass: selected bucket labels should not be as tiny as passive axis ticks. */
+body[data-view="popover"] .trend-suite.compact .chart-axis-labels text.selected {
+  fill: var(--fg);
+  font-size: 10px;
+  font-weight: 860;
+  stroke: color-mix(in srgb, var(--bg) 92%, transparent);
+  stroke-width: 2.8px;
 }
