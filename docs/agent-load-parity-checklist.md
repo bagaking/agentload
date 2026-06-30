@@ -33,11 +33,15 @@ machine paths, outside provenance labels, or prior product identifiers.
   still including live process files and foreground-window transcripts.
   Evidence refs: `observer.go`, `transcripts.go`, `observer_test.go`
 
-- [unimplemented] Snapshot API returns consistent refresh-slot metadata for
+- [verified] Snapshot API returns consistent refresh-slot metadata for
   cached snapshots, first on-demand snapshots, manual refreshes, HEAD requests,
   and validator responses.
   Evidence refs: `server.go`, `server_test.go`, `history.go`,
   `history_test.go`
+  Verified by: `server.go:75`, `server.go:111`, `server.go:220`,
+  `server_test.go:70`, `server_test.go:185`, `server_test.go:215`,
+  `server_test.go:251`, `server_test.go:308`, `history_test.go:349`.
+  Check: `go test ./... -run 'TestHandleRefreshAPI|TestHandleSnapshotAPI|TestRefreshSlotID'`.
 
 - [unimplemented] Tray metadata exposes parsed, scanned, deferred, tail,
   foreground-window, and deferred-history scan coverage.
