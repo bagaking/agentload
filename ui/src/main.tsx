@@ -700,7 +700,7 @@ function PopoverFooter({
     <footer className="popover-footer">
       <div className={`footer-meta ${active ? "is-active" : ""}`} role="status" title={stateLabel} aria-label={`${stateLabel} ${generated}`}>
         <span className={`state-dot footer-state-dot ${snapshot ? "observed" : "idle"} ${active ? "is-active" : ""}`} aria-hidden="true" />
-        <span>{generated}</span>
+        <span className="footer-time">{generated}</span>
         <button className={`refresh-interval footer-interval ${refreshInterval ? "" : "is-paused"}`} type="button" data-focus-key={focusKey("refresh-interval", "popover")} onClick={cycleRefreshInterval} title={t("autoRefresh")} aria-label={t("autoRefresh")}>
           <RefreshCw size={11} aria-hidden="true" />
           <span>{formatRefreshInterval(refreshInterval, t)}</span>

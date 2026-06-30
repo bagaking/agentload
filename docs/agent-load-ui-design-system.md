@@ -79,6 +79,11 @@ agent evidence.
   Prefer slow, soft core-and-ring motion from the footer mark; the animation must
   read as ambient state feedback, not a decorative loading spinner or loading
   control.
+- The compact popover footer should read as one flat control plane with timestamp,
+  cadence, view switch, and dashboard launch composed into a single graphic band.
+  Avoid separate chunky pills in the footer; use one-pixel dividers, planar
+  accents, restrained hover states, and theme-specific contrast so the strip
+  feels like an intentional control artifact rather than leftover chrome.
 - Compact explanatory rows should avoid decorative icons when the label and
   adjacent controls already identify the row. Compact scan readouts should stay
   on one row whenever the available width can hold the observed fields.
