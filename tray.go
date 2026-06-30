@@ -388,15 +388,20 @@ func formatTrayMetaTitle(snapshot Snapshot) string {
 	if snapshot.TranscriptStats.Cached {
 		cacheState = "cache hit"
 	}
-	return fmt.Sprintf(
-		"Updated %s · %s · %d/%d transcripts · %d deferred · %d tail",
-		formatTimestamp(snapshot.GeneratedAt),
+	parts := []string{
+		fmt.Sprintf("Updated %s", formatTimestamp(snapshot.GeneratedAt)),
 		cacheState,
-		snapshot.TranscriptStats.ParsedFiles,
-		snapshot.TranscriptStats.ScannedFiles,
-		snapshot.TranscriptStats.DeferredFiles,
-		snapshot.TranscriptStats.TailParsedFiles,
-	)
+		fmt.Sprintf("%d/%d transcripts", snapshot.TranscriptStats.ParsedFiles, snapshot.TranscriptStats.ScannedFiles),
+		fmt.Sprintf("%d deferred", snapshot.TranscriptStats.DeferredFiles),
+		fmt.Sprintf("%d tail", snapshot.TranscriptStats.TailParsedFiles),
+	}
+	if snapshot.TranscriptStats.HistoricalScanDeferred {
+		if snapshot.TranscriptStats.ForegroundScanLookbackSeconds > 0 {
+			parts = append(parts, "foreground "+formatDurationLabel(time.Duration(snapshot.TranscriptStats.ForegroundScanLookbackSeconds)*time.Second))
+		}
+		parts = append(parts, "history deferred")
+	}
+	return strings.Join(parts, " · ")
 }
 
 func (a *trayApp) togglePopover() {

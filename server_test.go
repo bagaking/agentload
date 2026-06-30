@@ -469,14 +469,16 @@ func TestFormatTrayMetaTitleIncludesScanCoverage(t *testing.T) {
 	got := formatTrayMetaTitle(Snapshot{
 		GeneratedAt: "2026-06-28T12:00:00Z",
 		TranscriptStats: TranscriptStats{
-			ScannedFiles:    19,
-			ParsedFiles:     11,
-			DeferredFiles:   4,
-			TailParsedFiles: 3,
-			Cached:          true,
+			ScannedFiles:                  19,
+			ParsedFiles:                   11,
+			DeferredFiles:                 4,
+			TailParsedFiles:               3,
+			HistoricalScanDeferred:        true,
+			ForegroundScanLookbackSeconds: 3600,
+			Cached:                        true,
 		},
 	})
-	for _, want := range []string{"cache hit", "11/19 transcripts", "4 deferred", "3 tail"} {
+	for _, want := range []string{"cache hit", "11/19 transcripts", "4 deferred", "3 tail", "foreground 1h", "history deferred"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected tray metadata %q to contain %q", got, want)
 		}
