@@ -375,10 +375,43 @@ func sanitizeCommandForClient(command string) string {
 	if len(fields) == 0 {
 		return ""
 	}
-	for i, field := range fields {
-		fields[i] = sanitizeTokenForClient(field)
+	out := []string{sanitizeTokenForClient(fields[0])}
+	redactedTail := false
+	for i := 1; i < len(fields); i++ {
+		field := fields[i]
+		if strings.HasPrefix(field, "-") {
+			if key, _, ok := strings.Cut(field, "="); ok {
+				out = append(out, sanitizeTokenForClient(key)+"=<value>")
+				continue
+			}
+			out = append(out, sanitizeTokenForClient(field))
+			if i+1 < len(fields) && !strings.HasPrefix(fields[i+1], "-") && !isCommandIdentityWord(fields[i+1]) {
+				out = append(out, "<value>")
+				i++
+			}
+			continue
+		}
+		if isCommandIdentityWord(field) {
+			out = append(out, sanitizeTokenForClient(field))
+			continue
+		}
+		if !redactedTail {
+			out = append(out, "...")
+			redactedTail = true
+		}
+		break
 	}
-	return strings.Join(fields, " ")
+	return strings.Join(out, " ")
+}
+
+func isCommandIdentityWord(field string) bool {
+	key := strings.Trim(strings.ToLower(field), "\"'.,;:()[]{}<>")
+	switch key {
+	case "apply", "auth", "chat", "diff", "doctor", "exec", "help", "login", "logout", "mcp", "resume", "review", "run", "serve", "server", "status", "update", "version":
+		return true
+	default:
+		return false
+	}
 }
 
 func sanitizeTextForClient(text string) string {

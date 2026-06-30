@@ -522,6 +522,31 @@ func TestSanitizeTextForClientRedactsColonSeparatedPaths(t *testing.T) {
 	}
 }
 
+func TestSanitizeCommandForClientKeepsIdentityOnly(t *testing.T) {
+	root := t.TempDir()
+	workspacePath := filepath.Join(root, "workspace", "agentload")
+	sessionPath := filepath.Join(root, "sessions", "session.jsonl")
+	sessionFileURI := (&url.URL{Scheme: "file", Path: sessionPath}).String()
+	raw := filepath.Join(root, "bin", "codex") +
+		` -c model_providers.local.base_url="http://127.0.0.1:12345"` +
+		" --cwd=" + workspacePath +
+		" --source=" + sessionFileURI +
+		" --yolo resume " + sessionPath +
+		" write a private operator note"
+
+	got := sanitizeCommandForClient(raw)
+	for _, leaked := range []string{root, workspacePath, sessionPath, sessionFileURI, "http://127.0.0.1:12345", "private operator note"} {
+		if strings.Contains(got, leaked) {
+			t.Fatalf("expected command identity to redact %q, got %q", leaked, got)
+		}
+	}
+	for _, want := range []string{"codex", "-c <value>", "--cwd=<value>", "--source=<value>", "--yolo", "resume", "..."} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected command identity %q to contain %q", got, want)
+		}
+	}
+}
+
 func TestHandleSnapshotAPIRedactsFreshObserverConfigPaths(t *testing.T) {
 	originalDiscover := discoverLiveProcessesFunc
 	discoverLiveProcessesFunc = func(context.Context) ([]LiveProcess, []string) {
