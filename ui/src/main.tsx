@@ -3807,9 +3807,9 @@ function trendChart(window: TrendWindow | undefined, points: TrendPoint[], lane:
   });
   const primary = coordinates(primaryKey, primaryScaleMax);
   const secondary = coordinates(secondaryKey, secondaryScaleMax);
-  const visualTarget = compact ? 9 : 8;
+  const visualTarget = compact ? 6 : 5;
   const visualPrimary = trendVisualPoints(primary, selectedAt, visualTarget);
-  const visualSecondary = trendVisualPoints(secondary, selectedAt, Math.max(4, visualTarget - 5));
+  const visualSecondary = trendVisualPoints(secondary, selectedAt, Math.max(3, visualTarget - 3));
   const selected = selectedAt ? points.find((point) => point.at === selectedAt) ?? points[points.length - 1] : points[points.length - 1];
   const firstAt = points[0]?.at;
   const lastAt = points[points.length - 1]?.at;
@@ -3893,36 +3893,18 @@ function trendEmphasisPoints(points: TrendPlotPoint[], selectedAt?: string): Arr
 }
 
 function trendVisualPoints(points: TrendPlotPoint[], selectedAt: string | undefined, maxCount: number): TrendPlotPoint[] {
-  if (points.length <= maxCount) return softenTrendPoints(points, selectedAt);
-  const selectedPoint = selectedAt ? points.find((point) => point.at === selectedAt) : undefined;
-  const bucketCount = Math.max(3, Math.min(maxCount, points.length));
-  const buckets = Array.from({ length: bucketCount }, () => [] as TrendPlotPoint[]);
-  points.forEach((point, index) => {
-    const bucketIndex = Math.min(bucketCount - 1, Math.floor((index / Math.max(1, points.length - 1)) * bucketCount));
-    buckets[bucketIndex].push(point);
+  const softened = softenTrendPoints(points, selectedAt);
+  if (softened.length <= maxCount) return softened;
+  const count = Math.max(3, Math.min(maxCount, softened.length));
+  const first = softened[0];
+  const last = softened[softened.length - 1];
+  const span = Math.max(1, last.x - first.x);
+  const sampled = Array.from({ length: count }, (_, index) => {
+    const ratio = count === 1 ? .5 : index / (count - 1);
+    const x = first.x + span * ratio;
+    return interpolateTrendPoint(softened, x, index);
   });
-  const coarse = buckets.flatMap((bucket, index): TrendPlotPoint[] => {
-    if (!bucket.length) return [];
-    if (index === 0) return [bucket[0]];
-    if (index === buckets.length - 1) return [bucket[bucket.length - 1]];
-    if (selectedPoint && bucket.some((point) => point.at === selectedPoint.at)) return [selectedPoint];
-    const middle = bucket[Math.floor(bucket.length / 2)];
-    const average = bucket.reduce(
-      (total, point) => ({
-        x: total.x + point.x,
-        y: total.y + point.y,
-        value: total.value + point.value,
-      }),
-      { x: 0, y: 0, value: 0 },
-    );
-    return [{
-      at: middle.at,
-      x: average.x / bucket.length,
-      y: average.y / bucket.length,
-      value: average.value / bucket.length,
-    }];
-  });
-  return softenTrendPoints(dedupeTrendPlotPoints(coarse, selectedPoint), selectedAt);
+  return dedupeTrendPlotPoints(sampled);
 }
 
 function dedupeTrendPlotPoints(points: TrendPlotPoint[], selectedPoint?: TrendPlotPoint): TrendPlotPoint[] {
@@ -3938,14 +3920,34 @@ function softenTrendPoints(points: TrendPlotPoint[], selectedAt?: string): Trend
   const lastAt = points[points.length - 1]?.at;
   return points.map((point, index) => {
     if (point.at === firstAt || point.at === lastAt || point.at === selectedAt) return point;
+    const beforePrevious = points[index - 2] ?? points[index - 1] ?? point;
     const previous = points[index - 1] ?? point;
     const next = points[index + 1] ?? point;
+    const afterNext = points[index + 2] ?? points[index + 1] ?? point;
     return {
       ...point,
-      y: clampNumber((previous.y + point.y * 2 + next.y) / 4, 12, 92),
-      value: (previous.value + point.value * 2 + next.value) / 4,
+      y: clampNumber((beforePrevious.y + previous.y * 2 + point.y * 3 + next.y * 2 + afterNext.y) / 9, 12, 92),
+      value: (beforePrevious.value + previous.value * 2 + point.value * 3 + next.value * 2 + afterNext.value) / 9,
     };
   });
+}
+
+function interpolateTrendPoint(points: TrendPlotPoint[], x: number, index: number): TrendPlotPoint {
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (x <= first.x) return first;
+  if (x >= last.x) return last;
+  const rightIndex = points.findIndex((point) => point.x >= x);
+  const right = points[rightIndex] ?? last;
+  const left = points[Math.max(0, rightIndex - 1)] ?? first;
+  const span = Math.max(.001, right.x - left.x);
+  const ratio = clampNumber((x - left.x) / span, 0, 1);
+  return {
+    at: `visual-${index}-${x.toFixed(1)}`,
+    x,
+    y: left.y + (right.y - left.y) * ratio,
+    value: left.value + (right.value - left.value) * ratio,
+  };
 }
 
 function linePath(points: TrendPlotPoint[]): string {

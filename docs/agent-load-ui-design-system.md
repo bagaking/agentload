@@ -188,6 +188,12 @@ agent evidence.
   sampling stripes. Secondary series are contextual ghosts; avoid giving them
   their own visible point marks unless the secondary metric is the selected
   object.
+- If a trend still reads as visually fragmented, lower the visible anchor count
+  before adding more styling. The primary contour should come from a smoothed
+  low-frequency signal model, while exact bucket values stay in hit targets,
+  header readouts, and the inspector. Avoid dashed ghost lines, dense anchor
+  dots, or selected-bucket kinks that make the main plane look like raw sample
+  mechanics.
 - Trend charts should not compress count-based primary signals against
   percentage-based context metrics on a shared 0-100 scale. Scale mixed-unit
   series independently, keep the primary signal visually legible, and let the

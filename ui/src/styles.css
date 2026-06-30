@@ -9668,3 +9668,60 @@ body[data-view="popover"] .trend-suite.compact .trend-chart {
     linear-gradient(90deg, color-mix(in srgb, var(--ok) 3.4%, transparent), transparent 38%, transparent 76%, color-mix(in srgb, var(--run) 2.6%, transparent)),
     color-mix(in srgb, var(--fg) .4%, transparent);
 }
+
+/* Trend continuous-surface pass: the chart should read as one calm movement field, not exposed bucket mechanics. */
+.trend-chart {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--fg) .9%, transparent), transparent 66%),
+    linear-gradient(90deg, color-mix(in srgb, var(--ok) 3.2%, transparent), transparent 42%, transparent 78%, color-mix(in srgb, var(--run) 2.4%, transparent)),
+    color-mix(in srgb, var(--fg) .34%, transparent);
+}
+
+.trend-chart .grid {
+  opacity: .08;
+}
+
+.trend-chart .time-band {
+  opacity: .01;
+}
+
+.trend-chart .series.primary {
+  opacity: .94;
+  stroke-width: 4.8;
+}
+
+.trend-chart .series.secondary,
+.trend-lane.runtime .series.secondary,
+body[data-view="popover"] .trend-suite.compact .series.secondary {
+  opacity: .018;
+  stroke-dasharray: none;
+  stroke-width: .7;
+}
+
+.trend-chart .series-area {
+  opacity: .5;
+}
+
+.trend-lane.history .series-area.secondary,
+.trend-lane.runtime .series-area.secondary {
+  opacity: 0;
+}
+
+.trend-chart .trend-point.is-anchor {
+  opacity: 0;
+}
+
+.trend-chart .trend-point.is-selected {
+  opacity: .92;
+}
+
+.chart-axis-labels .axis-segment text {
+  opacity: .32;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-chart {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--fg) .8%, transparent), transparent 68%),
+    linear-gradient(90deg, color-mix(in srgb, var(--ok) 2.8%, transparent), transparent 44%, transparent 78%, color-mix(in srgb, var(--run) 2.2%, transparent)),
+    color-mix(in srgb, var(--fg) .3%, transparent);
+}
