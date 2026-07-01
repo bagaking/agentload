@@ -44,7 +44,10 @@ func TestDetectedTool(t *testing.T) {
 	}{
 		{command: `/usr/local/bin/codexL as-agent watch`, want: "codex"},
 		{command: `/usr/local/bin/traex --yolo resume 019f0abc`, want: "trae"},
+		{command: `/usr/local/bin/trae_cli --yolo resume 019f0abc`, want: "trae"},
+		{command: `/usr/local/bin/trae-cli --yolo resume 019f0abc`, want: "trae"},
 		{command: `/usr/local/bin/trae --yolo resume 019f0abc`, want: "trae"},
+		{command: `/usr/local/bin/traefik --config local.yaml`, want: ""},
 		{command: `/Applications/Codex.app/Contents/MacOS/Codex`, want: "codex"},
 		{command: `Codex Computer Use.app/Contents/MacOS/Codex Computer Use`, want: "codex"},
 		{command: `/Applications/Claude.app/Contents/MacOS/Claude`, want: "claude"},

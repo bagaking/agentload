@@ -1,0 +1,315 @@
+import { formatAge, formatPct, shortID, type Translate } from "./format";
+import type { RoleCounts, ToolSessionGroup } from "../types/app";
+import type { LiveSession, ProjectSnapshot, Snapshot } from "../types/snapshot";
+
+export type EvidenceItem = { label: string; value: string; tone?: string };
+export type SessionRole = "main" | "subagent" | "unknown";
+
+export function orderedProjects(snapshot: Snapshot): ProjectSnapshot[] {
+  return [...(snapshot.project_focus ?? [])].sort((a, b) => {
+    const activeDelta = (b.active_burst_count ?? 0) - (a.active_burst_count ?? 0);
+    if (activeDelta) return activeDelta;
+    const attentionDelta = (b.attention_share_pct ?? 0) - (a.attention_share_pct ?? 0);
+    if (attentionDelta) return attentionDelta;
+    return String(a.project || "").localeCompare(String(b.project || ""));
+  });
+}
+
+export function projectKey(project?: string): string {
+  return String(project || "unassigned").trim() || "unassigned";
+}
+
+export function sessionsForProject(snapshot: Snapshot, project: ProjectSnapshot): LiveSession[] {
+  const key = projectKey(project.project).toLowerCase();
+  return [...(snapshot.live_sessions ?? [])]
+    .filter((session) => projectKey(session.project).toLowerCase() === key)
+    .sort((a, b) => {
+      if (Number(Boolean(a.active_burst)) !== Number(Boolean(b.active_burst))) return Number(Boolean(b.active_burst)) - Number(Boolean(a.active_burst));
+      const ageA = typeof a.last_event_age_seconds === "number" ? a.last_event_age_seconds : Number.MAX_SAFE_INTEGER;
+      const ageB = typeof b.last_event_age_seconds === "number" ? b.last_event_age_seconds : Number.MAX_SAFE_INTEGER;
+      if (ageA !== ageB) return ageA - ageB;
+      return sessionIdentity(a).localeCompare(sessionIdentity(b));
+    });
+}
+
+export function projectRoleCounts(project: ProjectSnapshot, sessions: LiveSession[]): RoleCounts {
+  const counts: RoleCounts = {
+    main: project.main_agent_sessions ?? 0,
+    sub: project.subagent_sessions ?? 0,
+    unknown: project.unknown_role_sessions ?? 0,
+    total: project.session_count ?? 0,
+    activeMain: 0,
+    activeSub: 0,
+    activeUnknown: 0,
+    activeTotal: project.active_burst_count ?? 0,
+  };
+  if (sessions.length) {
+    counts.main = 0;
+    counts.sub = 0;
+    counts.unknown = 0;
+    counts.activeMain = 0;
+    counts.activeSub = 0;
+    counts.activeUnknown = 0;
+    sessions.forEach((session) => {
+      const role = normalizedRole(session.session_role);
+      if (role === "main") counts.main++;
+      else if (role === "subagent") counts.sub++;
+      else counts.unknown++;
+      if (session.active_burst) {
+        if (role === "main") counts.activeMain++;
+        else if (role === "subagent") counts.activeSub++;
+        else counts.activeUnknown++;
+      }
+    });
+    counts.total = sessions.length;
+    counts.activeTotal = counts.activeMain + counts.activeSub + counts.activeUnknown;
+  }
+  return counts;
+}
+
+export function projectEvidenceItems(t: Translate, project: ProjectSnapshot, compact: boolean): EvidenceItem[] {
+  const stale = project.stale_session_count ?? 0;
+  const recent = project.recent_session_count ?? 0;
+  const items = [
+    { label: t("attention"), value: formatPct(project.attention_share_pct), tone: (project.attention_share_pct ?? 0) > 50 ? "active" : "" },
+    { label: t("basis"), value: project.attention_basis || t("unavailable") },
+    { label: t("confidence"), value: confidenceLabel(t, project.confidence), tone: project.confidence === "high" ? "good" : "" },
+    { label: t("attribution"), value: confidenceLabel(t, project.project_attribution_confidence), tone: project.project_attribution_confidence === "high" ? "good" : "" },
+    { label: t("recent"), value: String(recent), tone: recent > 0 ? "active" : "" },
+    { label: t("stale"), value: String(stale), tone: stale > 0 ? "warn" : "" },
+    { label: t("lastEvent"), value: formatAge(project.last_event_age_seconds, t) },
+  ];
+  return compact ? items.slice(0, 4) : items;
+}
+
+export function buildToolSessionGroups(sessions: LiveSession[]): ToolSessionGroup[] {
+  const sorted = [...sessions].sort(compareSessionsByFreshness);
+  const byID = new Map<string, LiveSession>();
+  sorted.forEach((session) => {
+    if (session.session_id) byID.set(session.session_id, session);
+  });
+
+  type MutableToolSessionGroup = {
+    tool: string;
+    sessions: LiveSession[];
+    activeCount: number;
+    mains: LiveSession[];
+    childrenByParent: Map<string, LiveSession[]>;
+    unlinked: LiveSession[];
+    unknown: LiveSession[];
+  };
+
+  const groupMap = new Map<string, MutableToolSessionGroup>();
+  const ensureGroup = (tool?: string): MutableToolSessionGroup => {
+    const key = String(tool || "unknown").trim() || "unknown";
+    const existing = groupMap.get(key);
+    if (existing) return existing;
+    const group: MutableToolSessionGroup = {
+      tool: key,
+      sessions: [],
+      activeCount: 0,
+      mains: [],
+      childrenByParent: new Map(),
+      unlinked: [],
+      unknown: [],
+    };
+    groupMap.set(key, group);
+    return group;
+  };
+
+  sorted.forEach((session) => {
+    const group = ensureGroup(session.tool);
+    group.sessions.push(session);
+    if (session.active_burst) group.activeCount++;
+    if (normalizedRole(session.session_role) === "main") group.mains.push(session);
+  });
+
+  sorted.forEach((session) => {
+    const role = normalizedRole(session.session_role);
+    const group = ensureGroup(session.tool);
+    if (role === "subagent") {
+      const parent = session.parent_thread_id ? byID.get(session.parent_thread_id) : undefined;
+      if (parent && normalizedRole(parent.session_role) === "main") {
+        const parentGroup = ensureGroup(parent.tool || session.tool);
+        const parentKey = sessionIdentity(parent);
+        parentGroup.childrenByParent.set(parentKey, [...(parentGroup.childrenByParent.get(parentKey) ?? []), session]);
+      } else {
+        group.unlinked.push(session);
+      }
+      return;
+    }
+    if (role === "unknown") {
+      group.unknown.push(session);
+    }
+  });
+
+  return Array.from(groupMap.values())
+    .map((group) => ({
+      tool: group.tool,
+      sessions: group.sessions,
+      activeCount: group.activeCount,
+      linked: group.mains
+        .sort(compareSessionsByFreshness)
+        .map((parent) => ({
+          parent,
+          children: (group.childrenByParent.get(sessionIdentity(parent)) ?? []).sort(compareSessionsByFreshness),
+        })),
+      unlinked: group.unlinked.sort(compareSessionsByFreshness),
+      unknown: group.unknown.sort(compareSessionsByFreshness),
+    }))
+    .sort((a, b) => {
+      if (a.activeCount !== b.activeCount) return b.activeCount - a.activeCount;
+      if (a.sessions.length !== b.sessions.length) return b.sessions.length - a.sessions.length;
+      return a.tool.localeCompare(b.tool);
+    });
+}
+
+export function hiddenToolSessionCount(group: ToolSessionGroup, linkedLimit: number, childLimit: number, unlinkedLimit: number): number {
+  const visibleLinked = group.linked.slice(0, linkedLimit);
+  const hiddenLinked = group.linked.slice(linkedLimit).reduce((total, branch) => total + 1 + branch.children.length, 0);
+  const hiddenChildren = visibleLinked.reduce((total, branch) => total + Math.max(0, branch.children.length - childLimit), 0);
+  const visibleUnlinkedCount = Math.min(group.unlinked.length, unlinkedLimit);
+  const unknownLimit = Math.max(1, unlinkedLimit - visibleUnlinkedCount);
+  const hiddenUnlinked = Math.max(0, group.unlinked.length - visibleUnlinkedCount);
+  const hiddenUnknown = Math.max(0, group.unknown.length - unknownLimit);
+  return hiddenLinked + hiddenChildren + hiddenUnlinked + hiddenUnknown;
+}
+
+export function compareSessionsByFreshness(a: LiveSession, b: LiveSession): number {
+  if (Number(Boolean(a.active_burst)) !== Number(Boolean(b.active_burst))) return Number(Boolean(b.active_burst)) - Number(Boolean(a.active_burst));
+  const ageA = typeof a.last_event_age_seconds === "number" ? a.last_event_age_seconds : Number.MAX_SAFE_INTEGER;
+  const ageB = typeof b.last_event_age_seconds === "number" ? b.last_event_age_seconds : Number.MAX_SAFE_INTEGER;
+  if (ageA !== ageB) return ageA - ageB;
+  return sessionIdentity(a).localeCompare(sessionIdentity(b));
+}
+
+export function normalizedRole(role?: string): SessionRole {
+  const value = String(role || "").trim().toLowerCase();
+  if (value === "main" || value === "main_agent" || value === "user") return "main";
+  if (value === "sub" || value === "subagent" || value === "agent") return "subagent";
+  return "unknown";
+}
+
+export function roleLabel(t: Translate, role: SessionRole): string {
+  return role === "main" ? t("main") : role === "subagent" ? t("subagent") : t("unknown");
+}
+
+export function confidenceLabel(t: Translate, value?: string): string {
+  const raw = enumToken(value);
+  if (!raw) return t("unavailable");
+  if (raw === "high") return t("confidenceHigh");
+  if (raw === "medium") return t("confidenceMedium");
+  if (raw === "low") return t("confidenceLow");
+  if (raw === "unknown") return t("unknown");
+  return enumDisplayValue(value);
+}
+
+export function freshnessLabel(t: Translate, value?: string): string {
+  const raw = enumToken(value);
+  if (!raw) return t("unavailable");
+  if (raw === "active") return t("active");
+  if (raw === "idle") return t("idle");
+  if (raw === "stale") return t("stale");
+  if (raw === "fresh") return t("fresh");
+  if (raw === "unknown") return t("unknown");
+  return enumDisplayValue(value);
+}
+
+export function mappingMethodLabel(t: Translate, value?: string): string {
+  const raw = enumToken(value);
+  if (!raw) return t("unavailable");
+  if (raw === "transcript_path") return t("mappingTranscriptPath");
+  if (raw === "transcript_activity") return t("mappingTranscriptActivity");
+  if (raw === "command_hint") return t("mappingCommandHint");
+  if (raw === "fallback_session_id") return t("mappingFallbackSession");
+  if (raw === "unknown") return t("unknown");
+  return enumDisplayValue(value);
+}
+
+export function threadSourceLabel(t: Translate, value?: string): string {
+  const raw = enumToken(value);
+  if (!raw) return t("unavailable");
+  if (raw === "user") return t("threadSourceUser");
+  if (raw === "subagent") return t("subagent");
+  if (raw === "unknown") return t("unknown");
+  return enumDisplayValue(value);
+}
+
+export function roleHintLabel(t: Translate, value?: string): string {
+  const raw = enumToken(value);
+  if (!raw) return "";
+  if (raw === "thread_source") return t("threadSource");
+  if (raw === "agent_role") return t("role");
+  if (raw === "unknown") return t("unknown");
+  return enumDisplayValue(value);
+}
+
+export function agentRoleLabel(t: Translate, value?: string): string {
+  const raw = enumToken(value);
+  if (!raw) return "";
+  if (raw === "worker") return t("agentRoleWorker");
+  if (raw === "explorer") return t("agentRoleExplorer");
+  if (raw === "unknown") return t("unknown");
+  return enumDisplayValue(value);
+}
+
+export function sessionEvidenceItems(t: Translate, session: LiveSession, compact: boolean): EvidenceItem[] {
+  const role = normalizedRole(session.session_role);
+  const relationship = session.parent_thread_id ? shortID(session.parent_thread_id) : roleLabel(t, role);
+  const items = [
+    {
+      label: t("confidence"),
+      value: confidenceLabel(t, session.confidence || session.role_confidence),
+      tone: session.confidence === "high" || session.role_confidence === "high" ? "good" : "",
+    },
+    { label: t("mappingMethod"), value: mappingMethodLabel(t, session.mapping_method) },
+    { label: session.parent_thread_id ? t("parentThread") : t("threadSource"), value: session.thread_source ? threadSourceLabel(t, session.thread_source) : relationship },
+    { label: t("roleHint"), value: roleHintLabel(t, session.role_hint_source) || agentRoleLabel(t, session.agent_role) || session.agent_nickname || t("unavailable") },
+    { label: t("freshness"), value: freshnessLabel(t, session.freshness || (session.active_burst ? "active" : "idle")), tone: session.active_burst ? "active" : "" },
+  ];
+  if (!compact && typeof session.active_duration_seconds === "number") {
+    items.push({ label: t("activeDuration"), value: formatAge(session.active_duration_seconds, t), tone: session.active_burst ? "active" : "" });
+  }
+  return compact ? items.slice(0, 3) : items;
+}
+
+export function sessionIdentity(session: LiveSession): string {
+  return session.session_id || session.path || `${session.tool || "tool"}:${session.project || "project"}`;
+}
+
+export function sessionIDsText(t: Translate, ids?: string[]): string {
+  if (!ids?.length) return t("unavailable");
+  const preview = ids.slice(0, 3).map((id) => shortID(id)).join(", ");
+  return ids.length > 3 ? `${preview}, +${ids.length - 3}` : preview;
+}
+
+export function toolDisplayName(toolName?: string): string {
+  const raw = String(toolName || "").trim();
+  if (!raw) return "Unknown";
+  const key = raw.toLowerCase();
+  if (key === "codex" || key === "codexl") return "Codex";
+  if (key === "claude") return "Claude";
+  if (key === "trae" || key === "traex") return "Trae";
+  return raw;
+}
+
+export function toolIconName(toolName?: string): string {
+  const key = String(toolName || "").trim().toLowerCase();
+  if (key === "codex" || key === "codexl") return "codex";
+  if (key === "claude") return "claude";
+  if (key === "trae" || key === "traex") return "trae";
+  return "";
+}
+
+export function toolBadgeLabel(toolName?: string): string {
+  const raw = String(toolName || "?").trim();
+  return (raw.slice(0, 2) || "?").toUpperCase();
+}
+
+function enumToken(value?: string): string {
+  return String(value || "").trim().toLowerCase();
+}
+
+function enumDisplayValue(value?: string): string {
+  return String(value || "").trim().replace(/_/g, " ");
+}

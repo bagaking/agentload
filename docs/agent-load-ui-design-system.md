@@ -102,6 +102,13 @@ agent evidence.
 - Dashboard process ledgers may keep a compact initial row window, but any cap
   must expose the hidden count through an open/close overflow control; observed
   process totals must never imply a fuller table than the operator can reach.
+- Process counts are PID concurrency, not session concurrency. UI labels and
+  detail text should make unmapped process contribution visible so a high
+  process number is not mistaken for confirmed session load.
+- Tool process recognition should use explicit executable aliases for known
+  local agents and avoid broad prefix matches that pull in unrelated commands.
+  When a tool has multiple launchers, keep the alias set covered by backend
+  tests before changing chart or ledger copy.
 - Compact project rows should expose role mix, active/all session totals,
   process count, and observed tool coverage before expansion. Expansion is for
   relationship inspection, not the first moment when distribution becomes
@@ -148,6 +155,10 @@ agent evidence.
 - Expanded popover session rows should fit role, agent mark, host mark, short id,
   last activity age, process count, and confidence onto one scan line whenever
   the width allows it. Detail panels may carry longer evidence.
+- Session execution duration is an evidence detail, not a top-level concurrency
+  metric. Expose transcript-derived observed span and active burst duration in
+  session detail surfaces, and keep global header metrics focused on current
+  fresh/session/PID concurrency.
 - Row actions in compact session lists and dashboard session trees should attach
   to the identifier they act on. Copy controls belong inline with the session id,
   with hover/focus emphasis and reserved width, rather than as a separate grid
@@ -169,6 +180,15 @@ agent evidence.
 - Trend selections should expose the selected time and compact numeric readout
   first. Longer interpretation and trust explanations belong behind an
   accessible disclosure control, especially in the popover.
+- Shared trend inspectors should describe the selected bucket in user-facing
+  language such as "selected window"; reserve stricter terms like "exact
+  bucket" for chart hover or detail affordances where audit precision is the
+  main task.
+- Selected trend inspectors should express metric relationships instead of
+  presenting unrelated readout tiles. Runtime selection should read like
+  processes = mapped + unmatched with matched share as a status badge; history
+  selection should keep fresh movement and session count visibly paired for the
+  same selected window.
 - Trend selection readout cells follow the same translucent instrument rule as
   compact metric cells. They should sit above the chart as light material
   overlays rather than opaque cards that compete with plotted values.
@@ -176,14 +196,29 @@ agent evidence.
   first reading pass. Do not repeat bulky selected-bucket cards under every
   lane; use one shared inspector strip and keep per-lane readouts inline with
   the lane header.
-- Compact trend typography should stay readable at popover size. Range controls,
-  lane titles, sample metadata, selected time, and selected values need one
-  clear step above axis and callout microtext; do not shrink them to the point
-  where the chart becomes legible but its controls feel like footnotes.
+- Compact trend typography should match the denser current/status popover page:
+  suite titles, lane titles, range controls, header readouts, and sample
+  metadata stay compact so the chart plane remains the primary object.
 - Trend point selection labels inside the chart are audit annotations, not
   passive axis ticks. Keep the selected bucket time and marker label visibly
-  larger and higher contrast than ambient axis labels, while lane titles above
-  the plot can stay compact.
+  larger and higher contrast than ambient axis labels or lane header text.
+- Trend selection must not visually move the plotted signal. The visible trend
+  curve should be stable across selected buckets; the selected marker may snap
+  to the chosen bucket's x position, but it must anchor the exact primary metric
+  value for that bucket. If a smoothed contour is used for visual calm, the
+  selected bead is the truth layer and the contour is only the reading plane.
+- Compact trend lane readouts must label each numeric value. Avoid bare
+  slash-separated numbers such as `3 / 6` without nearby metric names; use
+  compact labels plus slightly larger tabular numerals. Prefer spacing and a
+  faint one-pixel separator over a visible slash so the group reads as a flat
+  instrument rather than formula text.
+- Compact trend readouts should distinguish the plotted primary metric from
+  context metrics. The primary value maps to the selected bead and gets the
+  strongest numeric weight; context values such as sessions or matched share
+  stay smaller and quieter so they are not mistaken for the plotted line.
+- Compact trend readout separators should stay subordinate to the chart. Any
+  vertical rail near the readout should be short, low-contrast, and one pixel
+  wide so it does not compete with the selected trend marker.
 - Trend charts should read as composed planes, not dense point clouds. Keep all
   samples interactive through invisible hit targets, but only render anchor and
   selected point marks by default; use smooth continuous strokes, quiet fills,
@@ -212,6 +247,27 @@ agent evidence.
   resorting to tiny dashed guides, dense point labels, or card-like callouts.
   In compact popover views, prefer the lane header and shared inspector for
   selected values so the chart plane stays continuous.
+- When click precision is hard to audit, use a crosshair anchored at the exact
+  selected bucket x/y position. The crosshair may replace the soft band in
+  dense views, but it must not imply interpolated values between buckets.
+- Candlestick-like trend marks are allowed when they clarify bucket-to-bucket
+  movement. Their body and wick must derive from adjacent real sampled buckets;
+  do not invent open/high/low/close data that the local evidence does not
+  contain.
+- Professional chart interaction should come from a maintained chart component
+  when the trend surface needs candlesticks, crosshair behavior, hover tracking,
+  or canvas stability. Keep Agent Load's code responsible for local evidence
+  adaptation, selected-bucket truth, and visual skinning, not for rebuilding a
+  full chart engine inline.
+- Trend chart hover must expose local observation meaning, not implementation
+  or library provenance. Browser `title` text and tooltip-like affordances on
+  the plot plane should show selected bucket time, primary metric, context
+  metrics, and bucket movement. Do not let attribution, package names, bundle
+  names, or generic "powered by" copy occupy the chart hover path.
+- Trend hover floats are part of the chart control layer, not content cards.
+  They must render above the chart canvas and adjacent lane surfaces without
+  clipping, keep to a compact two-row information shape, and use light material
+  accents rather than bulky opaque panels.
 - Sparse trend windows should still read as one composed signal plane. Do not
   split the visible primary series into many short disconnected strokes during
   ordinary low-sample periods; keep bucket precision in hit targets, axis labels,
@@ -220,6 +276,27 @@ agent evidence.
   planes, thin separators, short range controls, and dense click targets so the
   operator can compare lanes without scrolling through repeated explanation
   panels.
+- Trend project heatmaps share the active trend range. They should render as
+  one cut-plane area map, not a list of cards, and must use persisted local
+  history rather than sample or decorative data.
+- Heatmap area represents cumulative session-window investment for a project
+  within the selected range: each retained history sample contributes its
+  project session count. Heatmap metadata should also expose sampled window
+  count so users can distinguish intensity from evidence coverage.
+- Heatmap tiles may compress labels in tiny rectangles, but the strongest
+  numeric value remains the session-window count and the full project/window
+  detail stays available through hover/focus metadata.
+- Compressed heatmap tiles should degrade typography before allowing overlap:
+  hide secondary window labels first, reduce the primary numeral next, and only
+  remove the numeral entirely for dot-sized cells where hover is the only clean
+  detail surface.
+- Heatmap hover should use the app's own compact material tooltip, not the
+  browser's native `title` bubble. Native bubbles can obscure adjacent tiles and
+  make compressed labels look broken.
+- Heatmap containers may use an outer radius, but internal project rectangles
+  should read as Metro-style square cuts. Do not squeeze project labels into
+  small or shallow tiles; hide label/detail text and rely on hover/focus
+  metadata when there is not enough area for clean typography.
 - Trend axes should expose compact in-between time ticks when the chart has
   enough width. These segment labels should be faint ledges for reading rhythm,
   and should yield when they collide with the selected time label.
@@ -251,6 +328,9 @@ agent evidence.
   must be added to every supported locale with matching placeholder tokens.
 - Locale resources should stay in `ui/src/i18n.ts`; UI components should call
   the translation helper instead of embedding language-specific copy inline.
+- Large interactive domains should leave `ui/src/main.tsx` as composition and
+  state wiring. Reusable surfaces such as trend charts, heatmaps, inspectors,
+  and their domain types belong in focused modules under `ui/src/<domain>/`.
 - Review feedback is design input. If a critique exposes a reusable rule about
   hierarchy, density, contrast, controls, terminology, or auditability, fold it
   back into this document instead of leaving it only in chat history.

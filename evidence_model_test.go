@@ -562,6 +562,11 @@ func TestProjectLiveSessionsExposeFreshnessConfidenceAndProvenance(t *testing.T)
 				ProjectSource: "transcript_cwd",
 				FirstEvent:    now.Add(-10 * time.Minute),
 				LastEvent:     now.Add(-30 * time.Second),
+				EventTimes: []time.Time{
+					now.Add(-10 * time.Minute),
+					now.Add(-9 * time.Minute),
+					now.Add(-30 * time.Second),
+				},
 			},
 			Mapping: LiveSessionMapping{TranscriptPath: true, ParsedTranscriptID: true},
 		},
@@ -624,6 +629,9 @@ func TestProjectLiveSessionsExposeFreshnessConfidenceAndProvenance(t *testing.T)
 	}
 	if !traceSession.ActiveBurst {
 		t.Fatalf("expected active session to contribute to active burst")
+	}
+	if traceSession.ObservedDurationSeconds != 570 || traceSession.ActiveDurationSeconds != 75 || traceSession.IdleDurationSeconds != 495 {
+		t.Fatalf("unexpected session durations: observed=%d active=%d idle=%d", traceSession.ObservedDurationSeconds, traceSession.ActiveDurationSeconds, traceSession.IdleDurationSeconds)
 	}
 	if !slices.Equal(traceSession.Provenance, []string{"transcript_path"}) {
 		t.Fatalf("unexpected provenance: %#v", traceSession.Provenance)

@@ -459,6 +459,26 @@ func TestReplayHelpersUseObservedSamplesOnly(t *testing.T) {
 		t.Fatalf("expected alpha replay max/session counts from in-range samples only, got %+v", alpha)
 	}
 
+	heatmaps := buildProjectHeatmapWindows(samples, now)
+	oneDayHeatmap := requireProjectHeatmapWindow(t, heatmaps, "1D")
+	if oneDayHeatmap.SampleWindowCount != 3 || oneDayHeatmap.SessionWindowCount != 14 {
+		t.Fatalf("expected one-day heatmap to aggregate 3 windows and 14 session-windows, got %+v", oneDayHeatmap)
+	}
+	betaHeat := requireProjectHeatmapItem(t, oneDayHeatmap.Items, "beta")
+	if betaHeat.WindowCount != 3 || betaHeat.SessionWindowCount != 10 || betaHeat.ProcessWindowCount != 9 {
+		t.Fatalf("expected beta heatmap to count sampled windows and cumulative sessions/processes, got %+v", betaHeat)
+	}
+	if math.Abs(betaHeat.SharePct-71.4285714) > 0.01 {
+		t.Fatalf("expected beta heatmap share about 71.43, got %+v", betaHeat)
+	}
+	alphaHeat := requireProjectHeatmapItem(t, oneDayHeatmap.Items, "alpha")
+	if alphaHeat.WindowCount != 2 || alphaHeat.SessionWindowCount != 4 || alphaHeat.MaxSessionCount != 2 {
+		t.Fatalf("expected alpha heatmap to exclude old sample and retain max session count, got %+v", alphaHeat)
+	}
+	if oneDayHeatmap.Items[0].Project != "beta" {
+		t.Fatalf("expected heatmap items sorted by session-window investment, got %+v", oneDayHeatmap.Items)
+	}
+
 	growth := deriveSessionRuntimeGrowth(samples, from, to)
 	if growth.SampleCount != 3 {
 		t.Fatalf("expected 3 in-range samples for growth, got %+v", growth)
@@ -521,4 +541,26 @@ func requireHistoryProjectAllocation(t *testing.T, allocations []HistoryProjectA
 	}
 	t.Fatalf("missing allocation replay for %s", project)
 	return HistoryProjectAllocation{}
+}
+
+func requireProjectHeatmapWindow(t *testing.T, heatmaps ProjectHeatmapSet, label string) ProjectHeatmapWindow {
+	t.Helper()
+	for _, window := range heatmaps.Windows {
+		if window.Range == label {
+			return window
+		}
+	}
+	t.Fatalf("missing project heatmap window %s", label)
+	return ProjectHeatmapWindow{}
+}
+
+func requireProjectHeatmapItem(t *testing.T, items []ProjectHeatmapItem, project string) ProjectHeatmapItem {
+	t.Helper()
+	for _, item := range items {
+		if item.Project == project {
+			return item
+		}
+	}
+	t.Fatalf("missing project heatmap item %s", project)
+	return ProjectHeatmapItem{}
 }

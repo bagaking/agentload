@@ -75,6 +75,62 @@ func buildBurstSpans(traces map[string]*SessionTrace, idleGap, minInterval time.
 	return out
 }
 
+type sessionDurationMetrics struct {
+	FirstEventAt            time.Time
+	ObservedDurationSeconds int
+	ActiveDurationSeconds   int
+	IdleDurationSeconds     int
+}
+
+func buildSessionDurationMetrics(trace *SessionTrace, idleGap, minInterval time.Duration) (sessionDurationMetrics, bool) {
+	if trace == nil || trace.FirstEvent.IsZero() {
+		return sessionDurationMetrics{}, false
+	}
+	sessionSpan, ok := normalizedInterval(Interval{
+		Tool:      trace.Tool,
+		SessionID: trace.SessionID,
+		Path:      trace.Path,
+		Project:   trace.Project,
+		Start:     trace.FirstEvent,
+		End:       trace.LastEvent,
+	}, minInterval)
+	if !ok {
+		return sessionDurationMetrics{}, false
+	}
+
+	activeDuration := time.Duration(0)
+	if len(trace.EventTimes) > 0 {
+		for _, span := range buildBurstSpans(map[string]*SessionTrace{trace.Path + "\x00" + trace.SessionID: trace}, idleGap, minInterval) {
+			activeDuration += span.End.Sub(span.Start)
+		}
+	}
+	observedDuration := sessionSpan.End.Sub(sessionSpan.Start)
+	if activeDuration > observedDuration {
+		activeDuration = observedDuration
+	}
+	idleDuration := observedDuration - activeDuration
+	if idleDuration < 0 {
+		idleDuration = 0
+	}
+	return sessionDurationMetrics{
+		FirstEventAt:            sessionSpan.Start,
+		ObservedDurationSeconds: wholeSeconds(observedDuration),
+		ActiveDurationSeconds:   wholeSeconds(activeDuration),
+		IdleDurationSeconds:     wholeSeconds(idleDuration),
+	}, true
+}
+
+func wholeSeconds(duration time.Duration) int {
+	if duration <= 0 {
+		return 0
+	}
+	seconds := int(duration / time.Second)
+	if duration%time.Second != 0 {
+		seconds++
+	}
+	return seconds
+}
+
 func normalizedInterval(in Interval, minInterval time.Duration) (Interval, bool) {
 	if in.Start.IsZero() && in.End.IsZero() {
 		return Interval{}, false

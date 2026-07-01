@@ -784,6 +784,12 @@ func projectLiveSessions(sessions []LiveSession, idleGap time.Duration, now time
 			item.AgentNickname = strings.TrimSpace(session.Trace.AgentNickname)
 			item.RoleHintSource = strings.TrimSpace(session.Trace.RoleHintSource)
 			item.IndependentlyRun = session.Trace.IndependentlyRun
+			if duration, ok := buildSessionDurationMetrics(session.Trace, idleGap, 0); ok {
+				item.FirstEventAt = duration.FirstEventAt.Format(time.RFC3339)
+				item.ObservedDurationSeconds = duration.ObservedDurationSeconds
+				item.ActiveDurationSeconds = duration.ActiveDurationSeconds
+				item.IdleDurationSeconds = duration.IdleDurationSeconds
+			}
 		}
 		if observation.LastEventAt != "" {
 			item.LastEventAt = observation.LastEventAt

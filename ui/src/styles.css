@@ -2444,7 +2444,7 @@ body[data-view="popover"] .warning-banner {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, .82fr);
   gap: 1px;
-  overflow: hidden;
+  overflow: visible;
   background: var(--console-line-soft);
 }
 
@@ -2454,14 +2454,18 @@ body[data-view="popover"] .warning-banner {
 
 .trend-lane {
   display: grid;
+  position: relative;
+  z-index: 1;
   gap: 8px;
   min-width: 0;
+  overflow: visible;
   padding: 8px;
   border-radius: 0;
   background: color-mix(in srgb, var(--console-material-2) 64%, transparent);
 }
 
 .trend-lane.is-focused {
+  z-index: 8;
   background:
     linear-gradient(90deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent 46%),
     color-mix(in srgb, var(--console-material-2) 72%, transparent);
@@ -2496,6 +2500,7 @@ body[data-view="popover"] .warning-banner {
   display: inline-grid;
   justify-items: end;
   gap: 1px;
+  position: relative;
   max-width: 46%;
   min-width: 82px;
   min-height: 24px;
@@ -2507,6 +2512,18 @@ body[data-view="popover"] .warning-banner {
   color: var(--fg-muted);
   cursor: pointer;
   text-align: right;
+}
+
+.trend-lane-readout::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 5px;
+  bottom: 5px;
+  width: 1px;
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  opacity: .62;
+  pointer-events: none;
 }
 
 .trend-lane-readout span {
@@ -2528,6 +2545,52 @@ body[data-view="popover"] .warning-banner {
   font-weight: 820;
 }
 
+.trend-lane-readout strong.trend-readout-values {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 8px;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.trend-readout-values span {
+  display: inline-flex;
+  align-items: baseline;
+  position: relative;
+  gap: 3px;
+  min-width: 0;
+}
+
+.trend-readout-values span + span::before {
+  content: "";
+  position: absolute;
+  left: -4px;
+  top: 2px;
+  bottom: 2px;
+  width: 1px;
+  background: color-mix(in srgb, var(--fg-muted) 24%, transparent);
+}
+
+.trend-readout-values em {
+  color: color-mix(in srgb, var(--fg-faint) 88%, transparent);
+  font-family: var(--font-sans);
+  font-size: 7.8px;
+  font-style: normal;
+  font-weight: 780;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.trend-readout-values b {
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 12.8px;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+  line-height: .98;
+}
+
 .trend-lane-readout:hover,
 .trend-lane-readout:focus-visible,
 .trend-lane-readout[aria-pressed="true"] {
@@ -2536,7 +2599,7 @@ body[data-view="popover"] .warning-banner {
 }
 
 .trend-lane-readout[aria-pressed="true"] {
-  border-left-color: color-mix(in srgb, var(--accent) 46%, transparent);
+  border-left-color: transparent;
 }
 
 .trend-chart {
@@ -2550,6 +2613,70 @@ body[data-view="popover"] .warning-banner {
   width: 100%;
   height: 100%;
   cursor: pointer;
+}
+
+.trend-kline-chart {
+  position: relative;
+}
+
+.trend-kline-host {
+  position: absolute;
+  inset: 0;
+}
+
+.trend-kline-host table,
+.trend-kline-host canvas {
+  cursor: crosshair;
+}
+
+.trend-kline-selection {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.trend-kline-selection::before,
+.trend-kline-selection::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+.trend-kline-selection::before {
+  left: var(--kx);
+  top: 12px;
+  bottom: 20px;
+  width: 1px;
+  background: repeating-linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--fg) 56%, transparent) 0 3px,
+    transparent 3px 6px
+  );
+}
+
+.trend-kline-selection::after {
+  left: 8px;
+  right: 8px;
+  top: var(--ky);
+  height: 1px;
+  background: repeating-linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent-hi) 42%, transparent) 0 3px,
+    transparent 3px 6px
+  );
+}
+
+.trend-kline-selection-dot {
+  position: absolute;
+  left: var(--kx);
+  top: var(--ky);
+  width: 8px;
+  height: 8px;
+  border: 1.4px solid color-mix(in srgb, var(--fg) 92%, transparent);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-hi) 10%, transparent);
+  transform: translate(-50%, -50%);
 }
 
 .trend-chart .grid {
@@ -2739,6 +2866,221 @@ body[data-view="popover"] .warning-banner {
 
 .trend-inspector-details {
   padding-top: 0;
+}
+
+.project-heatmap {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.project-heatmap-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.project-heatmap-title {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 5px;
+  color: var(--fg);
+  font-size: 10.5px;
+  font-weight: 790;
+}
+
+.project-heatmap-title svg {
+  flex: 0 0 auto;
+  color: color-mix(in srgb, var(--accent-hi) 86%, var(--fg));
+}
+
+.project-heatmap-head em {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-faint);
+  font-family: var(--font-mono);
+  font-size: 9.3px;
+  font-style: normal;
+  font-weight: 740;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-heatmap-map {
+  position: relative;
+  height: 124px;
+  min-width: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 16% 8%, color-mix(in srgb, var(--accent-hi) 10%, transparent), transparent 28%),
+    linear-gradient(135deg, color-mix(in srgb, var(--fg) 3.2%, transparent), transparent 46%),
+    color-mix(in srgb, var(--console-material-2) 28%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--fg) 4%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--bg) 10%, transparent);
+}
+
+.project-heatmap-tile {
+  --heat-color: var(--accent);
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  display: grid;
+  align-content: end;
+  width: var(--w);
+  height: var(--h);
+  min-width: 0;
+  overflow: hidden;
+  padding: 7px 8px;
+  color: var(--fg);
+  clip-path: inset(.75px round 4px);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--heat-color) 44%, transparent), color-mix(in srgb, var(--heat-color) 13%, transparent) 62%, color-mix(in srgb, var(--fg) 4%, transparent)),
+    color-mix(in srgb, var(--console-material-2) 58%, transparent);
+}
+
+.project-heatmap-tile::before,
+.project-heatmap-tile::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.project-heatmap-tile::before {
+  background:
+    radial-gradient(circle at 12% 18%, color-mix(in srgb, var(--fg) 26%, transparent), transparent 28%),
+    linear-gradient(90deg, color-mix(in srgb, var(--bg) 20%, transparent), transparent 38%);
+  opacity: var(--heat-opacity);
+}
+
+.project-heatmap-tile::after {
+  box-shadow:
+    inset 1px 0 0 color-mix(in srgb, var(--fg) 7%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--fg) 9%, transparent);
+  opacity: .62;
+}
+
+.project-heatmap-tile.tone-0 { --heat-color: var(--accent-hi); }
+.project-heatmap-tile.tone-1 { --heat-color: var(--ok); }
+.project-heatmap-tile.tone-2 { --heat-color: var(--run); }
+.project-heatmap-tile.tone-3 { --heat-color: #7dd0c7; }
+.project-heatmap-tile.tone-4 { --heat-color: #9b8cff; }
+.project-heatmap-tile.tone-5 { --heat-color: #d7a86e; }
+
+.project-heatmap-label,
+.project-heatmap-tile b,
+.project-heatmap-tile small {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-heatmap-label {
+  color: color-mix(in srgb, var(--fg) 88%, transparent);
+  font-size: 9.4px;
+  font-weight: 790;
+}
+
+.project-heatmap-tile b {
+  margin-top: 1px;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 17px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  line-height: .95;
+}
+
+.project-heatmap-tile small {
+  margin-top: 2px;
+  color: color-mix(in srgb, var(--fg-faint) 88%, transparent);
+  font-family: var(--font-mono);
+  font-size: 8.2px;
+  font-weight: 730;
+}
+
+.project-heatmap-tile.is-small {
+  align-content: center;
+  justify-items: start;
+  padding: 5px 6px;
+}
+
+.project-heatmap-tile.is-small .project-heatmap-label {
+  font-size: 8.4px;
+}
+
+.project-heatmap-tile.is-small small {
+  display: none;
+}
+
+.project-heatmap-tile.is-small b {
+  font-size: 12.8px;
+  line-height: .9;
+}
+
+.project-heatmap-tile.is-tiny {
+  justify-items: center;
+  align-content: center;
+  padding: 3px;
+}
+
+.project-heatmap-tile.is-tiny .project-heatmap-label,
+.project-heatmap-tile.is-tiny small {
+  display: none;
+}
+
+.project-heatmap-tile.is-tiny b {
+  font-size: 11px;
+}
+
+.project-heatmap-tile.is-flat {
+  align-content: center;
+  justify-items: center;
+  padding: 2px 5px;
+}
+
+.project-heatmap-tile.is-flat .project-heatmap-label,
+.project-heatmap-tile.is-flat small {
+  display: none;
+}
+
+.project-heatmap-tile.is-flat b {
+  font-size: 13px;
+}
+
+.project-heatmap-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 9px;
+  color: var(--fg-muted);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--fg) 2.4%, transparent), transparent 52%),
+    color-mix(in srgb, var(--console-material-2) 18%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--fg) 4%, transparent);
+}
+
+.project-heatmap-empty span {
+  font-size: 10px;
+  font-weight: 760;
+}
+
+.project-heatmap-empty small {
+  overflow: hidden;
+  color: var(--fg-faint);
+  font-family: var(--font-mono);
+  font-size: 8.8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .trend-detail-toggle-row {
@@ -9235,78 +9577,95 @@ body[data-view="popover"] .popover-project-table .project-compact-cluster em {
   }
 }
 
-/* Compact trend typography pass: keep chart space while making controls readable. */
+/* Compact trend typography pass: keep chart space while matching the denser popover surfaces. */
 body[data-view="popover"] .trend-suite.compact {
   gap: 8px;
-  padding: 9px 11px 10px;
+  padding: 8px 10px 9px;
 }
 
 body[data-view="popover"] .trend-suite.compact .trend-suite-head {
   align-items: start;
-  gap: 10px;
+  gap: 8px;
   padding-bottom: 1px;
 }
 
 body[data-view="popover"] .trend-suite.compact .trend-suite-copy h2 {
-  font-size: 17px;
-  font-weight: 780;
-  line-height: 1.04;
+  font-size: 14.5px;
+  font-weight: 760;
+  line-height: 1.06;
 }
 
 body[data-view="popover"] .trend-suite.compact .trend-suite-copy span {
   max-width: 340px;
   color: color-mix(in srgb, var(--fg-muted) 88%, var(--fg));
-  font-size: 12px;
+  font-size: 10.6px;
   line-height: 1.16;
 }
 
 body[data-view="popover"] .trend-suite.compact .trend-range-switch {
-  min-height: 34px;
+  min-height: 30px;
   padding: 3px;
 }
 
 body[data-view="popover"] .trend-suite.compact .trend-range-switch button {
-  min-width: 42px;
-  min-height: 28px;
-  padding: 5px 9px;
-  font-size: 13px;
-  font-weight: 760;
+  min-width: 38px;
+  min-height: 24px;
+  padding: 4px 8px;
+  font-size: 11.2px;
+  font-weight: 730;
 }
 
 body[data-view="popover"] .trend-suite.compact .trend-lane {
   gap: 6px;
-  padding: 8px 10px 7px;
+  padding: 7px 9px 7px;
 }
 
 body[data-view="popover"] .trend-suite.compact .trend-lane-head {
-  min-height: 37px;
-  gap: 12px;
+  min-height: 32px;
+  gap: 10px;
 }
 
 body[data-view="popover"] .trend-suite.compact .trend-kicker {
-  font-size: 14.4px;
-  font-weight: 780;
-  line-height: 1.12;
+  font-size: 12.4px;
+  font-weight: 760;
+  line-height: 1.1;
 }
 
 body[data-view="popover"] .trend-suite.compact .trend-lane-head small {
   color: color-mix(in srgb, var(--fg-muted) 82%, var(--fg));
-  font-size: 11.5px;
+  font-size: 10.4px;
 }
 
 body[data-view="popover"] .trend-suite.compact .trend-lane-readout {
-  min-width: 102px;
-  min-height: 35px;
-  padding-left: 11px;
+  min-width: 128px;
+  min-height: 30px;
+  padding-left: 9px;
 }
 
 body[data-view="popover"] .trend-suite.compact .trend-lane-readout span {
-  font-size: 11.5px;
+  font-size: 10.1px;
 }
 
 body[data-view="popover"] .trend-suite.compact .trend-lane-readout strong {
-  font-size: 15px;
+  font-size: 13px;
   line-height: 1.1;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-readout-values {
+  gap: 5px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-readout-values span {
+  gap: 3px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-readout-values em {
+  font-size: 8.2px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-readout-values b {
+  font-size: 14.6px;
+  font-weight: 880;
 }
 
 body[data-view="popover"] .trend-suite.compact .trend-callout text {
@@ -9729,8 +10088,895 @@ body[data-view="popover"] .trend-suite.compact .trend-chart {
 /* Compact trend point-label pass: selected bucket labels should not be as tiny as passive axis ticks. */
 body[data-view="popover"] .trend-suite.compact .chart-axis-labels text.selected {
   fill: var(--fg);
-  font-size: 10px;
-  font-weight: 860;
+  font-size: 13.4px;
+  font-weight: 890;
+  paint-order: stroke fill;
   stroke: color-mix(in srgb, var(--bg) 92%, transparent);
-  stroke-width: 2.8px;
+  stroke-width: 3.6px;
+}
+
+/* Compact trend readout emphasis pass: labels explain the pair, numerals carry the scan weight. */
+body[data-view="popover"] .trend-suite.compact .trend-lane-readout {
+  min-width: 138px;
+  border-left-color: transparent;
+  padding-left: 13px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-lane-readout::before {
+  top: 6px;
+  bottom: 7px;
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  opacity: .54;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-readout-time {
+  color: color-mix(in srgb, var(--fg-faint) 84%, transparent);
+  font-weight: 720;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-readout-values {
+  gap: 10px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-readout-values em {
+  color: color-mix(in srgb, var(--fg-faint) 96%, var(--fg));
+  font-size: 8.6px;
+  font-weight: 800;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-readout-values span + span::before {
+  left: -5px;
+  background: color-mix(in srgb, var(--fg-muted) 20%, transparent);
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-readout-values b {
+  font-size: 15.6px;
+  font-weight: 890;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-inspector-anchor span,
+body[data-view="popover"] .trend-suite.compact .trend-inspector-metric b {
+  color: color-mix(in srgb, var(--fg-faint) 94%, var(--fg));
+  font-size: 8.4px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-inspector-anchor strong,
+body[data-view="popover"] .trend-suite.compact .trend-inspector-metric strong {
+  font-size: 12.2px;
+  font-weight: 820;
+}
+
+/* Compact trend truth layer: the selected bead anchors the exact primary metric. */
+body[data-view="popover"] .trend-suite.compact .trend-readout-value.primary em {
+  color: color-mix(in srgb, var(--fg-muted) 92%, var(--fg));
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-readout-value.primary b {
+  font-size: 16.4px;
+  font-weight: 910;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-readout-value.context {
+  opacity: .76;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-readout-value.context em {
+  color: color-mix(in srgb, var(--fg-faint) 82%, transparent);
+  font-size: 8px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-readout-value.context b {
+  color: color-mix(in srgb, var(--fg) 78%, transparent);
+  font-size: 12.6px;
+  font-weight: 780;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-readout-value.context::before {
+  background: color-mix(in srgb, var(--fg-muted) 15%, transparent);
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-selection-band {
+  fill: color-mix(in srgb, var(--accent-hi) 10%, transparent);
+  opacity: .32;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-chart .trend-point.is-selected {
+  opacity: 1;
+  stroke: color-mix(in srgb, var(--fg) 96%, transparent);
+  stroke-width: 1.9px;
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--accent-hi) 30%, transparent));
+}
+
+/* Project heatmap pass: one compact area map shares the selected trend range. */
+body[data-view="popover"] .trend-suite.compact {
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-lane {
+  grid-template-rows: auto minmax(108px, 1fr);
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-chart {
+  min-height: 108px;
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap {
+  gap: 4px;
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap-title {
+  font-size: 9.6px;
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap-head em {
+  font-size: 8.6px;
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap-map {
+  height: 88px;
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap-tile {
+  padding: 5px 6px;
+  clip-path: inset(.75px round 3.5px);
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap-label {
+  font-size: 8.4px;
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap-tile b {
+  font-size: 14.8px;
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap-tile small {
+  font-size: 7.6px;
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap-empty {
+  min-height: 44px;
+}
+
+/* Trend edge refinement: the signal should feel precise, not marker-thick. */
+.trend-chart .series.primary {
+  stroke-width: 3.35;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--accent-hi) 14%, transparent));
+}
+
+.trend-chart .series-area {
+  opacity: .42;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-chart .series.primary {
+  stroke-width: 3.15;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-chart .series-area {
+  opacity: .38;
+}
+
+/* Compact inspector numerals: labels stay small, numbers carry the scan weight. */
+.trend-inspector-anchor strong,
+.trend-inspector-metric strong {
+  font-size: 12.8px;
+  font-weight: 830;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-inspector-anchor strong,
+body[data-view="popover"] .trend-suite.compact .trend-inspector-metric strong {
+  font-size: 13.6px;
+  font-weight: 870;
+}
+
+/* Trend candlestick pass: bigger planes, truthful bucket movement, clear crosshair selection. */
+body[data-view="popover"] .popover-view-shell,
+body[data-view="popover"] .popover-view-panel.trend {
+  height: auto;
+  min-height: 100%;
+}
+
+body[data-view="popover"] .popover-view-panel.trend:not([hidden]) {
+  display: block;
+}
+
+body[data-view="popover"] .trend-suite.compact {
+  height: auto;
+  min-height: 0;
+  grid-template-rows: auto auto auto auto;
+  gap: 8px;
+  padding-bottom: 12px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-duo {
+  grid-template-rows: none;
+  grid-auto-rows: auto;
+  gap: 9px;
+  overflow: visible;
+  background: transparent;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-lane {
+  grid-template-rows: auto auto;
+  gap: 6px;
+  min-height: 0;
+  padding: 8px 9px 9px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-chart {
+  height: 138px;
+  min-height: 138px;
+}
+
+.trend-candles {
+  pointer-events: none;
+}
+
+.trend-candle line {
+  stroke: color-mix(in srgb, var(--fg-muted) 42%, transparent);
+  stroke-linecap: round;
+  stroke-width: .9;
+}
+
+.trend-candle rect {
+  fill: color-mix(in srgb, var(--accent-hi) 34%, transparent);
+  stroke: color-mix(in srgb, var(--fg) 16%, transparent);
+  stroke-width: .7;
+}
+
+.trend-lane.history .trend-candle.is-rising rect {
+  fill: color-mix(in srgb, var(--ok) 45%, transparent);
+}
+
+.trend-lane.history .trend-candle.is-falling rect {
+  fill: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.trend-lane.runtime .trend-candle.is-rising rect {
+  fill: color-mix(in srgb, var(--run) 44%, transparent);
+}
+
+.trend-lane.runtime .trend-candle.is-falling rect {
+  fill: color-mix(in srgb, var(--accent-hi) 26%, transparent);
+}
+
+.trend-candle.is-selected line {
+  stroke: color-mix(in srgb, var(--fg) 72%, transparent);
+  stroke-width: 1.25;
+}
+
+.trend-candle.is-selected rect {
+  fill: color-mix(in srgb, var(--fg) 58%, transparent);
+  stroke: color-mix(in srgb, var(--fg) 92%, transparent);
+}
+
+.trend-crosshair {
+  pointer-events: none;
+}
+
+.trend-crosshair line {
+  fill: none;
+  stroke: color-mix(in srgb, var(--fg) 58%, transparent);
+  stroke-dasharray: 3 3;
+  stroke-linecap: round;
+  stroke-width: .85;
+}
+
+.trend-crosshair line.y {
+  stroke: color-mix(in srgb, var(--accent-hi) 44%, transparent);
+}
+
+.trend-crosshair circle {
+  fill: color-mix(in srgb, var(--bg) 72%, transparent);
+  stroke: color-mix(in srgb, var(--fg) 92%, transparent);
+  stroke-width: 1.45;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-chart .series.primary {
+  stroke-width: 2.65;
+  opacity: .84;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-chart .series-area {
+  opacity: .28;
+}
+
+/* Metro heatmap pass: rounded outer sheet, square internal tiles, no squeezed labels. */
+body[data-view="popover"] .trend-suite.compact .project-heatmap-map {
+  height: 100px;
+  border-radius: 8px;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--fg) 3%, transparent), transparent 48%),
+    color-mix(in srgb, var(--console-material-2) 34%, transparent);
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap-tile {
+  align-content: end;
+  padding: 6px 7px;
+  clip-path: inset(1px round 0);
+  background: color-mix(in srgb, var(--heat-color) var(--heat-mix), var(--console-material-2));
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap-tile::before {
+  opacity: .08;
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap-tile::after {
+  box-shadow:
+    inset 1px 0 0 color-mix(in srgb, var(--bg) 30%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--bg) 28%, transparent);
+  opacity: .9;
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap-label {
+  color: color-mix(in srgb, var(--fg) 90%, transparent);
+  font-size: 8.1px;
+  font-weight: 820;
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap-tile b {
+  font-size: 13.8px;
+  font-weight: 900;
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap-tile small {
+  font-size: 7.2px;
+  font-weight: 780;
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.is-small .project-heatmap-label {
+  display: none;
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.is-small {
+  align-content: center;
+  justify-items: center;
+  padding: 2px 4px;
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.is-small small {
+  display: none;
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.is-small b {
+  max-width: 100%;
+  font-size: 12.1px;
+  line-height: .9;
+  text-align: center;
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.is-flat {
+  align-content: center;
+  justify-items: center;
+  padding: 2px 4px;
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.is-flat .project-heatmap-label,
+body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.is-flat small,
+body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.is-dot .project-heatmap-label,
+body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.is-dot b,
+body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.is-dot small {
+  display: none;
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.is-flat b {
+  max-width: 100%;
+  font-size: 10.2px;
+  line-height: .88;
+  text-align: center;
+}
+
+.project-heatmap-tile.label-value,
+body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.label-value {
+  align-content: center;
+  justify-items: center;
+  padding: 2px 4px;
+}
+
+.project-heatmap-tile.label-value .project-heatmap-label,
+.project-heatmap-tile.label-value small,
+.project-heatmap-tile.label-mini .project-heatmap-label,
+.project-heatmap-tile.label-mini small,
+.project-heatmap-tile.label-none .project-heatmap-label,
+.project-heatmap-tile.label-none b,
+.project-heatmap-tile.label-none small {
+  display: none !important;
+}
+
+.project-heatmap-tile.label-value b,
+body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.label-value b {
+  max-width: 100%;
+  font-size: 12.2px;
+  line-height: .88;
+  text-align: center;
+}
+
+.project-heatmap-tile.label-mini,
+body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.label-mini {
+  align-content: center;
+  justify-items: center;
+  padding: 1px 3px;
+}
+
+.project-heatmap-tile.label-mini b,
+body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.label-mini b {
+  max-width: 100%;
+  font-size: 9.6px;
+  line-height: .86;
+  opacity: .9;
+  text-align: center;
+}
+
+.project-heatmap-tile.label-none::before {
+  opacity: calc(var(--heat-opacity) + .08);
+}
+
+.project-heatmap-tooltip {
+  position: absolute;
+  left: var(--tip-x);
+  top: var(--tip-y);
+  z-index: 12;
+  display: grid;
+  gap: 6px;
+  width: min(176px, calc(100% - 20px));
+  padding: 8px 9px 7px;
+  pointer-events: none;
+  border-radius: 7px;
+  color: var(--fg);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--fg) 5%, transparent), transparent 44%),
+    color-mix(in srgb, var(--console-material) 94%, var(--bg));
+  box-shadow:
+    0 14px 28px color-mix(in srgb, var(--bg) 42%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--fg) 10%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--fg) 10%, transparent);
+  transform: none;
+}
+
+.project-heatmap-tooltip strong {
+  overflow: hidden;
+  color: var(--fg);
+  font-size: 11.4px;
+  font-weight: 850;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-heatmap-tooltip div {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.project-heatmap-tooltip span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.project-heatmap-tooltip b {
+  overflow: hidden;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 12.2px;
+  font-weight: 880;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-heatmap-tooltip em {
+  overflow: hidden;
+  color: color-mix(in srgb, var(--fg-faint) 88%, transparent);
+  font-size: 7.5px;
+  font-style: normal;
+  font-weight: 760;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Professional chart skin: the canvas stays the truth layer; DOM chrome adds
+   only low-noise reading aids and metric hover detail. */
+.trend-kline-chart {
+  position: relative;
+  isolation: isolate;
+  overflow: visible;
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--fg) 4%, transparent), transparent 34%),
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 7%, transparent), transparent 42%, color-mix(in srgb, var(--run) 5%, transparent)),
+    repeating-linear-gradient(0deg, transparent 0 31px, color-mix(in srgb, var(--fg) 5%, transparent) 31px 32px),
+    color-mix(in srgb, var(--console-material-2) 56%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--fg) 7%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--fg) 10%, transparent);
+}
+
+.trend-kline-chart::before,
+.trend-kline-chart::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.trend-kline-chart::before {
+  background:
+    linear-gradient(90deg, transparent 0 9%, color-mix(in srgb, var(--fg) 5%, transparent) 9% calc(9% + 1px), transparent calc(9% + 1px) 100%),
+    linear-gradient(90deg, transparent 0 50%, color-mix(in srgb, var(--fg) 4%, transparent) 50% calc(50% + 1px), transparent calc(50% + 1px) 100%),
+    linear-gradient(90deg, transparent 0 91%, color-mix(in srgb, var(--fg) 5%, transparent) 91% calc(91% + 1px), transparent calc(91% + 1px) 100%);
+  opacity: .9;
+}
+
+.trend-kline-chart::after {
+  inset: auto 10px 10px 10px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--fg) 13%, transparent), transparent);
+  opacity: .82;
+}
+
+.trend-kline-host {
+  z-index: 1;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.trend-kline-host table,
+.trend-kline-host canvas {
+  cursor: crosshair;
+}
+
+.trend-kline-selection {
+  z-index: 2;
+}
+
+.trend-kline-selection::before {
+  left: var(--kx);
+  top: 10px;
+  bottom: 18px;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--fg) 42%, transparent) 14%, color-mix(in srgb, var(--fg) 42%, transparent) 86%, transparent);
+}
+
+.trend-kline-selection::after {
+  left: 9px;
+  right: 9px;
+  top: var(--ky);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent-hi) 34%, transparent) 16%, color-mix(in srgb, var(--accent-hi) 34%, transparent) 84%, transparent);
+}
+
+.trend-kline-selection-dot {
+  width: 7px;
+  height: 7px;
+  border: 1px solid color-mix(in srgb, var(--fg) 88%, transparent);
+  background: color-mix(in srgb, var(--bg) 76%, transparent);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--bg) 72%, transparent),
+    0 0 0 5px color-mix(in srgb, var(--accent-hi) 10%, transparent);
+}
+
+.trend-kline-tooltip {
+  position: absolute;
+  z-index: 80;
+  left: var(--tip-x);
+  top: var(--tip-y);
+  width: min(152px, calc(100% - 18px));
+  padding: 6px 7px 7px;
+  border: 1px solid color-mix(in srgb, var(--fg) 8%, transparent);
+  border-radius: 7px;
+  background:
+    radial-gradient(circle at 12px 10px, color-mix(in srgb, var(--accent-hi) 16%, transparent), transparent 34px),
+    linear-gradient(135deg, color-mix(in srgb, var(--fg) 6%, transparent), transparent 48%),
+    color-mix(in srgb, var(--console-material) 90%, transparent);
+  box-shadow:
+    0 16px 36px color-mix(in srgb, var(--bg) 40%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--bg) 18%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--fg) 10%, transparent);
+  backdrop-filter: blur(20px) saturate(1.2);
+  pointer-events: none;
+}
+
+.trend-kline-tooltip::before {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 7px;
+  bottom: 7px;
+  width: 1px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--accent-hi), color-mix(in srgb, var(--run) 62%, transparent));
+  opacity: .62;
+}
+
+.trend-kline-tooltip.align-left.is-above { transform: translate(8px, calc(-100% - 8px)); }
+.trend-kline-tooltip.align-left.is-below { transform: translate(8px, 8px); }
+.trend-kline-tooltip.align-right.is-above { transform: translate(calc(-100% - 8px), calc(-100% - 8px)); }
+.trend-kline-tooltip.align-right.is-below { transform: translate(calc(-100% - 8px), 8px); }
+
+.trend-kline-tooltip-kicker {
+  display: block;
+  margin-left: 8px;
+  color: color-mix(in srgb, var(--fg-faint) 88%, transparent);
+  font-size: 7.6px;
+  font-weight: 820;
+  line-height: 1;
+}
+
+.trend-kline-tooltip-time {
+  display: block;
+  margin-top: 3px;
+  margin-left: 8px;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 860;
+  line-height: 1;
+}
+
+.trend-kline-tooltip-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 7px;
+  margin-left: 8px;
+}
+
+.trend-kline-tooltip-grid span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.trend-kline-tooltip-grid b {
+  overflow: hidden;
+  color: color-mix(in srgb, var(--fg-faint) 86%, transparent);
+  font-size: 7.3px;
+  font-weight: 760;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trend-kline-tooltip-grid em {
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 12.2px;
+  font-style: normal;
+  font-weight: 880;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-chart.trend-kline-chart {
+  height: 148px;
+  min-height: 148px;
+}
+
+:root[data-theme="light"] .trend-kline-chart {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--fg) 3%, transparent), transparent 38%),
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 5%, transparent), transparent 44%, color-mix(in srgb, var(--run) 4%, transparent)),
+    repeating-linear-gradient(0deg, transparent 0 31px, color-mix(in srgb, var(--fg) 6%, transparent) 31px 32px),
+    color-mix(in srgb, var(--console-material-2) 74%, white);
+}
+
+:root[data-theme="light"] .trend-kline-tooltip {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--fg) 4%, transparent), transparent 42%),
+    color-mix(in srgb, var(--console-material) 92%, white);
+  box-shadow:
+    0 14px 30px color-mix(in srgb, var(--fg) 10%, transparent),
+    inset 0 1px 0 color-mix(in srgb, white 76%, transparent);
+}
+
+/* Selected trend audit strip: clarify metric relationships without turning
+   the inspector into a row of unrelated cards. */
+.trend-inspector-lead {
+  grid-template-columns: minmax(156px, .42fr) minmax(0, 1fr) 30px;
+  gap: 0;
+  overflow: visible;
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 9%, transparent), transparent 38%),
+    color-mix(in srgb, var(--console-material-2) 36%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--fg) 5%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--fg) 8%, transparent);
+}
+
+.trend-inspector-anchor {
+  gap: 4px;
+  min-height: 54px;
+  padding: 9px 12px 9px 13px;
+  background: transparent;
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--accent) 42%, transparent);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.trend-inspector-anchor::after {
+  display: none;
+}
+
+.trend-inspector-anchor span {
+  color: color-mix(in srgb, var(--fg-faint) 88%, transparent);
+  font-size: 9.4px;
+  font-weight: 820;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.trend-inspector-anchor strong {
+  color: var(--fg);
+  font-size: 18px;
+  font-weight: 880;
+  line-height: 1.05;
+}
+
+.trend-inspector-readouts {
+  display: grid;
+  align-items: center;
+  min-width: 0;
+  padding: 7px 8px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--fg) 4%, transparent), transparent 70%),
+    color-mix(in srgb, var(--bg) 5%, transparent);
+}
+
+.trend-inspector-equation {
+  display: grid;
+  grid-template-columns: minmax(58px, .92fr) 12px minmax(58px, .9fr) 12px minmax(64px, .96fr) minmax(76px, .82fr);
+  align-items: end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.trend-inspector-equation.history {
+  grid-template-columns: repeat(2, minmax(82px, 1fr));
+  gap: 10px;
+  max-width: 280px;
+}
+
+.trend-inspector-equation i {
+  align-self: center;
+  color: color-mix(in srgb, var(--fg-faint) 58%, transparent);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 820;
+  text-align: center;
+}
+
+.trend-inspector-unit,
+.trend-inspector-ratio {
+  display: grid;
+  position: relative;
+  min-width: 0;
+  gap: 3px;
+}
+
+.trend-inspector-unit::before,
+.trend-inspector-ratio::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: -5px;
+  width: 18px;
+  height: 1px;
+  background: color-mix(in srgb, currentColor 44%, transparent);
+}
+
+.trend-inspector-unit.primary { color: var(--run); }
+.trend-inspector-unit.mapped { color: var(--ok); }
+.trend-inspector-unit.unmatched { color: var(--accent); }
+.trend-inspector-unit.context { color: var(--accent-hi); }
+
+.trend-inspector-unit b,
+.trend-inspector-ratio b {
+  overflow: hidden;
+  color: color-mix(in srgb, var(--fg-faint) 86%, transparent);
+  font-size: 9.2px;
+  font-weight: 760;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trend-inspector-unit strong,
+.trend-inspector-ratio strong {
+  overflow: hidden;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trend-inspector-ratio {
+  align-self: stretch;
+  justify-content: center;
+  padding: 6px 8px 5px;
+  border-radius: 7px;
+  color: var(--accent-hi);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, currentColor 12%, transparent), transparent 55%),
+    color-mix(in srgb, var(--console-material) 42%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 16%, transparent);
+}
+
+.trend-inspector-ratio::before {
+  display: none;
+}
+
+.trend-inspector-ratio strong {
+  font-size: 17px;
+}
+
+.trend-inspector .trend-detail-toggle {
+  align-self: stretch;
+  min-width: 30px;
+  border-left: 1px solid color-mix(in srgb, var(--fg) 7%, transparent);
+  background: transparent;
+  box-shadow: none;
+  color: color-mix(in srgb, var(--fg-faint) 90%, transparent);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-inspector-lead {
+  grid-template-columns: minmax(124px, .42fr) minmax(0, 1fr) 28px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-inspector-anchor {
+  min-height: 46px;
+  padding: 7px 9px 7px 10px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-inspector-anchor span {
+  font-size: 8.4px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-inspector-anchor strong {
+  font-size: 14.5px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-inspector-readouts {
+  padding: 6px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-inspector-equation {
+  grid-template-columns: minmax(42px, .82fr) 8px minmax(42px, .76fr) 8px minmax(45px, .8fr) minmax(56px, .7fr);
+  gap: 4px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-inspector-equation.history {
+  grid-template-columns: repeat(2, minmax(56px, 1fr));
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-inspector-equation i {
+  font-size: 10px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-inspector-unit b,
+body[data-view="popover"] .trend-suite.compact .trend-inspector-ratio b {
+  font-size: 7.2px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-inspector-unit strong {
+  font-size: 14.5px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-inspector-ratio {
+  padding: 5px 5px 4px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-inspector-ratio strong {
+  font-size: 12.8px;
 }

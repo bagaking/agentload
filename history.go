@@ -370,6 +370,113 @@ func deriveProjectAllocation(samples []HistorySample, from, to time.Time) []Hist
 	return out
 }
 
+func buildProjectHeatmapWindows(samples []HistorySample, now time.Time) ProjectHeatmapSet {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	out := ProjectHeatmapSet{Windows: make([]ProjectHeatmapWindow, 0, len(defaultTrendSpecs))}
+	for _, spec := range defaultTrendSpecs {
+		from := now.Add(-spec.span)
+		filtered := filterHistorySamplesByRange(samples, from, now)
+		items, sessionWindowCount := deriveProjectHeatmapItems(filtered)
+		out.Windows = append(out.Windows, ProjectHeatmapWindow{
+			Range:              spec.label,
+			From:               from.Format(time.RFC3339),
+			To:                 now.Format(time.RFC3339),
+			HistoryComplete:    historySamplesCoverRange(samples, from),
+			SampleWindowCount:  len(filtered),
+			SessionWindowCount: sessionWindowCount,
+			Items:              items,
+		})
+	}
+	return out
+}
+
+func deriveProjectHeatmapItems(samples []HistorySample) ([]ProjectHeatmapItem, int) {
+	type aggregate struct {
+		ProjectHeatmapItem
+	}
+	aggregates := map[string]*aggregate{}
+	totalSessionWindows := 0
+	totalProjectWindows := 0
+	for _, sample := range samples {
+		perWindow := map[string]HistoryProjectSnapshot{}
+		for _, project := range sample.Projects {
+			name := strings.TrimSpace(project.Project)
+			if name == "" {
+				continue
+			}
+			current := perWindow[name]
+			current.Project = name
+			current.SessionCount += project.SessionCount
+			current.ActiveBurstCount += project.ActiveBurstCount
+			current.ProcessCount += project.ProcessCount
+			perWindow[name] = current
+		}
+		for name, project := range perWindow {
+			entry := aggregates[name]
+			if entry == nil {
+				entry = &aggregate{ProjectHeatmapItem: ProjectHeatmapItem{Project: name}}
+				aggregates[name] = entry
+			}
+			entry.WindowCount++
+			entry.SessionWindowCount += project.SessionCount
+			entry.ProcessWindowCount += project.ProcessCount
+			entry.ActiveWindowCount += project.ActiveBurstCount
+			if project.SessionCount > entry.MaxSessionCount {
+				entry.MaxSessionCount = project.SessionCount
+			}
+			if project.ProcessCount > entry.MaxProcessCount {
+				entry.MaxProcessCount = project.ProcessCount
+			}
+			totalSessionWindows += project.SessionCount
+			totalProjectWindows++
+		}
+	}
+	out := make([]ProjectHeatmapItem, 0, len(aggregates))
+	for _, entry := range aggregates {
+		if entry.WindowCount > 0 {
+			entry.AverageSessions = float64(entry.SessionWindowCount) / float64(entry.WindowCount)
+		}
+		if totalSessionWindows > 0 {
+			entry.SharePct = float64(entry.SessionWindowCount) / float64(totalSessionWindows) * 100
+		} else if totalProjectWindows > 0 {
+			entry.SharePct = float64(entry.WindowCount) / float64(totalProjectWindows) * 100
+		}
+		out = append(out, entry.ProjectHeatmapItem)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].SessionWindowCount == out[j].SessionWindowCount {
+			if out[i].WindowCount == out[j].WindowCount {
+				if out[i].ProcessWindowCount == out[j].ProcessWindowCount {
+					return out[i].Project < out[j].Project
+				}
+				return out[i].ProcessWindowCount > out[j].ProcessWindowCount
+			}
+			return out[i].WindowCount > out[j].WindowCount
+		}
+		return out[i].SessionWindowCount > out[j].SessionWindowCount
+	})
+	return out, totalSessionWindows
+}
+
+func historySamplesCoverRange(samples []HistorySample, from time.Time) bool {
+	if from.IsZero() {
+		return false
+	}
+	earliest := time.Time{}
+	for _, sample := range samples {
+		at, ok := historySampleTime(sample)
+		if !ok {
+			continue
+		}
+		if earliest.IsZero() || at.Before(earliest) {
+			earliest = at
+		}
+	}
+	return !earliest.IsZero() && !earliest.After(from)
+}
+
 func deriveSessionRuntimeGrowth(samples []HistorySample, from, to time.Time) HistoryGrowth {
 	filtered := filterHistorySamplesByRange(samples, from, to)
 	if len(filtered) == 0 {

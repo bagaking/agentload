@@ -248,6 +248,7 @@ func sanitizeSnapshotForClient(snapshot Snapshot) Snapshot {
 	snapshot.TranscriptStats.Errors = sanitizeTextListForClient(snapshot.TranscriptStats.Errors)
 	snapshot.CoordinationRisk = sanitizeCoordinationRiskForClient(snapshot.CoordinationRisk)
 	snapshot.ProjectFocus = sanitizeProjectFocusForClient(snapshot.ProjectFocus)
+	snapshot.ProjectHeatmaps = sanitizeProjectHeatmapsForClient(snapshot.ProjectHeatmaps)
 	snapshot.CandidateWorkitems = sanitizeCandidateWorkitemsForClient(snapshot.CandidateWorkitems)
 	snapshot.LiveProcesses = sanitizeLiveProcessesForClient(snapshot.LiveProcesses)
 	snapshot.LiveSessions = sanitizeLiveSessionsForClient(snapshot.LiveSessions)
@@ -266,6 +267,21 @@ func sanitizeCoordinationRiskForClient(risk CoordinationRiskSnapshot) Coordinati
 	}
 	risk.Signals = signals
 	return risk
+}
+
+func sanitizeProjectHeatmapsForClient(heatmaps ProjectHeatmapSet) ProjectHeatmapSet {
+	if len(heatmaps.Windows) == 0 {
+		return heatmaps
+	}
+	windows := append([]ProjectHeatmapWindow(nil), heatmaps.Windows...)
+	for i := range windows {
+		windows[i].Items = append([]ProjectHeatmapItem(nil), windows[i].Items...)
+		for j := range windows[i].Items {
+			windows[i].Items[j].Project = sanitizeProjectNameForClient(windows[i].Items[j].Project)
+		}
+	}
+	heatmaps.Windows = windows
+	return heatmaps
 }
 
 func sanitizeProjectFocusForClient(projects []ProjectSnapshot) []ProjectSnapshot {
@@ -575,7 +591,7 @@ func normalizeToolIconName(raw string) string {
 	switch key {
 	case "codex", "codexl", "com.openai.codex":
 		return "codex"
-	case "trae", "traex":
+	case "trae", "traex", "trae-cli", "trae_cli", "traecli":
 		return "trae"
 	case "karp", "warp", "warposs", "warp-oss":
 		return "karp"

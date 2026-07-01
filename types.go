@@ -16,6 +16,7 @@ type Snapshot struct {
 	HistoricPeaks      HistoricPeaks               `json:"historic_peaks"`
 	Trends             TrendSet                    `json:"trends"`
 	RealtimeTrends     TrendSet                    `json:"realtime_trends"`
+	ProjectHeatmaps    ProjectHeatmapSet           `json:"project_heatmaps"`
 	History            SnapshotHistory             `json:"history"`
 	TranscriptStats    TranscriptStats             `json:"transcript_stats"`
 	ProjectFocus       []ProjectSnapshot           `json:"project_focus"`
@@ -139,6 +140,32 @@ type PeakPoint struct {
 
 type TrendSet struct {
 	Windows []TrendWindow `json:"windows"`
+}
+
+type ProjectHeatmapSet struct {
+	Windows []ProjectHeatmapWindow `json:"windows"`
+}
+
+type ProjectHeatmapWindow struct {
+	Range              string               `json:"range"`
+	From               string               `json:"from"`
+	To                 string               `json:"to"`
+	HistoryComplete    bool                 `json:"history_complete"`
+	SampleWindowCount  int                  `json:"sample_window_count"`
+	SessionWindowCount int                  `json:"session_window_count"`
+	Items              []ProjectHeatmapItem `json:"items"`
+}
+
+type ProjectHeatmapItem struct {
+	Project            string  `json:"project"`
+	WindowCount        int     `json:"window_count"`
+	SessionWindowCount int     `json:"session_window_count"`
+	ProcessWindowCount int     `json:"process_window_count"`
+	ActiveWindowCount  int     `json:"active_window_count"`
+	MaxSessionCount    int     `json:"max_session_count"`
+	MaxProcessCount    int     `json:"max_process_count"`
+	AverageSessions    float64 `json:"average_sessions"`
+	SharePct           float64 `json:"share_pct"`
 }
 
 type TrendWindow struct {
@@ -297,8 +324,12 @@ type LiveSessionSnapshot struct {
 	Path                         string    `json:"path"`
 	ProcessCount                 int       `json:"process_count"`
 	HostApps                     []HostApp `json:"host_apps,omitempty"`
+	FirstEventAt                 string    `json:"first_event_at,omitempty"`
 	LastEventAt                  string    `json:"last_event_at,omitempty"`
 	LastEventAgeSeconds          int       `json:"last_event_age_seconds,omitempty"`
+	ObservedDurationSeconds      int       `json:"observed_duration_seconds,omitempty"`
+	ActiveDurationSeconds        int       `json:"active_duration_seconds,omitempty"`
+	IdleDurationSeconds          int       `json:"idle_duration_seconds,omitempty"`
 	ActiveBurst                  bool      `json:"active_burst"`
 	Freshness                    string    `json:"freshness"`
 	MappingMethod                string    `json:"mapping_method"`

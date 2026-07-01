@@ -641,6 +641,7 @@ func TestNormalizeToolIconNameAllowlist(t *testing.T) {
 		"codexL":           "codex",
 		"com.openai.codex": "codex",
 		"traex":            "trae",
+		"trae_cli":         "trae",
 		"Trae.app":         "trae",
 		"warp":             "karp",
 		"WarpOss":          "karp",

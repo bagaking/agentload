@@ -208,10 +208,7 @@ func detectedTool(command string) string {
 	switch {
 	case strings.Contains(executableBase, "claude"):
 		return "claude"
-	case strings.Contains(executableBase, "traex"),
-		executableBase == "trae",
-		strings.Contains(executable, "/traex"),
-		strings.Contains(executable, "/trae"):
+	case isTraeExecutable(executableBase):
 		return "trae"
 	case strings.Contains(executableBase, "codexl"),
 		strings.Contains(executableBase, "codex"),
@@ -221,6 +218,18 @@ func detectedTool(command string) string {
 		return "codex"
 	default:
 		return ""
+	}
+}
+
+func isTraeExecutable(executableBase string) bool {
+	key := strings.Trim(strings.ToLower(executableBase), `"'`)
+	key = strings.TrimSuffix(key, ".exe")
+	key = strings.ReplaceAll(key, "_", "-")
+	switch key {
+	case "trae", "traex", "trae-cli", "traecli":
+		return true
+	default:
+		return strings.HasPrefix(key, "trae ")
 	}
 }
 

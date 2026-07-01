@@ -299,6 +299,7 @@ func (a *trayApp) mergeRuntimeTrendsLocked(snapshot Snapshot) Snapshot {
 		a.logger.Printf("local history append failed: %v", err)
 	}
 	snapshot.RealtimeTrends = buildRealtimeTrendWindows(a.history.trendPoints(), sampleTime)
+	snapshot.ProjectHeatmaps = buildProjectHeatmapWindows(a.history.samples, sampleTime)
 	snapshot.History = a.history.snapshotMetadata()
 	if snapshot.History.LastWriteError != "" {
 		snapshot.Notes = uniqueSortedStrings(append(snapshot.Notes, "Local history append failed; see history.last_write_error."))
