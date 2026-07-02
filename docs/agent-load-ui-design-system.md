@@ -105,6 +105,14 @@ agent evidence.
 - Process counts are PID concurrency, not session concurrency. UI labels and
   detail text should make unmapped process contribution visible so a high
   process number is not mistaken for confirmed session load.
+- Primary workload readouts must not treat raw PID concurrency as an active
+  agent count. First-level status should emphasize recent local-log movement,
+  known sessions, and mapping health. Raw process totals belong in a diagnostic
+  pressure strip or process ledger using a formula such as
+  `PID = mapped + unmatched`.
+- Unmatched or unmapped processes still count for diagnostics, coverage, trend
+  risk, and process ledgers, but they must not be counted as active agents or
+  confirmed workload until they are mapped back to local session evidence.
 - Tool process recognition should use explicit executable aliases for known
   local agents and avoid broad prefix matches that pull in unrelated commands.
   When a tool has multiple launchers, keep the alias set covered by backend

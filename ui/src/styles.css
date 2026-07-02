@@ -10980,3 +10980,208 @@ body[data-view="popover"] .trend-suite.compact .trend-inspector-ratio {
 body[data-view="popover"] .trend-suite.compact .trend-inspector-ratio strong {
   font-size: 12.8px;
 }
+
+/* Strict metric hierarchy: workload first, raw PID pressure as diagnostics. */
+body[data-view="dashboard"] .dash-support-cell.mapping strong,
+body[data-view="dashboard"] .dash-support-cell.mapping > span,
+body[data-view="popover"] .instrument-stat.mapping,
+body[data-view="popover"] .instrument-stat.mapping span,
+body[data-view="popover"] .instrument-stat.mapping strong,
+.calibration-row.mapping .calibration-row-head span,
+.calibration-row.mapping .calibration-row-head strong {
+  color: var(--run);
+}
+
+body[data-view="dashboard"] .dash-process-diagnostic,
+body[data-view="popover"] .process-diagnostic-strip {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--console-text-soft);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--run) 9%, transparent), transparent 48%),
+    color-mix(in srgb, var(--console-material-2) 38%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--console-line-soft) 86%, transparent);
+}
+
+body[data-view="dashboard"] .dash-process-diagnostic {
+  grid-template-columns: auto auto minmax(0, 1fr) minmax(68px, .18fr);
+  min-height: 26px;
+  padding: 5px 7px 6px;
+}
+
+body[data-view="popover"] .process-diagnostic-strip {
+  min-height: 27px;
+  padding: 5px 10px;
+}
+
+body[data-view="dashboard"] .dash-process-diagnostic span,
+body[data-view="popover"] .process-diagnostic-strip span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: color-mix(in srgb, var(--run) 86%, var(--fg-muted));
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 780;
+  letter-spacing: .045em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+body[data-view="dashboard"] .dash-process-diagnostic strong,
+body[data-view="popover"] .process-diagnostic-strip strong {
+  color: var(--run);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 840;
+  line-height: 1;
+}
+
+body[data-view="dashboard"] .dash-process-diagnostic em,
+body[data-view="popover"] .process-diagnostic-strip em {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--console-text-faint);
+  font-size: 10px;
+  font-style: normal;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-view="dashboard"] .dash-process-diagnostic i {
+  display: block;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--run) 12%, var(--console-line-soft));
+}
+
+body[data-view="dashboard"] .dash-process-diagnostic i b {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--run);
+}
+
+.calibration-row.process-diagnostic {
+  color: var(--run);
+  opacity: .82;
+}
+
+.calibration-row.process-diagnostic p {
+  color: var(--console-text-faint);
+}
+
+body[data-view="dashboard"] .dashboard-masthead {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, .5fr);
+  min-height: 70px;
+  padding: 10px 16px 11px;
+}
+
+body[data-view="dashboard"] .dashboard-masthead h1 {
+  margin: 6px 0 2px;
+  font-size: 27px;
+}
+
+body[data-view="dashboard"] .dashboard-masthead-meta {
+  gap: 8px;
+}
+
+body[data-view="dashboard"] .dashboard-masthead-meta span {
+  padding-top: 5px;
+}
+
+body[data-view="dashboard"] .dash-front-band {
+  grid-template-columns: minmax(0, 1.25fr) minmax(260px, .75fr);
+}
+
+body[data-view="dashboard"] .dash-field-index {
+  gap: 6px;
+}
+
+body[data-view="dashboard"] .dash-support-cell {
+  min-height: 92px;
+}
+
+body[data-view="dashboard"] .dash-support-cell strong {
+  font-size: 32px;
+}
+
+body[data-view="popover"] .instrument-stat strong {
+  font-size: 28px;
+}
+
+body[data-view="popover"] .instrument-stat.mapping strong {
+  font-size: 23px;
+  letter-spacing: 0;
+}
+
+body[data-view="popover"] .instrument-scale-row.mapping {
+  color: var(--run);
+}
+
+body[data-view="popover"] .instrument-scale-row .term-label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .popover-current-surface,
+body[data-view="popover"] .popover-instrument {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+:root[data-theme="light"] body {
+  background:
+    linear-gradient(180deg, rgba(42, 91, 126, .035), transparent 38%),
+    linear-gradient(180deg, #f8fafb, #eef4f6);
+}
+
+:root[data-theme="light"] body[data-view="dashboard"] .dash-front-band,
+:root[data-theme="light"] body[data-view="dashboard"] .dash-atlas-band,
+:root[data-theme="light"] body[data-view="dashboard"] .dash-ledger-band,
+:root[data-theme="light"] body[data-view="dashboard"] .dash-nav-band,
+:root[data-theme="light"] body[data-view="dashboard"] .trend-suite.dashboard {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .70), rgba(255, 255, 255, .34)),
+    color-mix(in srgb, var(--console-material) 88%, transparent);
+  border-top-color: color-mix(in srgb, var(--border) 82%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--border-soft) 88%, transparent);
+}
+
+:root[data-theme="light"] body[data-view="popover"] .popover-current-surface,
+:root[data-theme="light"] body[data-view="popover"] .popover-project-table,
+:root[data-theme="light"] body[data-view="popover"] .trend-suite {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .70), rgba(255, 255, 255, .28)),
+    color-mix(in srgb, var(--console-material) 84%, transparent);
+}
+
+:root[data-theme="light"] body[data-view="popover"] .instrument-stat,
+:root[data-theme="light"] body[data-view="dashboard"] .dash-support-cell,
+:root[data-theme="light"] body[data-view="dashboard"] .readout,
+:root[data-theme="light"] body[data-view="dashboard"] .confidence-grid span {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .68), rgba(255, 255, 255, .34)),
+    color-mix(in srgb, var(--surface-2) 76%, transparent);
+}
+
+:root[data-theme="light"] body[data-view="dashboard"] .dash-process-diagnostic,
+:root[data-theme="light"] body[data-view="popover"] .process-diagnostic-strip {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--run) 10%, transparent), transparent 54%),
+    rgba(255, 255, 255, .52);
+}
+
+:root[data-theme="light"] .project-heatmap-tile {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .58);
+}

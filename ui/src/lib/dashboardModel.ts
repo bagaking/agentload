@@ -152,7 +152,7 @@ export function currentMeaningLead(t: Translate, snapshot: Snapshot): string {
   return formatCopy(t("currentMeaningExactLead"), {
     active: current.active_burst_concurrency ?? 0,
     sessions: current.session_concurrency ?? 0,
-    pids: current.pid_concurrency ?? 0,
+    coverage: formatPct(snapshot.summary?.mapping_coverage_pct),
   });
 }
 
@@ -210,7 +210,11 @@ export function deferredScanValue(t: Translate, stats?: TranscriptStats): string
 export function mappingHealthText(t: Translate, snapshot: Snapshot): string {
   const summary = snapshot.summary ?? {};
   const current = snapshot.current ?? {};
-  return `${summary.mapped_processes ?? 0} ${t("mapped")} / ${summary.unmapped_processes ?? 0} ${t("unmatched")} · ${current.pid_concurrency ?? 0} ${t("processesObserved")}`;
+  return formatCopy(t("processDiagnosticFormula"), {
+    pids: current.pid_concurrency ?? 0,
+    mapped: summary.mapped_processes ?? 0,
+    unmatched: summary.unmapped_processes ?? 0,
+  });
 }
 
 export function primaryEvidenceNote(t: Translate, snapshot: Snapshot): string {

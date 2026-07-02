@@ -534,7 +534,6 @@ function DashboardSurface({
         cycleRefreshInterval={cycleRefreshInterval}
       />
       <section className="dash-front-band">
-        <DashboardFrontTopline t={t} snapshot={snapshot} refreshInterval={refreshInterval} cycleRefreshInterval={cycleRefreshInterval} />
         <section className="dash-field-index">
           <DashboardBandHead kicker={t("runtimeField")} title={t("activityCounts")} meta={dashboardProjectMeta(t, snapshot)} />
           <DashboardFieldGrid t={t} snapshot={snapshot} />
@@ -547,15 +546,10 @@ function DashboardSurface({
         <DashboardBandHead kicker={t("liveLedger")} title={t("projectSessionTree")} meta={`${snapshot.live_sessions?.length ?? 0} ${t("sessions")}`} />
         <div className="dash-atlas-grid">
           <div className="dash-atlas-panel">
-            <ProjectAtlas t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} limit={14} defaultExpandedCount={3} showHead={false} />
+            <ProjectAtlas t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} limit={14} defaultExpandedCount={1} showHead={false} />
           </div>
           <DashboardSideRails t={t} snapshot={snapshot} />
         </div>
-      </section>
-
-      <section className="dash-ledger-band">
-        <DashboardBandHead kicker={t("liveLedger")} title={t("processLedger")} meta={`${snapshot.live_processes?.length ?? 0} ${t("processes")}`} />
-        <ProcessLedger t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} />
       </section>
 
       <TrendSuite
@@ -566,6 +560,11 @@ function DashboardSurface({
         trendSelection={trendSelection}
         setTrendSelection={setTrendSelection}
       />
+
+      <section className="dash-ledger-band">
+        <DashboardBandHead kicker={t("liveLedger")} title={t("processLedger")} meta={`${snapshot.live_processes?.length ?? 0} ${t("processes")}`} />
+        <ProcessLedger t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} />
+      </section>
 
       <DashboardInspectorStrip
         t={t}
@@ -770,26 +769,38 @@ function DashboardFrontTopline({
 function DashboardFieldGrid({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot }) {
   const current = snapshot.current ?? {};
   const summary = snapshot.summary ?? {};
+  const active = current.active_burst_concurrency ?? 0;
+  const sessions = current.session_concurrency ?? 0;
+  const mapped = summary.mapped_processes ?? 0;
+  const unmatched = summary.unmapped_processes ?? 0;
+  const pids = current.pid_concurrency ?? 0;
+  const coverage = clampPct(summary.mapping_coverage_pct ?? 0);
   return (
-    <div className="dash-field-grid">
-      <article className="dash-support-cell burst">
-        <span><TermLabel label={t("metricFresh")} tip={t("tipActiveBurst")} /></span>
-        <strong>{current.active_burst_concurrency ?? 0}</strong>
-        <em>{t("activeBurstHint")}</em>
-      </article>
-      <div className="dash-support-read">
+    <>
+      <div className="dash-field-grid">
+        <article className="dash-support-cell burst">
+          <span><TermLabel label={t("metricFresh")} tip={t("tipActiveBurst")} /></span>
+          <strong>{active}</strong>
+          <em>{t("activeBurstHint")}</em>
+        </article>
         <article className="dash-support-cell session">
-          <span><TermLabel label={t("metricSessions")} tip={t("tipSessions")} /></span>
-          <strong>{current.session_concurrency ?? 0}</strong>
+          <span><TermLabel label={t("metricKnownSessions")} tip={t("tipSessions")} /></span>
+          <strong>{sessions}</strong>
           <em>{t("liveIdle").replace("{live}", String(summary.active_sessions ?? 0)).replace("{idle}", String(summary.idle_sessions ?? 0))}</em>
         </article>
-        <article className="dash-support-cell pid">
-          <span><TermLabel label={t("metricProcesses")} tip={t("tipPids")} /></span>
-          <strong>{current.pid_concurrency ?? 0}</strong>
-          <em>{`${summary.mapped_processes ?? 0} ${t("mapped")} / ${summary.unmapped_processes ?? 0} ${t("unmatched")}`}</em>
+        <article className="dash-support-cell mapping">
+          <span><TermLabel label={t("mappingHealth")} tip={t("tipMappingHealth")} /></span>
+          <strong>{formatPct(summary.mapping_coverage_pct)}</strong>
+          <em>{`${mapped} ${t("mapped")} / ${unmatched} ${t("unmatched")}`}</em>
         </article>
       </div>
-    </div>
+      <div className="dash-process-diagnostic" aria-label={t("processPressure")}>
+        <span><Server size={12} aria-hidden="true" />{t("processPressure")}</span>
+        <strong>{pids}</strong>
+        <em>{formatCopy(t("processDiagnosticFormula"), { pids, mapped, unmatched })}</em>
+        <i aria-hidden="true"><b style={{ width: `${coverage}%` }} /></i>
+      </div>
+    </>
   );
 }
 
@@ -887,8 +898,12 @@ function PopoverAuditShell({
 function PopoverRuntimeInstrument({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot }) {
   const current = snapshot.current ?? {};
   const summary = snapshot.summary ?? {};
-  const scale = currentPeerScale(current);
+  const trustedScale = Math.max(1, current.active_burst_concurrency ?? 0, current.session_concurrency ?? 0);
   const active = (current.active_burst_concurrency ?? 0) > 0;
+  const mapped = summary.mapped_processes ?? 0;
+  const unmatched = summary.unmapped_processes ?? 0;
+  const pids = current.pid_concurrency ?? 0;
+  const coverage = clampPct(summary.mapping_coverage_pct ?? 0);
   const rows = [
     {
       key: "burst",
@@ -896,25 +911,25 @@ function PopoverRuntimeInstrument({ t, snapshot }: { t: (key: string) => string;
       tip: t("tipActiveBurst"),
       value: current.active_burst_concurrency ?? 0,
       detail: t("activeBurstHint"),
-      pct: pctPart(current.active_burst_concurrency, scale),
+      pct: pctPart(current.active_burst_concurrency, trustedScale),
     },
     {
       key: "session",
-      label: t("metricSessions"),
+      label: t("metricKnownSessions"),
       tip: t("tipSessions"),
       value: current.session_concurrency ?? 0,
       detail: t("liveIdle")
         .replace("{live}", String(summary.active_sessions ?? 0))
         .replace("{idle}", String(summary.idle_sessions ?? 0)),
-      pct: pctPart(current.session_concurrency, scale),
+      pct: pctPart(current.session_concurrency, trustedScale),
     },
     {
-      key: "pid",
-      label: t("metricProcesses"),
-      tip: t("tipPids"),
-      value: current.pid_concurrency ?? 0,
-      detail: `${summary.mapped_processes ?? 0} ${t("mapped")} / ${summary.unmapped_processes ?? 0} ${t("unmatched")}`,
-      pct: pctPart(current.pid_concurrency, scale),
+      key: "mapping",
+      label: t("mappingHealth"),
+      tip: t("tipMappingHealth"),
+      value: formatPct(summary.mapping_coverage_pct),
+      detail: `${mapped} ${t("mapped")} / ${unmatched} ${t("unmatched")}`,
+      pct: coverage,
     },
   ];
   return (
@@ -935,6 +950,11 @@ function PopoverRuntimeInstrument({ t, snapshot }: { t: (key: string) => string;
             <i aria-hidden="true"><em style={{ width: `${clampPct(row.pct, 3)}%` }} /></i>
           </span>
         ))}
+      </div>
+      <div className="process-diagnostic-strip" aria-label={t("processPressure")}>
+        <span><Server size={12} aria-hidden="true" />{t("processPressure")}</span>
+        <strong>{pids}</strong>
+        <em>{formatCopy(t("processDiagnosticFormula"), { pids, mapped, unmatched })}</em>
       </div>
       <CurrentMeaningStrip t={t} snapshot={snapshot} compact />
     </section>
@@ -1128,13 +1148,11 @@ function ProjectAtlas({
 }
 
 function DashboardSideRails({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot }) {
-  const current = snapshot.current ?? {};
-  const scale = currentPeerScale(current);
   return (
     <aside className="dash-atlas-side">
       <section className="dash-side-module">
         <div className="dash-mini-head"><h3>{t("calibration")}</h3><span>{t("currentMeaning")}</span></div>
-        <CalibrationRail t={t} snapshot={snapshot} scale={scale} />
+        <CalibrationRail t={t} snapshot={snapshot} />
       </section>
       <section className="dash-side-module">
         <div className="dash-mini-head"><h3>{t("candidateWorkitems")}</h3><span>{t("sessionProcessMix")}</span></div>
@@ -1152,11 +1170,14 @@ function DashboardSideRails({ t, snapshot }: { t: (key: string) => string; snaps
   );
 }
 
-function CalibrationRail({ t, snapshot, scale }: { t: (key: string) => string; snapshot: Snapshot; scale: number }) {
+function CalibrationRail({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot }) {
   const current = snapshot.current ?? {};
   const summary = snapshot.summary ?? {};
-  const mappedPct = t("mappedPct").replace("{pct}", formatPct(summary.mapping_coverage_pct));
-  const unmatchedCount = t("unmatchedCount").replace("{count}", String(summary.unmapped_processes ?? 0));
+  const trustedScale = Math.max(1, current.active_burst_concurrency ?? 0, current.session_concurrency ?? 0);
+  const mapped = summary.mapped_processes ?? 0;
+  const unmatched = summary.unmapped_processes ?? 0;
+  const pids = current.pid_concurrency ?? 0;
+  const coverage = clampPct(summary.mapping_coverage_pct ?? 0);
   const rows = [
     {
       key: "burst",
@@ -1164,25 +1185,25 @@ function CalibrationRail({ t, snapshot, scale }: { t: (key: string) => string; s
       value: current.active_burst_concurrency ?? 0,
       primary: t("activeBurstHint"),
       secondary: t("currentScale"),
-      pct: pctPart(current.active_burst_concurrency, scale),
+      pct: pctPart(current.active_burst_concurrency, trustedScale),
     },
     {
       key: "session",
-      label: t("sessions"),
+      label: t("metricKnownSessions"),
       value: current.session_concurrency ?? 0,
       primary: t("knownSessions"),
       secondary: t("liveIdle")
         .replace("{live}", String(summary.active_sessions ?? 0))
         .replace("{idle}", String(summary.idle_sessions ?? 0)),
-      pct: pctPart(current.session_concurrency, scale),
+      pct: pctPart(current.session_concurrency, trustedScale),
     },
     {
-      key: "pid",
-      label: t("processes"),
-      value: current.pid_concurrency ?? 0,
-      primary: t("visibleProcesses"),
-      secondary: `${mappedPct} · ${unmatchedCount}`,
-      pct: pctPart(current.pid_concurrency, scale),
+      key: "mapping",
+      label: t("mappingHealth"),
+      value: formatPct(summary.mapping_coverage_pct),
+      primary: t("processEvidenceMapped"),
+      secondary: `${mapped} ${t("mapped")} · ${unmatched} ${t("unmatched")}`,
+      pct: coverage,
     },
   ];
   return (
@@ -1198,6 +1219,15 @@ function CalibrationRail({ t, snapshot, scale }: { t: (key: string) => string; s
           <em>{row.secondary}</em>
         </article>
       ))}
+      <article className="calibration-row process-diagnostic">
+        <div className="calibration-row-head">
+          <span>{t("processPressure")}</span>
+          <strong>{pids}</strong>
+        </div>
+        <i aria-hidden="true"><b style={{ width: `${coverage}%` }} /></i>
+        <p>{t("visibleProcesses")}</p>
+        <em>{formatCopy(t("processDiagnosticFormula"), { pids, mapped, unmatched })}</em>
+      </article>
     </div>
   );
 }
@@ -1496,7 +1526,7 @@ function Topbar({
   cycleRefreshInterval: () => void;
 }) {
   const topbarStatusTone = error ? "bad" : running ? "running" : "idle";
-  const showTopbarStatus = !compact || !!error;
+  const showTopbarStatus = !!error || running;
   return (
     <header className="topbar">
       <div className="brand">
