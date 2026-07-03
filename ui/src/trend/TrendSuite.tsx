@@ -12,7 +12,7 @@ import {
   type MouseEventParams,
   type Time,
 } from "lightweight-charts";
-import { clampNumber, formatCopy, formatPct, type Translate } from "../lib/format";
+import { clampNumber, formatAge as formatRelativeAge, formatCopy, formatPct, type Translate } from "../lib/format";
 import {
   TREND_RANGES,
   type ProjectHeatmapItem,
@@ -29,6 +29,13 @@ export type TrendSnapshot = {
   trends?: TrendSet;
   realtime_trends?: TrendSet;
   project_heatmaps?: ProjectHeatmapSet;
+  project_focus?: ProjectHeatmapActivity[];
+};
+
+type ProjectHeatmapActivity = {
+  project?: string;
+  last_event_age_seconds?: number;
+  last_event_at?: string;
 };
 
 type TrendLaneSummary = {
@@ -40,6 +47,8 @@ type TrendLaneSummary = {
 };
 
 type ProjectHeatmapTile = ProjectHeatmapItem & {
+  last_event_age_seconds?: number;
+  last_event_at?: string;
   x: number;
   y: number;
   width: number;
@@ -102,6 +111,7 @@ export function TrendSuite({
   const history = trendWindowForRange(snapshot.trends, effectiveRange);
   const runtime = trendWindowForRange(snapshot.realtime_trends, effectiveRange);
   const projectHeatmap = projectHeatmapWindowForRange(snapshot.project_heatmaps, effectiveRange);
+  const projectActivity = useMemo(() => projectHeatmapActivityByProject(snapshot.project_focus), [snapshot.project_focus]);
   const [focusedLane, setFocusedLane] = useState<TrendLane>("history");
   const laneSummaries: TrendLaneSummary[] = [
     trendLaneSummary("history", t("historyLane"), history, trendSelection.history),
@@ -137,7 +147,7 @@ export function TrendSuite({
               />
             ))}
           </div>
-          <ProjectHeatmap t={t} window={projectHeatmap} compact={compact} />
+          <ProjectHeatmap t={t} window={projectHeatmap} projectActivity={projectActivity} compact={compact} />
           <TrendSelectionInspector t={t} summary={activeSummary} compact={compact} />
         </>
       ) : (
@@ -147,11 +157,24 @@ export function TrendSuite({
   );
 }
 
-function ProjectHeatmap({ t, window, compact }: { t: Translate; window?: ProjectHeatmapWindow; compact: boolean }) {
+function ProjectHeatmap({
+  t,
+  window,
+  projectActivity,
+  compact,
+}: {
+  t: Translate;
+  window?: ProjectHeatmapWindow;
+  projectActivity: Map<string, ProjectHeatmapActivity>;
+  compact: boolean;
+}) {
   const [hover, setHover] = useState<ProjectHeatmapHover | null>(null);
   const rawItems = (window?.items ?? []).filter((item) => (item.session_window_count ?? 0) > 0 || (item.window_count ?? 0) > 0);
   const visibleLimit = compact ? 10 : 16;
-  const items = rawItems.slice(0, visibleLimit);
+  const items = rawItems.slice(0, visibleLimit).map((item) => ({
+    ...item,
+    ...projectActivity.get(projectHeatmapProjectKey(item.project)),
+  }));
   const hiddenCount = Math.max(0, rawItems.length - items.length);
   const tiles = projectHeatmapTiles(items);
   const totalSessions = window?.session_window_count ?? items.reduce((sum, item) => sum + (item.session_window_count ?? 0), 0);
@@ -174,7 +197,7 @@ function ProjectHeatmap({ t, window, compact }: { t: Translate; window?: Project
               sessions: tile.session_window_count ?? 0,
               windows: tile.window_count ?? 0,
               share: formatPct(tile.share_pct),
-            });
+            }) + ` ${t("projectHeatmapLastActive")}: ${formatHeatmapLastActive(t, tile)}.`;
             const area = tile.width * tile.height;
             const labelMode = projectHeatmapLabelMode(tile, index, compact);
             const heat = clampNumber((tile.share_pct ?? 0) / 100, 0.18, 1);
@@ -221,6 +244,7 @@ function ProjectHeatmap({ t, window, compact }: { t: Translate; window?: Project
                 <span><b>{hover.item.session_window_count ?? 0}</b><em>{t("heatmapSessionWindows")}</em></span>
                 <span><b>{hover.item.window_count ?? 0}</b><em>{t("heatmapWindows")}</em></span>
                 <span><b>{formatPct(hover.item.share_pct)}</b><em>{t("heatmapShare")}</em></span>
+                <span><b>{formatHeatmapLastActive(t, hover.item)}</b><em>{t("projectHeatmapLastActive")}</em></span>
               </div>
             </div>
           ) : null}
@@ -233,6 +257,24 @@ function ProjectHeatmap({ t, window, compact }: { t: Translate; window?: Project
       )}
     </section>
   );
+}
+
+function projectHeatmapActivityByProject(items?: ProjectHeatmapActivity[]): Map<string, ProjectHeatmapActivity> {
+  const result = new Map<string, ProjectHeatmapActivity>();
+  (items ?? []).forEach((item) => {
+    result.set(projectHeatmapProjectKey(item.project), item);
+  });
+  return result;
+}
+
+function projectHeatmapProjectKey(project?: string): string {
+  const text = String(project || "unassigned").trim().toLowerCase();
+  return text || "unassigned";
+}
+
+function formatHeatmapLastActive(t: Translate, item: ProjectHeatmapTile): string {
+  if (typeof item.last_event_age_seconds === "number") return formatRelativeAge(item.last_event_age_seconds, t);
+  return t("unavailable");
 }
 
 function projectHeatmapLabelMode(tile: ProjectHeatmapTile, index: number, compact: boolean): ProjectHeatmapLabelMode {
@@ -261,8 +303,8 @@ function projectHeatmapHoverFromPointer(
   const height = rect?.height ?? event.currentTarget.clientHeight;
   const left = rect ? event.clientX - rect.left : event.nativeEvent.offsetX;
   const top = rect ? event.clientY - rect.top : event.nativeEvent.offsetY;
-  const tooltipWidth = Math.min(176, Math.max(112, width - 20));
-  const tooltipHeight = 58;
+  const tooltipWidth = Math.min(204, Math.max(132, width - 20));
+  const tooltipHeight = 66;
   const align: ProjectHeatmapHover["align"] = left > width / 2 ? "right" : "left";
   const tooltipLeft = align === "right" ? left - tooltipWidth - 8 : left + 8;
   const tooltipTop = top - tooltipHeight / 2;

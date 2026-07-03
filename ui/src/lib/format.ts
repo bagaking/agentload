@@ -1,3 +1,5 @@
+import type { TokenUsage } from "../types/snapshot";
+
 export type Translate = (key: string) => string;
 
 export function pctPart(value: number | undefined, total: number): number {
@@ -51,6 +53,35 @@ export function countLabel(t: Translate, key: string, count: number): string {
 
 export function formatCopy(template: string, values: Record<string, string | number>): string {
   return Object.entries(values).reduce((text, [key, value]) => text.split(`{${key}}`).join(String(value)), template);
+}
+
+export function formatTokenUsageSummary(usage: TokenUsage | undefined, t: Translate): string {
+  if (!usage || !tokenUsageHasValue(usage)) return t("unavailable");
+  const parts: string[] = [];
+  const total = usage.total_tokens ?? tokenUsageDerivedTotal(usage);
+  if (total > 0) parts.push(`${formatTokenCount(total)} ${t("tokenTotal")}`);
+  if ((usage.input_tokens ?? 0) > 0) parts.push(`${formatTokenCount(usage.input_tokens)} ${t("tokenInput")}`);
+  if ((usage.output_tokens ?? 0) > 0) parts.push(`${formatTokenCount(usage.output_tokens)} ${t("tokenOutput")}`);
+  const cache = (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0);
+  if (cache > 0) parts.push(`${formatTokenCount(cache)} ${t("tokenCache")}`);
+  if ((usage.reasoning_output_tokens ?? 0) > 0) parts.push(`${formatTokenCount(usage.reasoning_output_tokens)} ${t("tokenReasoning")}`);
+  return parts.join(" · ") || t("unavailable");
+}
+
+export function formatTokenCount(value?: number): string {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return "0";
+  return new Intl.NumberFormat(undefined, {
+    notation: value >= 10000 ? "compact" : "standard",
+    maximumFractionDigits: value >= 10000 ? 1 : 0,
+  }).format(value);
+}
+
+export function tokenUsageDerivedTotal(usage: TokenUsage): number {
+  return (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0);
+}
+
+export function tokenUsageHasValue(usage: TokenUsage): boolean {
+  return tokenUsageDerivedTotal(usage) > 0 || (usage.total_tokens ?? 0) > 0 || (usage.reasoning_output_tokens ?? 0) > 0;
 }
 
 export function shortID(value?: string): string {

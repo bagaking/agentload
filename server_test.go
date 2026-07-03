@@ -637,17 +637,20 @@ func TestFormatTrayMetaTitleIncludesScanCoverage(t *testing.T) {
 
 func TestNormalizeToolIconNameAllowlist(t *testing.T) {
 	tests := map[string]string{
-		"codex":            "codex",
-		"codexL":           "codex",
-		"com.openai.codex": "codex",
-		"traex":            "trae",
-		"trae_cli":         "trae",
-		"Trae.app":         "trae",
-		"warp":             "karp",
-		"WarpOss":          "karp",
-		"claude-code":      "claude",
-		"../../etc/passwd": "",
-		"unknown":          "",
+		"codex":              "codex",
+		"codexL":             "codex",
+		"com.openai.codex":   "codex",
+		"traex":              "trae",
+		"trae_cli":           "trae",
+		"Trae.app":           "trae",
+		"warp":               "karp",
+		"WarpOss":            "karp",
+		"claude-code":        "claude",
+		"opencode-ai":        "opencode",
+		"gemini-cli":         "gemini",
+		"@google/gemini-cli": "gemini",
+		"../../etc/passwd":   "",
+		"unknown":            "",
 	}
 	for raw, want := range tests {
 		t.Run(raw, func(t *testing.T) {

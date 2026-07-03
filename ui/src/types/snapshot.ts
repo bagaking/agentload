@@ -95,6 +95,7 @@ export type ProjectSnapshot = {
   project_attribution_reasons?: string[];
   last_event_age_seconds?: number;
   last_event_at?: string;
+  token_usage?: TokenUsage;
   tools?: ProjectTool[];
 };
 
@@ -113,12 +114,22 @@ export type ProjectTool = {
   session_count?: number;
   active_burst_count?: number;
   process_count?: number;
+  token_usage?: TokenUsage;
 };
 
 export type HostApp = {
   pid?: number;
   name?: string;
   bundle_path?: string;
+};
+
+export type TokenUsage = {
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+  reasoning_output_tokens?: number;
+  total_tokens?: number;
 };
 
 export type LiveProcess = {
@@ -157,6 +168,7 @@ export type LiveSession = {
   observed_duration_seconds?: number;
   active_duration_seconds?: number;
   idle_duration_seconds?: number;
+  token_usage?: TokenUsage;
   path?: string;
   provenance?: string[];
 };

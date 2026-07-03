@@ -10518,7 +10518,7 @@ body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.label-mini 
   z-index: 12;
   display: grid;
   gap: 6px;
-  width: min(176px, calc(100% - 20px));
+  width: min(204px, calc(100% - 20px));
   padding: 8px 9px 7px;
   pointer-events: none;
   border-radius: 7px;
@@ -10545,7 +10545,7 @@ body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.label-mini 
 
 .project-heatmap-tooltip div {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 5px;
 }
 

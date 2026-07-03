@@ -277,14 +277,16 @@ type ProjectSnapshot struct {
 	ProvenanceSummary               []ProvenanceCountSnapshot        `json:"provenance_summary"`
 	LastEventAt                     string                           `json:"last_event_at,omitempty"`
 	LastEventAgeSeconds             int                              `json:"last_event_age_seconds,omitempty"`
+	TokenUsage                      *TokenUsage                      `json:"token_usage,omitempty"`
 	Tools                           []ProjectToolSnapshot            `json:"tools,omitempty"`
 }
 
 type ProjectToolSnapshot struct {
-	Tool             string `json:"tool"`
-	SessionCount     int    `json:"session_count"`
-	ActiveBurstCount int    `json:"active_burst_count"`
-	ProcessCount     int    `json:"process_count"`
+	Tool             string      `json:"tool"`
+	SessionCount     int         `json:"session_count"`
+	ActiveBurstCount int         `json:"active_burst_count"`
+	ProcessCount     int         `json:"process_count"`
+	TokenUsage       *TokenUsage `json:"token_usage,omitempty"`
 }
 
 type AgeBucketSnapshot struct {
@@ -309,37 +311,38 @@ type HostApp struct {
 }
 
 type LiveSessionSnapshot struct {
-	Tool                         string    `json:"tool"`
-	SessionID                    string    `json:"session_id"`
-	SessionRole                  string    `json:"session_role"`
-	RoleConfidence               string    `json:"role_confidence"`
-	RoleReasons                  []string  `json:"role_reasons,omitempty"`
-	ThreadSource                 string    `json:"thread_source,omitempty"`
-	ParentThreadID               string    `json:"parent_thread_id,omitempty"`
-	AgentRole                    string    `json:"agent_role,omitempty"`
-	AgentNickname                string    `json:"agent_nickname,omitempty"`
-	RoleHintSource               string    `json:"role_hint_source,omitempty"`
-	IndependentlyRun             bool      `json:"independently_run,omitempty"`
-	Project                      string    `json:"project"`
-	Path                         string    `json:"path"`
-	ProcessCount                 int       `json:"process_count"`
-	HostApps                     []HostApp `json:"host_apps,omitempty"`
-	FirstEventAt                 string    `json:"first_event_at,omitempty"`
-	LastEventAt                  string    `json:"last_event_at,omitempty"`
-	LastEventAgeSeconds          int       `json:"last_event_age_seconds,omitempty"`
-	ObservedDurationSeconds      int       `json:"observed_duration_seconds,omitempty"`
-	ActiveDurationSeconds        int       `json:"active_duration_seconds,omitempty"`
-	IdleDurationSeconds          int       `json:"idle_duration_seconds,omitempty"`
-	ActiveBurst                  bool      `json:"active_burst"`
-	Freshness                    string    `json:"freshness"`
-	MappingMethod                string    `json:"mapping_method"`
-	MissingTranscript            bool      `json:"missing_transcript"`
-	Confidence                   string    `json:"confidence"`
-	ConfidenceReasons            []string  `json:"confidence_reasons,omitempty"`
-	ProjectAttributionSource     string    `json:"project_attribution_source"`
-	ProjectAttributionConfidence string    `json:"project_attribution_confidence"`
-	ProjectAttributionReasons    []string  `json:"project_attribution_reasons,omitempty"`
-	Provenance                   []string  `json:"provenance"`
+	Tool                         string      `json:"tool"`
+	SessionID                    string      `json:"session_id"`
+	SessionRole                  string      `json:"session_role"`
+	RoleConfidence               string      `json:"role_confidence"`
+	RoleReasons                  []string    `json:"role_reasons,omitempty"`
+	ThreadSource                 string      `json:"thread_source,omitempty"`
+	ParentThreadID               string      `json:"parent_thread_id,omitempty"`
+	AgentRole                    string      `json:"agent_role,omitempty"`
+	AgentNickname                string      `json:"agent_nickname,omitempty"`
+	RoleHintSource               string      `json:"role_hint_source,omitempty"`
+	IndependentlyRun             bool        `json:"independently_run,omitempty"`
+	Project                      string      `json:"project"`
+	Path                         string      `json:"path"`
+	ProcessCount                 int         `json:"process_count"`
+	HostApps                     []HostApp   `json:"host_apps,omitempty"`
+	FirstEventAt                 string      `json:"first_event_at,omitempty"`
+	LastEventAt                  string      `json:"last_event_at,omitempty"`
+	LastEventAgeSeconds          int         `json:"last_event_age_seconds,omitempty"`
+	ObservedDurationSeconds      int         `json:"observed_duration_seconds,omitempty"`
+	ActiveDurationSeconds        int         `json:"active_duration_seconds,omitempty"`
+	IdleDurationSeconds          int         `json:"idle_duration_seconds,omitempty"`
+	TokenUsage                   *TokenUsage `json:"token_usage,omitempty"`
+	ActiveBurst                  bool        `json:"active_burst"`
+	Freshness                    string      `json:"freshness"`
+	MappingMethod                string      `json:"mapping_method"`
+	MissingTranscript            bool        `json:"missing_transcript"`
+	Confidence                   string      `json:"confidence"`
+	ConfidenceReasons            []string    `json:"confidence_reasons,omitempty"`
+	ProjectAttributionSource     string      `json:"project_attribution_source"`
+	ProjectAttributionConfidence string      `json:"project_attribution_confidence"`
+	ProjectAttributionReasons    []string    `json:"project_attribution_reasons,omitempty"`
+	Provenance                   []string    `json:"provenance"`
 }
 
 type CandidateWorkitemSnapshot struct {
@@ -381,6 +384,16 @@ type SessionTrace struct {
 	EventTimes       []time.Time
 	FirstEvent       time.Time
 	LastEvent        time.Time
+	TokenUsage       TokenUsage
+}
+
+type TokenUsage struct {
+	InputTokens              int `json:"input_tokens,omitempty"`
+	OutputTokens             int `json:"output_tokens,omitempty"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens,omitempty"`
+	ReasoningOutputTokens    int `json:"reasoning_output_tokens,omitempty"`
+	TotalTokens              int `json:"total_tokens,omitempty"`
 }
 
 type Interval struct {

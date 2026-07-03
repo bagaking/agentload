@@ -712,6 +712,48 @@ func TestProjectLiveSessionsExposeFreshnessConfidenceAndProvenance(t *testing.T)
 	}
 }
 
+func TestProjectLiveSessionsExposeTokenUsage(t *testing.T) {
+	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
+	sessions := []LiveSession{
+		{
+			Tool:      "codex",
+			SessionID: "token-session",
+			Processes: map[int]struct{}{
+				1: {},
+			},
+			Trace: &SessionTrace{
+				Project:       "agentload",
+				ProjectSource: "transcript_cwd",
+				ThreadSource:  "user",
+				FirstEvent:    now.Add(-2 * time.Minute),
+				LastEvent:     now.Add(-30 * time.Second),
+				EventTimes: []time.Time{
+					now.Add(-2 * time.Minute),
+					now.Add(-30 * time.Second),
+				},
+				TokenUsage: TokenUsage{
+					InputTokens:              1200,
+					OutputTokens:             340,
+					CacheCreationInputTokens: 80,
+					CacheReadInputTokens:     160,
+					ReasoningOutputTokens:    45,
+					TotalTokens:              1780,
+				},
+			},
+			Mapping: LiveSessionMapping{TranscriptPath: true, ParsedTranscriptID: true},
+		},
+	}
+
+	snapshot := projectLiveSessions(sessions, 90*time.Second, now)
+	item := requireLiveSessionSnapshot(t, snapshot, "token-session")
+	if item.TokenUsage == nil {
+		t.Fatalf("expected token usage")
+	}
+	if *item.TokenUsage != sessions[0].Trace.TokenUsage {
+		t.Fatalf("unexpected token usage: %+v", *item.TokenUsage)
+	}
+}
+
 func TestBuildProjectFocusAddsAllocationRiskAndConfidenceSummary(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
 	sessions := []LiveSession{
@@ -725,6 +767,11 @@ func TestBuildProjectFocusAddsAllocationRiskAndConfidenceSummary(t *testing.T) {
 				ThreadSource:  "user",
 				FirstEvent:    now.Add(-5 * time.Minute),
 				LastEvent:     now.Add(-30 * time.Second),
+				TokenUsage: TokenUsage{
+					InputTokens:  100,
+					OutputTokens: 40,
+					TotalTokens:  140,
+				},
 			},
 			Mapping: LiveSessionMapping{TranscriptPath: true, ParsedTranscriptID: true},
 		},
@@ -738,6 +785,11 @@ func TestBuildProjectFocusAddsAllocationRiskAndConfidenceSummary(t *testing.T) {
 				ThreadSource:  "subagent",
 				FirstEvent:    now.Add(-2 * time.Hour),
 				LastEvent:     now.Add(-10 * time.Minute),
+				TokenUsage: TokenUsage{
+					InputTokens:  25,
+					OutputTokens: 10,
+					TotalTokens:  35,
+				},
 			},
 			Mapping: LiveSessionMapping{TranscriptPath: true, ParsedTranscriptID: true},
 		},
@@ -801,6 +853,12 @@ func TestBuildProjectFocusAddsAllocationRiskAndConfidenceSummary(t *testing.T) {
 	}
 	if !slices.Equal(alpha.ProvenanceSummary, []ProvenanceCountSnapshot{{Source: "transcript_path", Count: 2}}) {
 		t.Fatalf("unexpected alpha provenance summary: %#v", alpha.ProvenanceSummary)
+	}
+	if alpha.TokenUsage == nil || *alpha.TokenUsage != (TokenUsage{InputTokens: 125, OutputTokens: 50, TotalTokens: 175}) {
+		t.Fatalf("unexpected alpha token usage: %+v", alpha.TokenUsage)
+	}
+	if len(alpha.Tools) != 1 || alpha.Tools[0].TokenUsage == nil || *alpha.Tools[0].TokenUsage != *alpha.TokenUsage {
+		t.Fatalf("unexpected alpha tool token usage: %+v", alpha.Tools)
 	}
 
 	beta := requireProjectSnapshot(t, projects, "beta")

@@ -4,7 +4,7 @@ import { Activity, ArrowUpRight, Bot, ChevronDown, Copy, ExternalLink, Gauge, Gi
 import { copy, type Lang } from "./i18n";
 import { agentRoleLabel, buildToolSessionGroups, confidenceLabel, freshnessLabel, hiddenToolSessionCount, mappingMethodLabel, normalizedRole, orderedProjects, projectEvidenceItems, projectRoleCounts, roleHintLabel, roleLabel, sessionEvidenceItems, sessionIDsText, sessionIdentity, sessionsForProject, threadSourceLabel, toolBadgeLabel, toolDisplayName, toolIconName } from "./lib/activityModel";
 import { activeWindowLabel, buildRailItems, coordinationPostureLabel, currentMeaningLead, currentMeaningPoints, currentPeerScale, dashboardProjectLead, dashboardProjectMeta, deferredScanValue, mappingHealthText, metricState, primaryEvidenceNote, renderLogText, resolveSelection, statusTone, transcriptScanNote, transcriptScanSummary } from "./lib/dashboardModel";
-import { clampPct, compactCommand, countLabel, formatAge, formatCopy, formatDateTime, formatPct, formatRefreshInterval, pctPart, safeID, shortID } from "./lib/format";
+import { clampPct, compactCommand, countLabel, formatAge, formatCopy, formatDateTime, formatPct, formatRefreshInterval, formatTokenUsageSummary, pctPart, safeID, shortID, tokenUsageHasValue } from "./lib/format";
 import { TrendSuite } from "./trend/TrendSuite";
 import { TREND_RANGES, type TrendLane, type TrendRange } from "./trend/types";
 import type { ActiveElementIdentity, LogTab, PopoverView, ProjectMetricObject, ProjectMetricScope, RailItem, RailTab, RefreshReason, RoleCounts, SelectedView, Selection, Theme, ViewportState } from "./types/app";
@@ -2040,11 +2040,13 @@ function ToolStrip({ t, tools }: { t: (key: string) => string; tools: ProjectToo
     <div className="tool-strip" aria-label={t("projectToolStripLabel")}>
       {tools.map((tool) => {
         const toolName = tool.tool || "unknown";
-        const title = formatCopy(t("projectToolBadgeTooltip"), {
+        const baseTitle = formatCopy(t("projectToolBadgeTooltip"), {
           tool: toolDisplayName(toolName),
           active: tool.active_burst_count ?? 0,
           sessions: tool.session_count ?? 0,
         });
+        const tokenTitle = tool.token_usage && tokenUsageHasValue(tool.token_usage) ? `${t("tokenUsage")}: ${formatTokenUsageSummary(tool.token_usage, t)}` : "";
+        const title = tokenTitle ? `${baseTitle} ${tokenTitle}` : baseTitle;
         return (
           <span className="tool-mark" key={toolName} title={title} aria-label={title}>
             <ToolIcon t={t} tool={toolName} title={title} />
@@ -2278,6 +2280,7 @@ function SessionEvidencePanel({ t, session }: { t: (key: string) => string; sess
         <Readout label={t("observedDuration")} value={formatAge(session.observed_duration_seconds, t)} />
         <Readout label={t("activeDuration")} value={formatAge(session.active_duration_seconds, t)} />
         <Readout label={t("idleDuration")} value={formatAge(session.idle_duration_seconds, t)} />
+        <Readout label={t("tokenUsage")} value={formatTokenUsageSummary(session.token_usage, t)} />
         <Readout label={t("tools")} value={toolDisplayName(session.tool)} />
         <Readout label={t("host")} value={(session.host_apps ?? []).map((app) => app.name).join(", ") || t("unavailable")} />
         <Readout label={t("command")} value={session.path || t("unavailable")} />

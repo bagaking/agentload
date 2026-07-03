@@ -790,6 +790,10 @@ func projectLiveSessions(sessions []LiveSession, idleGap time.Duration, now time
 				item.ActiveDurationSeconds = duration.ActiveDurationSeconds
 				item.IdleDurationSeconds = duration.IdleDurationSeconds
 			}
+			if !session.Trace.TokenUsage.Empty() {
+				tokenUsage := session.Trace.TokenUsage
+				item.TokenUsage = &tokenUsage
+			}
 		}
 		if observation.LastEventAt != "" {
 			item.LastEventAt = observation.LastEventAt
@@ -1205,6 +1209,7 @@ func buildProjectFocus(sessions []LiveSession, idleGap time.Duration, now time.T
 		sessionCount     int
 		activeBurstCount int
 		processes        map[int]struct{}
+		tokenUsage       TokenUsage
 	}
 	type aggregate struct {
 		project                            string
@@ -1218,6 +1223,7 @@ func buildProjectFocus(sessions []LiveSession, idleGap time.Duration, now time.T
 		processes                          map[int]struct{}
 		lastEvent                          time.Time
 		tools                              map[string]*toolAggregate
+		tokenUsage                         TokenUsage
 		confidenceCounts                   map[string]int
 		provenanceCounts                   map[string]int
 		projectAttributionConfidenceCounts map[string]int
@@ -1277,6 +1283,10 @@ func buildProjectFocus(sessions []LiveSession, idleGap time.Duration, now time.T
 			item.tools[session.Tool] = toolAgg
 		}
 		toolAgg.sessionCount++
+		if session.Trace != nil && !session.Trace.TokenUsage.Empty() {
+			item.tokenUsage.Add(session.Trace.TokenUsage)
+			toolAgg.tokenUsage.Add(session.Trace.TokenUsage)
+		}
 		if observation.ActiveBurst {
 			item.activeBurstCount++
 			toolAgg.activeBurstCount++
@@ -1344,13 +1354,22 @@ func buildProjectFocus(sessions []LiveSession, idleGap time.Duration, now time.T
 			project.LastEventAt = item.lastEvent.Format(time.RFC3339)
 			project.LastEventAgeSeconds = int(age.Seconds())
 		}
+		if !item.tokenUsage.Empty() {
+			tokenUsage := item.tokenUsage
+			project.TokenUsage = &tokenUsage
+		}
 		for tool, toolAgg := range item.tools {
-			project.Tools = append(project.Tools, ProjectToolSnapshot{
+			toolSnapshot := ProjectToolSnapshot{
 				Tool:             tool,
 				SessionCount:     toolAgg.sessionCount,
 				ActiveBurstCount: toolAgg.activeBurstCount,
 				ProcessCount:     len(toolAgg.processes),
-			})
+			}
+			if !toolAgg.tokenUsage.Empty() {
+				tokenUsage := toolAgg.tokenUsage
+				toolSnapshot.TokenUsage = &tokenUsage
+			}
+			project.Tools = append(project.Tools, toolSnapshot)
 		}
 		sort.Slice(project.Tools, func(i, j int) bool {
 			if project.Tools[i].ActiveBurstCount != project.Tools[j].ActiveBurstCount {

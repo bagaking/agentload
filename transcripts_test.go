@@ -74,6 +74,37 @@ func TestParseCodexTraceCapturesExplicitProjectSource(t *testing.T) {
 	}
 }
 
+func TestParseCodexTraceCapturesTokenUsage(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+	body := strings.Join([]string{
+		`{"timestamp":"2026-06-27T12:00:00Z","payload":{"id":"codex-session","cwd":"workspace/agentload","usage":{"input_tokens":10,"output_tokens":4,"cache_read_input_tokens":3}}}`,
+		`{"timestamp":"2026-06-27T12:01:00Z","payload":{"id":"codex-session","response":{"usage":{"prompt_tokens":5,"completion_tokens":7,"total_tokens":12,"prompt_tokens_details":{"cached_tokens":2},"completion_tokens_details":{"reasoning_tokens":1}}}}}`,
+		`{"timestamp":"2026-06-27T12:02:00Z","payload":{"id":"codex-session","usageMetadata":{"promptTokenCount":8,"candidatesTokenCount":6,"cachedContentTokenCount":4}}}`,
+	}, "\n") + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+
+	trace, err := parseCodexTrace(path)
+	if err != nil {
+		t.Fatalf("parseCodexTrace: %v", err)
+	}
+	if trace == nil {
+		t.Fatalf("expected trace")
+	}
+	want := TokenUsage{
+		InputTokens:           23,
+		OutputTokens:          17,
+		CacheReadInputTokens:  9,
+		ReasoningOutputTokens: 1,
+		TotalTokens:           47,
+	}
+	if trace.TokenUsage != want {
+		t.Fatalf("unexpected token usage: %+v, want %+v", trace.TokenUsage, want)
+	}
+}
+
 func TestParseCodexLaneTraceFallsBackToConfigRootParent(t *testing.T) {
 	root := t.TempDir()
 	eventsPath := filepath.Join(root, "agentload", ".codex", ".codexl", "asagent", "lane-1", "events.jsonl")

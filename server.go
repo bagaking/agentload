@@ -597,6 +597,10 @@ func normalizeToolIconName(raw string) string {
 		return "karp"
 	case "claude", "claude-code", "claude-cli", "anthropic":
 		return "claude"
+	case "opencode", "opencode-ai":
+		return "opencode"
+	case "gemini", "gemini-cli", "@google/gemini-cli":
+		return "gemini"
 	default:
 		return ""
 	}
@@ -617,9 +621,11 @@ var toolIconFiles = map[string][]string{
 }
 
 var embeddedToolIconFiles = map[string][]string{
-	"codex":  {"ui/tool-icons/codex.svg"},
-	"trae":   {"ui/tool-icons/trae.svg"},
-	"claude": {"ui/tool-icons/claude.svg"},
+	"codex":    {"ui/tool-icons/codex.svg"},
+	"trae":     {"ui/tool-icons/trae.svg"},
+	"claude":   {"ui/tool-icons/claude.svg"},
+	"opencode": {"ui/tool-icons/opencode.svg"},
+	"gemini":   {"ui/tool-icons/gemini.svg"},
 }
 
 func resolveToolIconFile(tool string) (string, string, bool) {

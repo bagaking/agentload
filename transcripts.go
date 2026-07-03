@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -927,6 +928,7 @@ func processClaudeTraceLine(trace *SessionTrace, line []byte) {
 	if ts.IsZero() {
 		return
 	}
+	captureTokenUsage(trace, line)
 	if sid := firstNonEmptyString(
 		jsonStringField(line, "sessionId"),
 		jsonStringField(line, "session_id"),
@@ -973,6 +975,7 @@ func processCodexTraceLine(trace *SessionTrace, line []byte) {
 	if ts.IsZero() {
 		return
 	}
+	captureTokenUsage(trace, line)
 	captureTraceRoleMetadata(trace, line)
 	if sid := firstNonEmptyString(
 		jsonNestedStringField(line, "payload", "id"),
@@ -1097,6 +1100,7 @@ func processTraeTraceLine(trace *SessionTrace, line []byte) {
 	if ts.IsZero() {
 		return
 	}
+	captureTokenUsage(trace, line)
 	captureTraceRoleMetadata(trace, line)
 	if sid := firstNonEmptyString(
 		jsonNestedStringField(line, "payload", "id"),
@@ -1164,6 +1168,210 @@ func captureTraceRoleMetadata(trace *SessionTrace, line []byte) {
 		jsonStringField(line, "agent_role"),
 	); role != "" {
 		trace.AgentRole = role
+	}
+}
+
+func captureTokenUsage(trace *SessionTrace, line []byte) {
+	if trace == nil || !jsonlLineLooksLikeTokenUsage(line) {
+		return
+	}
+	var obj map[string]interface{}
+	if err := json.Unmarshal(line, &obj); err != nil {
+		return
+	}
+	usage := tokenUsageFromJSONValue(obj)
+	if usage.Empty() {
+		return
+	}
+	trace.TokenUsage.Add(usage)
+}
+
+func jsonlLineLooksLikeTokenUsage(line []byte) bool {
+	for _, key := range []string{
+		"usage",
+		"usage_metadata",
+		"usageMetadata",
+		"token_usage",
+		"tokenUsage",
+		"input_tokens",
+		"output_tokens",
+		"prompt_tokens",
+		"completion_tokens",
+		"total_tokens",
+		"promptTokenCount",
+		"candidatesTokenCount",
+		"totalTokenCount",
+	} {
+		if jsonlLineContainsKey(line, key) {
+			return true
+		}
+	}
+	return false
+}
+
+func tokenUsageFromJSONValue(value interface{}) TokenUsage {
+	var out TokenUsage
+	collectTokenUsage(value, &out)
+	return out
+}
+
+func collectTokenUsage(value interface{}, out *TokenUsage) {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		if usage, ok := directTokenUsage(v); ok {
+			out.Add(usage)
+			return
+		}
+		for key, child := range v {
+			if shouldInspectTokenUsageChild(key) {
+				collectTokenUsage(child, out)
+			}
+		}
+	case []interface{}:
+		for _, child := range v {
+			collectTokenUsage(child, out)
+		}
+	}
+}
+
+func shouldInspectTokenUsageChild(key string) bool {
+	key = strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(strings.TrimSpace(key), "-", "_"), " ", "_"))
+	if key == "" {
+		return false
+	}
+	if strings.Contains(key, "usage") || strings.Contains(key, "token") {
+		return true
+	}
+	switch key {
+	case "payload", "message", "response", "result", "metadata", "data", "output":
+		return true
+	default:
+		return false
+	}
+}
+
+func directTokenUsage(obj map[string]interface{}) (TokenUsage, bool) {
+	var usage TokenUsage
+	found := false
+	if value, ok := intFromKeys(obj, "input_tokens", "inputTokens", "prompt_tokens", "promptTokens", "promptTokenCount", "prompt_token_count"); ok {
+		usage.InputTokens = value
+		found = true
+	}
+	if value, ok := intFromKeys(obj, "output_tokens", "outputTokens", "completion_tokens", "completionTokens", "completionTokenCount", "completion_token_count", "candidatesTokenCount", "candidates_token_count", "response_tokens"); ok {
+		usage.OutputTokens = value
+		found = true
+	}
+	if value, ok := intFromKeys(obj, "cache_creation_input_tokens", "cacheCreationInputTokens", "cache_creation_tokens", "cacheCreationTokens", "cache_write_input_tokens", "cacheWriteInputTokens"); ok {
+		usage.CacheCreationInputTokens = value
+		found = true
+	}
+	if value, ok := intFromKeys(obj, "cache_read_input_tokens", "cacheReadInputTokens", "cached_input_tokens", "cachedInputTokens", "cached_tokens", "cachedTokens", "cachedContentTokenCount", "cached_content_token_count"); ok {
+		usage.CacheReadInputTokens = value
+		found = true
+	}
+	if value, ok := intFromKeys(obj, "reasoning_output_tokens", "reasoningOutputTokens", "reasoning_tokens", "reasoningTokens", "thoughtsTokenCount", "thoughts_token_count"); ok {
+		usage.ReasoningOutputTokens = value
+		found = true
+	}
+	if value, ok := intFromKeys(obj, "total_tokens", "totalTokens", "totalTokenCount", "total_token_count"); ok {
+		usage.TotalTokens = value
+		found = true
+	}
+	if details, ok := mapFromKeys(obj, "prompt_tokens_details", "promptTokensDetails", "input_token_details", "inputTokenDetails"); ok {
+		if value, ok := intFromKeys(details, "cached_tokens", "cachedTokens", "cache_read", "cacheRead", "cache_read_input_tokens", "cacheReadInputTokens"); ok {
+			usage.CacheReadInputTokens += value
+			found = true
+		}
+		if value, ok := intFromKeys(details, "cache_creation", "cacheCreation", "cache_creation_input_tokens", "cacheCreationInputTokens"); ok {
+			usage.CacheCreationInputTokens += value
+			found = true
+		}
+	}
+	if details, ok := mapFromKeys(obj, "completion_tokens_details", "completionTokensDetails", "output_token_details", "outputTokenDetails"); ok {
+		if value, ok := intFromKeys(details, "reasoning_tokens", "reasoningTokens", "reasoning_output_tokens", "reasoningOutputTokens"); ok {
+			usage.ReasoningOutputTokens += value
+			found = true
+		}
+	}
+	if found && usage.TotalTokens == 0 {
+		usage.TotalTokens = usage.DerivedTotal()
+	}
+	return usage, found
+}
+
+func intFromKeys(obj map[string]interface{}, keys ...string) (int, bool) {
+	for _, key := range keys {
+		if value, ok := intFromValue(obj[key]); ok {
+			return value, true
+		}
+	}
+	return 0, false
+}
+
+func mapFromKeys(obj map[string]interface{}, keys ...string) (map[string]interface{}, bool) {
+	for _, key := range keys {
+		if value, ok := obj[key].(map[string]interface{}); ok {
+			return value, true
+		}
+	}
+	return nil, false
+}
+
+func intFromValue(value interface{}) (int, bool) {
+	switch v := value.(type) {
+	case float64:
+		if v < 0 {
+			return 0, false
+		}
+		return int(v), true
+	case int:
+		if v < 0 {
+			return 0, false
+		}
+		return v, true
+	case json.Number:
+		parsed, err := strconv.Atoi(v.String())
+		if err != nil || parsed < 0 {
+			return 0, false
+		}
+		return parsed, true
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil || parsed < 0 {
+			return 0, false
+		}
+		return parsed, true
+	default:
+		return 0, false
+	}
+}
+
+func (u TokenUsage) Empty() bool {
+	return u.InputTokens <= 0 &&
+		u.OutputTokens <= 0 &&
+		u.CacheCreationInputTokens <= 0 &&
+		u.CacheReadInputTokens <= 0 &&
+		u.ReasoningOutputTokens <= 0 &&
+		u.TotalTokens <= 0
+}
+
+func (u TokenUsage) DerivedTotal() int {
+	return u.InputTokens + u.OutputTokens + u.CacheCreationInputTokens + u.CacheReadInputTokens
+}
+
+func (u *TokenUsage) Add(other TokenUsage) {
+	if u == nil || other.Empty() {
+		return
+	}
+	u.InputTokens += other.InputTokens
+	u.OutputTokens += other.OutputTokens
+	u.CacheCreationInputTokens += other.CacheCreationInputTokens
+	u.CacheReadInputTokens += other.CacheReadInputTokens
+	u.ReasoningOutputTokens += other.ReasoningOutputTokens
+	if other.TotalTokens > 0 {
+		u.TotalTokens += other.TotalTokens
+	} else {
+		u.TotalTokens += other.DerivedTotal()
 	}
 }
 

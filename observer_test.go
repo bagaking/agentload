@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
@@ -105,6 +106,39 @@ func TestSnapshotNotesDescribeDeferredHistoricalParsing(t *testing.T) {
 		if strings.Contains(note, "directory enumeration") {
 			t.Fatalf("expected snapshot notes not to claim directory enumeration was deferred, got %#v", notes)
 		}
+	}
+}
+
+func TestObserverSnapshotKeepsDetectedToolPIDMetricsWithoutSessions(t *testing.T) {
+	originalDiscover := discoverLiveProcessesFunc
+	discoverLiveProcessesFunc = func(context.Context) ([]LiveProcess, []string) {
+		return []LiveProcess{
+			{PID: 11, Tool: "opencode", Command: "opencode run"},
+			{PID: 12, Tool: "gemini", Command: "gemini --prompt hello"},
+		}, nil
+	}
+	t.Cleanup(func() {
+		discoverLiveProcessesFunc = originalDiscover
+	})
+
+	observer := newObserver(Config{
+		IdleGap:     90 * time.Second,
+		MinInterval: 15 * time.Second,
+		Lookback:    time.Hour,
+	})
+	got := observer.Snapshot(context.Background())
+
+	if got.Current.PIDConcurrency != 2 || got.Current.SessionConcurrency != 0 {
+		t.Fatalf("unexpected aggregate metrics: %+v", got.Current)
+	}
+	if got.CurrentByTool["opencode"].PIDConcurrency != 1 {
+		t.Fatalf("expected opencode pid metrics, got %+v", got.CurrentByTool["opencode"])
+	}
+	if got.CurrentByTool["gemini"].PIDConcurrency != 1 {
+		t.Fatalf("expected gemini pid metrics, got %+v", got.CurrentByTool["gemini"])
+	}
+	if len(got.LiveProcesses) != 2 || got.LiveProcesses[0].Tool != "gemini" || got.LiveProcesses[1].Tool != "opencode" {
+		t.Fatalf("expected sorted live processes for gemini and opencode, got %+v", got.LiveProcesses)
 	}
 }
 

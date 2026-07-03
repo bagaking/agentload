@@ -204,7 +204,7 @@ func detectedTool(command string) string {
 	if len(fields) > 0 {
 		executable = fields[0]
 	}
-	executableBase := strings.TrimSuffix(filepath.Base(executable), ".app")
+	executableBase := normalizedExecutableBase(executable)
 	switch {
 	case strings.Contains(executableBase, "claude"):
 		return "claude"
@@ -216,20 +216,118 @@ func detectedTool(command string) string {
 		strings.Contains(lower, "codex computer use.app"),
 		strings.Contains(lower, "com.openai.codex"):
 		return "codex"
+	case isOpenCodeExecutable(executableBase):
+		return "opencode"
+	case isGeminiExecutable(executableBase):
+		return "gemini"
+	case len(fields) > 1:
+		return detectedToolFromInterpreter(fields)
 	default:
 		return ""
 	}
 }
 
-func isTraeExecutable(executableBase string) bool {
-	key := strings.Trim(strings.ToLower(executableBase), `"'`)
+func normalizedExecutableBase(value string) string {
+	key := strings.Trim(strings.ToLower(value), `"'`)
+	key = strings.TrimSuffix(filepath.Base(key), ".app")
 	key = strings.TrimSuffix(key, ".exe")
 	key = strings.ReplaceAll(key, "_", "-")
+	return key
+}
+
+func isTraeExecutable(executableBase string) bool {
+	key := normalizedExecutableBase(executableBase)
 	switch key {
 	case "trae", "traex", "trae-cli", "traecli":
 		return true
 	default:
 		return strings.HasPrefix(key, "trae ")
+	}
+}
+
+func isOpenCodeExecutable(executableBase string) bool {
+	switch normalizedExecutableBase(executableBase) {
+	case "opencode", "opencode-ai":
+		return true
+	default:
+		return false
+	}
+}
+
+func isGeminiExecutable(executableBase string) bool {
+	switch normalizedExecutableBase(executableBase) {
+	case "gemini", "gemini-cli":
+		return true
+	default:
+		return false
+	}
+}
+
+func detectedToolFromInterpreter(fields []string) string {
+	if len(fields) < 2 {
+		return ""
+	}
+	switch normalizedExecutableBase(fields[0]) {
+	case "node", "bun", "deno":
+	default:
+		return ""
+	}
+	script := interpreterScriptToken(fields[1:])
+	if script == "" {
+		return ""
+	}
+	if isOpenCodeExecutable(script) {
+		return "opencode"
+	}
+	if isGeminiExecutable(script) {
+		return "gemini"
+	}
+	return detectedToolFromKnownPackagePath(script)
+}
+
+func interpreterScriptToken(args []string) string {
+	optionsWithValue := map[string]struct{}{
+		"-r":                    {},
+		"--require":             {},
+		"--import":              {},
+		"--loader":              {},
+		"--experimental-loader": {},
+		"--env-file":            {},
+	}
+	for i := 0; i < len(args); i++ {
+		arg := strings.Trim(args[i], `"'`)
+		if arg == "" {
+			continue
+		}
+		if arg == "--" {
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			option := arg
+			if index := strings.Index(option, "="); index >= 0 {
+				option = option[:index]
+			}
+			if _, ok := optionsWithValue[option]; ok && !strings.Contains(arg, "=") {
+				i++
+			}
+			continue
+		}
+		return arg
+	}
+	return ""
+}
+
+func detectedToolFromKnownPackagePath(path string) string {
+	normalized := "/" + strings.Trim(strings.ReplaceAll(strings.Trim(path, `"'`), "\\", "/"), "/")
+	switch {
+	case strings.Contains(normalized, "/node_modules/@google/gemini-cli/"),
+		strings.Contains(normalized, "/@google/gemini-cli/"):
+		return "gemini"
+	case strings.Contains(normalized, "/node_modules/opencode-ai/"),
+		strings.Contains(normalized, "/opencode-ai/"):
+		return "opencode"
+	default:
+		return ""
 	}
 }
 

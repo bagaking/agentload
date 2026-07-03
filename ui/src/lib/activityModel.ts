@@ -1,4 +1,4 @@
-import { formatAge, formatPct, shortID, type Translate } from "./format";
+import { formatAge, formatPct, formatTokenUsageSummary, shortID, tokenUsageHasValue, type Translate } from "./format";
 import type { RoleCounts, ToolSessionGroup } from "../types/app";
 import type { LiveSession, ProjectSnapshot, Snapshot } from "../types/snapshot";
 
@@ -70,15 +70,20 @@ export function projectRoleCounts(project: ProjectSnapshot, sessions: LiveSessio
 export function projectEvidenceItems(t: Translate, project: ProjectSnapshot, compact: boolean): EvidenceItem[] {
   const stale = project.stale_session_count ?? 0;
   const recent = project.recent_session_count ?? 0;
+  const tokenItem =
+    project.token_usage && tokenUsageHasValue(project.token_usage)
+      ? { label: t("tokenUsage"), value: formatTokenUsageSummary(project.token_usage, t), tone: "good" }
+      : null;
   const items = [
     { label: t("attention"), value: formatPct(project.attention_share_pct), tone: (project.attention_share_pct ?? 0) > 50 ? "active" : "" },
+    tokenItem,
     { label: t("basis"), value: project.attention_basis || t("unavailable") },
     { label: t("confidence"), value: confidenceLabel(t, project.confidence), tone: project.confidence === "high" ? "good" : "" },
     { label: t("attribution"), value: confidenceLabel(t, project.project_attribution_confidence), tone: project.project_attribution_confidence === "high" ? "good" : "" },
     { label: t("recent"), value: String(recent), tone: recent > 0 ? "active" : "" },
     { label: t("stale"), value: String(stale), tone: stale > 0 ? "warn" : "" },
     { label: t("lastEvent"), value: formatAge(project.last_event_age_seconds, t) },
-  ];
+  ].filter(Boolean) as EvidenceItem[];
   return compact ? items.slice(0, 4) : items;
 }
 
@@ -290,6 +295,8 @@ export function toolDisplayName(toolName?: string): string {
   if (key === "codex" || key === "codexl") return "Codex";
   if (key === "claude") return "Claude";
   if (key === "trae" || key === "traex") return "Trae";
+  if (key === "opencode" || key === "opencode-ai") return "OpenCode";
+  if (key === "gemini" || key === "gemini-cli") return "Gemini";
   return raw;
 }
 
@@ -298,6 +305,8 @@ export function toolIconName(toolName?: string): string {
   if (key === "codex" || key === "codexl") return "codex";
   if (key === "claude") return "claude";
   if (key === "trae" || key === "traex") return "trae";
+  if (key === "opencode" || key === "opencode-ai") return "opencode";
+  if (key === "gemini" || key === "gemini-cli") return "gemini";
   return "";
 }
 
