@@ -27,6 +27,10 @@ type ProcessFilter =
   | { kind: "runtime"; id: string }
   | { kind: "host"; id: string }
   | { kind: "role"; id: "direct" | "subagent" | "unknown" | "unmapped" };
+type HoverDetailPayload =
+  | { kind: "project"; id: string; title: string; detail: string; meta?: string }
+  | { kind: "session"; id: string; title: string; metrics: Array<{ label: string; value: string }>; tokenParts: Array<{ label: string; value: string }>; meta: string };
+type HoverDetailSink = (detail: HoverDetailPayload | null) => void;
 
 declare global {
   interface Window {
@@ -391,6 +395,11 @@ function PopoverSurface({
   trendSelection: Record<TrendLane, string | undefined>;
   setTrendSelection: React.Dispatch<React.SetStateAction<Record<TrendLane, string | undefined>>>;
 }) {
+  const [hoverDetail, setHoverDetail] = useState<HoverDetailPayload | null>(null);
+  useEffect(() => {
+    setHoverDetail(null);
+  }, [popoverView, snapshot?.generated_at, snapshot?.refresh_slot_id]);
+
   if (!snapshot) return <EmptySurface t={t} compact error={error} />;
   return (
     <main className="popover-surface">
@@ -405,7 +414,7 @@ function PopoverSurface({
               aria-labelledby="popover-view-online"
               hidden={popoverView !== "online"}
             >
-              <PopoverAuditShell t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} />
+              <PopoverAuditShell t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} setHoverDetail={setHoverDetail} />
             </section>
             <section
               className="popover-view-panel trend"
@@ -426,6 +435,7 @@ function PopoverSurface({
             </section>
           </div>
         </div>
+        {popoverView === "online" ? <PopoverHoverInspector t={t} detail={hoverDetail} /> : null}
       </div>
     </main>
   );
@@ -877,11 +887,13 @@ function PopoverAuditShell({
   snapshot,
   selection,
   setSelection,
+  setHoverDetail,
 }: {
   t: (key: string) => string;
   snapshot: Snapshot;
   selection: Selection;
   setSelection: (value: Selection) => void;
+  setHoverDetail: HoverDetailSink;
 }) {
   return (
     <section className="popover-panel audit-shell">
@@ -895,9 +907,34 @@ function PopoverAuditShell({
           </div>
           <span>{dashboardProjectMeta(t, snapshot)}</span>
         </div>
-        <ProjectAtlas t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} compact defaultExpandedCount={0} showHead={false} />
+        <ProjectAtlas t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} compact defaultExpandedCount={0} showHead={false} setHoverDetail={setHoverDetail} />
       </section>
     </section>
+  );
+}
+
+function PopoverHoverInspector({ t, detail }: { t: (key: string) => string; detail: HoverDetailPayload | null }) {
+  return (
+    <aside className={`popover-hover-inspector ${detail ? `is-visible ${detail.kind}` : ""}`} aria-hidden={detail ? "false" : "true"} aria-live="polite">
+      {detail ? (
+        <>
+          <span className="hover-inspector-mark" aria-hidden="true">
+            {detail.kind === "session" ? <Bot size={14} /> : <Layers size={14} />}
+          </span>
+          <span className="hover-inspector-body">
+            {detail.kind === "session" ? (
+              <SessionHoverContent t={t} title={detail.title} metrics={detail.metrics} tokenParts={detail.tokenParts} meta={detail.meta} />
+            ) : (
+              <>
+                <strong>{detail.title}</strong>
+                <em>{detail.detail}</em>
+                {detail.meta ? <small>{detail.meta}</small> : null}
+              </>
+            )}
+          </span>
+        </>
+      ) : null}
+    </aside>
   );
 }
 
@@ -1091,6 +1128,7 @@ function ProjectAtlas({
   limit,
   defaultExpandedCount,
   showHead = true,
+  setHoverDetail,
 }: {
   t: (key: string) => string;
   snapshot: Snapshot;
@@ -1100,6 +1138,7 @@ function ProjectAtlas({
   limit?: number;
   defaultExpandedCount: number;
   showHead?: boolean;
+  setHoverDetail?: HoverDetailSink;
 }) {
   const allProjects = useMemo(() => orderedProjects(snapshot), [snapshot]);
   const clippedProjects = allProjects.slice(0, limit ?? Number.POSITIVE_INFINITY);
@@ -1135,6 +1174,7 @@ function ProjectAtlas({
               onToggle={() => toggleProject(projectId)}
               onOpen={() => openProject(projectId)}
               rank={index + 1}
+              setHoverDetail={setHoverDetail}
             />
           );
         }) : (
@@ -2072,6 +2112,7 @@ function ProjectTreeRow({
   onToggle,
   onOpen,
   rank,
+  setHoverDetail,
 }: {
   t: (key: string) => string;
   snapshot: Snapshot;
@@ -2083,6 +2124,7 @@ function ProjectTreeRow({
   onToggle?: () => void;
   onOpen?: () => void;
   rank?: number;
+  setHoverDetail?: HoverDetailSink;
 }) {
   const sessions = sessionsForProject(snapshot, project);
   const counts = projectRoleCounts(project, sessions);
@@ -2096,6 +2138,7 @@ function ProjectTreeRow({
   const toolSummary = (project.tools ?? []).map((tool) => `${toolDisplayName(tool.tool)} ${tool.active_burst_count ?? 0}/${tool.session_count ?? 0}`).join(" · ") || t("unavailable");
   const projectHoverDetail = `${counts.activeTotal} ${t("active")} / ${counts.total} ${t("sessions")} · ${project.process_count ?? 0} ${t("processes")} · ${resourceText}`;
   const projectHoverMeta = `${t("lastEvent")} ${projectAge} · ${t("tools")}: ${toolSummary}`;
+  const projectHoverPayload: HoverDetailPayload = { kind: "project", id: projectId, title, detail: projectHoverDetail, meta: projectHoverMeta };
   const selected = selection.type === "project" && selection.id === projectId;
   const rowClassName = [
     "project-tree-row",
@@ -2114,9 +2157,15 @@ function ProjectTreeRow({
     }
   };
   const disclosureLabel = expanded ? t("collapseDetails") : t("expandDetails");
+  const showProjectHover = () => setHoverDetail?.(projectHoverPayload);
+  const clearProjectHover = () => setHoverDetail?.(null);
+  const clearProjectFocusHover = (event: React.FocusEvent<HTMLElement>) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    clearProjectHover();
+  };
   return (
     <article className={rowClassName}>
-      <div className="project-tree-head">
+      <div className="project-tree-head" onPointerEnter={showProjectHover} onPointerLeave={clearProjectHover} onFocus={showProjectHover} onBlur={clearProjectFocusHover}>
         <span className="project-rank">{rank ?? "-"}</span>
         <button className="project-disclosure" type="button" onClick={onToggle} aria-expanded={expanded} aria-label={disclosureLabel}>
           <ChevronDown size={15} aria-hidden="true" />
@@ -2138,10 +2187,10 @@ function ProjectTreeRow({
               </span>
             ))}
           </div>
-          <SessionTree t={t} sessions={sessions} selection={selection} setSelection={setSelection} compact={compact} />
+          <SessionTree t={t} sessions={sessions} selection={selection} setSelection={setSelection} compact={compact} setHoverDetail={setHoverDetail} />
         </>
       ) : null}
-      <RowHoverDetail title={title} detail={projectHoverDetail} meta={projectHoverMeta} />
+      {setHoverDetail ? null : <RowHoverDetail title={title} detail={projectHoverDetail} meta={projectHoverMeta} />}
     </article>
   );
 }
@@ -2258,12 +2307,14 @@ function SessionTree({
   selection,
   setSelection,
   compact,
+  setHoverDetail,
 }: {
   t: (key: string) => string;
   sessions: LiveSession[];
   selection: Selection;
   setSelection: (value: Selection) => void;
   compact: boolean;
+  setHoverDetail?: HoverDetailSink;
 }) {
   const groups = buildToolSessionGroups(sessions);
   const groupLimit = compact ? 2 : 4;
@@ -2299,9 +2350,9 @@ function SessionTree({
                     <strong>{branch.children.length}</strong>
                   </div>
                 ) : null}
-                <SessionLine t={t} session={branch.parent} selection={selection} setSelection={setSelection} compact={compact} />
+                <SessionLine t={t} session={branch.parent} selection={selection} setSelection={setSelection} compact={compact} setHoverDetail={setHoverDetail} />
                 {(showOverflow ? branch.children : branch.children.slice(0, childLimit)).map((session) => (
-                  <SessionLine key={sessionIdentity(session)} t={t} session={session} selection={selection} setSelection={setSelection} compact={compact} child />
+                  <SessionLine key={sessionIdentity(session)} t={t} session={session} selection={selection} setSelection={setSelection} compact={compact} child setHoverDetail={setHoverDetail} />
                 ))}
               </section>
             ))}
@@ -2312,7 +2363,7 @@ function SessionTree({
                   <strong>{group.unlinked.length}</strong>
                 </div>
                 {visibleUnlinked.map((session) => (
-                  <SessionLine key={sessionIdentity(session)} t={t} session={session} selection={selection} setSelection={setSelection} compact={compact} />
+                  <SessionLine key={sessionIdentity(session)} t={t} session={session} selection={selection} setSelection={setSelection} compact={compact} setHoverDetail={setHoverDetail} />
                 ))}
               </section>
             ) : null}
@@ -2323,7 +2374,7 @@ function SessionTree({
                   <strong>{group.unknown.length}</strong>
                 </div>
                 {visibleUnknown.map((session) => (
-                  <SessionLine key={sessionIdentity(session)} t={t} session={session} selection={selection} setSelection={setSelection} compact={compact} />
+                  <SessionLine key={sessionIdentity(session)} t={t} session={session} selection={selection} setSelection={setSelection} compact={compact} setHoverDetail={setHoverDetail} />
                 ))}
               </section>
             ) : null}
@@ -2347,6 +2398,7 @@ function SessionLine({
   setSelection,
   compact,
   child = false,
+  setHoverDetail,
 }: {
   t: (key: string) => string;
   session: LiveSession;
@@ -2354,6 +2406,7 @@ function SessionLine({
   setSelection: (value: Selection) => void;
   compact: boolean;
   child?: boolean;
+  setHoverDetail?: HoverDetailSink;
 }) {
   const role = normalizedRole(session.session_role);
   const sid = session.session_id || "";
@@ -2376,12 +2429,19 @@ function SessionLine({
     { label: t("processMemory"), value: formatMemory(session.process_memory_bytes, t) },
   ];
   const tokenParts = sessionTokenUsageParts(t, session.token_usage);
+  const sessionHoverPayload: HoverDetailPayload = { kind: "session", id: safeID(sid), title: sessionHoverTitle, metrics: sessionHoverMetrics, tokenParts, meta: sessionHoverMeta };
+  const showSessionHover = () => setHoverDetail?.(sessionHoverPayload);
+  const clearSessionHover = () => setHoverDetail?.(null);
+  const clearSessionFocusHover = (event: React.FocusEvent<HTMLElement>) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    clearSessionHover();
+  };
   const visibleEvidenceItems = (session.process_count ?? 0) > 0
     ? [{ label: t("resources"), value: resourceText, tone: "resource" }, ...evidenceItems]
     : evidenceItems;
   if (compact) {
     return (
-      <div className={`session-line role-${role} ${session.active_burst ? "is-active" : ""} ${selected ? "is-selected" : ""} ${child ? "is-child" : ""}`}>
+      <div className={`session-line role-${role} ${session.active_burst ? "is-active" : ""} ${selected ? "is-selected" : ""} ${child ? "is-child" : ""}`} onPointerEnter={showSessionHover} onPointerLeave={clearSessionHover} onFocus={showSessionHover} onBlur={clearSessionFocusHover}>
         <span className="session-role-slot">
           <RoleGlyph t={t} role={role} />
         </span>
@@ -2403,12 +2463,12 @@ function SessionLine({
             </span>
           ))}
         </div>
-        <SessionHoverDetail title={sessionHoverTitle} metrics={sessionHoverMetrics} tokenParts={tokenParts} meta={sessionHoverMeta} />
+        {setHoverDetail ? null : <SessionHoverDetail t={t} title={sessionHoverTitle} metrics={sessionHoverMetrics} tokenParts={tokenParts} meta={sessionHoverMeta} />}
       </div>
     );
   }
   return (
-    <div className={`session-line role-${role} ${session.active_burst ? "is-active" : ""} ${selected ? "is-selected" : ""} ${child ? "is-child" : ""}`}>
+    <div className={`session-line role-${role} ${session.active_burst ? "is-active" : ""} ${selected ? "is-selected" : ""} ${child ? "is-child" : ""}`} onPointerEnter={showSessionHover} onPointerLeave={clearSessionHover} onFocus={showSessionHover} onBlur={clearSessionFocusHover}>
       <span className="session-main">
         <RoleGlyph t={t} role={role} />
         <span className="session-title">
@@ -2430,7 +2490,7 @@ function SessionLine({
           </span>
         ))}
       </div>
-      <SessionHoverDetail title={sessionHoverTitle} metrics={sessionHoverMetrics} tokenParts={tokenParts} meta={sessionHoverMeta} />
+      {setHoverDetail ? null : <SessionHoverDetail t={t} title={sessionHoverTitle} metrics={sessionHoverMetrics} tokenParts={tokenParts} meta={sessionHoverMeta} />}
     </div>
   );
 }
@@ -2660,11 +2720,13 @@ function RowHoverDetail({ title, detail, meta }: { title: string; detail: string
 }
 
 function SessionHoverDetail({
+  t,
   title,
   metrics,
   tokenParts,
   meta,
 }: {
+  t: (key: string) => string;
   title: string;
   metrics: Array<{ label: string; value: string }>;
   tokenParts: Array<{ label: string; value: string }>;
@@ -2672,6 +2734,26 @@ function SessionHoverDetail({
 }) {
   return (
     <span className="row-hover-detail session-hover-detail" aria-hidden="true">
+      <SessionHoverContent t={t} title={title} metrics={metrics} tokenParts={tokenParts} meta={meta} />
+    </span>
+  );
+}
+
+function SessionHoverContent({
+  t,
+  title,
+  metrics,
+  tokenParts,
+  meta,
+}: {
+  t: (key: string) => string;
+  title: string;
+  metrics: Array<{ label: string; value: string }>;
+  tokenParts: Array<{ label: string; value: string }>;
+  meta: string;
+}) {
+  return (
+    <>
       <strong>{title}</strong>
       <span className="session-hover-grid">
         {metrics.map((item) => (
@@ -2682,7 +2764,7 @@ function SessionHoverDetail({
         ))}
       </span>
       <span className="session-hover-tokens">
-        <b>Tokens</b>
+        <b>{t("tokenUsage")}</b>
         <span>
           {tokenParts.map((item) => (
             <em key={item.label}><i>{item.label}</i>{item.value}</em>
@@ -2690,7 +2772,7 @@ function SessionHoverDetail({
         </span>
       </span>
       <small>{meta}</small>
-    </span>
+    </>
   );
 }
 

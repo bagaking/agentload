@@ -4917,6 +4917,120 @@ body[data-view="popover"] .popover-current-surface {
   overflow: hidden;
 }
 
+body[data-view="popover"] .popover-hover-inspector {
+  position: absolute;
+  top: 7px;
+  left: 8px;
+  right: 8px;
+  z-index: 90;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  max-height: 126px;
+  min-width: 0;
+  padding: 8px 10px;
+  overflow: hidden;
+  border-top: 1px solid color-mix(in srgb, var(--fg) 9%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--console-line) 84%, transparent);
+  background:
+    linear-gradient(100deg, color-mix(in srgb, var(--ok) 13%, transparent) 0 24%, transparent 24.5% 58%, color-mix(in srgb, var(--accent) 10%, transparent) 58% 78%, transparent 78.5%),
+    linear-gradient(180deg, color-mix(in srgb, var(--fg) 6%, transparent), transparent 48%),
+    color-mix(in srgb, var(--console-material) 90%, transparent);
+  box-shadow:
+    0 18px 42px color-mix(in srgb, #000 30%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--fg) 5%, transparent);
+  color: var(--fg);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate3d(0, -4px, 0) scale(.992);
+  transition: opacity .14s ease, transform .18s cubic-bezier(.2, .8, .2, 1);
+  backdrop-filter: blur(20px) saturate(1.28);
+  -webkit-backdrop-filter: blur(20px) saturate(1.28);
+}
+
+body[data-view="popover"] .popover-hover-inspector.is-visible {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
+}
+
+body[data-view="popover"] .hover-inspector-mark {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  color: var(--ok);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, currentColor 16%, transparent), transparent 62%),
+    color-mix(in srgb, var(--console-material-2) 64%, transparent);
+}
+
+body[data-view="popover"] .popover-hover-inspector.project .hover-inspector-mark {
+  color: var(--accent);
+}
+
+body[data-view="popover"] .hover-inspector-body {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+body[data-view="popover"] .hover-inspector-body strong,
+body[data-view="popover"] .hover-inspector-body em,
+body[data-view="popover"] .hover-inspector-body small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .hover-inspector-body strong {
+  color: var(--fg);
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1.15;
+}
+
+body[data-view="popover"] .hover-inspector-body > em,
+body[data-view="popover"] .hover-inspector-body small {
+  color: var(--console-text-soft);
+  font-size: 9px;
+  font-style: normal;
+  line-height: 1.2;
+}
+
+body[data-view="popover"] .hover-inspector-body > em {
+  color: color-mix(in srgb, var(--accent-hi) 72%, var(--fg));
+  font-family: var(--font-mono);
+}
+
+body[data-view="popover"] .popover-hover-inspector .session-hover-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+body[data-view="popover"] .popover-hover-inspector .session-hover-grid b,
+body[data-view="popover"] .popover-hover-inspector .session-hover-tokens > b {
+  font-size: 7.8px;
+}
+
+body[data-view="popover"] .popover-hover-inspector .session-hover-grid em,
+body[data-view="popover"] .popover-hover-inspector .session-hover-tokens em {
+  font-size: 9.3px;
+}
+
+body[data-view="popover"] .popover-hover-inspector .session-hover-tokens {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 7px;
+  padding-top: 5px;
+}
+
+body[data-view="popover"] .popover-hover-inspector .session-hover-tokens > span {
+  overflow: hidden;
+}
+
 body[data-view="popover"] .popover-current-scroll {
   height: 100%;
   overflow: auto;
