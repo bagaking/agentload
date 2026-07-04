@@ -30,7 +30,9 @@ type ProcessFilter =
 type HoverDetailPayload =
   | { kind: "project"; id: string; title: string; detail: string; meta?: string }
   | { kind: "session"; id: string; title: string; metrics: Array<{ label: string; value: string }>; tokenParts: Array<{ label: string; value: string }>; meta: string };
-type HoverDetailSink = (detail: HoverDetailPayload | null) => void;
+type HoverDetailEvent = React.PointerEvent<HTMLElement> | React.FocusEvent<HTMLElement>;
+type HoverDetailSink = (detail: HoverDetailPayload | null, event?: HoverDetailEvent) => void;
+type HoverDetailState = { detail: HoverDetailPayload; x: number; y: number; visible: boolean };
 
 declare global {
   interface Window {
@@ -395,10 +397,30 @@ function PopoverSurface({
   trendSelection: Record<TrendLane, string | undefined>;
   setTrendSelection: React.Dispatch<React.SetStateAction<Record<TrendLane, string | undefined>>>;
 }) {
-  const [hoverDetail, setHoverDetail] = useState<HoverDetailPayload | null>(null);
+  const [hoverDetail, setHoverDetailState] = useState<HoverDetailState | null>(null);
+  const hideHoverDetailTimerRef = useRef<number | null>(null);
+  const clearHoverDetailTimer = useCallback(() => {
+    if (hideHoverDetailTimerRef.current !== null) {
+      window.clearTimeout(hideHoverDetailTimerRef.current);
+      hideHoverDetailTimerRef.current = null;
+    }
+  }, []);
+  const setHoverDetail = useCallback<HoverDetailSink>((detail, event) => {
+    clearHoverDetailTimer();
+    if (!detail) {
+      hideHoverDetailTimerRef.current = window.setTimeout(() => {
+        setHoverDetailState((current) => current ? { ...current, visible: false } : null);
+      }, 140);
+      return;
+    }
+    const point = hoverPointFromEvent(event);
+    setHoverDetailState({ detail, x: point.x, y: point.y, visible: true });
+  }, [clearHoverDetailTimer]);
   useEffect(() => {
-    setHoverDetail(null);
-  }, [popoverView, snapshot?.generated_at, snapshot?.refresh_slot_id]);
+    clearHoverDetailTimer();
+    setHoverDetailState(null);
+  }, [clearHoverDetailTimer, popoverView, snapshot?.generated_at, snapshot?.refresh_slot_id]);
+  useEffect(() => () => clearHoverDetailTimer(), [clearHoverDetailTimer]);
 
   if (!snapshot) return <EmptySurface t={t} compact error={error} />;
   return (
@@ -913,22 +935,24 @@ function PopoverAuditShell({
   );
 }
 
-function PopoverHoverInspector({ t, detail }: { t: (key: string) => string; detail: HoverDetailPayload | null }) {
+function PopoverHoverInspector({ t, detail }: { t: (key: string) => string; detail: HoverDetailState | null }) {
+  const payload = detail?.detail ?? null;
+  const style = detail ? hoverInspectorStyle(detail) : undefined;
   return (
-    <aside className={`popover-hover-inspector ${detail ? `is-visible ${detail.kind}` : ""}`} aria-hidden={detail ? "false" : "true"} aria-live="polite">
-      {detail ? (
+    <aside className={`popover-hover-inspector ${payload ? `${detail?.visible ? "is-visible" : ""} ${payload.kind}` : ""}`} style={style} aria-hidden={payload ? "false" : "true"} aria-live="polite">
+      {payload ? (
         <>
           <span className="hover-inspector-mark" aria-hidden="true">
-            {detail.kind === "session" ? <Bot size={14} /> : <Layers size={14} />}
+            {payload.kind === "session" ? <Bot size={14} /> : <Layers size={14} />}
           </span>
           <span className="hover-inspector-body">
-            {detail.kind === "session" ? (
-              <SessionHoverContent t={t} title={detail.title} metrics={detail.metrics} tokenParts={detail.tokenParts} meta={detail.meta} />
+            {payload.kind === "session" ? (
+              <SessionHoverContent t={t} title={payload.title} metrics={payload.metrics} tokenParts={payload.tokenParts} meta={payload.meta} />
             ) : (
               <>
-                <strong>{detail.title}</strong>
-                <em>{detail.detail}</em>
-                {detail.meta ? <small>{detail.meta}</small> : null}
+                <strong>{payload.title}</strong>
+                <em>{payload.detail}</em>
+                {payload.meta ? <small>{payload.meta}</small> : null}
               </>
             )}
           </span>
@@ -936,6 +960,41 @@ function PopoverHoverInspector({ t, detail }: { t: (key: string) => string; deta
       ) : null}
     </aside>
   );
+}
+
+function hoverPointFromEvent(event?: HoverDetailEvent): { x: number; y: number } {
+  if (event && "clientX" in event && event.clientX && event.clientY) {
+    return { x: event.clientX, y: event.clientY };
+  }
+  const rect = event?.currentTarget.getBoundingClientRect();
+  if (rect) {
+    return {
+      x: rect.left + Math.min(Math.max(rect.width * 0.66, 24), Math.max(rect.width - 18, 24)),
+      y: rect.top + Math.min(Math.max(rect.height * 0.55, 14), Math.max(rect.height - 8, 14)),
+    };
+  }
+  return { x: 24, y: 24 };
+}
+
+function hoverInspectorStyle(state: HoverDetailState): React.CSSProperties {
+  const viewportWidth = typeof window === "undefined" ? 420 : window.innerWidth;
+  const viewportHeight = typeof window === "undefined" ? 560 : window.innerHeight;
+  const width = state.detail.kind === "session"
+    ? Math.min(348, Math.max(244, viewportWidth - 176))
+    : Math.min(304, Math.max(220, viewportWidth - 196));
+  const height = state.detail.kind === "session" && width < 280 ? 220 : state.detail.kind === "session" ? 156 : 86;
+  const gap = 14;
+  let left = state.x + gap;
+  let top = state.y + gap;
+  if (left + width > viewportWidth - 10) left = state.x - width - gap;
+  if (top + height > viewportHeight - 10) top = state.y - height - gap;
+  left = Math.max(10, Math.min(left, Math.max(10, viewportWidth - width - 10)));
+  top = Math.max(10, Math.min(top, Math.max(10, viewportHeight - height - 10)));
+  return {
+    left,
+    top,
+    "--hover-width": `${width}px`,
+  } as React.CSSProperties;
 }
 
 function PopoverRuntimeInstrument({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot }) {
@@ -2157,7 +2216,7 @@ function ProjectTreeRow({
     }
   };
   const disclosureLabel = expanded ? t("collapseDetails") : t("expandDetails");
-  const showProjectHover = () => setHoverDetail?.(projectHoverPayload);
+  const showProjectHover = (event: React.PointerEvent<HTMLElement> | React.FocusEvent<HTMLElement>) => setHoverDetail?.(projectHoverPayload, event);
   const clearProjectHover = () => setHoverDetail?.(null);
   const clearProjectFocusHover = (event: React.FocusEvent<HTMLElement>) => {
     if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
@@ -2165,7 +2224,7 @@ function ProjectTreeRow({
   };
   return (
     <article className={rowClassName}>
-      <div className="project-tree-head" onPointerEnter={showProjectHover} onPointerLeave={clearProjectHover} onFocus={showProjectHover} onBlur={clearProjectFocusHover}>
+      <div className="project-tree-head" onPointerEnter={showProjectHover} onPointerMove={showProjectHover} onPointerLeave={clearProjectHover} onFocus={showProjectHover} onBlur={clearProjectFocusHover}>
         <span className="project-rank">{rank ?? "-"}</span>
         <button className="project-disclosure" type="button" onClick={onToggle} aria-expanded={expanded} aria-label={disclosureLabel}>
           <ChevronDown size={15} aria-hidden="true" />
@@ -2430,7 +2489,7 @@ function SessionLine({
   ];
   const tokenParts = sessionTokenUsageParts(t, session.token_usage);
   const sessionHoverPayload: HoverDetailPayload = { kind: "session", id: safeID(sid), title: sessionHoverTitle, metrics: sessionHoverMetrics, tokenParts, meta: sessionHoverMeta };
-  const showSessionHover = () => setHoverDetail?.(sessionHoverPayload);
+  const showSessionHover = (event: React.PointerEvent<HTMLElement> | React.FocusEvent<HTMLElement>) => setHoverDetail?.(sessionHoverPayload, event);
   const clearSessionHover = () => setHoverDetail?.(null);
   const clearSessionFocusHover = (event: React.FocusEvent<HTMLElement>) => {
     if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
@@ -2441,7 +2500,7 @@ function SessionLine({
     : evidenceItems;
   if (compact) {
     return (
-      <div className={`session-line role-${role} ${session.active_burst ? "is-active" : ""} ${selected ? "is-selected" : ""} ${child ? "is-child" : ""}`} onPointerEnter={showSessionHover} onPointerLeave={clearSessionHover} onFocus={showSessionHover} onBlur={clearSessionFocusHover}>
+      <div className={`session-line role-${role} ${session.active_burst ? "is-active" : ""} ${selected ? "is-selected" : ""} ${child ? "is-child" : ""}`} onPointerEnter={showSessionHover} onPointerMove={showSessionHover} onPointerLeave={clearSessionHover} onFocus={showSessionHover} onBlur={clearSessionFocusHover}>
         <span className="session-role-slot">
           <RoleGlyph t={t} role={role} />
         </span>
@@ -2468,7 +2527,7 @@ function SessionLine({
     );
   }
   return (
-    <div className={`session-line role-${role} ${session.active_burst ? "is-active" : ""} ${selected ? "is-selected" : ""} ${child ? "is-child" : ""}`} onPointerEnter={showSessionHover} onPointerLeave={clearSessionHover} onFocus={showSessionHover} onBlur={clearSessionFocusHover}>
+    <div className={`session-line role-${role} ${session.active_burst ? "is-active" : ""} ${selected ? "is-selected" : ""} ${child ? "is-child" : ""}`} onPointerEnter={showSessionHover} onPointerMove={showSessionHover} onPointerLeave={clearSessionHover} onFocus={showSessionHover} onBlur={clearSessionFocusHover}>
       <span className="session-main">
         <RoleGlyph t={t} role={role} />
         <span className="session-title">

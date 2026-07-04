@@ -188,10 +188,10 @@ agent evidence.
   surface at a time. Do not combine browser-native `title` tooltips with custom
   row hover cards inside the same ledger; nested rows must suppress parent hover
   details so project, session, and process explanations do not stack.
-- Popover row hover details must render outside the scroll-clipped ledger.
-  Prefer one top-level inspector surface that updates from row hover/focus over
-  row-local absolute popovers, so session and project details cannot be cut by
-  overflow, hidden under neighboring rows, or forced to follow the pointer.
+- Popover row hover details must render outside the scroll-clipped ledger as a
+  single global cursor-following layer. Avoid row-local absolute popovers, but
+  keep the detail spatially tied to the pointer with a short hide delay so
+  moving across dense rows does not flash or stack competing panels.
 - Session hover details should be structured, not a single compressed sentence.
   Process resources must be labeled as process CPU and process memory, and token
   usage should appear as its own section with total/input/output/cache/reasoning
