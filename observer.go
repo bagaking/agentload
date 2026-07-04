@@ -57,8 +57,8 @@ func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 			ActiveBurstConcurrency: peakConcurrency(data.BurstSpans, sevenDayStart, now),
 		},
 	}
-	liveProcessSnapshots := projectLiveProcesses(processes, data)
 	liveSessionSnapshots := projectLiveSessions(liveSessions, o.cfg.IdleGap, now)
+	liveProcessSnapshots := projectLiveProcessesWithSessions(processes, liveSessions, liveSessionSnapshots, data)
 	projectFocus := buildProjectFocus(liveSessions, o.cfg.IdleGap, now)
 	candidateWorkitems := buildCandidateWorkitems(liveSessionSnapshots)
 	snapshot := Snapshot{
@@ -84,6 +84,8 @@ func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 		AgeBuckets:         buildAgeBuckets(liveSessions, o.cfg.IdleGap, now),
 		LiveProcesses:      liveProcessSnapshots,
 		LiveSessions:       liveSessionSnapshots,
+		RuntimeProcesses:   buildRuntimeProcessSummary(liveProcessSnapshots),
+		HostAppProcesses:   buildHostAppProcessSummary(liveProcessSnapshots),
 	}
 	snapshot.Summary = buildSnapshotSummary(snapshot.LiveProcesses, snapshot.LiveSessions, snapshot.ProjectFocus)
 	snapshot.CoordinationRisk = buildCoordinationRisk(
@@ -701,20 +703,46 @@ func mergeLiveSessionMapping(dst *LiveSessionMapping, src LiveSessionMapping) {
 }
 
 func projectLiveProcesses(processes []LiveProcess, data *TranscriptData) []LiveProcessSnapshot {
+	return projectLiveProcessesWithSessions(processes, nil, nil, data)
+}
+
+func projectLiveProcessesWithSessions(processes []LiveProcess, liveSessions []LiveSession, liveSessionSnapshots []LiveSessionSnapshot, data *TranscriptData) []LiveProcessSnapshot {
 	tracesByID := buildTracesByID(data)
+	sessionSnapshotsByID := map[string]LiveSessionSnapshot{}
+	for _, session := range liveSessionSnapshots {
+		if session.SessionID == "" {
+			continue
+		}
+		sessionSnapshotsByID[liveSessionKeyForID(session.Tool, session.SessionID)] = session
+	}
+	processSessionIDs := map[int]map[string]struct{}{}
+	for _, session := range liveSessions {
+		if session.SessionID == "" {
+			continue
+		}
+		key := liveSessionKeyForID(session.Tool, session.SessionID)
+		for pid := range session.Processes {
+			if processSessionIDs[pid] == nil {
+				processSessionIDs[pid] = map[string]struct{}{}
+			}
+			processSessionIDs[pid][key] = struct{}{}
+		}
+	}
 	out := make([]LiveProcessSnapshot, 0, len(processes))
 	for _, process := range processes {
 		processSessions, _ := normalizeProcessSessionMappings(process, data, tracesByID)
 		snapshot := LiveProcessSnapshot{
-			PID:     process.PID,
-			Tool:    process.Tool,
-			Command: process.Command,
-			HostApp: cloneHostApp(process.HostApp),
+			PID:         process.PID,
+			Tool:        process.Tool,
+			DisplayName: processDisplayName(process),
+			Command:     process.Command,
+			HostApp:     cloneHostApp(process.HostApp),
 		}
 		sessionIDs := []string{}
 		sessionPaths := []string{}
 		seenIDs := map[string]struct{}{}
 		seenPaths := map[string]struct{}{}
+		sessionKeys := map[string]struct{}{}
 		for _, candidate := range processSessions {
 			if candidate.Path != "" {
 				if _, ok := seenPaths[candidate.Path]; !ok {
@@ -730,12 +758,44 @@ func projectLiveProcesses(processes []LiveProcess, data *TranscriptData) []LiveP
 			}
 			seenIDs[candidate.SessionID] = struct{}{}
 			sessionIDs = append(sessionIDs, candidate.SessionID)
+			sessionKeys[liveSessionKeyForID(candidate.Tool, candidate.SessionID)] = struct{}{}
+		}
+		for key := range processSessionIDs[process.PID] {
+			sessionKeys[key] = struct{}{}
+			session := sessionSnapshotsByID[key]
+			if session.SessionID == "" {
+				continue
+			}
+			if _, ok := seenIDs[session.SessionID]; ok {
+				continue
+			}
+			seenIDs[session.SessionID] = struct{}{}
+			sessionIDs = append(sessionIDs, session.SessionID)
 		}
 		sort.Strings(sessionIDs)
 		sort.Strings(sessionPaths)
 		snapshot.SessionIDs = sessionIDs
 		snapshot.SessionPaths = sessionPaths
 		snapshot.MappedSessions = len(sessionIDs)
+		snapshot.MappedSessionEvidence = buildProcessSessionEvidence(sessionKeys, sessionSnapshotsByID)
+		snapshot.MatchMethods = processMatchMethods(snapshot.MappedSessionEvidence)
+		for _, evidence := range snapshot.MappedSessionEvidence {
+			if evidence.ActiveBurst {
+				snapshot.MappedActiveSessions++
+			}
+			switch normalizedRole(evidence.Role) {
+			case "main":
+				snapshot.MainSessions++
+			case "subagent":
+				snapshot.SubagentSessions++
+			default:
+				snapshot.UnknownRoleSessions++
+			}
+		}
+		if snapshot.MappedSessions > len(snapshot.MappedSessionEvidence) {
+			snapshot.UnknownRoleSessions += snapshot.MappedSessions - len(snapshot.MappedSessionEvidence)
+		}
+		snapshot.EvidenceSummary = processEvidenceSummary(snapshot)
 		out = append(out, snapshot)
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -746,6 +806,332 @@ func projectLiveProcesses(processes []LiveProcess, data *TranscriptData) []LiveP
 			return out[i].Tool < out[j].Tool
 		}
 		return out[i].PID < out[j].PID
+	})
+	return out
+}
+
+func buildProcessSessionEvidence(sessionKeys map[string]struct{}, sessionsByID map[string]LiveSessionSnapshot) []ProcessSessionEvidence {
+	out := []ProcessSessionEvidence{}
+	for key := range sessionKeys {
+		session, ok := sessionsByID[key]
+		if !ok || session.SessionID == "" {
+			continue
+		}
+		out = append(out, ProcessSessionEvidence{
+			SessionID:           session.SessionID,
+			Project:             session.Project,
+			Role:                normalizedRole(session.SessionRole),
+			ActiveBurst:         session.ActiveBurst,
+			Freshness:           session.Freshness,
+			MappingMethod:       session.MappingMethod,
+			Confidence:          session.Confidence,
+			RoleConfidence:      session.RoleConfidence,
+			LastEventAgeSeconds: session.LastEventAgeSeconds,
+			Provenance:          append([]string(nil), session.Provenance...),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].ActiveBurst != out[j].ActiveBurst {
+			return out[i].ActiveBurst
+		}
+		if roleRank(out[i].Role) != roleRank(out[j].Role) {
+			return roleRank(out[i].Role) < roleRank(out[j].Role)
+		}
+		if out[i].Project != out[j].Project {
+			return out[i].Project < out[j].Project
+		}
+		return out[i].SessionID < out[j].SessionID
+	})
+	return out
+}
+
+func normalizedRole(role string) string {
+	switch strings.TrimSpace(role) {
+	case "main", "subagent":
+		return role
+	default:
+		return "unknown"
+	}
+}
+
+func processMatchMethods(evidence []ProcessSessionEvidence) []string {
+	seen := map[string]struct{}{}
+	out := []string{}
+	for _, item := range evidence {
+		method := strings.TrimSpace(item.MappingMethod)
+		if method == "" {
+			continue
+		}
+		if _, ok := seen[method]; ok {
+			continue
+		}
+		seen[method] = struct{}{}
+		out = append(out, method)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func processEvidenceSummary(process LiveProcessSnapshot) string {
+	if process.MappedSessions == 0 {
+		return "unmapped process"
+	}
+	return fmt.Sprintf("direct %d / subagent %d / unknown %d / active %d", process.MainSessions, process.SubagentSessions, process.UnknownRoleSessions, process.MappedActiveSessions)
+}
+
+func processDisplayName(process LiveProcess) string {
+	fields := strings.Fields(strings.TrimSpace(process.Command))
+	if len(fields) == 0 {
+		return process.Tool
+	}
+	if known := knownProcessIdentity(fields); known != "" {
+		return known
+	}
+	first := cleanCommandBase(fields[0])
+	if first == "" {
+		return process.Tool
+	}
+	if isGenericRuntimeExecutable(first) {
+		for _, field := range fields[1:] {
+			if strings.HasPrefix(field, "-") {
+				continue
+			}
+			base := cleanCommandBase(field)
+			if base != "" && !isGenericRuntimeExecutable(base) {
+				return base
+			}
+		}
+	}
+	return first
+}
+
+func knownProcessIdentity(fields []string) string {
+	for _, field := range fields {
+		base := strings.ToLower(cleanCommandBase(field))
+		switch {
+		case strings.Contains(base, "node_repl"):
+			return "node_repl"
+		case strings.Contains(base, "codexl"):
+			return "codexL"
+		case base == "codex" || strings.HasPrefix(base, "codex-"):
+			return "codex"
+		case base == "claude" || strings.HasPrefix(base, "claude-"):
+			return "claude"
+		case base == "trae" || base == "traex" || base == "trae_cli":
+			return base
+		case base == "opencode" || base == "gemini":
+			return base
+		}
+	}
+	return ""
+}
+
+func cleanCommandBase(value string) string {
+	token := strings.Trim(value, "\"'")
+	if token == "" {
+		return ""
+	}
+	base := filepath.Base(token)
+	base = strings.TrimSuffix(base, ".js")
+	base = strings.TrimSuffix(base, ".mjs")
+	base = strings.TrimSuffix(base, ".cjs")
+	base = strings.TrimSuffix(base, ".ts")
+	return strings.TrimSpace(base)
+}
+
+func isGenericRuntimeExecutable(name string) bool {
+	switch strings.ToLower(name) {
+	case "node", "bun", "deno", "python", "python3", "ruby", "go", "bash", "zsh", "sh", "electron":
+		return true
+	default:
+		return false
+	}
+}
+
+func roleRank(role string) int {
+	switch normalizedRole(role) {
+	case "main":
+		return 0
+	case "subagent":
+		return 1
+	default:
+		return 2
+	}
+}
+
+func buildRuntimeProcessSummary(processes []LiveProcessSnapshot) []ProcessRuntimeSummary {
+	type accumulator struct {
+		item            ProcessRuntimeSummary
+		directSessions  map[string]struct{}
+		subSessions     map[string]struct{}
+		unknownSessions map[string]struct{}
+		activeSessions  map[string]struct{}
+	}
+	items := map[string]*accumulator{}
+	addEvidence := func(acc *accumulator, process LiveProcessSnapshot) {
+		for _, evidence := range process.MappedSessionEvidence {
+			if evidence.SessionID == "" {
+				continue
+			}
+			if evidence.ActiveBurst {
+				acc.activeSessions[evidence.SessionID] = struct{}{}
+			}
+			switch normalizedRole(evidence.Role) {
+			case "main":
+				acc.directSessions[evidence.SessionID] = struct{}{}
+			case "subagent":
+				acc.subSessions[evidence.SessionID] = struct{}{}
+			default:
+				acc.unknownSessions[evidence.SessionID] = struct{}{}
+			}
+		}
+		for _, sessionID := range process.SessionIDs {
+			if sessionID == "" {
+				continue
+			}
+			known := false
+			for _, evidence := range process.MappedSessionEvidence {
+				if evidence.SessionID == sessionID {
+					known = true
+					break
+				}
+			}
+			if !known {
+				acc.unknownSessions[sessionID] = struct{}{}
+			}
+		}
+	}
+	for _, process := range processes {
+		key := strings.TrimSpace(process.Tool)
+		if key == "" {
+			key = "unknown"
+		}
+		acc := items[key]
+		if acc == nil {
+			acc = &accumulator{
+				item: ProcessRuntimeSummary{
+					Key:         key,
+					Tool:        key,
+					DisplayName: key,
+				},
+				directSessions:  map[string]struct{}{},
+				subSessions:     map[string]struct{}{},
+				unknownSessions: map[string]struct{}{},
+				activeSessions:  map[string]struct{}{},
+			}
+			items[key] = acc
+		}
+		acc.item.PIDCount++
+		if process.MappedSessions > 0 {
+			acc.item.MappedProcesses++
+		} else {
+			acc.item.UnmappedProcesses++
+		}
+		addEvidence(acc, process)
+	}
+	out := make([]ProcessRuntimeSummary, 0, len(items))
+	for _, acc := range items {
+		acc.item.DirectSessions = len(acc.directSessions)
+		acc.item.SubagentSessions = len(acc.subSessions)
+		acc.item.UnknownRoleSessions = len(acc.unknownSessions)
+		acc.item.ActiveSessions = len(acc.activeSessions)
+		out = append(out, acc.item)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].PIDCount != out[j].PIDCount {
+			return out[i].PIDCount > out[j].PIDCount
+		}
+		return out[i].Key < out[j].Key
+	})
+	return out
+}
+
+func buildHostAppProcessSummary(processes []LiveProcessSnapshot) []HostAppProcessSummary {
+	type accumulator struct {
+		item            HostAppProcessSummary
+		directSessions  map[string]struct{}
+		subSessions     map[string]struct{}
+		unknownSessions map[string]struct{}
+		activeSessions  map[string]struct{}
+	}
+	items := map[string]*accumulator{}
+	addEvidence := func(acc *accumulator, process LiveProcessSnapshot) {
+		for _, evidence := range process.MappedSessionEvidence {
+			if evidence.SessionID == "" {
+				continue
+			}
+			if evidence.ActiveBurst {
+				acc.activeSessions[evidence.SessionID] = struct{}{}
+			}
+			switch normalizedRole(evidence.Role) {
+			case "main":
+				acc.directSessions[evidence.SessionID] = struct{}{}
+			case "subagent":
+				acc.subSessions[evidence.SessionID] = struct{}{}
+			default:
+				acc.unknownSessions[evidence.SessionID] = struct{}{}
+			}
+		}
+		for _, sessionID := range process.SessionIDs {
+			if sessionID == "" {
+				continue
+			}
+			known := false
+			for _, evidence := range process.MappedSessionEvidence {
+				if evidence.SessionID == sessionID {
+					known = true
+					break
+				}
+			}
+			if !known {
+				acc.unknownSessions[sessionID] = struct{}{}
+			}
+		}
+	}
+	for _, process := range processes {
+		if process.HostApp == nil || strings.TrimSpace(process.HostApp.Name) == "" {
+			continue
+		}
+		key := process.HostApp.Name
+		if process.HostApp.PID > 0 {
+			key = fmt.Sprintf("%s:%d", process.HostApp.Name, process.HostApp.PID)
+		}
+		acc := items[key]
+		if acc == nil {
+			acc = &accumulator{
+				item: HostAppProcessSummary{
+					Key:  key,
+					Name: process.HostApp.Name,
+					PID:  process.HostApp.PID,
+				},
+				directSessions:  map[string]struct{}{},
+				subSessions:     map[string]struct{}{},
+				unknownSessions: map[string]struct{}{},
+				activeSessions:  map[string]struct{}{},
+			}
+			items[key] = acc
+		}
+		acc.item.PIDCount++
+		if process.MappedSessions > 0 {
+			acc.item.MappedProcesses++
+		} else {
+			acc.item.UnmappedProcesses++
+		}
+		addEvidence(acc, process)
+	}
+	out := make([]HostAppProcessSummary, 0, len(items))
+	for _, acc := range items {
+		acc.item.DirectSessions = len(acc.directSessions)
+		acc.item.SubagentSessions = len(acc.subSessions)
+		acc.item.UnknownRoleSessions = len(acc.unknownSessions)
+		acc.item.ActiveSessions = len(acc.activeSessions)
+		out = append(out, acc.item)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].PIDCount != out[j].PIDCount {
+			return out[i].PIDCount > out[j].PIDCount
+		}
+		return out[i].Key < out[j].Key
 	})
 	return out
 }

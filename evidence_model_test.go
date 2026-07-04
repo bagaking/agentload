@@ -1397,6 +1397,105 @@ func TestBuildCoordinationRiskSummarizesCandidateCoverageAndConfidence(t *testin
 	}
 }
 
+func TestProjectLiveProcessesAddsRoleEvidenceAndSummaries(t *testing.T) {
+	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
+	processes := []LiveProcess{
+		{PID: 101, Tool: "codex", Command: "codex --thread-id main-session", HostApp: &HostApp{PID: 900, Name: "Terminal", BundlePath: "Terminal.app"}},
+		{PID: 102, Tool: "codex", Command: "codex --thread-id sub-session", HostApp: &HostApp{PID: 900, Name: "Terminal", BundlePath: "Terminal.app"}},
+		{PID: 103, Tool: "claude", Command: "claude --session-id unknown-session"},
+		{PID: 104, Tool: "codex", Command: "codex exec"},
+	}
+	sessions := []LiveSession{
+		{
+			Tool:      "codex",
+			SessionID: "main-session",
+			Processes: map[int]struct{}{
+				101: {},
+			},
+			Trace: &SessionTrace{
+				Tool:         "codex",
+				SessionID:    "main-session",
+				Project:      "alpha",
+				ThreadSource: "user",
+				FirstEvent:   now.Add(-2 * time.Minute),
+				LastEvent:    now.Add(-20 * time.Second),
+			},
+			Mapping: LiveSessionMapping{TranscriptPath: true, ParsedTranscriptID: true},
+		},
+		{
+			Tool:      "codex",
+			SessionID: "sub-session",
+			Processes: map[int]struct{}{
+				102: {},
+			},
+			Trace: &SessionTrace{
+				Tool:         "codex",
+				SessionID:    "sub-session",
+				Project:      "alpha",
+				ThreadSource: "subagent",
+				FirstEvent:   now.Add(-2 * time.Minute),
+				LastEvent:    now.Add(-15 * time.Second),
+			},
+			Mapping: LiveSessionMapping{TranscriptPath: true, ParsedTranscriptID: true},
+		},
+		{
+			Tool:      "claude",
+			SessionID: "unknown-session",
+			Processes: map[int]struct{}{
+				103: {},
+			},
+			Trace: &SessionTrace{
+				Tool:       "claude",
+				SessionID:  "unknown-session",
+				Project:    "beta",
+				FirstEvent: now.Add(-2 * time.Minute),
+				LastEvent:  now.Add(-10 * time.Minute),
+			},
+			Mapping: LiveSessionMapping{CommandHint: true},
+		},
+	}
+	sessionSnapshots := projectLiveSessions(sessions, 90*time.Second, now)
+	processSnapshots := projectLiveProcessesWithSessions(processes, sessions, sessionSnapshots, &TranscriptData{Traces: map[string]*SessionTrace{}})
+
+	mainProcess := requireLiveProcessSnapshot(t, processSnapshots, 101)
+	if mainProcess.DisplayName != "codex" || mainProcess.MainSessions != 1 || mainProcess.SubagentSessions != 0 || mainProcess.UnknownRoleSessions != 0 || mainProcess.MappedActiveSessions != 1 {
+		t.Fatalf("unexpected main process evidence: %#v", mainProcess)
+	}
+	if len(mainProcess.MappedSessionEvidence) != 1 || mainProcess.MappedSessionEvidence[0].Role != "main" {
+		t.Fatalf("expected main session evidence, got %#v", mainProcess.MappedSessionEvidence)
+	}
+
+	subagentProcess := requireLiveProcessSnapshot(t, processSnapshots, 102)
+	if subagentProcess.SubagentSessions != 1 || subagentProcess.MainSessions != 0 || subagentProcess.UnknownRoleSessions != 0 {
+		t.Fatalf("unexpected subagent process evidence: %#v", subagentProcess)
+	}
+
+	unknownProcess := requireLiveProcessSnapshot(t, processSnapshots, 103)
+	if unknownProcess.UnknownRoleSessions != 1 || unknownProcess.MainSessions != 0 || unknownProcess.SubagentSessions != 0 || unknownProcess.MappedActiveSessions != 0 {
+		t.Fatalf("unexpected unknown-role process evidence: %#v", unknownProcess)
+	}
+
+	unmappedProcess := requireLiveProcessSnapshot(t, processSnapshots, 104)
+	if unmappedProcess.MappedSessions != 0 || unmappedProcess.MainSessions != 0 || unmappedProcess.SubagentSessions != 0 || unmappedProcess.UnknownRoleSessions != 0 {
+		t.Fatalf("unmapped process should not be assigned to role buckets: %#v", unmappedProcess)
+	}
+
+	runtimeSummary := buildRuntimeProcessSummary(processSnapshots)
+	codexRuntime := requireRuntimeProcessSummary(t, runtimeSummary, "codex")
+	if codexRuntime.PIDCount != 3 || codexRuntime.DirectSessions != 1 || codexRuntime.SubagentSessions != 1 || codexRuntime.UnknownRoleSessions != 0 || codexRuntime.UnmappedProcesses != 1 {
+		t.Fatalf("unexpected codex runtime summary: %#v", codexRuntime)
+	}
+	claudeRuntime := requireRuntimeProcessSummary(t, runtimeSummary, "claude")
+	if claudeRuntime.UnknownRoleSessions != 1 || claudeRuntime.DirectSessions != 0 || claudeRuntime.SubagentSessions != 0 {
+		t.Fatalf("unexpected claude runtime summary: %#v", claudeRuntime)
+	}
+	hostSummary := buildHostAppProcessSummary(processSnapshots)
+	terminal := requireHostAppProcessSummary(t, hostSummary, "Terminal:900")
+	if terminal.PIDCount != 2 || terminal.DirectSessions != 1 || terminal.SubagentSessions != 1 || terminal.UnmappedProcesses != 0 {
+		t.Fatalf("unexpected host summary: %#v", terminal)
+	}
+}
+
 func requireLiveSession(t *testing.T, sessions []LiveSession, sessionID string) LiveSession {
 	t.Helper()
 	for _, session := range sessions {
@@ -1417,6 +1516,39 @@ func requireLiveSessionSnapshot(t *testing.T, sessions []LiveSessionSnapshot, se
 	}
 	t.Fatalf("missing live session snapshot %s", sessionID)
 	return LiveSessionSnapshot{}
+}
+
+func requireLiveProcessSnapshot(t *testing.T, processes []LiveProcessSnapshot, pid int) LiveProcessSnapshot {
+	t.Helper()
+	for _, process := range processes {
+		if process.PID == pid {
+			return process
+		}
+	}
+	t.Fatalf("missing live process snapshot %d", pid)
+	return LiveProcessSnapshot{}
+}
+
+func requireRuntimeProcessSummary(t *testing.T, items []ProcessRuntimeSummary, key string) ProcessRuntimeSummary {
+	t.Helper()
+	for _, item := range items {
+		if item.Key == key {
+			return item
+		}
+	}
+	t.Fatalf("missing runtime process summary %s", key)
+	return ProcessRuntimeSummary{}
+}
+
+func requireHostAppProcessSummary(t *testing.T, items []HostAppProcessSummary, key string) HostAppProcessSummary {
+	t.Helper()
+	for _, item := range items {
+		if item.Key == key {
+			return item
+		}
+	}
+	t.Fatalf("missing host app process summary %s", key)
+	return HostAppProcessSummary{}
 }
 
 func requireProjectSnapshot(t *testing.T, projects []ProjectSnapshot, projectName string) ProjectSnapshot {

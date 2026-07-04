@@ -252,6 +252,8 @@ func sanitizeSnapshotForClient(snapshot Snapshot) Snapshot {
 	snapshot.CandidateWorkitems = sanitizeCandidateWorkitemsForClient(snapshot.CandidateWorkitems)
 	snapshot.LiveProcesses = sanitizeLiveProcessesForClient(snapshot.LiveProcesses)
 	snapshot.LiveSessions = sanitizeLiveSessionsForClient(snapshot.LiveSessions)
+	snapshot.RuntimeProcesses = sanitizeRuntimeProcessSummaryForClient(snapshot.RuntimeProcesses)
+	snapshot.HostAppProcesses = sanitizeHostAppProcessSummaryForClient(snapshot.HostAppProcesses)
 	snapshot.Notes = sanitizeTextListForClient(snapshot.Notes)
 	return snapshot
 }
@@ -341,8 +343,18 @@ func sanitizeLiveProcessesForClient(processes []LiveProcessSnapshot) []LiveProce
 	out := append([]LiveProcessSnapshot(nil), processes...)
 	for i := range out {
 		out[i].Command = sanitizeCommandForClient(out[i].Command)
+		out[i].DisplayName = sanitizeTokenForClient(out[i].DisplayName)
 		out[i].SessionIDs = append([]string(nil), out[i].SessionIDs...)
 		out[i].SessionPaths = nil
+		out[i].MatchMethods = append([]string(nil), out[i].MatchMethods...)
+		if len(out[i].MappedSessionEvidence) > 0 {
+			evidence := append([]ProcessSessionEvidence(nil), out[i].MappedSessionEvidence...)
+			for j := range evidence {
+				evidence[j].Project = sanitizeProjectNameForClient(evidence[j].Project)
+				evidence[j].Provenance = append([]string(nil), evidence[j].Provenance...)
+			}
+			out[i].MappedSessionEvidence = evidence
+		}
 		if out[i].HostApp != nil {
 			host := *out[i].HostApp
 			host.BundlePath = ""
@@ -350,6 +362,26 @@ func sanitizeLiveProcessesForClient(processes []LiveProcessSnapshot) []LiveProce
 		}
 	}
 	return out
+}
+
+func sanitizeRuntimeProcessSummaryForClient(items []ProcessRuntimeSummary) []ProcessRuntimeSummary {
+	if len(items) == 0 {
+		return items
+	}
+	out := append([]ProcessRuntimeSummary(nil), items...)
+	for i := range out {
+		out[i].Key = sanitizeTokenForClient(out[i].Key)
+		out[i].Tool = sanitizeTokenForClient(out[i].Tool)
+		out[i].DisplayName = sanitizeTokenForClient(out[i].DisplayName)
+	}
+	return out
+}
+
+func sanitizeHostAppProcessSummaryForClient(items []HostAppProcessSummary) []HostAppProcessSummary {
+	if len(items) == 0 {
+		return items
+	}
+	return append([]HostAppProcessSummary(nil), items...)
 }
 
 func sanitizeLiveSessionsForClient(sessions []LiveSessionSnapshot) []LiveSessionSnapshot {

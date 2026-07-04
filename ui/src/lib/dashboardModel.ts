@@ -57,7 +57,7 @@ export function resolveSelection(t: Translate, snapshot: Snapshot | null, select
   }
   const process = (snapshot.live_processes ?? []).find((item) => String(item.pid ?? "") === selection.id);
   return {
-    title: `${process?.tool || t("process")} · ${process?.pid ?? t("pid")}`,
+    title: `${process?.display_name || process?.tool || t("process")} · ${process?.pid ?? t("pid")}`,
     kind: "verify",
     status: (process?.mapped_sessions ?? 0) > 0 ? "done" : "failed",
     command: process?.command || `pid:${process?.pid || "unknown"}`,
@@ -65,11 +65,13 @@ export function resolveSelection(t: Translate, snapshot: Snapshot | null, select
       pid: process?.pid ?? 0,
       tool: process?.tool || "unknown",
       mapped: process?.mapped_sessions ?? 0,
+      direct: process?.main_sessions ?? 0,
+      subagent: process?.subagent_sessions ?? 0,
     },
     details: [
       `session_ids=${(process?.session_ids ?? []).join(",") || "none"}`,
+      `role_mix=direct:${process?.main_sessions ?? 0},subagent:${process?.subagent_sessions ?? 0},unknown:${process?.unknown_role_sessions ?? 0}`,
       `host_app=${process?.host_app?.name || "unknown"}`,
-      `bundle=${process?.host_app?.bundle_path || "unknown"}`,
     ],
   };
 }
@@ -108,8 +110,8 @@ export function buildRailItems(t: Translate, snapshot: Snapshot | null, tab: Rai
       id: String(process.pid ?? ""),
       type: "process",
       kind: "verify",
-      title: `${process.tool || t("tool")} · ${process.pid ?? t("pid")}`,
-      description: `${process.mapped_sessions ?? 0} ${t("mappedSessions")}`,
+      title: `${process.display_name || process.tool || t("tool")} · ${process.pid ?? t("pid")}`,
+      description: `${process.mapped_sessions ?? 0} ${t("mappedSessions")} · ${t("mainShort")} ${process.main_sessions ?? 0} · ${t("subagentShort")} ${process.subagent_sessions ?? 0}`,
       command: process.command || t("process"),
       status: (process.mapped_sessions ?? 0) > 0 ? "done" : "failed",
       tags: [process.tool || t("tool"), process.host_app?.name || t("hostUnknown")],

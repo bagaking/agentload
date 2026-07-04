@@ -24,6 +24,8 @@ type Snapshot struct {
 	AgeBuckets         []AgeBucketSnapshot         `json:"age_buckets"`
 	LiveProcesses      []LiveProcessSnapshot       `json:"live_processes"`
 	LiveSessions       []LiveSessionSnapshot       `json:"live_sessions"`
+	RuntimeProcesses   []ProcessRuntimeSummary     `json:"runtime_process_summary,omitempty"`
+	HostAppProcesses   []HostAppProcessSummary     `json:"host_app_process_summary,omitempty"`
 	Notes              []string                    `json:"notes,omitempty"`
 }
 
@@ -295,19 +297,66 @@ type AgeBucketSnapshot struct {
 }
 
 type LiveProcessSnapshot struct {
-	PID            int      `json:"pid"`
-	Tool           string   `json:"tool"`
-	Command        string   `json:"command"`
-	HostApp        *HostApp `json:"host_app,omitempty"`
-	SessionIDs     []string `json:"session_ids,omitempty"`
-	SessionPaths   []string `json:"session_paths,omitempty"`
-	MappedSessions int      `json:"mapped_sessions"`
+	PID                   int                      `json:"pid"`
+	Tool                  string                   `json:"tool"`
+	DisplayName           string                   `json:"display_name,omitempty"`
+	Command               string                   `json:"command"`
+	HostApp               *HostApp                 `json:"host_app,omitempty"`
+	SessionIDs            []string                 `json:"session_ids,omitempty"`
+	SessionPaths          []string                 `json:"session_paths,omitempty"`
+	MappedSessions        int                      `json:"mapped_sessions"`
+	MappedActiveSessions  int                      `json:"mapped_active_sessions"`
+	MainSessions          int                      `json:"main_sessions"`
+	SubagentSessions      int                      `json:"subagent_sessions"`
+	UnknownRoleSessions   int                      `json:"unknown_role_sessions"`
+	MatchMethods          []string                 `json:"match_methods,omitempty"`
+	EvidenceSummary       string                   `json:"evidence_summary,omitempty"`
+	MappedSessionEvidence []ProcessSessionEvidence `json:"mapped_session_evidence,omitempty"`
 }
 
 type HostApp struct {
 	PID        int    `json:"pid"`
 	Name       string `json:"name"`
 	BundlePath string `json:"bundle_path,omitempty"`
+}
+
+type ProcessSessionEvidence struct {
+	SessionID           string   `json:"session_id"`
+	Project             string   `json:"project,omitempty"`
+	Role                string   `json:"role"`
+	ActiveBurst         bool     `json:"active_burst"`
+	Freshness           string   `json:"freshness,omitempty"`
+	MappingMethod       string   `json:"mapping_method,omitempty"`
+	Confidence          string   `json:"confidence,omitempty"`
+	RoleConfidence      string   `json:"role_confidence,omitempty"`
+	LastEventAgeSeconds int      `json:"last_event_age_seconds,omitempty"`
+	Provenance          []string `json:"provenance,omitempty"`
+}
+
+type ProcessRuntimeSummary struct {
+	Key                 string `json:"key"`
+	Tool                string `json:"tool"`
+	DisplayName         string `json:"display_name"`
+	PIDCount            int    `json:"pid_count"`
+	MappedProcesses     int    `json:"mapped_processes"`
+	UnmappedProcesses   int    `json:"unmapped_processes"`
+	DirectSessions      int    `json:"direct_sessions"`
+	SubagentSessions    int    `json:"subagent_sessions"`
+	UnknownRoleSessions int    `json:"unknown_role_sessions"`
+	ActiveSessions      int    `json:"active_sessions"`
+}
+
+type HostAppProcessSummary struct {
+	Key                 string `json:"key"`
+	Name                string `json:"name"`
+	PID                 int    `json:"pid,omitempty"`
+	PIDCount            int    `json:"pid_count"`
+	MappedProcesses     int    `json:"mapped_processes"`
+	UnmappedProcesses   int    `json:"unmapped_processes"`
+	DirectSessions      int    `json:"direct_sessions"`
+	SubagentSessions    int    `json:"subagent_sessions"`
+	UnknownRoleSessions int    `json:"unknown_role_sessions"`
+	ActiveSessions      int    `json:"active_sessions"`
 }
 
 type LiveSessionSnapshot struct {

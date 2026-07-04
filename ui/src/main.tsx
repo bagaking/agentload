@@ -4,7 +4,7 @@ import { Activity, ArrowUpRight, Bot, ChevronDown, Copy, ExternalLink, Gauge, Gi
 import { copy, type Lang } from "./i18n";
 import { agentRoleLabel, buildToolSessionGroups, confidenceLabel, freshnessLabel, hiddenToolSessionCount, mappingMethodLabel, normalizedRole, orderedProjects, projectEvidenceItems, projectRoleCounts, roleHintLabel, roleLabel, sessionEvidenceItems, sessionIDsText, sessionIdentity, sessionsForProject, threadSourceLabel, toolBadgeLabel, toolDisplayName, toolIconName } from "./lib/activityModel";
 import { activeWindowLabel, buildRailItems, coordinationPostureLabel, currentMeaningLead, currentMeaningPoints, currentPeerScale, dashboardProjectLead, dashboardProjectMeta, deferredScanValue, mappingHealthText, metricState, primaryEvidenceNote, renderLogText, resolveSelection, statusTone, transcriptScanNote, transcriptScanSummary } from "./lib/dashboardModel";
-import { clampPct, compactCommand, countLabel, formatAge, formatCopy, formatDateTime, formatPct, formatRefreshInterval, formatTokenUsageSummary, pctPart, safeID, shortID, tokenUsageHasValue } from "./lib/format";
+import { clampPct, countLabel, formatAge, formatCopy, formatDateTime, formatPct, formatRefreshInterval, formatTokenUsageSummary, pctPart, safeID, shortID, tokenUsageHasValue } from "./lib/format";
 import { TrendSuite } from "./trend/TrendSuite";
 import { TREND_RANGES, type TrendLane, type TrendRange } from "./trend/types";
 import type { ActiveElementIdentity, LogTab, PopoverView, ProjectMetricObject, ProjectMetricScope, RailItem, RailTab, RefreshReason, RoleCounts, SelectedView, Selection, Theme, ViewportState } from "./types/app";
@@ -22,6 +22,11 @@ const REFRESH_INTERVALS_MS = [30_000, 60_000, 120_000, 300_000, 0] as const;
 const REFRESH_INTERVAL_STORAGE_KEY = "agentload.refreshIntervalMs.v5";
 const INSPECTOR_INITIAL_LIMIT = 12;
 const PROCESS_LEDGER_INITIAL_LIMIT = 40;
+type ProcessFilter =
+  | { kind: "all"; id: "all" }
+  | { kind: "runtime"; id: string }
+  | { kind: "host"; id: string }
+  | { kind: "role"; id: "direct" | "subagent" | "unknown" | "unmapped" };
 
 declare global {
   interface Window {
@@ -1356,18 +1361,33 @@ function CandidateWorkitemsRail({ t, snapshot, limit = 5 }: { t: (key: string) =
 
 function ProcessLedger({ t, snapshot, selection, setSelection }: { t: (key: string) => string; snapshot: Snapshot; selection: Selection; setSelection: (value: Selection) => void }) {
   const [showOverflow, setShowOverflow] = useState(false);
-  const rows = useMemo(() => [...(snapshot.live_processes ?? [])].sort((a, b) => (b.mapped_sessions ?? 0) - (a.mapped_sessions ?? 0)), [snapshot.live_processes]);
-  const hiddenCount = Math.max(0, rows.length - PROCESS_LEDGER_INITIAL_LIMIT);
-  const visibleRows = showOverflow ? rows : rows.slice(0, PROCESS_LEDGER_INITIAL_LIMIT);
+  const [filter, setFilter] = useState<ProcessFilter>({ kind: "all", id: "all" });
+  const rows = useMemo(() => [...(snapshot.live_processes ?? [])].sort((a, b) => {
+    if ((b.mapped_active_sessions ?? 0) !== (a.mapped_active_sessions ?? 0)) return (b.mapped_active_sessions ?? 0) - (a.mapped_active_sessions ?? 0);
+    if ((b.mapped_sessions ?? 0) !== (a.mapped_sessions ?? 0)) return (b.mapped_sessions ?? 0) - (a.mapped_sessions ?? 0);
+    return (a.pid ?? 0) - (b.pid ?? 0);
+  }), [snapshot.live_processes]);
+  const filteredRows = useMemo(() => rows.filter((process) => processMatchesFilter(process, filter)), [filter, rows]);
+  useEffect(() => {
+    setShowOverflow(false);
+  }, [filter.kind, filter.id]);
+  const hiddenCount = Math.max(0, filteredRows.length - PROCESS_LEDGER_INITIAL_LIMIT);
+  const visibleRows = showOverflow ? filteredRows : filteredRows.slice(0, PROCESS_LEDGER_INITIAL_LIMIT);
   const overflowLabel = countLabel(t, showOverflow ? "lessCount" : "moreCount", hiddenCount);
   return (
-    <div className="process-ledger" role="table" aria-label={t("processLedger")}>
+    <div className="process-ledger-shell">
+      <ProcessAuditFilters t={t} snapshot={snapshot} filter={filter} setFilter={setFilter} />
+      <div className="process-filter-readout">
+        <span>{processFilterLabel(t, filter)}</span>
+        <em>{filteredRows.length}/{rows.length} {t("processes")}</em>
+      </div>
+      <div className="process-ledger" role="table" aria-label={t("processLedger")}>
       <div className="process-row head" role="row">
         <span>{t("processes")}</span>
         <span>{t("tools")}</span>
-        <span>{t("mapped")}</span>
+        <span>{t("roleMix")}</span>
         <span>{t("sessions")}</span>
-        <span>{t("command")}</span>
+        <span>{t("evidence")}</span>
         <span>{t("host")}</span>
       </div>
       {visibleRows.map((process) => (
@@ -1381,6 +1401,7 @@ function ProcessLedger({ t, snapshot, selection, setSelection }: { t: (key: stri
           </button>
         </div>
       ) : null}
+      </div>
     </div>
   );
 }
@@ -1388,22 +1409,33 @@ function ProcessLedger({ t, snapshot, selection, setSelection }: { t: (key: stri
 function ProcessLedgerRow({ t, process, selection, setSelection }: { t: (key: string) => string; process: LiveProcess; selection: Selection; setSelection: (value: Selection) => void }) {
   const processID = String(process.pid ?? "");
   const sessions = process.session_ids ?? [];
+  const evidence = process.mapped_session_evidence ?? [];
   const [showAllSessions, setShowAllSessions] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const host = process.host_app;
   const selected = selection.type === "process" && selection.id === processID;
   const hiddenSessionCount = Math.max(0, sessions.length - 3);
   const visibleSessions = showAllSessions ? sessions : sessions.slice(0, 3);
   const sessionOverflowLabel = countLabel(t, showAllSessions ? "lessCount" : "moreCount", hiddenSessionCount);
   return (
-    <div className={`process-row process-detail-row ${selected ? "is-selected" : ""}`} role="row">
+    <div className={`process-row process-detail-row ${selected ? "is-selected" : ""} ${expanded ? "is-expanded" : ""}`} role="row">
       <span className="process-cell process-main-cell" role="cell">
+        <button className="process-expand" type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-label={expanded ? t("collapseDetails") : t("expandDetails")} title={expanded ? t("collapseDetails") : t("expandDetails")}>
+          <ChevronDown size={12} aria-hidden="true" />
+        </button>
         <button className="process-main" type="button" data-focus-key={focusKey("process", processID)} aria-current={selected ? "true" : undefined} onClick={() => setSelection({ type: "process", id: processID })}>
           <Server size={13} />
-          <span>{t("pid")} {process.pid ?? t("unavailable")}</span>
+          <span className="process-name">{processIdentity(process, t)}</span>
+          <em>{t("pid")} {process.pid ?? t("unavailable")}</em>
         </button>
       </span>
       <span className="process-cell tool-cell" role="cell"><ToolIcon t={t} tool={process.tool || "unknown"} />{toolDisplayName(process.tool)}</span>
-      <span className={`process-map ${(process.mapped_sessions ?? 0) > 0 ? "mapped" : "unmapped"}`} role="cell">{process.mapped_sessions ?? 0}</span>
+      <span className="process-role-mix" role="cell" title={process.evidence_summary || ""}>
+        <ProcessRolePill label={t("mainShort")} value={process.main_sessions ?? 0} tone="main" />
+        <ProcessRolePill label={t("subagentShort")} value={process.subagent_sessions ?? 0} tone="subagent" />
+        <ProcessRolePill label={t("unknown")} value={process.unknown_role_sessions ?? 0} tone="unknown" />
+        {(process.mapped_sessions ?? 0) === 0 ? <ProcessRolePill label={t("unmatched")} value={1} tone="unmapped" /> : null}
+      </span>
       <div className={`process-session-preview ${showAllSessions ? "is-expanded" : ""}`} role="cell" aria-label={t("sessions")}>
         {sessions.length ? visibleSessions.map((sessionID) => (
           <button className="session-chip" type="button" key={sessionID} data-focus-key={focusKey("process-session", processID, sessionID)} onClick={() => setSelection({ type: "session", id: safeID(sessionID) })}>
@@ -1423,13 +1455,126 @@ function ProcessLedgerRow({ t, process, selection, setSelection }: { t: (key: st
           </button>
         ) : null}
       </div>
-      <code className="process-command" role="cell" title={process.command || ""}>{compactCommand(process.command) || t("unavailable")}</code>
+      <span className={`process-map ${(process.mapped_sessions ?? 0) > 0 ? "mapped" : "unmapped"}`} role="cell">
+        <b>{process.mapped_sessions ?? 0}</b>
+        <em>{process.mapped_active_sessions ?? 0} {t("activeShort")}</em>
+      </span>
       <span className="process-host-cell" role="cell">
         {host ? <HostAppButton t={t} host={host} /> : null}
         <span>{host?.name || t("unavailable")}</span>
       </span>
+      {expanded ? (
+        <div className="process-row-details" role="cell">
+          <div className="process-command-full">
+            <span>{t("command")}</span>
+            <code>{process.command || t("unavailable")}</code>
+          </div>
+          <div className="process-evidence-lines">
+            {evidence.length ? evidence.map((item) => (
+              <button className="process-evidence-line" type="button" key={item.session_id || `${processID}-evidence`} onClick={() => setSelection({ type: "session", id: safeID(item.session_id) })}>
+                <span>{roleLabel(t, normalizedRole(item.role))}</span>
+                <strong>{item.project || shortID(item.session_id) || t("unassigned")}</strong>
+                <em>{mappingMethodLabel(t, item.mapping_method)} · {freshnessLabel(t, item.freshness)} · {confidenceLabel(t, item.confidence)}</em>
+              </button>
+            )) : <span className="muted-inline">{t("unmappedProcessDetail")}</span>}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
+}
+
+function ProcessAuditFilters({ t, snapshot, filter, setFilter }: { t: (key: string) => string; snapshot: Snapshot; filter: ProcessFilter; setFilter: (filter: ProcessFilter) => void }) {
+  const runtime = snapshot.runtime_process_summary ?? [];
+  const hosts = snapshot.host_app_process_summary ?? [];
+  const rows = snapshot.live_processes ?? [];
+  const roleFilters: ProcessFilter[] = [
+    { kind: "role", id: "direct" },
+    { kind: "role", id: "subagent" },
+    { kind: "role", id: "unknown" },
+    { kind: "role", id: "unmapped" },
+  ];
+  return (
+    <div className="process-audit-filters" aria-label={t("processFilters")}>
+      <button className={`process-filter-chip ${isSameProcessFilter(filter, { kind: "all", id: "all" }) ? "is-selected" : ""}`} type="button" onClick={() => setFilter({ kind: "all", id: "all" })}>
+        <span>{t("all")}</span>
+        <strong>{rows.length}</strong>
+      </button>
+      {runtime.map((item) => (
+        <button className={`process-filter-chip runtime ${isSameProcessFilter(filter, { kind: "runtime", id: item.key || item.tool || "" }) ? "is-selected" : ""}`} type="button" key={`runtime-${item.key || item.tool}`} onClick={() => setFilter({ kind: "runtime", id: item.key || item.tool || "" })}>
+          <span>{toolDisplayName(item.display_name || item.tool)}</span>
+          <strong>{item.pid_count ?? 0}</strong>
+          <em>{processSummaryMix(t, item.direct_sessions, item.subagent_sessions, item.unknown_role_sessions, item.unmapped_processes)}</em>
+        </button>
+      ))}
+      {hosts.slice(0, 4).map((item) => (
+        <button className={`process-filter-chip host ${isSameProcessFilter(filter, { kind: "host", id: item.key || item.name || "" }) ? "is-selected" : ""}`} type="button" key={`host-${item.key || item.name}`} onClick={() => setFilter({ kind: "host", id: item.key || item.name || "" })}>
+          <span>{item.name || t("hostUnknown")}</span>
+          <strong>{item.pid_count ?? 0}</strong>
+          <em>{processSummaryMix(t, item.direct_sessions, item.subagent_sessions, item.unknown_role_sessions, item.unmapped_processes)}</em>
+        </button>
+      ))}
+      {roleFilters.map((item) => (
+        <button className={`process-filter-chip role ${isSameProcessFilter(filter, item) ? "is-selected" : ""}`} type="button" key={`role-${item.id}`} onClick={() => setFilter(item)}>
+          <span>{processRoleFilterName(t, item.id)}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ProcessRolePill({ label, value, tone }: { label: string; value: number; tone: string }) {
+  return <span className={`process-role-pill ${tone} ${value > 0 ? "has-value" : ""}`}><b>{value}</b><em>{label}</em></span>;
+}
+
+function processMatchesFilter(process: LiveProcess, filter: ProcessFilter): boolean {
+  if (filter.kind === "all") return true;
+  if (filter.kind === "runtime") return (process.tool || "unknown") === filter.id;
+  if (filter.kind === "host") return processHostKey(process) === filter.id;
+  if (filter.id === "direct") return (process.main_sessions ?? 0) > 0;
+  if (filter.id === "subagent") return (process.subagent_sessions ?? 0) > 0;
+  if (filter.id === "unknown") return (process.unknown_role_sessions ?? 0) > 0;
+  return (process.mapped_sessions ?? 0) === 0;
+}
+
+function processHostKey(process: LiveProcess): string {
+  const host = process.host_app;
+  if (!host?.name) return "";
+  return host.pid ? `${host.name}:${host.pid}` : host.name;
+}
+
+function processIdentity(process: LiveProcess, t: (key: string) => string): string {
+  return process.display_name || toolDisplayName(process.tool) || process.command?.split(/\s+/)[0] || t("process");
+}
+
+function isSameProcessFilter(a: ProcessFilter, b: ProcessFilter): boolean {
+  return a.kind === b.kind && a.id === b.id;
+}
+
+function processFilterLabel(t: (key: string) => string, filter: ProcessFilter): string {
+  if (filter.kind === "all") return t("allProcesses");
+  if (filter.kind === "runtime") return `${t("runtimeField")} · ${toolDisplayName(filter.id)}`;
+  if (filter.kind === "host") return `${t("host")} · ${filter.id}`;
+  return `${t("role")} · ${processRoleFilterName(t, filter.id)}`;
+}
+
+function processRoleFilterName(t: (key: string) => string, id: ProcessFilter["id"]): string {
+  switch (id) {
+    case "direct":
+      return t("main");
+    case "subagent":
+      return t("subagent");
+    case "unknown":
+      return t("unknown");
+    case "unmapped":
+      return t("unmatched");
+    default:
+      return t("all");
+  }
+}
+
+function processSummaryMix(t: (key: string) => string, direct = 0, subagent = 0, unknown = 0, unmapped = 0): string {
+  return `${t("mainShort")} ${direct} · ${t("subagentShort")} ${subagent} · ${t("unknown")} ${unknown} · ${t("unmatched")} ${unmapped}`;
 }
 
 function ToolMix({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot }) {
@@ -2294,12 +2439,16 @@ function ProcessEvidencePanel({ t, process }: { t: (key: string) => string; proc
     <section className="entity-panel">
       <div className="entity-title">
         <Server size={17} />
-        <strong>{toolDisplayName(process.tool)}</strong>
+        <strong>{processIdentity(process, t)}</strong>
         <span>{t("pid")} {process.pid ?? t("unavailable")}</span>
       </div>
       <div className="entity-grid">
         <Readout label={t("metricMatched")} value={String(process.mapped_sessions ?? 0)} />
+        <Readout label={t("active")} value={String(process.mapped_active_sessions ?? 0)} />
+        <Readout label={t("roleMix")} value={`${t("mainShort")} ${process.main_sessions ?? 0} · ${t("subagentShort")} ${process.subagent_sessions ?? 0} · ${t("unknown")} ${process.unknown_role_sessions ?? 0}`} />
+        <Readout label={t("mappingMethod")} value={(process.match_methods ?? []).map((method) => mappingMethodLabel(t, method)).join(", ") || t("unavailable")} />
         <Readout label={t("sessions")} value={sessionIDsText(t, process.session_ids)} />
+        <Readout label={t("tools")} value={toolDisplayName(process.tool)} />
         <Readout label={t("host")} value={process.host_app?.name || t("unavailable")} />
         <Readout label={t("command")} value={process.command || t("unavailable")} />
       </div>

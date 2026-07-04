@@ -19,6 +19,8 @@ export type Snapshot = {
   age_buckets?: AgeBucketSnapshot[];
   live_processes?: LiveProcess[];
   live_sessions?: LiveSession[];
+  runtime_process_summary?: ProcessRuntimeSummary[];
+  host_app_process_summary?: HostAppProcessSummary[];
   notes?: string[];
 };
 
@@ -135,10 +137,57 @@ export type TokenUsage = {
 export type LiveProcess = {
   pid?: number;
   tool?: string;
+  display_name?: string;
   command?: string;
   mapped_sessions?: number;
+  mapped_active_sessions?: number;
+  main_sessions?: number;
+  subagent_sessions?: number;
+  unknown_role_sessions?: number;
+  match_methods?: string[];
+  evidence_summary?: string;
+  mapped_session_evidence?: ProcessSessionEvidence[];
   session_ids?: string[];
   host_app?: HostApp;
+};
+
+export type ProcessSessionEvidence = {
+  session_id?: string;
+  project?: string;
+  role?: string;
+  active_burst?: boolean;
+  freshness?: string;
+  mapping_method?: string;
+  confidence?: string;
+  role_confidence?: string;
+  last_event_age_seconds?: number;
+  provenance?: string[];
+};
+
+export type ProcessRuntimeSummary = {
+  key?: string;
+  tool?: string;
+  display_name?: string;
+  pid_count?: number;
+  mapped_processes?: number;
+  unmapped_processes?: number;
+  direct_sessions?: number;
+  subagent_sessions?: number;
+  unknown_role_sessions?: number;
+  active_sessions?: number;
+};
+
+export type HostAppProcessSummary = {
+  key?: string;
+  name?: string;
+  pid?: number;
+  pid_count?: number;
+  mapped_processes?: number;
+  unmapped_processes?: number;
+  direct_sessions?: number;
+  subagent_sessions?: number;
+  unknown_role_sessions?: number;
+  active_sessions?: number;
 };
 
 export type LiveSession = {
