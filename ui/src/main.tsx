@@ -1419,6 +1419,8 @@ function ProcessLedgerRow({ t, process, selection, setSelection }: { t: (key: st
   const hiddenSessionCount = Math.max(0, sessions.length - 3);
   const visibleSessions = showAllSessions ? sessions : sessions.slice(0, 3);
   const sessionOverflowLabel = countLabel(t, showAllSessions ? "lessCount" : "moreCount", hiddenSessionCount);
+  const processHoverDetail = `${processResourceText(t, process.cpu_percent, process.memory_bytes)} · ${t("runtimeDuration")} ${process.elapsed || t("unavailable")} · ${process.mapped_sessions ?? 0} ${t("mappedSessions")}`;
+  const processHoverMeta = process.command || t("unavailable");
   return (
     <div className={`process-row process-detail-row ${selected ? "is-selected" : ""} ${expanded ? "is-expanded" : ""}`} role="row">
       <span className="process-cell process-main-cell" role="cell">
@@ -1465,6 +1467,7 @@ function ProcessLedgerRow({ t, process, selection, setSelection }: { t: (key: st
         {host ? <HostAppButton t={t} host={host} /> : null}
         <span>{host?.name || t("unavailable")}</span>
       </span>
+      <RowHoverDetail title={`${processIdentity(process, t)} · ${t("pid")} ${process.pid ?? t("unavailable")}`} detail={processHoverDetail} meta={processHoverMeta} />
       {expanded ? (
         <div className="process-row-details" role="cell">
           <div className="process-resource-detail">
@@ -2091,6 +2094,9 @@ function ProjectTreeRow({
   const evidenceItems = projectEvidenceItems(t, project, compact);
   const projectAge = formatAge(project.last_event_age_seconds, t);
   const projectMeta = projectAge;
+  const toolSummary = (project.tools ?? []).map((tool) => `${toolDisplayName(tool.tool)} ${tool.active_burst_count ?? 0}/${tool.session_count ?? 0}`).join(" · ") || t("unavailable");
+  const projectHoverDetail = `${counts.activeTotal} ${t("active")} / ${counts.total} ${t("sessions")} · ${project.process_count ?? 0} ${t("processes")} · ${resourceText}`;
+  const projectHoverMeta = `${t("lastEvent")} ${projectAge} · ${t("tools")}: ${toolSummary}`;
   const selected = selection.type === "project" && selection.id === projectId;
   const rowClassName = [
     "project-tree-row",
@@ -2136,6 +2142,7 @@ function ProjectTreeRow({
           <SessionTree t={t} sessions={sessions} selection={selection} setSelection={setSelection} compact={compact} />
         </>
       ) : null}
+      <RowHoverDetail title={title} detail={projectHoverDetail} meta={projectHoverMeta} />
     </article>
   );
 }
@@ -2358,6 +2365,10 @@ function SessionLine({
   const selected = selection.type === "session" && safeID(sid) === selection.id;
   const title = session.agent_nickname || shortID(sid) || "session";
   const meta = `${formatAge(session.last_event_age_seconds, t)} · ${processText} · ${resourceText} · ${confidenceLabel(t, session.confidence)}`;
+  const hostName = host?.name || t("hostUnknown");
+  const sessionHoverTitle = `${title} · ${roleLabel(t, role)}`;
+  const sessionHoverDetail = `${toolDisplayName(session.tool)} · ${hostName} · ${meta}`;
+  const sessionHoverMeta = `${t("mappingMethod")}: ${mappingMethodLabel(t, session.mapping_method)} · ${t("freshness")}: ${freshnessLabel(t, session.freshness || (session.active_burst ? "active" : "idle"))}`;
   const visibleEvidenceItems = (session.process_count ?? 0) > 0
     ? [{ label: t("resources"), value: resourceText, tone: "resource" }, ...evidenceItems]
     : evidenceItems;
@@ -2385,6 +2396,7 @@ function SessionLine({
             </span>
           ))}
         </div>
+        <RowHoverDetail title={sessionHoverTitle} detail={sessionHoverDetail} meta={sessionHoverMeta} />
       </div>
     );
   }
@@ -2411,6 +2423,7 @@ function SessionLine({
           </span>
         ))}
       </div>
+      <RowHoverDetail title={sessionHoverTitle} detail={sessionHoverDetail} meta={sessionHoverMeta} />
     </div>
   );
 }
@@ -2626,6 +2639,16 @@ function TermLabel({ label, tip }: { label: string; tip: string }) {
   return (
     <span className="term-label" tabIndex={0} role="button" data-focus-key={focusKey("term", label)} aria-label={`${label}: ${tip}`} data-tip={tip} title={tip}>
       {label}
+    </span>
+  );
+}
+
+function RowHoverDetail({ title, detail, meta }: { title: string; detail: string; meta?: string }) {
+  return (
+    <span className="row-hover-detail" aria-hidden="true">
+      <strong>{title}</strong>
+      <em>{detail}</em>
+      {meta ? <small>{meta}</small> : null}
     </span>
   );
 }

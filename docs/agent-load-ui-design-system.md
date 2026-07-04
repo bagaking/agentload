@@ -107,9 +107,11 @@ agent evidence.
   process number is not mistaken for confirmed session load.
 - Primary workload readouts must not treat raw PID concurrency as an active
   agent count. First-level status should emphasize recent local-log movement,
-  known sessions, and mapping health. Raw process totals belong in a diagnostic
-  pressure strip or process ledger using a formula such as
-  `PID = mapped + unmatched`.
+  known sessions, and the PID match rate. Avoid vague judgment labels such as
+  "mapping health"; the visible label should state that the percentage is the
+  share of visible PIDs matched back to sessions. Raw process totals belong in
+  a diagnostic pressure strip or process ledger using a formula such as
+  `PID = matched to sessions + unmatched`.
 - Unmatched or unmapped processes still count for diagnostics, coverage, trend
   risk, and process ledgers, but they must not be counted as active agents or
   confirmed workload until they are mapped back to local session evidence.
@@ -179,8 +181,8 @@ agent evidence.
   sessions and processes. Compact presentation must not make audit lookup by
   full session id impossible.
 - Use icons for tabs, commands, status, and metrics where they reduce text load.
-- Core runtime terms such as fresh movement, sessions, processes, mapping
-  health, and scan state should expose short hover/focus explanations so dense
+- Core runtime terms such as fresh movement, sessions, processes, PID match
+  rate, and scan state should expose short hover/focus explanations so dense
   operator views stay readable without adding permanent copy.
 - Dense explanation blocks should default to a compact lead sentence and expose
   full details through an accessible disclosure control instead of permanently
