@@ -195,6 +195,10 @@ agent evidence.
   In dense popovers, prefer a complete one-pixel outline, quiet corner light,
   and lightly translucent material over a strong single-side accent rail, which
   repeats too aggressively across project/session rows and blocks scan paths.
+  The outline must remain a single visual pixel: do not stack border, outline,
+  mask, and spread shadows into a thick rim. Keep tooltip radius small and
+  internal padding tight so dense details read as editorial annotation rather
+  than a floating card.
 - Session hover details should be structured, not a single compressed sentence.
   Process resources must be labeled as process CPU and process memory, and token
   usage should appear as its own section with total/input/output/cache/reasoning
