@@ -184,6 +184,10 @@ agent evidence.
 - Core runtime terms such as fresh movement, sessions, processes, PID match
   rate, and scan state should expose short hover/focus explanations so dense
   operator views stay readable without adding permanent copy.
+- Dense project/session/process rows should use one deliberate hover detail
+  surface at a time. Do not combine browser-native `title` tooltips with custom
+  row hover cards inside the same ledger; nested rows must suppress parent hover
+  details so project, session, and process explanations do not stack.
 - Dense explanation blocks should default to a compact lead sentence and expose
   full details through an accessible disclosure control instead of permanently
   occupying popover height.

@@ -1424,7 +1424,7 @@ function ProcessLedgerRow({ t, process, selection, setSelection }: { t: (key: st
   return (
     <div className={`process-row process-detail-row ${selected ? "is-selected" : ""} ${expanded ? "is-expanded" : ""}`} role="row">
       <span className="process-cell process-main-cell" role="cell">
-        <button className="process-expand" type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-label={expanded ? t("collapseDetails") : t("expandDetails")} title={expanded ? t("collapseDetails") : t("expandDetails")}>
+        <button className="process-expand" type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-label={expanded ? t("collapseDetails") : t("expandDetails")}>
           <ChevronDown size={12} aria-hidden="true" />
         </button>
         <button className="process-main" type="button" data-focus-key={focusKey("process", processID)} aria-current={selected ? "true" : undefined} onClick={() => setSelection({ type: "process", id: processID })}>
@@ -1434,7 +1434,7 @@ function ProcessLedgerRow({ t, process, selection, setSelection }: { t: (key: st
         </button>
       </span>
       <span className="process-cell tool-cell" role="cell"><ToolIcon t={t} tool={process.tool || "unknown"} />{toolDisplayName(process.tool)}</span>
-      <span className="process-role-mix" role="cell" title={process.evidence_summary || ""}>
+      <span className="process-role-mix" role="cell" aria-label={process.evidence_summary || t("roleMix")}>
         <ProcessRolePill label={t("mainShort")} value={process.main_sessions ?? 0} tone="main" />
         <ProcessRolePill label={t("subagentShort")} value={process.subagent_sessions ?? 0} tone="subagent" />
         <ProcessRolePill label={t("unknown")} value={process.unknown_role_sessions ?? 0} tone="unknown" />
@@ -1453,13 +1453,12 @@ function ProcessLedgerRow({ t, process, selection, setSelection }: { t: (key: st
             onClick={() => setShowAllSessions((value) => !value)}
             aria-expanded={showAllSessions}
             aria-label={sessionOverflowLabel}
-            title={sessionOverflowLabel}
           >
             {showAllSessions ? countLabel(t, "lessCount", hiddenSessionCount) : `+${hiddenSessionCount}`}
           </button>
         ) : null}
       </div>
-      <span className={`process-resource-cell ${(process.cpu_percent ?? 0) > 0 ? "is-hot" : ""}`} role="cell" title={`${processResourceText(t, process.cpu_percent, process.memory_bytes)} · ${process.elapsed || t("unavailable")}`}>
+      <span className={`process-resource-cell ${(process.cpu_percent ?? 0) > 0 ? "is-hot" : ""}`} role="cell" aria-label={`${processResourceText(t, process.cpu_percent, process.memory_bytes)} · ${process.elapsed || t("unavailable")}`}>
         <b>{formatMemory(process.memory_bytes, t)}</b>
         <em>{formatCPU(process.cpu_percent)} {t("cpu")}</em>
       </span>
@@ -2119,10 +2118,10 @@ function ProjectTreeRow({
     <article className={rowClassName}>
       <div className="project-tree-head">
         <span className="project-rank">{rank ?? "-"}</span>
-        <button className="project-disclosure" type="button" onClick={onToggle} aria-expanded={expanded} aria-label={disclosureLabel} title={disclosureLabel}>
+        <button className="project-disclosure" type="button" onClick={onToggle} aria-expanded={expanded} aria-label={disclosureLabel}>
           <ChevronDown size={15} aria-hidden="true" />
         </button>
-        <button className="project-select" type="button" data-focus-key={focusKey("project", projectId)} onClick={selectProject} aria-current={selected ? "true" : undefined} aria-expanded={expanded} title={selected ? disclosureLabel : title}>
+        <button className="project-select" type="button" data-focus-key={focusKey("project", projectId)} onClick={selectProject} aria-current={selected ? "true" : undefined} aria-expanded={expanded} aria-label={title}>
           <span>{title}</span>
           <small>{projectMeta}</small>
         </button>
@@ -2159,17 +2158,17 @@ function ProjectCompactMetrics({ t, counts, processCount, resourceText }: { t: (
   const processTitle = projectMetricProcessTitle(t, processCount);
   return (
     <div className="project-compact-metrics" aria-label={t("metricSessions")}>
-      <span className="project-compact-cluster active" title={activeTitle} aria-label={activeTitle}>
+      <span className="project-compact-cluster active" aria-label={activeTitle}>
         <b>{t("activeShort")}</b>
-        <strong title={activeTotalTitle} aria-label={activeTotalTitle}>{counts.activeTotal}</strong>
-        <em title={`${activeMainTitle} · ${activeSubagentTitle}`} aria-label={`${activeMainTitle} · ${activeSubagentTitle}`}>{t("mainShort")}{counts.activeMain} · {t("subagentShort")}{counts.activeSub}</em>
+        <strong aria-label={activeTotalTitle}>{counts.activeTotal}</strong>
+        <em aria-label={`${activeMainTitle} · ${activeSubagentTitle}`}>{t("mainShort")}{counts.activeMain} · {t("subagentShort")}{counts.activeSub}</em>
       </span>
-      <span className="project-compact-cluster all" title={allTitle} aria-label={allTitle}>
+      <span className="project-compact-cluster all" aria-label={allTitle}>
         <b>{t("allShort")}</b>
-        <strong title={allTotalTitle} aria-label={allTotalTitle}>{counts.total}</strong>
-        <em title={`${allMainTitle} · ${allSubagentTitle}`} aria-label={`${allMainTitle} · ${allSubagentTitle}`}>{t("mainShort")}{counts.main} · {t("subagentShort")}{counts.sub}</em>
+        <strong aria-label={allTotalTitle}>{counts.total}</strong>
+        <em aria-label={`${allMainTitle} · ${allSubagentTitle}`}>{t("mainShort")}{counts.main} · {t("subagentShort")}{counts.sub}</em>
       </span>
-      <span className="project-compact-proc" title={processTitle} aria-label={processTitle}>
+      <span className="project-compact-proc" aria-label={processTitle}>
         <i>{t("processShort")}</i>
         <strong>{processCount}</strong>
         <em>{resourceText}</em>
@@ -2188,18 +2187,18 @@ function ProjectMetricMatrix({ t, counts, processCount, resourceText }: { t: (ke
   return (
     <div className="project-matrix" aria-label={t("metricSessions")}>
       <span />
-      <b title={mainTitle} aria-label={mainTitle}>{t("main")}</b>
-      <b title={subagentTitle} aria-label={subagentTitle}>{t("subagent")}</b>
-      <b title={totalTitle} aria-label={totalTitle}>{t("total")}</b>
-      <b title={activeTitle} aria-label={activeTitle}>{t("active")}</b>
+      <b aria-label={mainTitle}>{t("main")}</b>
+      <b aria-label={subagentTitle}>{t("subagent")}</b>
+      <b aria-label={totalTitle}>{t("total")}</b>
+      <b aria-label={activeTitle}>{t("active")}</b>
       <ProjectMetricNumber t={t} scope="active" metric="main" value={counts.activeMain} />
       <ProjectMetricNumber t={t} scope="active" metric="subagent" value={counts.activeSub} />
       <ProjectMetricNumber t={t} scope="active" metric="total" value={counts.activeTotal} />
-      <b title={allTitle} aria-label={allTitle}>{t("all")}</b>
+      <b aria-label={allTitle}>{t("all")}</b>
       <ProjectMetricNumber t={t} scope="all" metric="main" value={counts.main} />
       <ProjectMetricNumber t={t} scope="all" metric="subagent" value={counts.sub} />
       <ProjectMetricNumber t={t} scope="all" metric="total" value={counts.total} />
-      <span className="project-proc" title={processTitle} aria-label={processTitle}>
+      <span className="project-proc" aria-label={processTitle}>
         <Server size={12} />
         <strong>{processCount}</strong>
         <em>{resourceText}</em>
@@ -2225,7 +2224,7 @@ function projectProcessResources(snapshot: Snapshot, sessions: LiveSession[]): {
 
 function ProjectMetricNumber({ t, scope, metric, value }: { t: (key: string) => string; scope: ProjectMetricScope; metric: ProjectMetricObject; value: number }) {
   const title = projectMetricCellTitle(t, scope, metric, value);
-  return <strong title={title} aria-label={title}>{value}</strong>;
+  return <strong aria-label={title}>{value}</strong>;
 }
 
 function ToolStrip({ t, tools }: { t: (key: string) => string; tools: ProjectTool[] }) {
@@ -2242,7 +2241,7 @@ function ToolStrip({ t, tools }: { t: (key: string) => string; tools: ProjectToo
         const tokenTitle = tool.token_usage && tokenUsageHasValue(tool.token_usage) ? `${t("tokenUsage")}: ${formatTokenUsageSummary(tool.token_usage, t)}` : "";
         const title = tokenTitle ? `${baseTitle} ${tokenTitle}` : baseTitle;
         return (
-          <span className="tool-mark" key={toolName} title={title} aria-label={title}>
+          <span className="tool-mark" key={toolName} aria-label={title}>
             <ToolIcon t={t} tool={toolName} title={title} />
             <strong>{tool.active_burst_count ?? 0}</strong>
             <small>/{tool.session_count ?? 0}</small>
@@ -2442,14 +2441,13 @@ function SessionIdControl({
   setSelection: (value: Selection) => void;
 }) {
   return (
-    <span className="session-id-control" title={sid || title}>
+    <span className="session-id-control" aria-label={sid || title}>
       <button className="session-id-button" type="button" data-focus-key={focusKey("session", sid || title)} aria-current={selected ? "true" : undefined} onClick={() => setSelection({ type: "session", id: safeID(sid) })}>
         <strong>{title}</strong>
       </button>
       <button
         className="session-copy-inline"
         type="button"
-        title={t("copySession")}
         aria-label={t("copySession")}
         data-focus-key={focusKey("session-copy", sid || title)}
         disabled={!sid}
@@ -2530,9 +2528,9 @@ function Readout({ label, value }: { label: string; value?: string }) {
 function ToolIcon({ t, tool, title }: { t: (key: string) => string; tool?: string; title?: string }) {
   const iconName = toolIconName(tool);
   const label = title || formatCopy(t("codingAgentTooltip"), { tool: toolDisplayName(tool) });
-  if (!iconName) return <span className="tool-fallback" title={label} aria-label={label}>{toolBadgeLabel(tool)}</span>;
+  if (!iconName) return <span className="tool-fallback" aria-label={label}>{toolBadgeLabel(tool)}</span>;
   return (
-    <span className="tool-icon" title={label} aria-label={label}>
+    <span className="tool-icon" aria-label={label}>
       <img src={`/api/tool-icon/${encodeURIComponent(iconName)}`} alt="" loading="lazy" decoding="async" />
     </span>
   );
@@ -2541,7 +2539,7 @@ function ToolIcon({ t, tool, title }: { t: (key: string) => string; tool?: strin
 function HostAppButton({ t, host }: { t: (key: string) => string; host: HostApp }) {
   const title = hostAppTitle(t, host);
   return (
-    <button className="host-app" type="button" data-focus-key={focusKey("host-app", host.pid ?? host.bundle_path ?? host.name ?? "")} title={title} aria-label={title} onClick={() => openHostApp(host)}>
+    <button className="host-app" type="button" data-focus-key={focusKey("host-app", host.pid ?? host.bundle_path ?? host.name ?? "")} aria-label={title} onClick={() => openHostApp(host)}>
       <span className="host-icon">
         <img src={`/api/host-app-icon/${encodeURIComponent(String(host.pid ?? ""))}`} alt="" loading="lazy" decoding="async" />
       </span>
@@ -2552,7 +2550,7 @@ function HostAppButton({ t, host }: { t: (key: string) => string; host: HostApp 
 
 function HostAppEmpty({ t, label = false }: { t: (key: string) => string; label?: boolean }) {
   const title = t("hostAppUnknown");
-  return <span className="host-empty" title={title} aria-label={title}>{label ? t("host") : ""}</span>;
+  return <span className="host-empty" aria-label={title}>{label ? t("host") : ""}</span>;
 }
 
 function hostAppTitle(t: (key: string) => string, host: HostApp): string {
@@ -2677,7 +2675,7 @@ function RoleGlyph({ t, role }: { t: (key: string) => string; role: "main" | "su
   const label = roleLabel(t, role);
   const icon = role === "main" ? <Terminal size={12} /> : role === "subagent" ? <Bot size={12} /> : <GitBranch size={12} />;
   return (
-    <span className="role-glyph" title={label} aria-label={label}>
+    <span className="role-glyph" aria-label={label}>
       {icon}
     </span>
   );

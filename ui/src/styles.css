@@ -2332,6 +2332,18 @@ body[data-view="popover"] .warning-banner {
   transform: translateY(0);
 }
 
+.project-tree-row:has(.session-line:hover) > .row-hover-detail,
+.project-tree-row:has(.session-line:focus-within) > .row-hover-detail,
+.project-tree-row:has(.session-id-control:hover) > .row-hover-detail,
+.project-tree-row:has(.session-id-control:focus-within) > .row-hover-detail {
+  opacity: 0;
+  transform: translateY(-3px);
+}
+
+.project-tree-row.expanded > .row-hover-detail {
+  display: none;
+}
+
 .project-tree-row:hover,
 .project-tree-row:focus-within,
 .session-line:hover,
