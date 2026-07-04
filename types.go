@@ -301,6 +301,9 @@ type LiveProcessSnapshot struct {
 	Tool                  string                   `json:"tool"`
 	DisplayName           string                   `json:"display_name,omitempty"`
 	Command               string                   `json:"command"`
+	CPUPercent            float64                  `json:"cpu_percent,omitempty"`
+	MemoryBytes           int64                    `json:"memory_bytes,omitempty"`
+	Elapsed               string                   `json:"elapsed,omitempty"`
 	HostApp               *HostApp                 `json:"host_app,omitempty"`
 	SessionIDs            []string                 `json:"session_ids,omitempty"`
 	SessionPaths          []string                 `json:"session_paths,omitempty"`
@@ -321,6 +324,7 @@ type HostApp struct {
 }
 
 type ProcessSessionEvidence struct {
+	Tool                string   `json:"tool,omitempty"`
 	SessionID           string   `json:"session_id"`
 	Project             string   `json:"project,omitempty"`
 	Role                string   `json:"role"`
@@ -334,29 +338,33 @@ type ProcessSessionEvidence struct {
 }
 
 type ProcessRuntimeSummary struct {
-	Key                 string `json:"key"`
-	Tool                string `json:"tool"`
-	DisplayName         string `json:"display_name"`
-	PIDCount            int    `json:"pid_count"`
-	MappedProcesses     int    `json:"mapped_processes"`
-	UnmappedProcesses   int    `json:"unmapped_processes"`
-	DirectSessions      int    `json:"direct_sessions"`
-	SubagentSessions    int    `json:"subagent_sessions"`
-	UnknownRoleSessions int    `json:"unknown_role_sessions"`
-	ActiveSessions      int    `json:"active_sessions"`
+	Key                 string  `json:"key"`
+	Tool                string  `json:"tool"`
+	DisplayName         string  `json:"display_name"`
+	PIDCount            int     `json:"pid_count"`
+	CPUPercent          float64 `json:"cpu_percent,omitempty"`
+	MemoryBytes         int64   `json:"memory_bytes,omitempty"`
+	MappedProcesses     int     `json:"mapped_processes"`
+	UnmappedProcesses   int     `json:"unmapped_processes"`
+	DirectSessions      int     `json:"direct_sessions"`
+	SubagentSessions    int     `json:"subagent_sessions"`
+	UnknownRoleSessions int     `json:"unknown_role_sessions"`
+	ActiveSessions      int     `json:"active_sessions"`
 }
 
 type HostAppProcessSummary struct {
-	Key                 string `json:"key"`
-	Name                string `json:"name"`
-	PID                 int    `json:"pid,omitempty"`
-	PIDCount            int    `json:"pid_count"`
-	MappedProcesses     int    `json:"mapped_processes"`
-	UnmappedProcesses   int    `json:"unmapped_processes"`
-	DirectSessions      int    `json:"direct_sessions"`
-	SubagentSessions    int    `json:"subagent_sessions"`
-	UnknownRoleSessions int    `json:"unknown_role_sessions"`
-	ActiveSessions      int    `json:"active_sessions"`
+	Key                 string  `json:"key"`
+	Name                string  `json:"name"`
+	PID                 int     `json:"pid,omitempty"`
+	PIDCount            int     `json:"pid_count"`
+	CPUPercent          float64 `json:"cpu_percent,omitempty"`
+	MemoryBytes         int64   `json:"memory_bytes,omitempty"`
+	MappedProcesses     int     `json:"mapped_processes"`
+	UnmappedProcesses   int     `json:"unmapped_processes"`
+	DirectSessions      int     `json:"direct_sessions"`
+	SubagentSessions    int     `json:"subagent_sessions"`
+	UnknownRoleSessions int     `json:"unknown_role_sessions"`
+	ActiveSessions      int     `json:"active_sessions"`
 }
 
 type LiveSessionSnapshot struct {
@@ -374,6 +382,8 @@ type LiveSessionSnapshot struct {
 	Project                      string      `json:"project"`
 	Path                         string      `json:"path"`
 	ProcessCount                 int         `json:"process_count"`
+	ProcessCPUPercent            float64     `json:"process_cpu_percent,omitempty"`
+	ProcessMemoryBytes           int64       `json:"process_memory_bytes,omitempty"`
 	HostApps                     []HostApp   `json:"host_apps,omitempty"`
 	FirstEventAt                 string      `json:"first_event_at,omitempty"`
 	LastEventAt                  string      `json:"last_event_at,omitempty"`
@@ -479,6 +489,9 @@ type LiveProcess struct {
 	PPID         int
 	Tool         string
 	Command      string
+	CPUPercent   float64
+	MemoryBytes  int64
+	Elapsed      string
 	HostApp      *HostApp
 	SessionFiles []TranscriptFile
 	SessionHints []string

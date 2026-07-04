@@ -4,7 +4,7 @@ import { Activity, ArrowUpRight, Bot, ChevronDown, Copy, ExternalLink, Gauge, Gi
 import { copy, type Lang } from "./i18n";
 import { agentRoleLabel, buildToolSessionGroups, confidenceLabel, freshnessLabel, hiddenToolSessionCount, mappingMethodLabel, normalizedRole, orderedProjects, projectEvidenceItems, projectRoleCounts, roleHintLabel, roleLabel, sessionEvidenceItems, sessionIDsText, sessionIdentity, sessionsForProject, threadSourceLabel, toolBadgeLabel, toolDisplayName, toolIconName } from "./lib/activityModel";
 import { activeWindowLabel, buildRailItems, coordinationPostureLabel, currentMeaningLead, currentMeaningPoints, currentPeerScale, dashboardProjectLead, dashboardProjectMeta, deferredScanValue, mappingHealthText, metricState, primaryEvidenceNote, renderLogText, resolveSelection, statusTone, transcriptScanNote, transcriptScanSummary } from "./lib/dashboardModel";
-import { clampPct, countLabel, formatAge, formatCopy, formatDateTime, formatPct, formatRefreshInterval, formatTokenUsageSummary, pctPart, safeID, shortID, tokenUsageHasValue } from "./lib/format";
+import { clampPct, countLabel, formatAge, formatCPU, formatCopy, formatDateTime, formatMemory, formatPct, formatRefreshInterval, formatTokenUsageSummary, pctPart, safeID, shortID, tokenUsageHasValue } from "./lib/format";
 import { TrendSuite } from "./trend/TrendSuite";
 import { TREND_RANGES, type TrendLane, type TrendRange } from "./trend/types";
 import type { ActiveElementIdentity, LogTab, PopoverView, ProjectMetricObject, ProjectMetricScope, RailItem, RailTab, RefreshReason, RoleCounts, SelectedView, Selection, Theme, ViewportState } from "./types/app";
@@ -780,6 +780,7 @@ function DashboardFieldGrid({ t, snapshot }: { t: (key: string) => string; snaps
   const unmatched = summary.unmapped_processes ?? 0;
   const pids = current.pid_concurrency ?? 0;
   const coverage = clampPct(summary.mapping_coverage_pct ?? 0);
+  const resources = processResourceTotals(snapshot.live_processes);
   return (
     <>
       <div className="dash-field-grid">
@@ -802,7 +803,7 @@ function DashboardFieldGrid({ t, snapshot }: { t: (key: string) => string; snaps
       <div className="dash-process-diagnostic" aria-label={t("processPressure")}>
         <span><Server size={12} aria-hidden="true" />{t("processPressure")}</span>
         <strong>{pids}</strong>
-        <em>{formatCopy(t("processDiagnosticFormula"), { pids, mapped, unmatched })}</em>
+        <em>{`${processResourceText(t, resources.cpu, resources.memory)} · ${formatCopy(t("processDiagnosticFormula"), { pids, mapped, unmatched })}`}</em>
         <i aria-hidden="true"><b style={{ width: `${coverage}%` }} /></i>
       </div>
     </>
@@ -909,6 +910,7 @@ function PopoverRuntimeInstrument({ t, snapshot }: { t: (key: string) => string;
   const unmatched = summary.unmapped_processes ?? 0;
   const pids = current.pid_concurrency ?? 0;
   const coverage = clampPct(summary.mapping_coverage_pct ?? 0);
+  const resources = processResourceTotals(snapshot.live_processes);
   const rows = [
     {
       key: "burst",
@@ -959,7 +961,7 @@ function PopoverRuntimeInstrument({ t, snapshot }: { t: (key: string) => string;
       <div className="process-diagnostic-strip" aria-label={t("processPressure")}>
         <span><Server size={12} aria-hidden="true" />{t("processPressure")}</span>
         <strong>{pids}</strong>
-        <em>{formatCopy(t("processDiagnosticFormula"), { pids, mapped, unmatched })}</em>
+        <em>{`${processResourceText(t, resources.cpu, resources.memory)} · ${formatCopy(t("processDiagnosticFormula"), { pids, mapped, unmatched })}`}</em>
       </div>
       <CurrentMeaningStrip t={t} snapshot={snapshot} compact />
     </section>
@@ -1387,7 +1389,7 @@ function ProcessLedger({ t, snapshot, selection, setSelection }: { t: (key: stri
         <span>{t("tools")}</span>
         <span>{t("roleMix")}</span>
         <span>{t("sessions")}</span>
-        <span>{t("evidence")}</span>
+        <span>{t("resources")}</span>
         <span>{t("host")}</span>
       </div>
       {visibleRows.map((process) => (
@@ -1455,9 +1457,9 @@ function ProcessLedgerRow({ t, process, selection, setSelection }: { t: (key: st
           </button>
         ) : null}
       </div>
-      <span className={`process-map ${(process.mapped_sessions ?? 0) > 0 ? "mapped" : "unmapped"}`} role="cell">
-        <b>{process.mapped_sessions ?? 0}</b>
-        <em>{process.mapped_active_sessions ?? 0} {t("activeShort")}</em>
+      <span className={`process-resource-cell ${(process.cpu_percent ?? 0) > 0 ? "is-hot" : ""}`} role="cell" title={`${processResourceText(t, process.cpu_percent, process.memory_bytes)} · ${process.elapsed || t("unavailable")}`}>
+        <b>{formatMemory(process.memory_bytes, t)}</b>
+        <em>{formatCPU(process.cpu_percent)} {t("cpu")}</em>
       </span>
       <span className="process-host-cell" role="cell">
         {host ? <HostAppButton t={t} host={host} /> : null}
@@ -1465,6 +1467,11 @@ function ProcessLedgerRow({ t, process, selection, setSelection }: { t: (key: st
       </span>
       {expanded ? (
         <div className="process-row-details" role="cell">
+          <div className="process-resource-detail">
+            <span>{t("resources")}</span>
+            <strong>{processResourceText(t, process.cpu_percent, process.memory_bytes)}</strong>
+            <em>{t("runtimeDuration")} {process.elapsed || t("unavailable")} · {process.mapped_sessions ?? 0} {t("mappedSessions")} / {process.mapped_active_sessions ?? 0} {t("activeShort")}</em>
+          </div>
           <div className="process-command-full">
             <span>{t("command")}</span>
             <code>{process.command || t("unavailable")}</code>
@@ -1504,14 +1511,14 @@ function ProcessAuditFilters({ t, snapshot, filter, setFilter }: { t: (key: stri
         <button className={`process-filter-chip runtime ${isSameProcessFilter(filter, { kind: "runtime", id: item.key || item.tool || "" }) ? "is-selected" : ""}`} type="button" key={`runtime-${item.key || item.tool}`} onClick={() => setFilter({ kind: "runtime", id: item.key || item.tool || "" })}>
           <span>{toolDisplayName(item.display_name || item.tool)}</span>
           <strong>{item.pid_count ?? 0}</strong>
-          <em>{processSummaryMix(t, item.direct_sessions, item.subagent_sessions, item.unknown_role_sessions, item.unmapped_processes)}</em>
+          <em>{`${processResourceText(t, item.cpu_percent, item.memory_bytes)} · ${processSummaryMix(t, item.direct_sessions, item.subagent_sessions, item.unknown_role_sessions, item.unmapped_processes)}`}</em>
         </button>
       ))}
       {hosts.slice(0, 4).map((item) => (
         <button className={`process-filter-chip host ${isSameProcessFilter(filter, { kind: "host", id: item.key || item.name || "" }) ? "is-selected" : ""}`} type="button" key={`host-${item.key || item.name}`} onClick={() => setFilter({ kind: "host", id: item.key || item.name || "" })}>
           <span>{item.name || t("hostUnknown")}</span>
           <strong>{item.pid_count ?? 0}</strong>
-          <em>{processSummaryMix(t, item.direct_sessions, item.subagent_sessions, item.unknown_role_sessions, item.unmapped_processes)}</em>
+          <em>{`${processResourceText(t, item.cpu_percent, item.memory_bytes)} · ${processSummaryMix(t, item.direct_sessions, item.subagent_sessions, item.unknown_role_sessions, item.unmapped_processes)}`}</em>
         </button>
       ))}
       {roleFilters.map((item) => (
@@ -1525,6 +1532,22 @@ function ProcessAuditFilters({ t, snapshot, filter, setFilter }: { t: (key: stri
 
 function ProcessRolePill({ label, value, tone }: { label: string; value: number; tone: string }) {
   return <span className={`process-role-pill ${tone} ${value > 0 ? "has-value" : ""}`}><b>{value}</b><em>{label}</em></span>;
+}
+
+function processResourceTotals(processes: LiveProcess[] = []): { cpu: number; memory: number } {
+  return processes.reduce((total, process) => ({
+    cpu: total.cpu + (process.cpu_percent ?? 0),
+    memory: total.memory + (process.memory_bytes ?? 0),
+  }), { cpu: 0, memory: 0 });
+}
+
+function processResourceText(t: (key: string) => string, cpu?: number, memory?: number): string {
+  return `${formatCPU(cpu)} ${t("cpu")} · ${formatMemory(memory, t)}`;
+}
+
+function sessionProcessResourceText(t: (key: string) => string, session: LiveSession): string {
+  if ((session.process_count ?? 0) <= 0) return t("unavailable");
+  return processResourceText(t, session.process_cpu_percent, session.process_memory_bytes);
 }
 
 function processMatchesFilter(process: LiveProcess, filter: ProcessFilter): boolean {
@@ -2061,6 +2084,8 @@ function ProjectTreeRow({
 }) {
   const sessions = sessionsForProject(snapshot, project);
   const counts = projectRoleCounts(project, sessions);
+  const projectResources = projectProcessResources(snapshot, sessions);
+  const resourceText = processResourceText(t, projectResources.cpu, projectResources.memory);
   const projectId = safeID(project.project);
   const title = project.project || t("unassigned");
   const evidenceItems = projectEvidenceItems(t, project, compact);
@@ -2095,7 +2120,7 @@ function ProjectTreeRow({
           <span>{title}</span>
           <small>{projectMeta}</small>
         </button>
-        {compact ? <ProjectCompactMetrics t={t} counts={counts} processCount={project.process_count ?? 0} /> : <ProjectMetricMatrix t={t} counts={counts} processCount={project.process_count ?? 0} />}
+        {compact ? <ProjectCompactMetrics t={t} counts={counts} processCount={project.process_count ?? 0} resourceText={resourceText} /> : <ProjectMetricMatrix t={t} counts={counts} processCount={project.process_count ?? 0} resourceText={resourceText} />}
         <ToolStrip t={t} tools={project.tools ?? []} />
       </div>
       {expanded ? (
@@ -2115,7 +2140,7 @@ function ProjectTreeRow({
   );
 }
 
-function ProjectCompactMetrics({ t, counts, processCount }: { t: (key: string) => string; counts: RoleCounts; processCount: number }) {
+function ProjectCompactMetrics({ t, counts, processCount, resourceText }: { t: (key: string) => string; counts: RoleCounts; processCount: number; resourceText: string }) {
   const activeMainTitle = projectMetricCellTitle(t, "active", "main", counts.activeMain);
   const activeSubagentTitle = projectMetricCellTitle(t, "active", "subagent", counts.activeSub);
   const activeTotalTitle = projectMetricCellTitle(t, "active", "total", counts.activeTotal);
@@ -2140,12 +2165,13 @@ function ProjectCompactMetrics({ t, counts, processCount }: { t: (key: string) =
       <span className="project-compact-proc" title={processTitle} aria-label={processTitle}>
         <i>{t("processShort")}</i>
         <strong>{processCount}</strong>
+        <em>{resourceText}</em>
       </span>
     </div>
   );
 }
 
-function ProjectMetricMatrix({ t, counts, processCount }: { t: (key: string) => string; counts: RoleCounts; processCount: number }) {
+function ProjectMetricMatrix({ t, counts, processCount, resourceText }: { t: (key: string) => string; counts: RoleCounts; processCount: number; resourceText: string }) {
   const activeTitle = projectMetricGroupTitle(t, "active", counts);
   const allTitle = projectMetricGroupTitle(t, "all", counts);
   const mainTitle = projectMetricObjectTitle(t, "main");
@@ -2168,10 +2194,26 @@ function ProjectMetricMatrix({ t, counts, processCount }: { t: (key: string) => 
       <ProjectMetricNumber t={t} scope="all" metric="total" value={counts.total} />
       <span className="project-proc" title={processTitle} aria-label={processTitle}>
         <Server size={12} />
-        {processCount}
+        <strong>{processCount}</strong>
+        <em>{resourceText}</em>
       </span>
     </div>
   );
+}
+
+function projectProcessResources(snapshot: Snapshot, sessions: LiveSession[]): { cpu: number; memory: number } {
+  const sessionKeys = new Set(sessions.map((session) => `${session.tool || ""}\x00${session.session_id || ""}`));
+  const sessionIDs = new Set(sessions.map((session) => session.session_id || "").filter(Boolean));
+  let cpu = 0;
+  let memory = 0;
+  for (const process of snapshot.live_processes ?? []) {
+    const matched = (process.mapped_session_evidence ?? []).some((evidence) => sessionKeys.has(`${evidence.tool || process.tool || ""}\x00${evidence.session_id || ""}`))
+      || (process.session_ids ?? []).some((id) => sessionIDs.has(id));
+    if (!matched) continue;
+    cpu += process.cpu_percent ?? 0;
+    memory += process.memory_bytes ?? 0;
+  }
+  return { cpu, memory };
 }
 
 function ProjectMetricNumber({ t, scope, metric, value }: { t: (key: string) => string; scope: ProjectMetricScope; metric: ProjectMetricObject; value: number }) {
@@ -2312,9 +2354,13 @@ function SessionLine({
   const host = session.host_apps?.[0];
   const evidenceItems = sessionEvidenceItems(t, session, compact);
   const processText = compact ? `${session.process_count ?? 0}p` : `${session.process_count ?? 0} ${t("pid")}`;
+  const resourceText = sessionProcessResourceText(t, session);
   const selected = selection.type === "session" && safeID(sid) === selection.id;
   const title = session.agent_nickname || shortID(sid) || "session";
-  const meta = `${formatAge(session.last_event_age_seconds, t)} · ${processText} · ${confidenceLabel(t, session.confidence)}`;
+  const meta = `${formatAge(session.last_event_age_seconds, t)} · ${processText} · ${resourceText} · ${confidenceLabel(t, session.confidence)}`;
+  const visibleEvidenceItems = (session.process_count ?? 0) > 0
+    ? [{ label: t("resources"), value: resourceText, tone: "resource" }, ...evidenceItems]
+    : evidenceItems;
   if (compact) {
     return (
       <div className={`session-line role-${role} ${session.active_burst ? "is-active" : ""} ${selected ? "is-selected" : ""} ${child ? "is-child" : ""}`}>
@@ -2332,7 +2378,7 @@ function SessionLine({
           </button>
         </span>
         <div className="session-evidence-strip" aria-label={t("evidence")}>
-          {evidenceItems.map((item) => (
+          {visibleEvidenceItems.map((item) => (
             <span className={`session-evidence-chip ${item.tone ?? ""}`} key={item.label}>
               <b>{item.label}</b>
               <em>{item.value}</em>
@@ -2425,6 +2471,7 @@ function SessionEvidencePanel({ t, session }: { t: (key: string) => string; sess
         <Readout label={t("observedDuration")} value={formatAge(session.observed_duration_seconds, t)} />
         <Readout label={t("activeDuration")} value={formatAge(session.active_duration_seconds, t)} />
         <Readout label={t("idleDuration")} value={formatAge(session.idle_duration_seconds, t)} />
+        <Readout label={t("resources")} value={sessionProcessResourceText(t, session)} />
         <Readout label={t("tokenUsage")} value={formatTokenUsageSummary(session.token_usage, t)} />
         <Readout label={t("tools")} value={toolDisplayName(session.tool)} />
         <Readout label={t("host")} value={(session.host_apps ?? []).map((app) => app.name).join(", ") || t("unavailable")} />
@@ -2443,6 +2490,8 @@ function ProcessEvidencePanel({ t, process }: { t: (key: string) => string; proc
         <span>{t("pid")} {process.pid ?? t("unavailable")}</span>
       </div>
       <div className="entity-grid">
+        <Readout label={t("resources")} value={processResourceText(t, process.cpu_percent, process.memory_bytes)} />
+        <Readout label={t("runtimeDuration")} value={process.elapsed || t("unavailable")} />
         <Readout label={t("metricMatched")} value={String(process.mapped_sessions ?? 0)} />
         <Readout label={t("active")} value={String(process.mapped_active_sessions ?? 0)} />
         <Readout label={t("roleMix")} value={`${t("mainShort")} ${process.main_sessions ?? 0} · ${t("subagentShort")} ${process.subagent_sessions ?? 0} · ${t("unknown")} ${process.unknown_role_sessions ?? 0}`} />

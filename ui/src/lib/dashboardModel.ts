@@ -1,5 +1,5 @@
 import { freshnessLabel, normalizedRole, orderedProjects, roleLabel } from "./activityModel";
-import { formatAge, formatCopy, formatDateTime, formatPct, safeID, shortID, type Translate } from "./format";
+import { formatAge, formatCPU, formatCopy, formatDateTime, formatMemory, formatPct, safeID, shortID, type Translate } from "./format";
 import type { LogTab, RailItem, RailTab, SelectedView, Selection } from "../types/app";
 import type { CurrentMetrics, Snapshot, TranscriptStats } from "../types/snapshot";
 import type { TrendPoint, TrendSet, TrendWindow } from "../trend/types";
@@ -67,10 +67,13 @@ export function resolveSelection(t: Translate, snapshot: Snapshot | null, select
       mapped: process?.mapped_sessions ?? 0,
       direct: process?.main_sessions ?? 0,
       subagent: process?.subagent_sessions ?? 0,
+      cpu: formatCPU(process?.cpu_percent),
+      memory: formatMemory(process?.memory_bytes, t),
     },
     details: [
       `session_ids=${(process?.session_ids ?? []).join(",") || "none"}`,
       `role_mix=direct:${process?.main_sessions ?? 0},subagent:${process?.subagent_sessions ?? 0},unknown:${process?.unknown_role_sessions ?? 0}`,
+      `resources=${formatCPU(process?.cpu_percent)} cpu, ${formatMemory(process?.memory_bytes, t)}`,
       `host_app=${process?.host_app?.name || "unknown"}`,
     ],
   };
@@ -111,11 +114,11 @@ export function buildRailItems(t: Translate, snapshot: Snapshot | null, tab: Rai
       type: "process",
       kind: "verify",
       title: `${process.display_name || process.tool || t("tool")} · ${process.pid ?? t("pid")}`,
-      description: `${process.mapped_sessions ?? 0} ${t("mappedSessions")} · ${t("mainShort")} ${process.main_sessions ?? 0} · ${t("subagentShort")} ${process.subagent_sessions ?? 0}`,
+      description: `${process.mapped_sessions ?? 0} ${t("mappedSessions")} · ${formatCPU(process.cpu_percent)} ${t("cpu")} · ${formatMemory(process.memory_bytes, t)}`,
       command: process.command || t("process"),
       status: (process.mapped_sessions ?? 0) > 0 ? "done" : "failed",
       tags: [process.tool || t("tool"), process.host_app?.name || t("hostUnknown")],
-      value: `${process.mapped_sessions ?? 0} ${t("mapped")}`,
+      value: formatMemory(process.memory_bytes, t),
     }));
   }
   return items.filter(filter);

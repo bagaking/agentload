@@ -22,6 +22,25 @@ export function formatPct(value?: number): string {
   return `${Math.round(value)}%`;
 }
 
+export function formatCPU(value?: number): string {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return "0%";
+  const digits = value >= 10 ? 0 : 1;
+  return `${value.toFixed(digits)}%`;
+}
+
+export function formatMemory(bytes?: number, t?: Translate): string {
+  if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes <= 0) return t ? t("unavailable") : "n/a";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  const digits = value >= 100 || unit === 0 ? 0 : value >= 10 ? 1 : 2;
+  return `${value.toFixed(digits)} ${units[unit]}`;
+}
+
 export function formatDateTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;

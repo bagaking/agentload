@@ -37,6 +37,28 @@ func TestParseProcessTableLineIncludesPPID(t *testing.T) {
 	}
 }
 
+func TestParseProcessTableLineIncludesResourceUsage(t *testing.T) {
+	row, ok := parseProcessTableLine(`  501  4242  101  12.5  131072  01:02:03 codex --thread-id 123e4567-e89b-12d3-a456-426614174000`)
+	if !ok {
+		t.Fatalf("expected resource process table line to parse")
+	}
+	if row.UID != 501 || row.PID != 4242 || row.PPID != 101 {
+		t.Fatalf("unexpected row ids: %#v", row)
+	}
+	if row.CPUPercent != 12.5 {
+		t.Fatalf("unexpected cpu percent: %v", row.CPUPercent)
+	}
+	if row.MemoryBytes != 131072*1024 {
+		t.Fatalf("unexpected memory bytes: %d", row.MemoryBytes)
+	}
+	if row.Elapsed != "01:02:03" {
+		t.Fatalf("unexpected elapsed: %q", row.Elapsed)
+	}
+	if row.Command != `codex --thread-id 123e4567-e89b-12d3-a456-426614174000` {
+		t.Fatalf("unexpected command: %q", row.Command)
+	}
+}
+
 func TestDetectedTool(t *testing.T) {
 	cases := []struct {
 		command string

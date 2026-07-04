@@ -1400,10 +1400,10 @@ func TestBuildCoordinationRiskSummarizesCandidateCoverageAndConfidence(t *testin
 func TestProjectLiveProcessesAddsRoleEvidenceAndSummaries(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
 	processes := []LiveProcess{
-		{PID: 101, Tool: "codex", Command: "codex --thread-id main-session", HostApp: &HostApp{PID: 900, Name: "Terminal", BundlePath: "Terminal.app"}},
-		{PID: 102, Tool: "codex", Command: "codex --thread-id sub-session", HostApp: &HostApp{PID: 900, Name: "Terminal", BundlePath: "Terminal.app"}},
-		{PID: 103, Tool: "claude", Command: "claude --session-id unknown-session"},
-		{PID: 104, Tool: "codex", Command: "codex exec"},
+		{PID: 101, Tool: "codex", Command: "codex --thread-id main-session", CPUPercent: 2.5, MemoryBytes: 128 * 1024 * 1024, Elapsed: "00:02:00", HostApp: &HostApp{PID: 900, Name: "Terminal", BundlePath: "Terminal.app"}},
+		{PID: 102, Tool: "codex", Command: "codex --thread-id sub-session", CPUPercent: 1.25, MemoryBytes: 64 * 1024 * 1024, HostApp: &HostApp{PID: 900, Name: "Terminal", BundlePath: "Terminal.app"}},
+		{PID: 103, Tool: "claude", Command: "claude --session-id unknown-session", CPUPercent: 0.5, MemoryBytes: 32 * 1024 * 1024},
+		{PID: 104, Tool: "codex", Command: "codex exec", CPUPercent: 0.75, MemoryBytes: 16 * 1024 * 1024},
 	}
 	sessions := []LiveSession{
 		{
@@ -1461,6 +1461,9 @@ func TestProjectLiveProcessesAddsRoleEvidenceAndSummaries(t *testing.T) {
 	if mainProcess.DisplayName != "codex" || mainProcess.MainSessions != 1 || mainProcess.SubagentSessions != 0 || mainProcess.UnknownRoleSessions != 0 || mainProcess.MappedActiveSessions != 1 {
 		t.Fatalf("unexpected main process evidence: %#v", mainProcess)
 	}
+	if mainProcess.CPUPercent != 2.5 || mainProcess.MemoryBytes != 128*1024*1024 || mainProcess.Elapsed != "00:02:00" {
+		t.Fatalf("unexpected main process resources: %#v", mainProcess)
+	}
 	if len(mainProcess.MappedSessionEvidence) != 1 || mainProcess.MappedSessionEvidence[0].Role != "main" {
 		t.Fatalf("expected main session evidence, got %#v", mainProcess.MappedSessionEvidence)
 	}
@@ -1485,6 +1488,9 @@ func TestProjectLiveProcessesAddsRoleEvidenceAndSummaries(t *testing.T) {
 	if codexRuntime.PIDCount != 3 || codexRuntime.DirectSessions != 1 || codexRuntime.SubagentSessions != 1 || codexRuntime.UnknownRoleSessions != 0 || codexRuntime.UnmappedProcesses != 1 {
 		t.Fatalf("unexpected codex runtime summary: %#v", codexRuntime)
 	}
+	if codexRuntime.CPUPercent != 4.5 || codexRuntime.MemoryBytes != 208*1024*1024 {
+		t.Fatalf("unexpected codex runtime resources: %#v", codexRuntime)
+	}
 	claudeRuntime := requireRuntimeProcessSummary(t, runtimeSummary, "claude")
 	if claudeRuntime.UnknownRoleSessions != 1 || claudeRuntime.DirectSessions != 0 || claudeRuntime.SubagentSessions != 0 {
 		t.Fatalf("unexpected claude runtime summary: %#v", claudeRuntime)
@@ -1493,6 +1499,14 @@ func TestProjectLiveProcessesAddsRoleEvidenceAndSummaries(t *testing.T) {
 	terminal := requireHostAppProcessSummary(t, hostSummary, "Terminal:900")
 	if terminal.PIDCount != 2 || terminal.DirectSessions != 1 || terminal.SubagentSessions != 1 || terminal.UnmappedProcesses != 0 {
 		t.Fatalf("unexpected host summary: %#v", terminal)
+	}
+	if terminal.CPUPercent != 3.75 || terminal.MemoryBytes != 192*1024*1024 {
+		t.Fatalf("unexpected host resources: %#v", terminal)
+	}
+	enrichedSessions := attachProcessResourcesToSessions(sessionSnapshots, processSnapshots)
+	mainSession := requireLiveSessionSnapshot(t, enrichedSessions, "main-session")
+	if mainSession.ProcessCPUPercent != 2.5 || mainSession.ProcessMemoryBytes != 128*1024*1024 {
+		t.Fatalf("unexpected main session process resources: %#v", mainSession)
 	}
 }
 

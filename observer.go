@@ -59,6 +59,7 @@ func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 	}
 	liveSessionSnapshots := projectLiveSessions(liveSessions, o.cfg.IdleGap, now)
 	liveProcessSnapshots := projectLiveProcessesWithSessions(processes, liveSessions, liveSessionSnapshots, data)
+	liveSessionSnapshots = attachProcessResourcesToSessions(liveSessionSnapshots, liveProcessSnapshots)
 	projectFocus := buildProjectFocus(liveSessions, o.cfg.IdleGap, now)
 	candidateWorkitems := buildCandidateWorkitems(liveSessionSnapshots)
 	snapshot := Snapshot{
@@ -736,6 +737,9 @@ func projectLiveProcessesWithSessions(processes []LiveProcess, liveSessions []Li
 			Tool:        process.Tool,
 			DisplayName: processDisplayName(process),
 			Command:     process.Command,
+			CPUPercent:  process.CPUPercent,
+			MemoryBytes: process.MemoryBytes,
+			Elapsed:     process.Elapsed,
 			HostApp:     cloneHostApp(process.HostApp),
 		}
 		sessionIDs := []string{}
@@ -818,6 +822,7 @@ func buildProcessSessionEvidence(sessionKeys map[string]struct{}, sessionsByID m
 			continue
 		}
 		out = append(out, ProcessSessionEvidence{
+			Tool:                session.Tool,
 			SessionID:           session.SessionID,
 			Project:             session.Project,
 			Role:                normalizedRole(session.SessionRole),
@@ -842,6 +847,39 @@ func buildProcessSessionEvidence(sessionKeys map[string]struct{}, sessionsByID m
 		}
 		return out[i].SessionID < out[j].SessionID
 	})
+	return out
+}
+
+func attachProcessResourcesToSessions(sessions []LiveSessionSnapshot, processes []LiveProcessSnapshot) []LiveSessionSnapshot {
+	if len(sessions) == 0 || len(processes) == 0 {
+		return sessions
+	}
+	out := append([]LiveSessionSnapshot(nil), sessions...)
+	index := map[string]int{}
+	for i, session := range out {
+		if session.SessionID == "" {
+			continue
+		}
+		index[liveSessionKeyForID(session.Tool, session.SessionID)] = i
+	}
+	for _, process := range processes {
+		for _, evidence := range process.MappedSessionEvidence {
+			if evidence.SessionID == "" {
+				continue
+			}
+			key := liveSessionKeyForID(evidence.Tool, evidence.SessionID)
+			i, ok := index[key]
+			if !ok {
+				key = liveSessionKeyForID(process.Tool, evidence.SessionID)
+				i, ok = index[key]
+			}
+			if !ok {
+				continue
+			}
+			out[i].ProcessCPUPercent += process.CPUPercent
+			out[i].ProcessMemoryBytes += process.MemoryBytes
+		}
+	}
 	return out
 }
 
@@ -1022,6 +1060,8 @@ func buildRuntimeProcessSummary(processes []LiveProcessSnapshot) []ProcessRuntim
 			items[key] = acc
 		}
 		acc.item.PIDCount++
+		acc.item.CPUPercent += process.CPUPercent
+		acc.item.MemoryBytes += process.MemoryBytes
 		if process.MappedSessions > 0 {
 			acc.item.MappedProcesses++
 		} else {
@@ -1112,6 +1152,8 @@ func buildHostAppProcessSummary(processes []LiveProcessSnapshot) []HostAppProces
 			items[key] = acc
 		}
 		acc.item.PIDCount++
+		acc.item.CPUPercent += process.CPUPercent
+		acc.item.MemoryBytes += process.MemoryBytes
 		if process.MappedSessions > 0 {
 			acc.item.MappedProcesses++
 		} else {

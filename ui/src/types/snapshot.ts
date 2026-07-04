@@ -139,6 +139,9 @@ export type LiveProcess = {
   tool?: string;
   display_name?: string;
   command?: string;
+  cpu_percent?: number;
+  memory_bytes?: number;
+  elapsed?: string;
   mapped_sessions?: number;
   mapped_active_sessions?: number;
   main_sessions?: number;
@@ -152,6 +155,7 @@ export type LiveProcess = {
 };
 
 export type ProcessSessionEvidence = {
+  tool?: string;
   session_id?: string;
   project?: string;
   role?: string;
@@ -169,6 +173,8 @@ export type ProcessRuntimeSummary = {
   tool?: string;
   display_name?: string;
   pid_count?: number;
+  cpu_percent?: number;
+  memory_bytes?: number;
   mapped_processes?: number;
   unmapped_processes?: number;
   direct_sessions?: number;
@@ -182,6 +188,8 @@ export type HostAppProcessSummary = {
   name?: string;
   pid?: number;
   pid_count?: number;
+  cpu_percent?: number;
+  memory_bytes?: number;
   mapped_processes?: number;
   unmapped_processes?: number;
   direct_sessions?: number;
@@ -204,6 +212,8 @@ export type LiveSession = {
   independently_run?: boolean;
   project?: string;
   process_count?: number;
+  process_cpu_percent?: number;
+  process_memory_bytes?: number;
   host_apps?: HostApp[];
   active_burst?: boolean;
   freshness?: string;

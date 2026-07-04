@@ -20,7 +20,7 @@ var sessionHintPatterns = []*regexp.Regexp{
 }
 
 func discoverLiveProcesses(ctx context.Context) ([]LiveProcess, []string) {
-	out, err := exec.CommandContext(ctx, "ps", "-axo", "uid=,pid=,ppid=,command=").Output()
+	out, err := exec.CommandContext(ctx, "ps", "-axo", "uid=,pid=,ppid=,pcpu=,rss=,etime=,command=").Output()
 	if err != nil {
 		return nil, []string{"ps failed: " + strings.TrimSpace(err.Error())}
 	}
@@ -38,11 +38,14 @@ func discoverLiveProcesses(ctx context.Context) ([]LiveProcess, []string) {
 		}
 		hostApp := inferHostApp(process, processTable)
 		processes = append(processes, LiveProcess{
-			PID:     process.PID,
-			PPID:    process.PPID,
-			Tool:    tool,
-			Command: strings.TrimSpace(process.Command),
-			HostApp: hostApp,
+			PID:         process.PID,
+			PPID:        process.PPID,
+			Tool:        tool,
+			Command:     strings.TrimSpace(process.Command),
+			HostApp:     hostApp,
+			CPUPercent:  process.CPUPercent,
+			MemoryBytes: process.MemoryBytes,
+			Elapsed:     process.Elapsed,
 		})
 		pids = append(pids, process.PID)
 	}
@@ -63,10 +66,13 @@ func discoverLiveProcesses(ctx context.Context) ([]LiveProcess, []string) {
 var discoverLiveProcessesFunc = discoverLiveProcesses
 
 type processRow struct {
-	UID     int
-	PID     int
-	PPID    int
-	Command string
+	UID         int
+	PID         int
+	PPID        int
+	CPUPercent  float64
+	MemoryBytes int64
+	Elapsed     string
+	Command     string
 }
 
 func parseProcessTable(output string) map[int]processRow {
@@ -97,6 +103,21 @@ func parseProcessTableLine(line string) (processRow, bool) {
 	ppid, err := strconv.Atoi(fields[2])
 	if err != nil || ppid < 0 {
 		return processRow{}, false
+	}
+	if len(fields) >= 7 {
+		if cpuPercent, cpuErr := strconv.ParseFloat(fields[3], 64); cpuErr == nil {
+			if rssKB, rssErr := strconv.ParseInt(fields[4], 10, 64); rssErr == nil && rssKB >= 0 {
+				return processRow{
+					UID:         uid,
+					PID:         pid,
+					PPID:        ppid,
+					CPUPercent:  cpuPercent,
+					MemoryBytes: rssKB * 1024,
+					Elapsed:     fields[5],
+					Command:     strings.Join(fields[6:], " "),
+				}, true
+			}
+		}
 	}
 	return processRow{
 		UID:     uid,
