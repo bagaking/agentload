@@ -4,11 +4,11 @@ import { Activity, ArrowUpRight, Bot, ChevronDown, Copy, ExternalLink, Gauge, Gi
 import { copy, type Lang } from "./i18n";
 import { agentRoleLabel, buildToolSessionGroups, confidenceLabel, freshnessLabel, hiddenToolSessionCount, mappingMethodLabel, normalizedRole, orderedProjects, projectEvidenceItems, projectRoleCounts, roleHintLabel, roleLabel, sessionEvidenceItems, sessionIDsText, sessionIdentity, sessionsForProject, threadSourceLabel, toolBadgeLabel, toolDisplayName, toolIconName } from "./lib/activityModel";
 import { activeWindowLabel, buildRailItems, coordinationPostureLabel, currentMeaningLead, currentMeaningPoints, currentPeerScale, dashboardProjectLead, dashboardProjectMeta, deferredScanValue, mappingHealthText, metricState, primaryEvidenceNote, renderLogText, resolveSelection, statusTone, transcriptScanNote, transcriptScanSummary } from "./lib/dashboardModel";
-import { clampPct, countLabel, formatAge, formatCPU, formatCopy, formatDateTime, formatMemory, formatPct, formatRefreshInterval, formatTokenUsageSummary, pctPart, safeID, shortID, tokenUsageHasValue } from "./lib/format";
+import { clampPct, countLabel, formatAge, formatCPU, formatCopy, formatDateTime, formatMemory, formatPct, formatRefreshInterval, formatTokenCount, formatTokenUsageSummary, pctPart, safeID, shortID, tokenUsageHasValue } from "./lib/format";
 import { TrendSuite } from "./trend/TrendSuite";
 import { TREND_RANGES, type TrendLane, type TrendRange } from "./trend/types";
 import type { ActiveElementIdentity, LogTab, PopoverView, ProjectMetricObject, ProjectMetricScope, RailItem, RailTab, RefreshReason, RoleCounts, SelectedView, Selection, Theme, ViewportState } from "./types/app";
-import type { AgeBucketSnapshot, HostApp, LiveProcess, LiveSession, ProjectSnapshot, ProjectTool, Snapshot } from "./types/snapshot";
+import type { AgeBucketSnapshot, HostApp, LiveProcess, LiveSession, ProjectSnapshot, ProjectTool, Snapshot, TokenUsage } from "./types/snapshot";
 import "./styles.css";
 
 const BRAND_NAME = "Agent Load";
@@ -2366,8 +2366,16 @@ function SessionLine({
   const meta = `${formatAge(session.last_event_age_seconds, t)} · ${processText} · ${resourceText} · ${confidenceLabel(t, session.confidence)}`;
   const hostName = host?.name || t("hostUnknown");
   const sessionHoverTitle = `${title} · ${roleLabel(t, role)}`;
-  const sessionHoverDetail = `${toolDisplayName(session.tool)} · ${hostName} · ${meta}`;
   const sessionHoverMeta = `${t("mappingMethod")}: ${mappingMethodLabel(t, session.mapping_method)} · ${t("freshness")}: ${freshnessLabel(t, session.freshness || (session.active_burst ? "active" : "idle"))}`;
+  const sessionHoverMetrics = [
+    { label: t("tool"), value: toolDisplayName(session.tool) },
+    { label: t("host"), value: hostName },
+    { label: t("age"), value: formatAge(session.last_event_age_seconds, t) },
+    { label: t("processCount"), value: processText },
+    { label: t("processCPU"), value: formatCPU(session.process_cpu_percent) },
+    { label: t("processMemory"), value: formatMemory(session.process_memory_bytes, t) },
+  ];
+  const tokenParts = sessionTokenUsageParts(t, session.token_usage);
   const visibleEvidenceItems = (session.process_count ?? 0) > 0
     ? [{ label: t("resources"), value: resourceText, tone: "resource" }, ...evidenceItems]
     : evidenceItems;
@@ -2395,7 +2403,7 @@ function SessionLine({
             </span>
           ))}
         </div>
-        <RowHoverDetail title={sessionHoverTitle} detail={sessionHoverDetail} meta={sessionHoverMeta} />
+        <SessionHoverDetail title={sessionHoverTitle} metrics={sessionHoverMetrics} tokenParts={tokenParts} meta={sessionHoverMeta} />
       </div>
     );
   }
@@ -2422,7 +2430,7 @@ function SessionLine({
           </span>
         ))}
       </div>
-      <RowHoverDetail title={sessionHoverTitle} detail={sessionHoverDetail} meta={sessionHoverMeta} />
+      <SessionHoverDetail title={sessionHoverTitle} metrics={sessionHoverMetrics} tokenParts={tokenParts} meta={sessionHoverMeta} />
     </div>
   );
 }
@@ -2649,6 +2657,58 @@ function RowHoverDetail({ title, detail, meta }: { title: string; detail: string
       {meta ? <small>{meta}</small> : null}
     </span>
   );
+}
+
+function SessionHoverDetail({
+  title,
+  metrics,
+  tokenParts,
+  meta,
+}: {
+  title: string;
+  metrics: Array<{ label: string; value: string }>;
+  tokenParts: Array<{ label: string; value: string }>;
+  meta: string;
+}) {
+  return (
+    <span className="row-hover-detail session-hover-detail" aria-hidden="true">
+      <strong>{title}</strong>
+      <span className="session-hover-grid">
+        {metrics.map((item) => (
+          <span key={item.label}>
+            <b>{item.label}</b>
+            <em>{item.value}</em>
+          </span>
+        ))}
+      </span>
+      <span className="session-hover-tokens">
+        <b>Tokens</b>
+        <span>
+          {tokenParts.map((item) => (
+            <em key={item.label}><i>{item.label}</i>{item.value}</em>
+          ))}
+        </span>
+      </span>
+      <small>{meta}</small>
+    </span>
+  );
+}
+
+function sessionTokenUsageParts(t: (key: string) => string, usage?: TokenUsage): Array<{ label: string; value: string }> {
+  if (!usage || !tokenUsageHasValue(usage)) return [{ label: t("tokenTotal"), value: t("unavailable") }];
+  const cache = (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0);
+  const parts = [
+    { label: t("tokenTotal"), value: formatTokenCount(usage.total_tokens ?? tokenUsageDerivedTotalForHover(usage)) },
+    { label: t("tokenInput"), value: formatTokenCount(usage.input_tokens) },
+    { label: t("tokenOutput"), value: formatTokenCount(usage.output_tokens) },
+  ];
+  if (cache > 0) parts.push({ label: t("tokenCache"), value: formatTokenCount(cache) });
+  if ((usage.reasoning_output_tokens ?? 0) > 0) parts.push({ label: t("tokenReasoning"), value: formatTokenCount(usage.reasoning_output_tokens) });
+  return parts;
+}
+
+function tokenUsageDerivedTotalForHover(usage: TokenUsage): number {
+  return (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0);
 }
 
 function Pill({ tone, children }: { tone: "safe" | "idle" | "running" | "bad"; children: React.ReactNode }) {

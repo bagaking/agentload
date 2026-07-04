@@ -188,6 +188,10 @@ agent evidence.
   surface at a time. Do not combine browser-native `title` tooltips with custom
   row hover cards inside the same ledger; nested rows must suppress parent hover
   details so project, session, and process explanations do not stack.
+- Session hover details should be structured, not a single compressed sentence.
+  Process resources must be labeled as process CPU and process memory, and token
+  usage should appear as its own section with total/input/output/cache/reasoning
+  values when available.
 - Dense explanation blocks should default to a compact lead sentence and expose
   full details through an accessible disclosure control instead of permanently
   occupying popover height.
