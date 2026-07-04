@@ -23,9 +23,9 @@ export function formatPct(value?: number): string {
 }
 
 export function formatCPU(value?: number): string {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return "0%";
-  const digits = value >= 10 ? 0 : 1;
-  return `${value.toFixed(digits)}%`;
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return "0.00%";
+  if (value < 0.01) return "<0.01%";
+  return `${value.toFixed(2)}%`;
 }
 
 export function formatMemory(bytes?: number, t?: Translate): string {
