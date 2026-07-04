@@ -985,8 +985,9 @@ function hoverInspectorStyle(state: HoverDetailState): React.CSSProperties {
   const height = state.detail.kind === "session" && width < 280 ? 220 : state.detail.kind === "session" ? 156 : 86;
   const gap = 14;
   let left = state.x + gap;
-  let top = state.y + gap;
+  let top = state.y - height - gap;
   if (left + width > viewportWidth - 10) left = state.x - width - gap;
+  if (top < 10) top = state.y + gap;
   if (top + height > viewportHeight - 10) top = state.y - height - gap;
   left = Math.max(10, Math.min(left, Math.max(10, viewportWidth - width - 10)));
   top = Math.max(10, Math.min(top, Math.max(10, viewportHeight - height - 10)));

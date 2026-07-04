@@ -192,6 +192,9 @@ agent evidence.
   single global cursor-following layer. Avoid row-local absolute popovers, but
   keep the detail spatially tied to the pointer with a short hide delay so
   moving across dense rows does not flash or stack competing panels.
+  In dense popovers, prefer a complete one-pixel outline, quiet corner light,
+  and lightly translucent material over a strong single-side accent rail, which
+  repeats too aggressively across project/session rows and blocks scan paths.
 - Session hover details should be structured, not a single compressed sentence.
   Process resources must be labeled as process CPU and process memory, and token
   usage should appear as its own section with total/input/output/cache/reasoning
