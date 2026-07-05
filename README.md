@@ -30,3 +30,9 @@ go test ./...
 node scripts/validate_locales.js
 ./build_macos_app.sh
 ```
+
+## Distribution Prep
+
+- [Apple distribution readiness](docs/apple-distribution-readiness.md)
+- [Local observation privacy draft](docs/privacy-local-observation.md)
+- [App Store positioning](docs/app-store-positioning.md)
