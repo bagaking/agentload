@@ -13,6 +13,7 @@ import type { AgeBucketSnapshot, HostApp, LiveProcess, LiveSession, ProcessDiagn
 import "./styles.css";
 import "./styles/system-view.css";
 import "./styles/popover-footer.css";
+import "./styles/metric-help.css";
 
 const BRAND_NAME = "Agent Load";
 const ACTIVE = new Set(["active", "running", "queued"]);
@@ -844,7 +845,7 @@ function DashboardFieldGrid({ t, snapshot }: { t: (key: string) => string; snaps
         </article>
       </div>
       <div className="dash-process-diagnostic" aria-label={t("processPressure")}>
-        <span><Server size={12} aria-hidden="true" />{t("processPressure")}</span>
+        <span><Server size={12} aria-hidden="true" /><TermLabel label={t("processPressure")} tip={t("tipPids")} /></span>
         <strong>{pids}</strong>
         <em>{`${processResourceText(t, resources.cpu, resources.memory)} · ${formatCopy(t("processDiagnosticFormula"), { pids, mapped, unmatched })}`}</em>
         <i aria-hidden="true"><b style={{ width: `${coverage}%` }} /></i>
@@ -1024,7 +1025,7 @@ function SystemResourceDeck({
     <section className="system-resource-deck" aria-label={t("systemResources")}>
       <article className="system-resource-card cpu" style={systemMetricStyle(cpu)}>
         <div className="system-resource-card-head">
-          <span><Cpu size={15} />{t("systemCpu")}</span>
+          <span><Cpu size={15} /><TermLabel label={t("systemCpu")} tip={t("tipSystemCpu")} /></span>
           <strong>{formatCompactCPU(cpu)}</strong>
         </div>
         <div className="cpu-orbit" aria-hidden="true"><i /></div>
@@ -1037,13 +1038,14 @@ function SystemResourceDeck({
         tone="memory"
         icon={<MemoryStick size={15} />}
         label={t("systemMemory")}
+        tip={t("tipSystemMemory")}
         value={formatPct(memoryPct)}
         meta={memoryMeta}
         pct={memoryPct}
       />
       <article className="system-resource-card network" aria-label={t("networkFlow")} style={systemMetricStyle(networkIntensity)}>
         <div className="system-resource-card-head">
-          <span><Network size={15} />{t("networkFlow")}</span>
+          <span><Network size={15} /><TermLabel label={t("networkFlow")} tip={t("tipNetworkFlow")} /></span>
           <strong>{formatBytesPerSecond(rxRate, t)}</strong>
         </div>
         <div className="network-wave">
@@ -1059,6 +1061,7 @@ function SystemResourceDeck({
         tone="disk"
         icon={<HardDrive size={15} />}
         label={t("systemDisk")}
+        tip={t("tipSystemDisk")}
         value={formatPct(diskPct)}
         meta={diskMeta}
         pct={diskPct}
@@ -1067,6 +1070,7 @@ function SystemResourceDeck({
         tone="agent"
         icon={<Server size={15} />}
         label={t("agentProcessLoad")}
+        tip={t("tipAgentProcessLoad")}
         value={String(processCount)}
         meta={processMeta}
         pct={Math.min(100, processCPU)}
@@ -1076,11 +1080,11 @@ function SystemResourceDeck({
   );
 }
 
-function SystemCapacityCard({ tone, icon, label, value, meta, pct }: { tone: string; icon: React.ReactNode; label: string; value: string; meta: string; pct: number }) {
+function SystemCapacityCard({ tone, icon, label, tip, value, meta, pct }: { tone: string; icon: React.ReactNode; label: string; tip: string; value: string; meta: string; pct: number }) {
   return (
     <article className={`system-resource-card ${tone}`} style={systemMetricStyle(pct)}>
       <div className="system-resource-card-head">
-        <span>{icon}{label}</span>
+        <span>{icon}<TermLabel label={label} tip={tip} /></span>
         <strong>{value}</strong>
       </div>
       <div className="system-meter" aria-hidden="true"><i style={{ width: `${clampPct(pct, 2)}%` }} /></div>
@@ -1344,10 +1348,10 @@ function DashboardEvidenceColumn({ t, snapshot }: { t: (key: string) => string; 
       <DashboardBandHead kicker={t("evidenceColumn")} title={t("runtimeEvidence")} meta={t("scanAndMapping")} />
       <div className="dash-evidence-block">
         <div className="evidence-grid">
-          <Readout label={t("scan")} value={`${stats.parsed_files ?? 0}/${stats.scanned_files ?? 0}`} />
-          <Readout label={t("deferred")} value={deferredScanValue(t, stats)} />
-          <Readout label={t("tail")} value={String(stats.tail_parsed_files ?? 0)} />
-          <Readout label={t("metricMatched")} value={formatPct(summaryMappingCoveragePct(summary))} />
+          <Readout label={t("scan")} tip={t("tipScanner")} value={`${stats.parsed_files ?? 0}/${stats.scanned_files ?? 0}`} />
+          <Readout label={t("deferred")} tip={t("tipDeferredScan")} value={deferredScanValue(t, stats)} />
+          <Readout label={t("tail")} tip={t("tipTailScan")} value={String(stats.tail_parsed_files ?? 0)} />
+          <Readout label={t("metricMatched")} tip={t("tipMappingHealth")} value={formatPct(summaryMappingCoveragePct(summary))} />
         </div>
         <EvidenceHealth t={t} snapshot={snapshot} />
       </div>
@@ -1510,6 +1514,7 @@ function CalibrationRail({ t, snapshot }: { t: (key: string) => string; snapshot
     {
       key: "burst",
       label: t("active"),
+      tip: t("tipActiveBurst"),
       value: currentRecentMovementCount(current),
       primary: t("activeBurstHint"),
       secondary: t("currentScale"),
@@ -1518,6 +1523,7 @@ function CalibrationRail({ t, snapshot }: { t: (key: string) => string; snapshot
     {
       key: "session",
       label: t("metricKnownSessions"),
+      tip: t("tipSessions"),
       value: currentKnownSessionCount(current),
       primary: t("knownSessions"),
       secondary: t("liveIdle")
@@ -1528,6 +1534,7 @@ function CalibrationRail({ t, snapshot }: { t: (key: string) => string; snapshot
     {
       key: "mapping",
       label: t("mappingHealth"),
+      tip: t("tipMappingHealth"),
       value: formatPct(summaryMappingCoveragePct(summary)),
       primary: t("processEvidenceMapped"),
       secondary: `${mapped} ${t("mapped")} · ${unmatched} ${t("unmatched")}`,
@@ -1539,7 +1546,7 @@ function CalibrationRail({ t, snapshot }: { t: (key: string) => string; snapshot
       {rows.map((row) => (
         <article className={`calibration-row ${row.key}`} key={row.key}>
           <div className="calibration-row-head">
-            <span>{row.label}</span>
+            <span><TermLabel label={row.label} tip={row.tip} /></span>
             <strong>{row.value}</strong>
           </div>
           <i aria-hidden="true"><b style={{ width: `${clampPct(row.pct, 4)}%` }} /></i>
@@ -1549,7 +1556,7 @@ function CalibrationRail({ t, snapshot }: { t: (key: string) => string; snapshot
       ))}
       <article className="calibration-row process-diagnostic">
         <div className="calibration-row-head">
-          <span>{t("processPressure")}</span>
+          <span><TermLabel label={t("processPressure")} tip={t("tipPids")} /></span>
           <strong>{pids}</strong>
         </div>
         <i aria-hidden="true"><b style={{ width: `${coverage}%` }} /></i>
@@ -2364,16 +2371,16 @@ function Metrics({ t, snapshot, selected, compact }: { t: (key: string) => strin
   const summary = snapshot.summary ?? {};
   const items = selectionMetrics(t, snapshot, selected);
   const base = [
-    { key: t("metricFresh"), value: currentRecentMovementCount(current), cls: "is-accent", icon: <Activity size={15} /> },
-    { key: t("metricSessions"), value: currentKnownSessionCount(current), cls: "", icon: <Bot size={15} /> },
-    { key: t("metricProcesses"), value: currentProcessPressureCount(current), cls: "", icon: <Server size={15} /> },
-    { key: t("metricMatched"), value: formatPct(summaryMappingCoveragePct(summary)), cls: "is-ok", icon: <Gauge size={15} /> },
+    { key: t("metricFresh"), value: currentRecentMovementCount(current), cls: "is-accent", icon: <Activity size={15} />, tip: t("tipActiveBurst") },
+    { key: t("metricSessions"), value: currentKnownSessionCount(current), cls: "", icon: <Bot size={15} />, tip: t("tipSessions") },
+    { key: t("metricProcesses"), value: currentProcessPressureCount(current), cls: "", icon: <Server size={15} />, tip: t("tipPids") },
+    { key: t("metricMatched"), value: formatPct(summaryMappingCoveragePct(summary)), cls: "is-ok", icon: <Gauge size={15} />, tip: t("tipMappingHealth") },
   ];
   return (
     <div className="metrics">
       {(compact ? items.concat(base).slice(0, 4) : items.concat(base).slice(0, 8)).map((metric) => (
         <div className={`metric ${metric.cls}`} key={metric.key}>
-          <b>{metric.icon}<span>{metric.key}</span></b>
+          <b>{metric.icon}{metric.tip ? <TermLabel label={String(metric.key)} tip={metric.tip} /> : <span>{metric.key}</span>}</b>
           <span>{metric.value}</span>
         </div>
       ))}
@@ -2971,10 +2978,10 @@ function ProcessEvidencePanel({ t, process }: { t: (key: string) => string; proc
   );
 }
 
-function Readout({ label, value }: { label: string; value?: string }) {
+function Readout({ label, value, tip }: { label: string; value?: string; tip?: string }) {
   return (
     <span className="readout">
-      <b>{label}</b>
+      <b>{tip ? <TermLabel label={label} tip={tip} /> : label}</b>
       <strong>{value || ""}</strong>
     </span>
   );
@@ -3101,9 +3108,88 @@ function LanguageControl({ t, lang, setLang }: { t: (key: string) => string; lan
 }
 
 function TermLabel({ label, tip }: { label: string; tip: string }) {
+  const tipId = useId();
+  const [open, setOpen] = useState(false);
+  const [locked, setLocked] = useState(false);
+  const [position, setPosition] = useState<{ left: number; top: number; width: number; above: boolean }>({ left: 0, top: 0, width: 260, above: false });
+  const place = (target: HTMLElement) => {
+    const rect = target.getBoundingClientRect();
+    const viewportWidth = typeof window === "undefined" ? 420 : window.innerWidth;
+    const viewportHeight = typeof window === "undefined" ? 560 : window.innerHeight;
+    const width = Math.min(292, Math.max(220, viewportWidth - 20));
+    const left = Math.max(10, Math.min(rect.left, viewportWidth - width - 10));
+    const belowTop = rect.bottom + 8;
+    const above = belowTop + 96 > viewportHeight && rect.top > 112;
+    setPosition({
+      left,
+      top: above ? rect.top - 8 : belowTop,
+      width,
+      above,
+    });
+  };
+  const show = (event: React.PointerEvent<HTMLElement> | React.FocusEvent<HTMLElement>) => {
+    place(event.currentTarget);
+    setOpen(true);
+  };
+  const hide = () => {
+    if (!locked) setOpen(false);
+  };
+  const toggle = (event: React.MouseEvent<HTMLElement>) => {
+    event.preventDefault();
+    place(event.currentTarget);
+    setOpen((value) => !value || !locked);
+    setLocked((value) => !value);
+  };
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.key === "Escape") {
+      setLocked(false);
+      setOpen(false);
+      return;
+    }
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    place(event.currentTarget);
+    setOpen((value) => !value || !locked);
+    setLocked((value) => !value);
+  };
   return (
-    <span className="term-label" tabIndex={0} role="button" data-focus-key={focusKey("term", label)} aria-label={`${label}: ${tip}`} data-tip={tip} title={tip}>
-      {label}
+    <span
+      className={`term-label ${open ? "is-open" : ""}`}
+      tabIndex={0}
+      role="button"
+      data-focus-key={focusKey("term", label)}
+      aria-label={`${label}: ${tip}`}
+      aria-describedby={open ? tipId : undefined}
+      aria-expanded={open}
+      data-tip={tip}
+      onPointerEnter={show}
+      onPointerMove={show}
+      onPointerLeave={hide}
+      onFocus={show}
+      onBlur={() => {
+        setLocked(false);
+        setOpen(false);
+      }}
+      onClick={toggle}
+      onKeyDown={handleKeyDown}
+    >
+      <span className="term-label-text">{label}</span>
+      <span className="term-label-mark" aria-hidden="true">?</span>
+      {open ? (
+        <span
+          id={tipId}
+          className={`term-tooltip ${position.above ? "is-above" : "is-below"}`}
+          role="tooltip"
+          style={{
+            left: position.left,
+            top: position.top,
+            width: position.width,
+          }}
+        >
+          <b>{label}</b>
+          <em>{tip}</em>
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -3205,10 +3291,10 @@ function selectionMetrics(t: (key: string) => string, snapshot: Snapshot, select
   const stats = snapshot.transcript_stats;
   const risk = snapshot.coordination_risk;
   return [
-    { key: t("resultKind"), value: selected.kind, cls: "is-accent", icon: <Terminal size={15} /> },
-    { key: t("source"), value: stats?.cached ? t("cached") : t("fresh"), cls: "", icon: <Activity size={15} /> },
-    { key: t("samples"), value: snapshot.history?.retained_sample_count ?? 0, cls: "", icon: <Gauge size={15} /> },
-    { key: t("topProject"), value: risk?.top_project || t("none"), cls: "", icon: <GitBranch size={15} /> },
+    { key: t("resultKind"), value: selected.kind, cls: "is-accent", icon: <Terminal size={15} />, tip: t("tipResultKind") },
+    { key: t("source"), value: stats?.cached ? t("cached") : t("fresh"), cls: "", icon: <Activity size={15} />, tip: t("tipScanner") },
+    { key: t("samples"), value: snapshot.history?.retained_sample_count ?? 0, cls: "", icon: <Gauge size={15} />, tip: t("tipSampleHistory") },
+    { key: t("topProject"), value: risk?.top_project || t("none"), cls: "", icon: <GitBranch size={15} />, tip: t("tipTopProject") },
   ];
 }
 

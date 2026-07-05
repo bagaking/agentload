@@ -1,0 +1,114 @@
+/* Shared metric explanation affordance.
+   A visible ? mark means hover, focus, click, Enter, and Space all expose the
+   same explanation layer. */
+
+.term-label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  border: 0;
+  border-radius: 3px;
+  color: inherit;
+  background: transparent;
+  cursor: help;
+  outline: none;
+  text-decoration: none;
+}
+
+.term-label::after {
+  content: none;
+}
+
+.term-label-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: inherit;
+  white-space: inherit;
+}
+
+.term-label-mark {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+  border: 1px solid color-mix(in srgb, currentColor 38%, transparent);
+  border-radius: 50%;
+  color: color-mix(in srgb, currentColor 86%, var(--fg));
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 820;
+  line-height: 1;
+  opacity: .72;
+}
+
+.term-label:hover .term-label-mark,
+.term-label:focus-visible .term-label-mark,
+.term-label.is-open .term-label-mark {
+  opacity: 1;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.term-label:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.term-tooltip {
+  position: fixed;
+  z-index: 420;
+  display: grid;
+  gap: 4px;
+  padding: 8px 9px;
+  border: 1px solid color-mix(in srgb, var(--fg) 14%, var(--border));
+  border-radius: 4px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 5%, transparent), transparent 36%),
+    color-mix(in srgb, var(--surface-2) 94%, transparent);
+  box-shadow:
+    0 12px 28px color-mix(in srgb, #000 22%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--fg) 5%, transparent);
+  color: var(--fg);
+  pointer-events: none;
+  transform: translateY(0);
+  white-space: normal;
+}
+
+.term-tooltip,
+.term-tooltip * {
+  font-family: var(--font-sans);
+  text-transform: none;
+}
+
+.term-tooltip.is-above {
+  transform: translateY(-100%);
+}
+
+.term-tooltip b {
+  color: color-mix(in srgb, var(--fg) 88%, var(--accent));
+  font-size: 10px;
+  font-weight: 780;
+  letter-spacing: .01em;
+  line-height: 1.15;
+}
+
+.term-tooltip em {
+  color: var(--console-text-soft);
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 520;
+  letter-spacing: 0;
+  line-height: 1.36;
+  text-transform: none;
+}
+
+:root[data-theme="light"] .term-tooltip {
+  border-color: rgba(73, 93, 119, .18);
+  background:
+    linear-gradient(135deg, rgba(75, 120, 210, .055), transparent 36%),
+    rgba(255, 255, 255, .94);
+  box-shadow:
+    0 12px 26px rgba(58, 78, 111, .13),
+    inset 0 1px 0 rgba(255, 255, 255, .72);
+}

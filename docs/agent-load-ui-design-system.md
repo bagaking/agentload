@@ -241,6 +241,10 @@ semantic layer before visual polish is accepted.
 - Core runtime terms such as fresh movement, sessions, processes, PID match
   rate, and scan state should expose short hover/focus explanations so dense
   operator views stay readable without adding permanent copy.
+- Metric help affordances must be globally consistent. A visible help mark or
+  help cursor means the label opens the same explanation on hover, focus, click,
+  Enter, and Space; labels without explanation should not use button semantics
+  or look interactive.
 - Dense project/session/process rows should use one deliberate hover detail
   surface at a time. Do not combine browser-native `title` tooltips with custom
   row hover cards inside the same ledger; nested rows must suppress parent hover
