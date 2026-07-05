@@ -162,6 +162,10 @@ agent evidence.
   one-pixel guides offset from text, not thick bars over content.
 - Compact project tool coverage must reserve enough right gutter for the visible
   icon/count pair. Do not use fade masks that make the final count look clipped.
+- Compact popover project rows should spend width on role/process metrics before
+  secondary identity metadata. Keep the left identity lane to rank, disclosure,
+  and truncated project name; move unavailable ages or other low-value metadata
+  into hover/detail surfaces so right-side numerals never collide.
 - Expanded popover session rows should fit role, agent mark, host mark, short id,
   last activity age, process count, and confidence onto one scan line whenever
   the width allows it. Detail panels may carry longer evidence.
