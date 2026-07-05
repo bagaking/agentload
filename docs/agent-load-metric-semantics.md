@@ -44,6 +44,10 @@ semantic layer says so.
 - Whole-machine CPU, memory, and network counters are system pressure, not agent
   workload. They may refresh more often than snapshots, but they must stay in
   their own system resource field and UI surface.
+- Whole-machine network counters should foreground inbound and outbound
+  throughput. Interface packet errors and input drops may be shown as a local
+  packet issue rate, but the UI must not present that number as an end-to-end
+  internet packet-loss measurement.
 - UI labels may abbreviate for density, but tooltips and accessible labels must
   preserve the semantic name.
 - Trend charts, selected-point readouts, hover tooltips, and inspectors must use

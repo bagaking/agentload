@@ -1,0 +1,179 @@
+/* Popover tab rhythm layer.
+   Keep Online, Trend, and System panels on one compact content grid. */
+
+body[data-view="popover"] {
+  --popover-tab-pad-x: 9px;
+  --popover-tab-pad-y: 8px;
+  --popover-tab-pad-bottom: 9px;
+  --popover-tab-gap: 8px;
+  --popover-tab-title: 12.2px;
+  --popover-tab-kicker: 8.8px;
+  --popover-tab-meta: 8.7px;
+  --popover-tab-body: 9.4px;
+  --popover-tab-readout: 10.8px;
+}
+
+body[data-view="popover"] .popover-view-shell,
+body[data-view="popover"] .popover-view-panel {
+  min-width: 0;
+}
+
+body[data-view="popover"] .popover-view-panel[hidden] {
+  display: none;
+}
+
+body[data-view="popover"] .audit-shell,
+body[data-view="popover"] .trend-suite.compact,
+body[data-view="popover"] .system-shell {
+  gap: var(--popover-tab-gap);
+  padding: var(--popover-tab-pad-y) var(--popover-tab-pad-x) var(--popover-tab-pad-bottom);
+}
+
+body[data-view="popover"] .audit-shell {
+  padding: 0;
+}
+
+body[data-view="popover"] .popover-instrument,
+body[data-view="popover"] .scan-boundary,
+body[data-view="popover"] .popover-project-table,
+body[data-view="popover"] .trend-suite.compact .trend-lane,
+body[data-view="popover"] .system-shell .popover-process-panel,
+body[data-view="popover"] .system-resource-deck {
+  max-width: 100%;
+}
+
+body[data-view="popover"] .popover-instrument,
+body[data-view="popover"] .popover-project-table {
+  padding-right: 9px;
+  padding-left: 9px;
+}
+
+body[data-view="popover"] .scan-boundary {
+  padding-right: 9px;
+  padding-left: 9px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-suite-head,
+body[data-view="popover"] .system-headline,
+body[data-view="popover"] .popover-project-head {
+  min-height: 28px;
+  gap: 8px;
+  padding-bottom: 4px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-suite-copy h2,
+body[data-view="popover"] .system-headline h2,
+body[data-view="popover"] .popover-project-head h2 {
+  margin-top: 1px;
+  font-size: var(--popover-tab-title);
+  font-weight: 760;
+  letter-spacing: .01em;
+  line-height: 1.08;
+}
+
+body[data-view="popover"] .note-kicker,
+body[data-view="popover"] .trend-suite.compact .trend-suite-copy span,
+body[data-view="popover"] .system-headline > span,
+body[data-view="popover"] .popover-project-head > span,
+body[data-view="popover"] .project-heatmap-head em {
+  color: var(--console-text-faint);
+  font-size: var(--popover-tab-meta);
+  line-height: 1.16;
+}
+
+body[data-view="popover"] .note-kicker,
+body[data-view="popover"] .trend-suite.compact .project-heatmap-title,
+body[data-view="popover"] .system-resource-card-head span {
+  font-size: var(--popover-tab-kicker);
+  line-height: 1.14;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-range-switch {
+  min-height: 27px;
+  padding: 2px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-range-switch button {
+  min-width: 34px;
+  min-height: 22px;
+  padding: 3px 7px;
+  font-size: 10px;
+}
+
+body[data-view="popover"] .scan-boundary-main,
+body[data-view="popover"] .scan-readout b,
+body[data-view="popover"] .scan-readout strong,
+body[data-view="popover"] .trend-suite.compact .trend-lane-head small,
+body[data-view="popover"] .trend-suite.compact .trend-readout-values em,
+body[data-view="popover"] .system-resource-card > em,
+body[data-view="popover"] .system-chip-row b,
+body[data-view="popover"] .system-shell .popover-process-subline {
+  font-size: var(--popover-tab-body);
+  line-height: 1.16;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-kicker,
+body[data-view="popover"] .system-shell .popover-process-mainline strong,
+body[data-view="popover"] .system-shell .popover-process-mainline b,
+body[data-view="popover"] .popover-project-table .project-select span {
+  font-size: var(--popover-tab-readout);
+  line-height: 1.1;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-lane {
+  gap: 6px;
+  padding: 8px 9px 9px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-lane-head {
+  min-height: 29px;
+  gap: 8px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-lane-readout {
+  min-height: 28px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-readout-values b {
+  font-size: 14px;
+}
+
+body[data-view="popover"] .system-resource-card {
+  padding: 7px 9px 8px;
+}
+
+body[data-view="popover"] .system-resource-card-head {
+  gap: 6px;
+}
+
+body[data-view="popover"] .system-resource-card-head strong,
+body[data-view="popover"] .system-resource-card.cpu .system-resource-card-head strong,
+body[data-view="popover"] .system-resource-card.network .system-resource-card-head strong,
+body[data-view="popover"] .system-resource-card.memory .system-resource-card-head strong,
+body[data-view="popover"] .system-resource-card.disk .system-resource-card-head strong,
+body[data-view="popover"] .system-resource-card.agent .system-resource-card-head strong {
+  font-size: 19px;
+}
+
+body[data-view="popover"] .system-chip-row em {
+  font-size: 10px;
+}
+
+body[data-view="popover"] .system-shell .popover-process-head {
+  min-height: 44px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+@media (max-width: 430px) {
+  body[data-view="popover"] {
+    --popover-tab-pad-x: 7px;
+    --popover-tab-title: 11.6px;
+    --popover-tab-readout: 10.2px;
+  }
+
+  body[data-view="popover"] .trend-suite.compact .trend-range-switch button {
+    min-width: 30px;
+    padding-inline: 5px;
+  }
+}

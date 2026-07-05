@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { Activity, ArrowUpRight, Bot, ChevronDown, Copy, Cpu, ExternalLink, Gauge, GitBranch, HardDrive, Info, Languages, Layers, MemoryStick, Moon, Network, RefreshCw, Search, Server, Sun, Terminal, X } from "lucide-react";
 import { copy, type Lang } from "./i18n";
@@ -14,6 +15,8 @@ import "./styles.css";
 import "./styles/system-view.css";
 import "./styles/popover-footer.css";
 import "./styles/metric-help.css";
+import "./styles/popover-tabs.css";
+import "./styles/system-process.css";
 
 const BRAND_NAME = "Agent Load";
 const ACTIVE = new Set(["active", "running", "queued"]);
@@ -1016,6 +1019,10 @@ function SystemResourceDeck({
   const diskPct = resources?.disk_used_pct ?? 0;
   const rxRate = resources?.network_rx_bytes_per_sec ?? 0;
   const txRate = resources?.network_tx_bytes_per_sec ?? 0;
+  const rxPacketRate = resources?.network_rx_packets_per_sec ?? 0;
+  const txPacketRate = resources?.network_tx_packets_per_sec ?? 0;
+  const packetIssuePct = resources?.network_packet_issue_pct ?? 0;
+  const packetIssueRate = (resources?.network_error_packets_per_sec ?? 0) + (resources?.network_dropped_packets_per_sec ?? 0);
   const networkScale = Math.max(1, rxRate, txRate);
   const networkIntensity = clampPct(((rxRate + txRate) / 2_000_000) * 100, 4);
   const memoryMeta = `${formatMemory(resources?.memory_used_bytes, t)} / ${formatMemory(resources?.memory_total_bytes, t)} · ${t("available")} ${formatMemory(resources?.memory_free_bytes, t)}`;
@@ -1046,7 +1053,10 @@ function SystemResourceDeck({
       <article className="system-resource-card network" aria-label={t("networkFlow")} style={systemMetricStyle(networkIntensity)}>
         <div className="system-resource-card-head">
           <span><Network size={15} /><TermLabel label={t("networkFlow")} tip={t("tipNetworkFlow")} /></span>
-          <strong>{formatBytesPerSecond(rxRate, t)}</strong>
+          <strong className="network-throughput">
+            <span><b>{t("inbound")}</b>{formatBytesPerSecond(rxRate, t)}</span>
+            <span><b>{t("outbound")}</b>{formatBytesPerSecond(txRate, t)}</span>
+          </strong>
         </div>
         <div className="network-wave">
           <i style={{ height: `${clampPct((rxRate / networkScale) * 100, 4)}%` }} />
@@ -1055,7 +1065,12 @@ function SystemResourceDeck({
           <i style={{ height: `${clampPct((txRate / networkScale) * 100, 4)}%` }} />
           <i style={{ height: `${clampPct((rxRate / networkScale) * 100, 4)}%` }} />
         </div>
-        <em>{t("inbound")} {formatBytesPerSecond(rxRate, t)} · {t("outbound")} {formatBytesPerSecond(txRate, t)} · {resources?.network_interface_count ?? 0} {t("interfaces")}</em>
+        <em className="network-health-grid">
+          <span><b>{t("packetRate")}</b><strong>{formatPacketRate(rxPacketRate + txPacketRate, t)}</strong></span>
+          <span><b>{t("packetIssue")}</b><strong>{formatPrecisePct(packetIssuePct)}</strong></span>
+          <span><b>{t("packetIssueRate")}</b><strong>{formatPacketRate(packetIssueRate, t)}</strong></span>
+          <span><b>{t("interfaces")}</b><strong>{resources?.network_interface_count ?? 0}</strong></span>
+        </em>
       </article>
       <SystemCapacityCard
         tone="disk"
@@ -1146,6 +1161,12 @@ function PopoverProcessPanel({ t, snapshot, selection, setSelection }: { t: (key
           const projectText = processProjectSummary(t, process, " / ");
           const hostText = process.host_app?.name || t("hostAppUnknown");
           const resourceText = `${t("pid")} ${process.pid ?? t("unavailable")} · ${t("processCPU")} ${formatCompactCPU(process.cpu_percent)} · ${t("processMemory")} ${formatMemory(process.memory_bytes, t)} · ${t("diskIO")} ${processDiskIORateSummary(t, process)}`;
+          const metrics = [
+            { label: t("pid"), value: String(process.pid ?? t("unavailable")) },
+            { label: t("cpu"), value: formatCompactCPU(process.cpu_percent) },
+            { label: t("memoryShort"), value: formatMemory(process.memory_bytes, t) },
+            { label: t("diskIO"), value: processDiskIORatePair(t, process) },
+          ];
           return (
             <article className={`popover-process-card ${expanded ? "is-expanded" : ""} ${selected ? "is-selected" : ""}`} key={processID || process.command}>
               <button className="popover-process-head" type="button" onClick={() => setExpandedPID(expanded ? null : processID)} aria-expanded={expanded}>
@@ -1156,7 +1177,14 @@ function PopoverProcessPanel({ t, snapshot, selection, setSelection }: { t: (key
                   <b title={processProjectSummary(t, process, "\n")}>{projectText}</b>
                 </span>
                 <ProcessHostInline t={t} host={process.host_app} fallback={hostText} />
-                <span className="popover-process-subline">{resourceText}</span>
+                <span className="popover-process-metrics" aria-label={resourceText}>
+                  {metrics.map((metric) => (
+                    <span key={metric.label}>
+                      <b>{metric.label}</b>
+                      <strong>{metric.value}</strong>
+                    </span>
+                  ))}
+                </span>
               </button>
               {expanded ? <ProcessDiagnosticDetails t={t} process={process} setSelection={setSelection} /> : null}
             </article>
@@ -1910,6 +1938,10 @@ function processDiskIORateSummary(t: (key: string) => string, process: LiveProce
   return `${t("read")} ${formatBytesPerSecond(process.disk_read_bytes_per_sec, t)} / ${t("write")} ${formatBytesPerSecond(process.disk_write_bytes_per_sec, t)}`;
 }
 
+function processDiskIORatePair(t: (key: string) => string, process: LiveProcess): string {
+  return `${formatBytesPerSecond(process.disk_read_bytes_per_sec, t)} / ${formatBytesPerSecond(process.disk_write_bytes_per_sec, t)}`;
+}
+
 function ProcessAuditFilters({ t, snapshot, filter, setFilter }: { t: (key: string) => string; snapshot: Snapshot; filter: ProcessFilter; setFilter: (filter: ProcessFilter) => void }) {
   const runtime = snapshot.runtime_process_summary ?? [];
   const hosts = snapshot.host_app_process_summary ?? [];
@@ -1967,6 +1999,20 @@ function processResourceText(t: (key: string) => string, cpu?: number, memory?: 
 function formatBytesPerSecond(bytes?: number, t?: (key: string) => string): string {
   if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes <= 0) return `0 B/s`;
   return `${formatMemory(bytes, t ?? ((key: string) => key))}/s`;
+}
+
+function formatPacketRate(value?: number, t?: (key: string) => string): string {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return `0 ${t?.("packetsShort") ?? "pkt"}/s`;
+  const suffix = `${t?.("packetsShort") ?? "pkt"}/s`;
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M ${suffix}`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(value >= 10_000 ? 0 : 1)}K ${suffix}`;
+  return `${value.toFixed(value >= 100 ? 0 : value >= 10 ? 1 : 2)} ${suffix}`;
+}
+
+function formatPrecisePct(value?: number): string {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return "0.00%";
+  if (value < 0.01) return "<0.01%";
+  return `${value.toFixed(2)}%`;
 }
 
 function formatCompactCPU(value?: number): string {
@@ -3152,6 +3198,21 @@ function TermLabel({ label, tip }: { label: string; tip: string }) {
     setOpen((value) => !value || !locked);
     setLocked((value) => !value);
   };
+  const tooltip = open ? (
+    <span
+      id={tipId}
+      className={`term-tooltip ${position.above ? "is-above" : "is-below"}`}
+      role="tooltip"
+      style={{
+        left: position.left,
+        top: position.top,
+        width: position.width,
+      }}
+    >
+      <b>{label}</b>
+      <em>{tip}</em>
+    </span>
+  ) : null;
   return (
     <span
       className={`term-label ${open ? "is-open" : ""}`}
@@ -3174,22 +3235,7 @@ function TermLabel({ label, tip }: { label: string; tip: string }) {
       onKeyDown={handleKeyDown}
     >
       <span className="term-label-text">{label}</span>
-      <span className="term-label-mark" aria-hidden="true">?</span>
-      {open ? (
-        <span
-          id={tipId}
-          className={`term-tooltip ${position.above ? "is-above" : "is-below"}`}
-          role="tooltip"
-          style={{
-            left: position.left,
-            top: position.top,
-            width: position.width,
-          }}
-        >
-          <b>{label}</b>
-          <em>{tip}</em>
-        </span>
-      ) : null}
+      {tooltip && typeof document !== "undefined" ? createPortal(tooltip, document.body) : tooltip}
     </span>
   );
 }

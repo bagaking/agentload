@@ -130,8 +130,18 @@ export type SystemResourceSnapshot = {
   disk_used_pct?: number;
   network_rx_bytes?: number;
   network_tx_bytes?: number;
+  network_rx_packets?: number;
+  network_tx_packets?: number;
+  network_rx_errors?: number;
+  network_tx_errors?: number;
+  network_rx_drops?: number;
   network_rx_bytes_per_sec?: number;
   network_tx_bytes_per_sec?: number;
+  network_rx_packets_per_sec?: number;
+  network_tx_packets_per_sec?: number;
+  network_error_packets_per_sec?: number;
+  network_dropped_packets_per_sec?: number;
+  network_packet_issue_pct?: number;
   network_interface_count?: number;
   sample_interval_seconds?: number;
   notes?: string[];

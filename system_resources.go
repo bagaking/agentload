@@ -22,6 +22,11 @@ type systemResourceCounters struct {
 	DiskFreeBytes     uint64
 	NetworkRxBytes    uint64
 	NetworkTxBytes    uint64
+	NetworkRxPackets  uint64
+	NetworkTxPackets  uint64
+	NetworkRxErrors   uint64
+	NetworkTxErrors   uint64
+	NetworkRxDrops    uint64
 	NetworkInterfaces int
 }
 
@@ -52,6 +57,11 @@ func sampleSystemResources() SystemResourceSnapshot {
 		DiskUsedPct:           pctFromUint(counters.DiskUsedBytes, counters.DiskTotalBytes),
 		NetworkRxBytes:        counters.NetworkRxBytes,
 		NetworkTxBytes:        counters.NetworkTxBytes,
+		NetworkRxPackets:      counters.NetworkRxPackets,
+		NetworkTxPackets:      counters.NetworkTxPackets,
+		NetworkRxErrors:       counters.NetworkRxErrors,
+		NetworkTxErrors:       counters.NetworkTxErrors,
+		NetworkRxDrops:        counters.NetworkRxDrops,
 		NetworkInterfaceCount: counters.NetworkInterfaces,
 		Notes:                 append([]string(nil), notes...),
 	}
@@ -75,13 +85,27 @@ func sampleSystemResources() SystemResourceSnapshot {
 	}
 	snapshot.SampleIntervalSeconds = interval
 	snapshot.CPUPercent = cpuPercentDelta(previous, counters)
-	if counters.NetworkRxBytes >= previous.NetworkRxBytes {
-		snapshot.NetworkRxBytesPerSec = float64(counters.NetworkRxBytes-previous.NetworkRxBytes) / interval
-	}
-	if counters.NetworkTxBytes >= previous.NetworkTxBytes {
-		snapshot.NetworkTxBytesPerSec = float64(counters.NetworkTxBytes-previous.NetworkTxBytes) / interval
-	}
+	rxBytesDelta := counterDelta(previous.NetworkRxBytes, counters.NetworkRxBytes)
+	txBytesDelta := counterDelta(previous.NetworkTxBytes, counters.NetworkTxBytes)
+	rxPacketDelta := counterDelta(previous.NetworkRxPackets, counters.NetworkRxPackets)
+	txPacketDelta := counterDelta(previous.NetworkTxPackets, counters.NetworkTxPackets)
+	errorDelta := counterDelta(previous.NetworkRxErrors, counters.NetworkRxErrors) + counterDelta(previous.NetworkTxErrors, counters.NetworkTxErrors)
+	dropDelta := counterDelta(previous.NetworkRxDrops, counters.NetworkRxDrops)
+	snapshot.NetworkRxBytesPerSec = float64(rxBytesDelta) / interval
+	snapshot.NetworkTxBytesPerSec = float64(txBytesDelta) / interval
+	snapshot.NetworkRxPacketsPerSec = float64(rxPacketDelta) / interval
+	snapshot.NetworkTxPacketsPerSec = float64(txPacketDelta) / interval
+	snapshot.NetworkErrorPacketsPerSec = float64(errorDelta) / interval
+	snapshot.NetworkDroppedPacketsPerSec = float64(dropDelta) / interval
+	snapshot.NetworkPacketIssuePct = pctFromUint(errorDelta+dropDelta, rxPacketDelta+txPacketDelta+errorDelta+dropDelta)
 	return snapshot
+}
+
+func counterDelta(previous, current uint64) uint64 {
+	if current < previous {
+		return 0
+	}
+	return current - previous
 }
 
 func cpuPercentDelta(previous, current systemResourceCounters) float64 {

@@ -154,6 +154,11 @@ func readNetworkCounters(counters *systemResourceCounters) bool {
 		data := (*C.struct_if_data)(ifa.ifa_data)
 		counters.NetworkRxBytes += uint64(data.ifi_ibytes)
 		counters.NetworkTxBytes += uint64(data.ifi_obytes)
+		counters.NetworkRxPackets += uint64(data.ifi_ipackets)
+		counters.NetworkTxPackets += uint64(data.ifi_opackets)
+		counters.NetworkRxErrors += uint64(data.ifi_ierrors)
+		counters.NetworkTxErrors += uint64(data.ifi_oerrors)
+		counters.NetworkRxDrops += uint64(data.ifi_iqdrops)
 		seen[name] = struct{}{}
 	}
 	counters.NetworkInterfaces = len(seen)

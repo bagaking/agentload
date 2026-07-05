@@ -1,0 +1,165 @@
+/* System process ledger layout.
+   Process rows use fixed diagnostic rails so resource metrics do not wrap into
+   loose prose when project names or localized labels get long. */
+
+body[data-view="popover"] .system-shell .popover-process-head {
+  grid-template-columns: 14px 20px minmax(0, 1fr) minmax(96px, auto);
+  grid-template-rows: minmax(19px, auto) minmax(24px, auto);
+  gap: 4px 8px;
+  min-height: 55px;
+  padding: 6px 0;
+}
+
+body[data-view="popover"] .system-shell .popover-process-mainline {
+  grid-column: 3;
+  grid-row: 1;
+  display: grid;
+  grid-template-columns: minmax(66px, .28fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+}
+
+body[data-view="popover"] .system-shell .popover-process-mainline strong,
+body[data-view="popover"] .system-shell .popover-process-mainline b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+body[data-view="popover"] .system-shell .popover-process-mainline strong {
+  font-size: 12px;
+}
+
+body[data-view="popover"] .system-shell .popover-process-mainline b {
+  color: color-mix(in srgb, var(--fg) 82%, var(--metric-color, var(--accent)));
+  font-size: 11px;
+}
+
+body[data-view="popover"] .system-shell .popover-process-metrics {
+  display: grid;
+  grid-column: 3 / 5;
+  grid-row: 2;
+  grid-template-columns: 52px 70px 84px minmax(126px, 1fr);
+  min-width: 0;
+  overflow: hidden;
+  color: var(--console-text-faint);
+  font-family: var(--font-mono);
+  font-size: 8.6px;
+  line-height: 1;
+}
+
+body[data-view="popover"] .system-shell .popover-process-metrics > span {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+  padding: 3px 6px 3px 0;
+  border-top: 1px solid color-mix(in srgb, var(--metric-color, var(--accent)) 10%, transparent);
+}
+
+body[data-view="popover"] .system-shell .popover-process-metrics > span + span {
+  padding-left: 7px;
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--console-line-soft) 44%, transparent);
+}
+
+body[data-view="popover"] .system-shell .popover-process-metrics b,
+body[data-view="popover"] .system-shell .popover-process-metrics strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .system-shell .popover-process-metrics b {
+  color: color-mix(in srgb, var(--console-text-faint) 82%, transparent);
+  font-size: 7.4px;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+body[data-view="popover"] .system-shell .popover-process-metrics strong {
+  color: color-mix(in srgb, var(--fg-muted) 84%, var(--metric-color, var(--accent)));
+  font-size: 9.4px;
+  font-weight: 740;
+}
+
+body[data-view="popover"] .network-throughput {
+  display: grid;
+  gap: 3px;
+  min-width: 112px;
+  text-align: right;
+}
+
+body[data-view="popover"] .network-throughput span {
+  display: inline-grid;
+  grid-template-columns: 2.4ch minmax(0, 1fr);
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  line-height: .95;
+}
+
+body[data-view="popover"] .network-throughput b {
+  color: color-mix(in srgb, var(--console-text-faint) 82%, transparent);
+  font-size: 7.8px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+body[data-view="popover"] .network-health-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  min-width: 0;
+}
+
+body[data-view="popover"] .network-health-grid span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding-top: 5px;
+  border-top: 1px solid color-mix(in srgb, var(--metric-color, var(--pressure)) 14%, transparent);
+}
+
+body[data-view="popover"] .network-health-grid b,
+body[data-view="popover"] .network-health-grid strong {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-style: normal;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .network-health-grid b {
+  color: color-mix(in srgb, var(--metric-strong, var(--pressure-strong)) 34%, var(--fg-muted));
+  font-size: 7.2px;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+body[data-view="popover"] .network-health-grid strong {
+  color: color-mix(in srgb, var(--metric-strong, var(--pressure-strong)) 76%, var(--fg));
+  font-size: 9.4px;
+  font-weight: 760;
+}
+
+@media (max-width: 430px) {
+  body[data-view="popover"] .system-shell .popover-process-metrics {
+    grid-template-columns: 44px 58px 70px minmax(88px, 1fr);
+  }
+
+  body[data-view="popover"] .system-shell .popover-process-metrics > span {
+    gap: 3px;
+    padding-right: 4px;
+  }
+
+  body[data-view="popover"] .network-health-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

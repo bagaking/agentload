@@ -129,6 +129,13 @@ semantic layer before visual polish is accepted.
   whole-machine resource dashboards. Put process diagnostics, system CPU,
   memory, and network fluctuation into the system view so workload evidence and
   machine pressure stay visually and semantically separate.
+- Compact popover tab panels share one content rhythm. Online, trend, and
+  system views should use the same first-level side inset, top/bottom padding,
+  section gap, heading scale, and secondary text scale; individual charts,
+  resource meters, and ledger rows may specialize internally, but the content
+  plane under the tab switch must not jump between tabs. Align this rhythm to
+  the tightest usable inset and available-width fill; do not make tabs match by
+  adding a new bulky wrapper padding around every view.
 - Compact popover trend view should prioritize session movement and project
   distribution. Do not place raw process/runtime trend readouts or a process
   selected-window inspector under the project heatmap; those diagnostics belong
@@ -136,9 +143,10 @@ semantic layer before visual polish is accepted.
   proportions without feeling like a compressed footer.
 - Compact system view should use metric-appropriate components instead of one
   repeated card form: CPU may use a gauge with load/uptime, memory and disk use
-  capacity rails, network uses throughput motion, and Agent process load uses
-  process-oriented rows. Process rows in the system view should show project
-  attribution directly so high CPU or memory can be traced without expansion.
+  capacity rails, network foregrounds inbound/outbound throughput with local
+  packet issue counters, and Agent process load uses process-oriented rows.
+  Process rows in the system view should show project attribution directly so
+  high CPU or memory can be traced without expansion.
 - Compact system resource color must be metric-state driven. Capacity rails,
   CPU gauges, and throughput bars should derive fill, track, glow, and tile
   wash from the same semantic pressure color for that metric. Avoid neutral
@@ -152,6 +160,8 @@ semantic layer before visual polish is accepted.
   first line carries tool/process identity and project attribution without
   losing the names; the second line carries PID, host app, CPU, memory, and I/O
   rate. Tool or host icons should identify the process before the text.
+  The second line should be fixed metric rails, not a prose sentence, so disk
+  read/write values cannot wrap into visually unrelated fragments.
 - Compact trend may keep a process trend lane, but it should use a simpler
   curve or similar low-noise chart rather than a candlestick when the point is
   runtime pressure rather than session movement.
@@ -241,10 +251,15 @@ semantic layer before visual polish is accepted.
 - Core runtime terms such as fresh movement, sessions, processes, PID match
   rate, and scan state should expose short hover/focus explanations so dense
   operator views stay readable without adding permanent copy.
-- Metric help affordances must be globally consistent. A visible help mark or
-  help cursor means the label opens the same explanation on hover, focus, click,
-  Enter, and Space; labels without explanation should not use button semantics
+- Metric help affordances must be globally consistent. Explanatory labels use a
+  quiet underline or similar text-native affordance instead of repeated question
+  marks in circles; the label opens the same explanation on hover, focus, click,
+  Enter, and Space. Labels without explanation should not use button semantics
   or look interactive.
+- Metric help tooltips are global overlays, not card-local decorations. Render
+  them above resource cards, charts, hover inspectors, and decorative meter
+  layers so the explanation text is never cut through by sibling graphics or
+  clipped by panel scroll containers.
 - Dense project/session/process rows should use one deliberate hover detail
   surface at a time. Do not combine browser-native `title` tooltips with custom
   row hover cards inside the same ledger; nested rows must suppress parent hover
