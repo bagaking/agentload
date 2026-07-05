@@ -1,5 +1,6 @@
 import { freshnessLabel, normalizedRole, orderedProjects, roleLabel } from "./activityModel";
 import { formatAge, formatCPU, formatCopy, formatDateTime, formatMemory, formatPct, safeID, shortID, type Translate } from "./format";
+import { currentHasAnyMetric, currentHasRecentMovement, currentKnownSessionCount, currentProcessPressureCount, currentRecentMovementCount, projectHasRecentMovement, projectKnownSessionCount, projectProcessPressureCount, projectRecentMovementCount, sessionHasRecentMovement, sessionProcessPressure, summaryMappedProcessCount, summaryMappingCoveragePct, summaryUnmappedProcessCount, trendContextSessionValue, trendMappedProcessCount, trendPrimaryValue } from "./metricSemantics";
 import type { LogTab, RailItem, RailTab, SelectedView, Selection } from "../types/app";
 import type { CurrentMetrics, Snapshot, TranscriptStats } from "../types/snapshot";
 import type { TrendPoint, TrendSet, TrendWindow } from "../trend/types";
@@ -20,12 +21,12 @@ export function resolveSelection(t: Translate, snapshot: Snapshot | null, select
     return {
       title: project?.project || t("unassigned"),
       kind: "scan",
-      status: (project?.active_burst_count ?? 0) > 0 ? "running" : "done",
+      status: project && projectHasRecentMovement(project) ? "running" : "done",
       command: `project:${project?.project || "unassigned"}`,
       summary: {
         sessions: project?.session_count ?? 0,
-        active: project?.active_burst_count ?? 0,
-        processes: project?.process_count ?? 0,
+        active: project ? projectRecentMovementCount(project) : 0,
+        processes: project ? projectProcessPressureCount(project) : 0,
       },
       details: [
         `attention_share_pct=${formatPct(project?.attention_share_pct)}`,
@@ -40,12 +41,12 @@ export function resolveSelection(t: Translate, snapshot: Snapshot | null, select
     return {
       title: session?.project || shortID(session?.session_id) || t("session"),
       kind: "query",
-      status: session?.active_burst ? "running" : "done",
+      status: session && sessionHasRecentMovement(session) ? "running" : "done",
       command: session?.path || `session:${session?.session_id || "unknown"}`,
       summary: {
         tool: session?.tool || "unknown",
         role: session?.session_role || "unknown",
-        processes: session?.process_count ?? 0,
+        processes: session ? sessionProcessPressure(session) : 0,
       },
       details: [
         `session_id=${session?.session_id || "unknown"}`,
@@ -90,11 +91,11 @@ export function buildRailItems(t: Translate, snapshot: Snapshot | null, tab: Rai
       type: "project",
       kind: "scan",
       title: project.project || t("unassigned"),
-      description: `${project.session_count ?? 0} ${t("sessions")} · ${project.process_count ?? 0} ${t("processes")}`,
+      description: `${projectKnownSessionCount(project)} ${t("sessions")} · ${projectProcessPressureCount(project)} ${t("processes")}`,
       command: `attention ${formatPct(project.attention_share_pct)}`,
-      status: (project.active_burst_count ?? 0) > 0 ? "active" : "done",
+      status: projectHasRecentMovement(project) ? "active" : "done",
       tags: [`${t("mainShort")} ${project.main_agent_sessions ?? 0}`, `${t("subagentShort")} ${project.subagent_sessions ?? 0}`],
-      value: `${project.active_burst_count ?? 0} ${t("fresh")}`,
+      value: `${projectRecentMovementCount(project)} ${t("fresh")}`,
     }));
   } else if (tab === "sessions") {
     items = (snapshot.live_sessions ?? []).map((session) => ({
@@ -104,7 +105,7 @@ export function buildRailItems(t: Translate, snapshot: Snapshot | null, tab: Rai
       title: session.project || shortID(session.session_id) || t("session"),
       description: `${session.tool || t("tool")} · ${roleLabel(t, normalizedRole(session.session_role))} · ${freshnessLabel(t, session.freshness)}`,
       command: session.session_id ? `session:${session.session_id}` : session.path || shortID(session.session_id) || t("session"),
-      status: session.active_burst ? "active" : "done",
+      status: sessionHasRecentMovement(session) ? "active" : "done",
       tags: [session.tool || t("tool"), roleLabel(t, normalizedRole(session.session_role))],
       value: formatAge(session.last_event_age_seconds, t),
     }));
@@ -135,7 +136,7 @@ export function currentMeaningPoints(t: Translate, snapshot: Snapshot): string[]
   } else if ((risk.active_project_count ?? 0) > 1) {
     points.push(formatCopy(t("currentMeaningProjectSpread"), { count: risk.active_project_count ?? 0 }));
   }
-  const unmatched = risk.orphan_process_count ?? summary.unmapped_processes ?? 0;
+  const unmatched = risk.orphan_process_count ?? summaryUnmappedProcessCount(summary);
   if (unmatched > 0) {
     points.push(formatCopy(t("currentMeaningOrphans"), { count: unmatched }));
   } else if ((risk.low_confidence_session_count ?? 0) > 0) {
@@ -143,21 +144,22 @@ export function currentMeaningPoints(t: Translate, snapshot: Snapshot): string[]
   } else if ((risk.stale_session_count ?? 0) > 0) {
     points.push(formatCopy(t("currentMeaningStale"), { count: risk.stale_session_count ?? 0 }));
   }
-  const hasProcessEvidence = (summary.mapped_processes ?? 0) > 0 || (summary.unmapped_processes ?? 0) > 0 || (current.pid_concurrency ?? 0) > 0;
-  if (hasProcessEvidence && typeof summary.mapping_coverage_pct === "number" && summary.mapping_coverage_pct < 100) {
-    points.push(formatCopy(t("currentMeaningCoverage"), { pct: formatPct(summary.mapping_coverage_pct) }));
+  const coverage = summaryMappingCoveragePct(summary);
+  const hasProcessEvidence = summaryMappedProcessCount(summary) > 0 || summaryUnmappedProcessCount(summary) > 0 || currentProcessPressureCount(current) > 0;
+  if (hasProcessEvidence && coverage < 100) {
+    points.push(formatCopy(t("currentMeaningCoverage"), { pct: formatPct(coverage) }));
   }
   return points;
 }
 
 export function currentMeaningLead(t: Translate, snapshot: Snapshot): string {
   const current = snapshot.current ?? {};
-  const hasMetric = typeof current.active_burst_concurrency === "number" || typeof current.session_concurrency === "number" || typeof current.pid_concurrency === "number";
+  const hasMetric = currentHasAnyMetric(current);
   if (!hasMetric) return t("currentMeaningIdleLead");
   return formatCopy(t("currentMeaningExactLead"), {
-    active: current.active_burst_concurrency ?? 0,
-    sessions: current.session_concurrency ?? 0,
-    coverage: formatPct(snapshot.summary?.mapping_coverage_pct),
+    active: currentRecentMovementCount(current),
+    sessions: currentKnownSessionCount(current),
+    coverage: formatPct(summaryMappingCoveragePct(snapshot.summary)),
   });
 }
 
@@ -170,7 +172,7 @@ export function activeWindowLabel(t: Translate, snapshot: Snapshot): string {
 export function dashboardProjectMeta(t: Translate, snapshot: Snapshot): string {
   const summary = snapshot.summary ?? {};
   const projectCount = summary.project_count ?? snapshot.project_focus?.length ?? 0;
-  const hotCount = summary.hot_project_count ?? orderedProjects(snapshot).filter((project) => (project.active_burst_count ?? 0) > 0).length;
+  const hotCount = summary.hot_project_count ?? orderedProjects(snapshot).filter(projectHasRecentMovement).length;
   return `${projectCount} ${t("projects")} / ${hotCount} ${t("active")}`;
 }
 
@@ -216,9 +218,9 @@ export function mappingHealthText(t: Translate, snapshot: Snapshot): string {
   const summary = snapshot.summary ?? {};
   const current = snapshot.current ?? {};
   return formatCopy(t("processDiagnosticFormula"), {
-    pids: current.pid_concurrency ?? 0,
-    mapped: summary.mapped_processes ?? 0,
-    unmatched: summary.unmapped_processes ?? 0,
+    pids: currentProcessPressureCount(current),
+    mapped: summaryMappedProcessCount(summary),
+    unmatched: summaryUnmappedProcessCount(summary),
   });
 }
 
@@ -229,12 +231,12 @@ export function primaryEvidenceNote(t: Translate, snapshot: Snapshot): string {
   if (firstSignal) return normalizeEvidenceNote(t, firstSignal);
   const firstNote = [...(snapshot.notes ?? []), ...(snapshot.transcript_stats?.errors ?? [])].find((note) => note);
   if (firstNote) return normalizeEvidenceNote(t, firstNote);
-  const unmapped = risk.orphan_process_count ?? summary.unmapped_processes ?? 0;
+  const unmapped = risk.orphan_process_count ?? summaryUnmappedProcessCount(summary);
   if (unmapped > 0) return formatCopy(t("unmatchedSignalWarning"), { count: unmapped });
   const lowConfidence = risk.low_confidence_session_count ?? 0;
   if (lowConfidence > 0) return `${lowConfidence} ${t("lowConfidenceEvidence")}`;
-  const mapped = summary.mapped_processes ?? 0;
-  const pids = snapshot.current?.pid_concurrency ?? 0;
+  const mapped = summaryMappedProcessCount(summary);
+  const pids = currentProcessPressureCount(snapshot.current);
   if (mapped || pids) return `${mapped}/${pids} ${t("processEvidenceMapped")}`;
   return t("noSignals");
 }
@@ -264,23 +266,23 @@ export function renderLogText(t: Translate, snapshot: Snapshot, selected: Select
   return points
     .map((point) => {
       const at = point.at ? formatDateTime(point.at) : t("unavailable");
-      return `${at}  fresh=${point.active_burst_concurrency ?? "-"} sessions=${point.session_concurrency ?? "-"} pids=${point.pid_concurrency ?? "-"} mapped=${point.mapped_processes ?? "-"}`;
+      return `${at}  fresh=${trendPrimaryValue("history", point) ?? "-"} sessions=${trendContextSessionValue(point) ?? "-"} pids=${trendPrimaryValue("runtime", point) ?? "-"} mapped=${trendMappedProcessCount(point) ?? "-"}`;
     })
     .join("\n") || `${t("trend")}: ${t("noTrend")}`;
 }
 
 export function currentPeerScale(current: CurrentMetrics): number {
-  return Math.max(1, current.active_burst_concurrency ?? 0, current.session_concurrency ?? 0, current.pid_concurrency ?? 0);
+  return Math.max(1, currentRecentMovementCount(current), currentKnownSessionCount(current), currentProcessPressureCount(current));
 }
 
 export function statusTone(snapshot: Snapshot): "active" | "idle" | "warn" {
-  if ((snapshot.current?.active_burst_concurrency ?? 0) > 0) return "active";
+  if (currentHasRecentMovement(snapshot.current)) return "active";
   if ((snapshot.transcript_stats?.errors?.length ?? 0) > 0) return "warn";
   return "idle";
 }
 
 export function metricState(snapshot: Snapshot, t: Translate): string {
-  if ((snapshot.current?.active_burst_concurrency ?? 0) > 0) return t("active");
+  if (currentHasRecentMovement(snapshot.current)) return t("active");
   return t("idle");
 }
 

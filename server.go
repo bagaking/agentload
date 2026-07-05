@@ -32,8 +32,10 @@ func (a *trayApp) handler() http.Handler {
 	mux.HandleFunc("/dashboard", a.handleDashboardPage)
 	mux.HandleFunc("/assets/", a.handleUIAsset)
 	mux.HandleFunc("/api/snapshot", a.handleSnapshotAPI)
+	mux.HandleFunc("/api/system-resources", a.handleSystemResourcesAPI)
 	mux.HandleFunc("/api/refresh", a.handleRefreshAPI)
 	mux.HandleFunc("/api/quit", a.handleQuitAPI)
+	mux.HandleFunc("/api/process-diagnostic/", a.handleProcessDiagnosticAPI)
 	mux.HandleFunc("/api/tool-icon/", a.handleToolIconAPI)
 	mux.HandleFunc("/api/host-app-icon/", a.handleHostAppIconAPI)
 	mux.HandleFunc("/api/open-host-app/", a.handleOpenHostAppAPI)
@@ -44,6 +46,20 @@ func (a *trayApp) handler() http.Handler {
 		}
 		mux.ServeHTTP(w, r)
 	})
+}
+
+func (a *trayApp) handleSystemResourcesAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(sampleSystemResources())
 }
 
 func (a *trayApp) handlePopoverPage(w http.ResponseWriter, r *http.Request) {
@@ -143,6 +159,49 @@ func (a *trayApp) handleQuitAPI(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(150 * time.Millisecond)
 		systrayQuit()
 	}()
+}
+
+func (a *trayApp) handleProcessDiagnosticAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	rawPID := strings.TrimPrefix(r.URL.Path, "/api/process-diagnostic/")
+	if rawPID == "" || strings.Contains(rawPID, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	pid, err := strconv.Atoi(rawPID)
+	if err != nil || pid <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	snapshot, ok := a.snapshotForInternalUse(r.Context())
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	for _, process := range snapshot.LiveProcesses {
+		if process.PID != pid {
+			continue
+		}
+		diagnostic := ProcessDiagnosticSnapshot{
+			PID:          process.PID,
+			Command:      process.Command,
+			SessionIDs:   append([]string(nil), process.SessionIDs...),
+			SessionPaths: append([]string(nil), process.SessionPaths...),
+			HostApp:      cloneHostApp(process.HostApp),
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		if r.Method == http.MethodHead {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(diagnostic)
+		return
+	}
+	http.NotFound(w, r)
 }
 
 func (a *trayApp) handleToolIconAPI(w http.ResponseWriter, r *http.Request) {

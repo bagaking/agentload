@@ -35,10 +35,12 @@ func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 		currentByTool[process.Tool] = metrics
 	}
 	for _, session := range liveSessions {
+		observation := observeLiveSession(session, o.cfg.IdleGap, now)
+		facts := metricFactsForLiveSession(session, observation)
 		current.SessionConcurrency++
 		metrics := currentByTool[session.Tool]
 		metrics.SessionConcurrency++
-		if session.Trace != nil && now.Sub(session.Trace.LastEvent) <= o.cfg.IdleGap {
+		if facts.RecentMovement {
 			current.ActiveBurstConcurrency++
 			metrics.ActiveBurstConcurrency++
 		}
@@ -83,6 +85,7 @@ func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 		ProjectFocus:       projectFocus,
 		CandidateWorkitems: candidateWorkitems,
 		AgeBuckets:         buildAgeBuckets(liveSessions, o.cfg.IdleGap, now),
+		SystemResources:    sampleSystemResources(),
 		LiveProcesses:      liveProcessSnapshots,
 		LiveSessions:       liveSessionSnapshots,
 		RuntimeProcesses:   buildRuntimeProcessSummary(liveProcessSnapshots),
@@ -733,14 +736,18 @@ func projectLiveProcessesWithSessions(processes []LiveProcess, liveSessions []Li
 	for _, process := range processes {
 		processSessions, _ := normalizeProcessSessionMappings(process, data, tracesByID)
 		snapshot := LiveProcessSnapshot{
-			PID:         process.PID,
-			Tool:        process.Tool,
-			DisplayName: processDisplayName(process),
-			Command:     process.Command,
-			CPUPercent:  process.CPUPercent,
-			MemoryBytes: process.MemoryBytes,
-			Elapsed:     process.Elapsed,
-			HostApp:     cloneHostApp(process.HostApp),
+			PID:                  process.PID,
+			Tool:                 process.Tool,
+			DisplayName:          processDisplayName(process),
+			Command:              process.Command,
+			CPUPercent:           process.CPUPercent,
+			MemoryBytes:          process.MemoryBytes,
+			DiskReadBytes:        process.DiskReadBytes,
+			DiskWriteBytes:       process.DiskWriteBytes,
+			DiskReadBytesPerSec:  process.DiskReadBytesPerSec,
+			DiskWriteBytesPerSec: process.DiskWriteBytesPerSec,
+			Elapsed:              process.Elapsed,
+			HostApp:              cloneHostApp(process.HostApp),
 		}
 		sessionIDs := []string{}
 		sessionPaths := []string{}
@@ -784,10 +791,11 @@ func projectLiveProcessesWithSessions(processes []LiveProcess, liveSessions []Li
 		snapshot.MappedSessionEvidence = buildProcessSessionEvidence(sessionKeys, sessionSnapshotsByID)
 		snapshot.MatchMethods = processMatchMethods(snapshot.MappedSessionEvidence)
 		for _, evidence := range snapshot.MappedSessionEvidence {
-			if evidence.ActiveBurst {
+			facts := metricFactsForProcessSessionEvidence(evidence)
+			if facts.RecentMovement {
 				snapshot.MappedActiveSessions++
 			}
-			switch normalizedRole(evidence.Role) {
+			switch facts.Role {
 			case "main":
 				snapshot.MainSessions++
 			case "subagent":
@@ -821,12 +829,13 @@ func buildProcessSessionEvidence(sessionKeys map[string]struct{}, sessionsByID m
 		if !ok || session.SessionID == "" {
 			continue
 		}
+		facts := metricFactsForSessionSnapshot(session)
 		out = append(out, ProcessSessionEvidence{
 			Tool:                session.Tool,
 			SessionID:           session.SessionID,
 			Project:             session.Project,
-			Role:                normalizedRole(session.SessionRole),
-			ActiveBurst:         session.ActiveBurst,
+			Role:                facts.Role,
+			ActiveBurst:         facts.RecentMovement,
 			Freshness:           session.Freshness,
 			MappingMethod:       session.MappingMethod,
 			Confidence:          session.Confidence,
@@ -1008,13 +1017,14 @@ func buildRuntimeProcessSummary(processes []LiveProcessSnapshot) []ProcessRuntim
 	items := map[string]*accumulator{}
 	addEvidence := func(acc *accumulator, process LiveProcessSnapshot) {
 		for _, evidence := range process.MappedSessionEvidence {
-			if evidence.SessionID == "" {
+			facts := metricFactsForProcessSessionEvidence(evidence)
+			if !facts.KnownSession {
 				continue
 			}
-			if evidence.ActiveBurst {
+			if facts.RecentMovement {
 				acc.activeSessions[evidence.SessionID] = struct{}{}
 			}
-			switch normalizedRole(evidence.Role) {
+			switch facts.Role {
 			case "main":
 				acc.directSessions[evidence.SessionID] = struct{}{}
 			case "subagent":
@@ -1097,13 +1107,14 @@ func buildHostAppProcessSummary(processes []LiveProcessSnapshot) []HostAppProces
 	items := map[string]*accumulator{}
 	addEvidence := func(acc *accumulator, process LiveProcessSnapshot) {
 		for _, evidence := range process.MappedSessionEvidence {
-			if evidence.SessionID == "" {
+			facts := metricFactsForProcessSessionEvidence(evidence)
+			if !facts.KnownSession {
 				continue
 			}
-			if evidence.ActiveBurst {
+			if facts.RecentMovement {
 				acc.activeSessions[evidence.SessionID] = struct{}{}
 			}
-			switch normalizedRole(evidence.Role) {
+			switch facts.Role {
 			case "main":
 				acc.directSessions[evidence.SessionID] = struct{}{}
 			case "subagent":
@@ -1182,18 +1193,19 @@ func projectLiveSessions(sessions []LiveSession, idleGap time.Duration, now time
 	out := make([]LiveSessionSnapshot, 0, len(sessions))
 	for _, session := range sessions {
 		observation := observeLiveSession(session, idleGap, now)
+		facts := metricFactsForLiveSession(session, observation)
 		projectAttribution := observeProjectAttribution(session)
 		role := observeSessionRole(session)
 		item := LiveSessionSnapshot{
 			Tool:                         session.Tool,
 			SessionID:                    session.SessionID,
-			SessionRole:                  role.Role,
+			SessionRole:                  facts.Role,
 			RoleConfidence:               role.Confidence,
 			RoleReasons:                  role.Reasons,
 			Project:                      projectAttribution.Project,
 			Path:                         session.Path,
-			ProcessCount:                 len(session.Processes),
-			ActiveBurst:                  observation.ActiveBurst,
+			ProcessCount:                 facts.ProcessPressure,
+			ActiveBurst:                  facts.RecentMovement,
 			Freshness:                    observation.Freshness,
 			MappingMethod:                observation.MappingMethod,
 			MissingTranscript:            observation.MissingTranscript,
@@ -1571,12 +1583,13 @@ func buildSnapshotSummary(processes []LiveProcessSnapshot, sessions []LiveSessio
 		}
 	}
 	for _, session := range sessions {
-		if session.ActiveBurst {
+		facts := metricFactsForSessionSnapshot(session)
+		if facts.RecentMovement {
 			summary.ActiveSessions++
 		} else {
 			summary.IdleSessions++
 		}
-		switch session.SessionRole {
+		switch facts.Role {
 		case "main":
 			summary.MainAgentSessions++
 		case "subagent":
@@ -1663,6 +1676,7 @@ func buildProjectFocus(sessions []LiveSession, idleGap time.Duration, now time.T
 	pidProjects := map[int]map[string]struct{}{}
 	for _, session := range sessions {
 		observation := observeLiveSession(session, idleGap, now)
+		facts := metricFactsForLiveSession(session, observation)
 		projectAttribution := observeProjectAttribution(session)
 		projectName := projectAttribution.Project
 		if projectName == "" {
@@ -1682,7 +1696,7 @@ func buildProjectFocus(sessions []LiveSession, idleGap time.Duration, now time.T
 			projects[projectName] = item
 		}
 		item.sessionCount++
-		switch observeSessionRole(session).Role {
+		switch facts.Role {
 		case "main":
 			item.mainAgentSessions++
 		case "subagent":
@@ -1696,10 +1710,10 @@ func buildProjectFocus(sessions []LiveSession, idleGap time.Duration, now time.T
 		if observation.MissingTranscript {
 			item.missingTranscriptCount++
 		}
-		if observation.Stale {
+		if facts.StaleSession {
 			item.staleSessionCount++
 		}
-		if observation.Recent {
+		if facts.RecentSession {
 			item.recentSessionCount++
 		}
 		for _, source := range observation.Provenance {
@@ -1715,14 +1729,14 @@ func buildProjectFocus(sessions []LiveSession, idleGap time.Duration, now time.T
 			item.tokenUsage.Add(session.Trace.TokenUsage)
 			toolAgg.tokenUsage.Add(session.Trace.TokenUsage)
 		}
-		if observation.ActiveBurst {
+		if facts.RecentMovement {
 			item.activeBurstCount++
 			toolAgg.activeBurstCount++
 		}
 		if session.Trace != nil && session.Trace.LastEvent.After(item.lastEvent) {
 			item.lastEvent = session.Trace.LastEvent
 		}
-		for pid := range session.Processes {
+		for _, pid := range facts.ProcessIDs {
 			item.processes[pid] = struct{}{}
 			toolAgg.processes[pid] = struct{}{}
 			if pidProjects[pid] == nil {
@@ -2529,6 +2543,7 @@ func pathProjectName(path string) (string, string) {
 	if path == "" || path == "." || path == string(filepath.Separator) {
 		return "", "path is empty or root"
 	}
+	path = normalizeProjectAttributionPath(path)
 	if parent := strings.ToLower(filepath.Base(filepath.Dir(path))); parent == "users" || parent == "home" || parent == "profiles" {
 		return "", "path is anchored under a home/global directory"
 	}
@@ -2542,6 +2557,21 @@ func pathProjectName(path string) (string, string) {
 	default:
 		return name, ""
 	}
+}
+
+func normalizeProjectAttributionPath(path string) string {
+	parts := strings.Split(filepath.Clean(path), string(filepath.Separator))
+	for i, part := range parts {
+		if part != ".benchmark" || i == 0 {
+			continue
+		}
+		prefix := strings.Join(parts[:i], string(filepath.Separator))
+		if filepath.IsAbs(path) {
+			return string(filepath.Separator) + strings.TrimPrefix(prefix, string(filepath.Separator))
+		}
+		return prefix
+	}
+	return path
 }
 
 func configRootUnassignedReason(marker, parent string) string {

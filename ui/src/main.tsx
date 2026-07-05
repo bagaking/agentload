@@ -1,15 +1,18 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Activity, ArrowUpRight, Bot, ChevronDown, Copy, ExternalLink, Gauge, GitBranch, Info, Languages, Layers, Moon, RefreshCw, Search, Server, Sun, Terminal, X } from "lucide-react";
+import { Activity, ArrowUpRight, Bot, ChevronDown, Copy, Cpu, ExternalLink, Gauge, GitBranch, HardDrive, Info, Languages, Layers, MemoryStick, Moon, Network, RefreshCw, Search, Server, Sun, Terminal, X } from "lucide-react";
 import { copy, type Lang } from "./i18n";
-import { agentRoleLabel, buildToolSessionGroups, confidenceLabel, freshnessLabel, hiddenToolSessionCount, mappingMethodLabel, normalizedRole, orderedProjects, projectEvidenceItems, projectRoleCounts, roleHintLabel, roleLabel, sessionEvidenceItems, sessionIDsText, sessionIdentity, sessionsForProject, threadSourceLabel, toolBadgeLabel, toolDisplayName, toolIconName } from "./lib/activityModel";
+import { agentRoleLabel, buildToolSessionGroups, confidenceLabel, freshnessLabel, hiddenToolSessionCount, mappingMethodLabel, normalizedRole, orderedProjects, projectEvidenceItems, roleHintLabel, roleLabel, sessionEvidenceItems, sessionIDsText, sessionIdentity, sessionsForProject, threadSourceLabel, toolBadgeLabel, toolDisplayName, toolIconName } from "./lib/activityModel";
 import { activeWindowLabel, buildRailItems, coordinationPostureLabel, currentMeaningLead, currentMeaningPoints, currentPeerScale, dashboardProjectLead, dashboardProjectMeta, deferredScanValue, mappingHealthText, metricState, primaryEvidenceNote, renderLogText, resolveSelection, statusTone, transcriptScanNote, transcriptScanSummary } from "./lib/dashboardModel";
 import { clampPct, countLabel, formatAge, formatCPU, formatCopy, formatDateTime, formatMemory, formatPct, formatRefreshInterval, formatTokenCount, formatTokenUsageSummary, pctPart, safeID, shortID, tokenUsageHasValue } from "./lib/format";
+import { currentHasRecentMovement, currentKnownSessionCount, currentProcessPressureCount, currentRecentMovementCount, projectProcessPressureCount, projectProcessResources, projectRoleCounts, sessionHasRecentMovement, sessionProcessPressure, summaryMappedProcessCount, summaryMappingCoveragePct, summaryUnmappedProcessCount, toolKnownSessionCount, toolRecentMovementCount } from "./lib/metricSemantics";
 import { TrendSuite } from "./trend/TrendSuite";
 import { TREND_RANGES, type TrendLane, type TrendRange } from "./trend/types";
 import type { ActiveElementIdentity, LogTab, PopoverView, ProjectMetricObject, ProjectMetricScope, RailItem, RailTab, RefreshReason, RoleCounts, SelectedView, Selection, Theme, ViewportState } from "./types/app";
-import type { AgeBucketSnapshot, HostApp, LiveProcess, LiveSession, ProjectSnapshot, ProjectTool, Snapshot, TokenUsage } from "./types/snapshot";
+import type { AgeBucketSnapshot, HostApp, LiveProcess, LiveSession, ProcessDiagnostic, ProjectSnapshot, ProjectTool, Snapshot, SystemResourceSnapshot, TokenUsage } from "./types/snapshot";
 import "./styles.css";
+import "./styles/system-view.css";
+import "./styles/popover-footer.css";
 
 const BRAND_NAME = "Agent Load";
 const ACTIVE = new Set(["active", "running", "queued"]);
@@ -455,6 +458,15 @@ function PopoverSurface({
                 setTrendSelection={setTrendSelection}
               />
             </section>
+            <section
+              className="popover-view-panel system"
+              id="popover-panel-system"
+              role="tabpanel"
+              aria-labelledby="popover-view-system"
+              hidden={popoverView !== "system"}
+            >
+              <PopoverSystemPanel t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} active={popoverView === "system"} />
+            </section>
           </div>
         </div>
         {popoverView === "online" ? <PopoverHoverInspector t={t} detail={hoverDetail} /> : null}
@@ -479,7 +491,7 @@ function PopoverFooter({
   cycleRefreshInterval: () => void;
 }) {
   const generated = snapshot?.generated_at ? formatDateTime(snapshot.generated_at) : t("noData");
-  const active = (snapshot?.current?.active_burst_concurrency ?? 0) > 0;
+  const active = currentHasRecentMovement(snapshot?.current);
   const stateLabel = snapshot ? metricState(snapshot, t) : t("noData");
   return (
     <footer className={`popover-footer ${active ? "is-active" : ""}`}>
@@ -493,7 +505,7 @@ function PopoverFooter({
       </div>
       <div className="popover-footer-controls">
         <div className="popover-view-switch" role="tablist" aria-label={t("view")}>
-          {(["online", "trend"] as PopoverView[]).map((view) => (
+          {(["online", "trend", "system"] as PopoverView[]).map((view) => (
             <button
               key={view}
               id={`popover-view-${view}`}
@@ -506,14 +518,13 @@ function PopoverFooter({
               data-focus-key={focusKey("popover-view", view)}
               onClick={() => setPopoverView(view)}
             >
-              {view === "online" ? <Activity size={13} /> : <Gauge size={13} />}
-              <span>{view === "online" ? t("online") : t("trend")}</span>
+              {view === "online" ? <Activity size={13} /> : view === "trend" ? <Gauge size={13} /> : <Server size={13} />}
+              <span>{t(view)}</span>
             </button>
           ))}
         </div>
         <button className="footer-link" type="button" data-focus-key={focusKey("open-dashboard", "popover")} onClick={() => postHostAction("open_dashboard")} title={t("dashboard")} aria-label={t("dashboard")}>
           <ArrowUpRight size={14} />
-          <span>{t("dashboard")}</span>
         </button>
       </div>
     </footer>
@@ -806,12 +817,12 @@ function DashboardFrontTopline({
 function DashboardFieldGrid({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot }) {
   const current = snapshot.current ?? {};
   const summary = snapshot.summary ?? {};
-  const active = current.active_burst_concurrency ?? 0;
-  const sessions = current.session_concurrency ?? 0;
-  const mapped = summary.mapped_processes ?? 0;
-  const unmatched = summary.unmapped_processes ?? 0;
-  const pids = current.pid_concurrency ?? 0;
-  const coverage = clampPct(summary.mapping_coverage_pct ?? 0);
+  const active = currentRecentMovementCount(current);
+  const sessions = currentKnownSessionCount(current);
+  const mapped = summaryMappedProcessCount(summary);
+  const unmatched = summaryUnmappedProcessCount(summary);
+  const pids = currentProcessPressureCount(current);
+  const coverage = clampPct(summaryMappingCoveragePct(summary));
   const resources = processResourceTotals(snapshot.live_processes);
   return (
     <>
@@ -828,7 +839,7 @@ function DashboardFieldGrid({ t, snapshot }: { t: (key: string) => string; snaps
         </article>
         <article className="dash-support-cell mapping">
           <span><TermLabel label={t("mappingHealth")} tip={t("tipMappingHealth")} /></span>
-          <strong>{formatPct(summary.mapping_coverage_pct)}</strong>
+          <strong>{formatPct(summaryMappingCoveragePct(summary))}</strong>
           <em>{`${mapped} ${t("mapped")} / ${unmatched} ${t("unmatched")}`}</em>
         </article>
       </div>
@@ -883,13 +894,13 @@ function FieldIndex({ t, snapshot, compact = false }: { t: (key: string) => stri
   const summary = snapshot.summary ?? {};
   const scale = currentPeerScale(current);
   const items = [
-    { key: "burst", label: t("metricFresh"), tip: t("tipActiveBurst"), value: current.active_burst_concurrency ?? 0, detail: t("active"), tone: "burst", pct: pctPart(current.active_burst_concurrency, scale) },
-    { key: "sessions", label: t("metricSessions"), tip: t("tipSessions"), value: current.session_concurrency ?? 0, detail: `${summary.active_sessions ?? 0} ${t("active")} · ${summary.idle_sessions ?? 0} ${t("idle")}`, tone: "session", pct: pctPart(current.session_concurrency, scale) },
-    { key: "pids", label: t("metricProcesses"), tip: t("tipPids"), value: current.pid_concurrency ?? 0, detail: `${summary.mapped_processes ?? 0} ${t("mapped")} · ${summary.unmapped_processes ?? 0} ${t("unmatched")}`, tone: "pid", pct: pctPart(current.pid_concurrency, scale) },
+    { key: "burst", label: t("metricFresh"), tip: t("tipActiveBurst"), value: currentRecentMovementCount(current), detail: t("active"), tone: "burst", pct: pctPart(currentRecentMovementCount(current), scale) },
+    { key: "sessions", label: t("metricSessions"), tip: t("tipSessions"), value: currentKnownSessionCount(current), detail: `${summary.active_sessions ?? 0} ${t("active")} · ${summary.idle_sessions ?? 0} ${t("idle")}`, tone: "session", pct: pctPart(currentKnownSessionCount(current), scale) },
+    { key: "pids", label: t("metricProcesses"), tip: t("tipPids"), value: currentProcessPressureCount(current), detail: `${summaryMappedProcessCount(summary)} ${t("mapped")} · ${summaryUnmappedProcessCount(summary)} ${t("unmatched")}`, tone: "pid", pct: pctPart(currentProcessPressureCount(current), scale) },
   ];
   return (
     <section className={`field-index ${compact ? "compact" : ""}`}>
-      <BandHead kicker={t("runtimeField")} title={t("activityCounts")} meta={`${formatPct(summary.mapping_coverage_pct)} ${t("coverage")}`} />
+      <BandHead kicker={t("runtimeField")} title={t("activityCounts")} meta={`${formatPct(summaryMappingCoveragePct(summary))} ${t("coverage")}`} />
       <div className="field-grid">
         {items.map((item) => (
           <article className={`field-cell ${item.tone}`} key={item.key}>
@@ -931,6 +942,223 @@ function PopoverAuditShell({
         </div>
         <ProjectAtlas t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} compact defaultExpandedCount={0} showHead={false} setHoverDetail={setHoverDetail} />
       </section>
+    </section>
+  );
+}
+
+function PopoverSystemPanel({ t, snapshot, selection, setSelection, active }: { t: (key: string) => string; snapshot: Snapshot; selection: Selection; setSelection: (value: Selection) => void; active: boolean }) {
+  const resources = useLiveSystemResources(snapshot.system_resources, active);
+  const processes = snapshot.live_processes ?? [];
+  const processTotals = processResourceTotals(processes);
+  const sampledAt = resources?.sampled_at ? formatDateTime(resources.sampled_at) : t("unavailable");
+  return (
+    <section className="popover-panel system-shell">
+      <div className="system-headline">
+        <div>
+          <span className="note-kicker">{t("system")}</span>
+          <h2>{t("systemResources")}</h2>
+        </div>
+        <span>{t("liveSample")} · {sampledAt}</span>
+      </div>
+      <SystemResourceDeck t={t} resources={resources} processCount={processes.length} processCPU={processTotals.cpu} processMemory={processTotals.memory} />
+      <PopoverProcessPanel t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} />
+    </section>
+  );
+}
+
+function useLiveSystemResources(initial: SystemResourceSnapshot | undefined, active: boolean): SystemResourceSnapshot | undefined {
+  const [resources, setResources] = useState<SystemResourceSnapshot | undefined>(initial);
+  useEffect(() => {
+    setResources(initial);
+  }, [initial?.sampled_at]);
+  useEffect(() => {
+    if (!active) return;
+    let cancelled = false;
+    let timer = 0;
+    const poll = async () => {
+      try {
+        const response = await fetch("/api/system-resources", { cache: "no-store" });
+        if (response.ok) {
+          const next = (await response.json()) as SystemResourceSnapshot;
+          if (!cancelled) setResources(next);
+        }
+      } catch {
+        // Keep the last good sample; the snapshot refresh path will surface broader failures.
+      } finally {
+        if (!cancelled) timer = window.setTimeout(poll, 2000);
+      }
+    };
+    void poll();
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [active]);
+  return resources;
+}
+
+function SystemResourceDeck({
+  t,
+  resources,
+  processCount,
+  processCPU,
+  processMemory,
+}: {
+  t: (key: string) => string;
+  resources?: SystemResourceSnapshot;
+  processCount: number;
+  processCPU: number;
+  processMemory: number;
+}) {
+  const cpu = resources?.cpu_percent ?? 0;
+  const memoryPct = resources?.memory_used_pct ?? 0;
+  const diskPct = resources?.disk_used_pct ?? 0;
+  const rxRate = resources?.network_rx_bytes_per_sec ?? 0;
+  const txRate = resources?.network_tx_bytes_per_sec ?? 0;
+  const networkScale = Math.max(1, rxRate, txRate);
+  const networkIntensity = clampPct(((rxRate + txRate) / 2_000_000) * 100, 4);
+  const memoryMeta = `${formatMemory(resources?.memory_used_bytes, t)} / ${formatMemory(resources?.memory_total_bytes, t)} · ${t("available")} ${formatMemory(resources?.memory_free_bytes, t)}`;
+  const diskMeta = `${formatMemory(resources?.disk_used_bytes, t)} / ${formatMemory(resources?.disk_total_bytes, t)} · ${t("available")} ${formatMemory(resources?.disk_free_bytes, t)}`;
+  const processMeta = `${processCount} ${t("processes")} · ${t("processCPU")} ${formatCompactCPU(processCPU)} · ${t("processMemory")} ${formatMemory(processMemory, t)}`;
+  return (
+    <section className="system-resource-deck" aria-label={t("systemResources")}>
+      <article className="system-resource-card cpu" style={systemMetricStyle(cpu)}>
+        <div className="system-resource-card-head">
+          <span><Cpu size={15} />{t("systemCpu")}</span>
+          <strong>{formatCompactCPU(cpu)}</strong>
+        </div>
+        <div className="cpu-orbit" aria-hidden="true"><i /></div>
+        <div className="system-chip-row">
+          <span><b>{t("loadAvg")}</b><em>{formatLoadAverage(resources?.load_average_1)} / {formatLoadAverage(resources?.load_average_5)}</em></span>
+          <span><b>{t("uptime")}</b><em>{formatAge(resources?.uptime_seconds, t)}</em></span>
+        </div>
+      </article>
+      <SystemCapacityCard
+        tone="memory"
+        icon={<MemoryStick size={15} />}
+        label={t("systemMemory")}
+        value={formatPct(memoryPct)}
+        meta={memoryMeta}
+        pct={memoryPct}
+      />
+      <article className="system-resource-card network" aria-label={t("networkFlow")} style={systemMetricStyle(networkIntensity)}>
+        <div className="system-resource-card-head">
+          <span><Network size={15} />{t("networkFlow")}</span>
+          <strong>{formatBytesPerSecond(rxRate, t)}</strong>
+        </div>
+        <div className="network-wave">
+          <i style={{ height: `${clampPct((rxRate / networkScale) * 100, 4)}%` }} />
+          <i style={{ height: `${clampPct((txRate / networkScale) * 100, 4)}%` }} />
+          <i style={{ height: `${clampPct(((rxRate + txRate) / 2 / networkScale) * 100, 4)}%` }} />
+          <i style={{ height: `${clampPct((txRate / networkScale) * 100, 4)}%` }} />
+          <i style={{ height: `${clampPct((rxRate / networkScale) * 100, 4)}%` }} />
+        </div>
+        <em>{t("inbound")} {formatBytesPerSecond(rxRate, t)} · {t("outbound")} {formatBytesPerSecond(txRate, t)} · {resources?.network_interface_count ?? 0} {t("interfaces")}</em>
+      </article>
+      <SystemCapacityCard
+        tone="disk"
+        icon={<HardDrive size={15} />}
+        label={t("systemDisk")}
+        value={formatPct(diskPct)}
+        meta={diskMeta}
+        pct={diskPct}
+      />
+      <SystemCapacityCard
+        tone="agent"
+        icon={<Server size={15} />}
+        label={t("agentProcessLoad")}
+        value={String(processCount)}
+        meta={processMeta}
+        pct={Math.min(100, processCPU)}
+      />
+      {resources?.supported === false ? <p className="system-resource-note">{(resources.notes ?? []).join(" · ") || t("unsupported")}</p> : null}
+    </section>
+  );
+}
+
+function SystemCapacityCard({ tone, icon, label, value, meta, pct }: { tone: string; icon: React.ReactNode; label: string; value: string; meta: string; pct: number }) {
+  return (
+    <article className={`system-resource-card ${tone}`} style={systemMetricStyle(pct)}>
+      <div className="system-resource-card-head">
+        <span>{icon}{label}</span>
+        <strong>{value}</strong>
+      </div>
+      <div className="system-meter" aria-hidden="true"><i style={{ width: `${clampPct(pct, 2)}%` }} /></div>
+      <em>{meta}</em>
+    </article>
+  );
+}
+
+function systemMetricStyle(value?: number): React.CSSProperties {
+  const pct = clampPct(value ?? 0, 0);
+  const palette = pct >= 90
+    ? { color: "#c85f73", strong: "#b6435b", soft: "rgba(200, 95, 115, .105)", line: "rgba(200, 95, 115, .22)" }
+    : pct >= 75
+      ? { color: "#6f73df", strong: "#535cc8", soft: "rgba(111, 115, 223, .105)", line: "rgba(111, 115, 223, .22)" }
+      : pct >= 55
+        ? { color: "#1f9f8a", strong: "#147e72", soft: "rgba(31, 159, 138, .10)", line: "rgba(31, 159, 138, .20)" }
+        : { color: "#5577d8", strong: "#315ec7", soft: "rgba(85, 119, 216, .105)", line: "rgba(85, 119, 216, .20)" };
+  return {
+    "--system-pct": `${pct}%`,
+    "--metric-color": palette.color,
+    "--metric-strong": palette.strong,
+    "--metric-soft": palette.soft,
+    "--metric-line": palette.line,
+    "--metric-track": `color-mix(in srgb, ${palette.color} 11%, transparent)`,
+  } as React.CSSProperties;
+}
+
+function formatLoadAverage(value?: number): string {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return "0.00";
+  return value.toFixed(2);
+}
+
+function PopoverProcessPanel({ t, snapshot, selection, setSelection }: { t: (key: string) => string; snapshot: Snapshot; selection: Selection; setSelection: (value: Selection) => void }) {
+  const [expandedPID, setExpandedPID] = useState<string | null>(null);
+  const processes = useMemo(() => [...(snapshot.live_processes ?? [])]
+    .sort((a, b) => {
+      if ((b.mapped_active_sessions ?? 0) !== (a.mapped_active_sessions ?? 0)) return (b.mapped_active_sessions ?? 0) - (a.mapped_active_sessions ?? 0);
+      if ((b.mapped_sessions ?? 0) !== (a.mapped_sessions ?? 0)) return (b.mapped_sessions ?? 0) - (a.mapped_sessions ?? 0);
+      const resourceDelta = (b.cpu_percent ?? 0) - (a.cpu_percent ?? 0);
+      if (resourceDelta) return resourceDelta;
+      return (a.pid ?? 0) - (b.pid ?? 0);
+    })
+    .slice(0, 8), [snapshot.live_processes]);
+  if (!processes.length) return null;
+  return (
+    <section className="popover-process-panel">
+      <div className="popover-project-head">
+        <div>
+          <span className="note-kicker">{t("processLedger")}</span>
+          <h2>{t("processDiagnostics")}</h2>
+        </div>
+        <span>{processes.length}/{snapshot.live_processes?.length ?? 0} {t("processes")}</span>
+      </div>
+      <div className="popover-process-list">
+        {processes.map((process) => {
+          const processID = String(process.pid ?? "");
+          const expanded = expandedPID === processID;
+          const selected = selection.type === "process" && selection.id === processID;
+          const projectText = processProjectSummary(t, process, " / ");
+          const hostText = process.host_app?.name || t("hostAppUnknown");
+          const resourceText = `${t("pid")} ${process.pid ?? t("unavailable")} · ${t("processCPU")} ${formatCompactCPU(process.cpu_percent)} · ${t("processMemory")} ${formatMemory(process.memory_bytes, t)} · ${t("diskIO")} ${processDiskIORateSummary(t, process)}`;
+          return (
+            <article className={`popover-process-card ${expanded ? "is-expanded" : ""} ${selected ? "is-selected" : ""}`} key={processID || process.command}>
+              <button className="popover-process-head" type="button" onClick={() => setExpandedPID(expanded ? null : processID)} aria-expanded={expanded}>
+                <ChevronDown size={12} aria-hidden="true" />
+                <ToolIcon t={t} tool={process.tool || "unknown"} />
+                <span className="popover-process-mainline">
+                  <strong>{processIdentity(process, t)}</strong>
+                  <b title={processProjectSummary(t, process, "\n")}>{projectText}</b>
+                </span>
+                <ProcessHostInline t={t} host={process.host_app} fallback={hostText} />
+                <span className="popover-process-subline">{resourceText}</span>
+              </button>
+              {expanded ? <ProcessDiagnosticDetails t={t} process={process} setSelection={setSelection} /> : null}
+            </article>
+          );
+        })}
+      </div>
     </section>
   );
 }
@@ -982,7 +1210,7 @@ function hoverInspectorStyle(state: HoverDetailState): React.CSSProperties {
   const width = state.detail.kind === "session"
     ? Math.min(348, Math.max(244, viewportWidth - 176))
     : Math.min(304, Math.max(220, viewportWidth - 196));
-  const height = state.detail.kind === "session" && width < 280 ? 220 : state.detail.kind === "session" ? 156 : 86;
+  const height = state.detail.kind === "session" && width < 280 ? 220 : state.detail.kind === "session" ? 156 : 132;
   const gap = 14;
   let left = state.x + gap;
   let top = state.y - height - gap;
@@ -1001,37 +1229,35 @@ function hoverInspectorStyle(state: HoverDetailState): React.CSSProperties {
 function PopoverRuntimeInstrument({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot }) {
   const current = snapshot.current ?? {};
   const summary = snapshot.summary ?? {};
-  const trustedScale = Math.max(1, current.active_burst_concurrency ?? 0, current.session_concurrency ?? 0);
-  const active = (current.active_burst_concurrency ?? 0) > 0;
-  const mapped = summary.mapped_processes ?? 0;
-  const unmatched = summary.unmapped_processes ?? 0;
-  const pids = current.pid_concurrency ?? 0;
-  const coverage = clampPct(summary.mapping_coverage_pct ?? 0);
-  const resources = processResourceTotals(snapshot.live_processes);
+  const trustedScale = Math.max(1, currentRecentMovementCount(current), currentKnownSessionCount(current));
+  const active = currentHasRecentMovement(current);
+  const mapped = summaryMappedProcessCount(summary);
+  const unmatched = summaryUnmappedProcessCount(summary);
+  const coverage = clampPct(summaryMappingCoveragePct(summary));
   const rows = [
     {
       key: "burst",
       label: t("metricFresh"),
       tip: t("tipActiveBurst"),
-      value: current.active_burst_concurrency ?? 0,
+      value: currentRecentMovementCount(current),
       detail: t("activeBurstHint"),
-      pct: pctPart(current.active_burst_concurrency, trustedScale),
+      pct: pctPart(currentRecentMovementCount(current), trustedScale),
     },
     {
       key: "session",
       label: t("metricKnownSessions"),
       tip: t("tipSessions"),
-      value: current.session_concurrency ?? 0,
+      value: currentKnownSessionCount(current),
       detail: t("liveIdle")
         .replace("{live}", String(summary.active_sessions ?? 0))
         .replace("{idle}", String(summary.idle_sessions ?? 0)),
-      pct: pctPart(current.session_concurrency, trustedScale),
+      pct: pctPart(currentKnownSessionCount(current), trustedScale),
     },
     {
       key: "mapping",
       label: t("mappingHealth"),
       tip: t("tipMappingHealth"),
-      value: formatPct(summary.mapping_coverage_pct),
+      value: formatPct(summaryMappingCoveragePct(summary)),
       detail: `${mapped} ${t("mapped")} / ${unmatched} ${t("unmatched")}`,
       pct: coverage,
     },
@@ -1054,11 +1280,6 @@ function PopoverRuntimeInstrument({ t, snapshot }: { t: (key: string) => string;
             <i aria-hidden="true"><em style={{ width: `${clampPct(row.pct, 3)}%` }} /></i>
           </span>
         ))}
-      </div>
-      <div className="process-diagnostic-strip" aria-label={t("processPressure")}>
-        <span><Server size={12} aria-hidden="true" />{t("processPressure")}</span>
-        <strong>{pids}</strong>
-        <em>{`${processResourceText(t, resources.cpu, resources.memory)} · ${formatCopy(t("processDiagnosticFormula"), { pids, mapped, unmatched })}`}</em>
       </div>
       <CurrentMeaningStrip t={t} snapshot={snapshot} compact />
     </section>
@@ -1126,7 +1347,7 @@ function DashboardEvidenceColumn({ t, snapshot }: { t: (key: string) => string; 
           <Readout label={t("scan")} value={`${stats.parsed_files ?? 0}/${stats.scanned_files ?? 0}`} />
           <Readout label={t("deferred")} value={deferredScanValue(t, stats)} />
           <Readout label={t("tail")} value={String(stats.tail_parsed_files ?? 0)} />
-          <Readout label={t("metricMatched")} value={formatPct(summary.mapping_coverage_pct)} />
+          <Readout label={t("metricMatched")} value={formatPct(summaryMappingCoveragePct(summary))} />
         </div>
         <EvidenceHealth t={t} snapshot={snapshot} />
       </div>
@@ -1145,14 +1366,14 @@ function EvidenceHealth({ t, snapshot }: { t: (key: string) => string; snapshot:
   const stats = snapshot.transcript_stats ?? {};
   const summary = snapshot.summary ?? {};
   const current = snapshot.current ?? {};
-  const coverage = clampPct(summary.mapping_coverage_pct ?? 0);
+  const coverage = clampPct(summaryMappingCoveragePct(summary));
   const tone = coverage >= 80 ? "good" : coverage >= 50 ? "warn" : "bad";
   return (
     <section className={`evidence-health ${tone}`} aria-label={t("evidenceHealth")}>
       <article className="evidence-note mapping-note">
         <div className="evidence-note-head">
           <span><TermLabel label={t("mappingHealth")} tip={t("tipMappingHealth")} /></span>
-          <strong>{formatPct(summary.mapping_coverage_pct)}</strong>
+          <strong>{formatPct(summaryMappingCoveragePct(summary))}</strong>
         </div>
         <div className="mapping-meter" style={{ "--coverage": `${coverage}%` } as React.CSSProperties}>
           <i />
@@ -1173,7 +1394,7 @@ function EvidenceHealth({ t, snapshot }: { t: (key: string) => string; snapshot:
           <strong>{coordinationPostureLabel(snapshot, t)}</strong>
         </div>
         <p>{primaryEvidenceNote(t, snapshot)}</p>
-        <em>{current.pid_concurrency ?? 0} {t("processesObserved")}</em>
+        <em>{currentProcessPressureCount(current)} {t("processesObserved")}</em>
       </article>
     </section>
   );
@@ -1280,34 +1501,34 @@ function DashboardSideRails({ t, snapshot }: { t: (key: string) => string; snaps
 function CalibrationRail({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot }) {
   const current = snapshot.current ?? {};
   const summary = snapshot.summary ?? {};
-  const trustedScale = Math.max(1, current.active_burst_concurrency ?? 0, current.session_concurrency ?? 0);
-  const mapped = summary.mapped_processes ?? 0;
-  const unmatched = summary.unmapped_processes ?? 0;
-  const pids = current.pid_concurrency ?? 0;
-  const coverage = clampPct(summary.mapping_coverage_pct ?? 0);
+  const trustedScale = Math.max(1, currentRecentMovementCount(current), currentKnownSessionCount(current));
+  const mapped = summaryMappedProcessCount(summary);
+  const unmatched = summaryUnmappedProcessCount(summary);
+  const pids = currentProcessPressureCount(current);
+  const coverage = clampPct(summaryMappingCoveragePct(summary));
   const rows = [
     {
       key: "burst",
       label: t("active"),
-      value: current.active_burst_concurrency ?? 0,
+      value: currentRecentMovementCount(current),
       primary: t("activeBurstHint"),
       secondary: t("currentScale"),
-      pct: pctPart(current.active_burst_concurrency, trustedScale),
+      pct: pctPart(currentRecentMovementCount(current), trustedScale),
     },
     {
       key: "session",
       label: t("metricKnownSessions"),
-      value: current.session_concurrency ?? 0,
+      value: currentKnownSessionCount(current),
       primary: t("knownSessions"),
       secondary: t("liveIdle")
         .replace("{live}", String(summary.active_sessions ?? 0))
         .replace("{idle}", String(summary.idle_sessions ?? 0)),
-      pct: pctPart(current.session_concurrency, trustedScale),
+      pct: pctPart(currentKnownSessionCount(current), trustedScale),
     },
     {
       key: "mapping",
       label: t("mappingHealth"),
-      value: formatPct(summary.mapping_coverage_pct),
+      value: formatPct(summaryMappingCoveragePct(summary)),
       primary: t("processEvidenceMapped"),
       secondary: `${mapped} ${t("mapped")} · ${unmatched} ${t("unmatched")}`,
       pct: coverage,
@@ -1373,7 +1594,7 @@ function ConfidenceGrid({ t, snapshot }: { t: (key: string) => string; snapshot:
     { label: t("candidateCoverage"), value: formatPct(risk.candidate_workitem_coverage_pct), warn: false },
     { label: t("lowConfidence"), value: String(risk.low_confidence_session_count ?? 0), warn: (risk.low_confidence_session_count ?? 0) > 0 },
     { label: t("stale"), value: String(risk.stale_session_count ?? 0), warn: (risk.stale_session_count ?? 0) > 0 },
-    { label: t("unmatched"), value: String(risk.orphan_process_count ?? summary.unmapped_processes ?? 0), warn: (risk.orphan_process_count ?? summary.unmapped_processes ?? 0) > 0 },
+    { label: t("unmatched"), value: String(risk.orphan_process_count ?? summaryUnmappedProcessCount(summary)), warn: (risk.orphan_process_count ?? summaryUnmappedProcessCount(summary)) > 0 },
   ];
   return (
     <div className="confidence-grid">
@@ -1487,6 +1708,7 @@ function ProcessLedger({ t, snapshot, selection, setSelection }: { t: (key: stri
       <div className="process-row head" role="row">
         <span>{t("processes")}</span>
         <span>{t("tools")}</span>
+        <span>{t("projects")}</span>
         <span>{t("roleMix")}</span>
         <span>{t("sessions")}</span>
         <span>{t("resources")}</span>
@@ -1534,6 +1756,7 @@ function ProcessLedgerRow({ t, process, selection, setSelection }: { t: (key: st
         </button>
       </span>
       <span className="process-cell tool-cell" role="cell"><ToolIcon t={t} tool={process.tool || "unknown"} />{toolDisplayName(process.tool)}</span>
+      <span className="process-project-cell" role="cell" title={processProjectSummary(t, process, "\n")}>{processProjectSummary(t, process, " / ")}</span>
       <span className="process-role-mix" role="cell" aria-label={process.evidence_summary || t("roleMix")}>
         <ProcessRolePill label={t("mainShort")} value={process.main_sessions ?? 0} tone="main" />
         <ProcessRolePill label={t("subagentShort")} value={process.subagent_sessions ?? 0} tone="subagent" />
@@ -1567,30 +1790,117 @@ function ProcessLedgerRow({ t, process, selection, setSelection }: { t: (key: st
         <span>{host?.name || t("unavailable")}</span>
       </span>
       <RowHoverDetail title={`${processIdentity(process, t)} · ${t("pid")} ${process.pid ?? t("unavailable")}`} detail={processHoverDetail} meta={processHoverMeta} />
-      {expanded ? (
-        <div className="process-row-details" role="cell">
-          <div className="process-resource-detail">
-            <span>{t("resources")}</span>
-            <strong>{processResourceText(t, process.cpu_percent, process.memory_bytes)}</strong>
-            <em>{t("runtimeDuration")} {process.elapsed || t("unavailable")} · {process.mapped_sessions ?? 0} {t("mappedSessions")} / {process.mapped_active_sessions ?? 0} {t("activeShort")}</em>
-          </div>
-          <div className="process-command-full">
-            <span>{t("command")}</span>
-            <code>{process.command || t("unavailable")}</code>
-          </div>
-          <div className="process-evidence-lines">
-            {evidence.length ? evidence.map((item) => (
-              <button className="process-evidence-line" type="button" key={item.session_id || `${processID}-evidence`} onClick={() => setSelection({ type: "session", id: safeID(item.session_id) })}>
-                <span>{roleLabel(t, normalizedRole(item.role))}</span>
-                <strong>{item.project || shortID(item.session_id) || t("unassigned")}</strong>
-                <em>{mappingMethodLabel(t, item.mapping_method)} · {freshnessLabel(t, item.freshness)} · {confidenceLabel(t, item.confidence)}</em>
-              </button>
-            )) : <span className="muted-inline">{t("unmappedProcessDetail")}</span>}
-          </div>
-        </div>
-      ) : null}
+      {expanded ? <ProcessDiagnosticDetails t={t} process={process} setSelection={setSelection} /> : null}
     </div>
   );
+}
+
+function ProcessDiagnosticDetails({ t, process, setSelection }: { t: (key: string) => string; process: LiveProcess; setSelection: (value: Selection) => void }) {
+  const processID = String(process.pid ?? "");
+  const sessions = process.session_ids ?? [];
+  const evidence = process.mapped_session_evidence ?? [];
+  const [diagnostic, setDiagnostic] = useState<ProcessDiagnostic | null>(null);
+  useEffect(() => {
+    if (!process.pid) return;
+    let cancelled = false;
+    fetch(`/api/process-diagnostic/${encodeURIComponent(String(process.pid))}`, { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((next: ProcessDiagnostic | null) => {
+        if (!cancelled) setDiagnostic(next);
+      })
+      .catch(() => {
+        if (!cancelled) setDiagnostic(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [process.pid]);
+  const diagnosticCommand = diagnostic?.command || process.command || "";
+  const diagnosticSessionPaths = diagnostic?.session_paths ?? [];
+  const routeItems = processRouteItems(t, process, diagnostic);
+  const mappedProjects = processMappedProjects(process);
+  return (
+    <div className="process-row-details" role="cell">
+      <div className="process-route-detail">
+        <span>{t("route")}</span>
+        <div className="process-route-stack">
+          {routeItems.map((item) => (
+            <em key={item.label}><b>{item.label}</b><strong>{item.value}</strong></em>
+          ))}
+        </div>
+      </div>
+      <div className="process-command-full">
+        <span>{t("launchScript")}</span>
+        <code>{diagnosticCommand || t("unavailable")}</code>
+      </div>
+      <div className="process-resource-detail">
+        <span>{t("resources")}</span>
+        <strong>{processResourceText(t, process.cpu_percent, process.memory_bytes)}</strong>
+        <em>{t("runtimeDuration")} {process.elapsed || t("unavailable")} · {process.mapped_sessions ?? 0} {t("mappedSessions")} / {process.mapped_active_sessions ?? 0} {t("activeShort")}</em>
+      </div>
+      <div className="process-io-detail">
+        <span>{t("diskIO")}</span>
+        <strong>{processDiskIOText(t, process)}</strong>
+        <em>{t("networkIO")} · {t("unsupported")}</em>
+      </div>
+      <div className="process-session-full-list">
+        <span>{t("sessionIds")}</span>
+        <code>{sessions.length ? sessions.join("\n") : t("unavailable")}</code>
+      </div>
+      <div className="process-session-full-list">
+        <span>{t("evidencePath")}</span>
+        <code>{diagnosticSessionPaths.length ? diagnosticSessionPaths.join("\n") : t("unavailable")}</code>
+      </div>
+      <div className="process-evidence-lines">
+        <span>{t("mappedRoutes")}</span>
+        {evidence.length ? evidence.map((item, index) => (
+          <button className="process-evidence-line" type="button" key={item.session_id || `${processID}-evidence-${index}`} onClick={() => setSelection({ type: "session", id: safeID(item.session_id) })}>
+            <span>{roleLabel(t, normalizedRole(item.role))}</span>
+            <strong>{item.project || t("unassigned")}</strong>
+            <code>{item.session_id || t("unavailable")}</code>
+            <em>{mappingMethodLabel(t, item.mapping_method)} · {freshnessLabel(t, item.freshness)} · {confidenceLabel(t, item.confidence)} · {t("age")} {formatAge(item.last_event_age_seconds, t)} · {t("provenance")} {(item.provenance ?? []).join(", ") || t("unavailable")}</em>
+          </button>
+        )) : <span className="muted-inline">{t("unmappedProcessDetail")}</span>}
+      </div>
+      <div className="process-route-projects">
+        <span>{t("projects")}</span>
+        <code>{mappedProjects.length ? mappedProjects.join("\n") : t("unassigned")}</code>
+      </div>
+    </div>
+  );
+}
+
+function processMappedProjects(process: LiveProcess): string[] {
+  return Array.from(new Set((process.mapped_session_evidence ?? []).map((item) => item.project || "").filter(Boolean))).sort((a, b) => a.localeCompare(b));
+}
+
+function processProjectSummary(t: (key: string) => string, process: LiveProcess, separator: string): string {
+  const projects = processMappedProjects(process);
+  return projects.length ? projects.join(separator) : t("unassigned");
+}
+
+function processRouteItems(t: (key: string) => string, process: LiveProcess, diagnostic?: ProcessDiagnostic | null): Array<{ label: string; value: string }> {
+  const projects = processMappedProjects(process);
+  const host = diagnostic?.host_app ?? process.host_app;
+  return [
+    { label: t("process"), value: `${processIdentity(process, t)} · ${t("pid")} ${process.pid ?? t("unavailable")}` },
+    { label: t("tool"), value: toolDisplayName(process.tool) },
+    { label: t("host"), value: host?.bundle_path || host?.name || t("unavailable") },
+    { label: t("projects"), value: projects.length ? projects.join(" / ") : t("unassigned") },
+    { label: t("sessions"), value: `${process.mapped_sessions ?? 0} ${t("mapped")} · ${process.mapped_active_sessions ?? 0} ${t("active")}` },
+  ];
+}
+
+function processDiskIOText(t: (key: string) => string, process: LiveProcess): string {
+  const readRate = formatBytesPerSecond(process.disk_read_bytes_per_sec, t);
+  const writeRate = formatBytesPerSecond(process.disk_write_bytes_per_sec, t);
+  const readTotal = formatMemory(process.disk_read_bytes, t);
+  const writeTotal = formatMemory(process.disk_write_bytes, t);
+  return `${t("read")} ${readRate} (${readTotal}) · ${t("write")} ${writeRate} (${writeTotal})`;
+}
+
+function processDiskIORateSummary(t: (key: string) => string, process: LiveProcess): string {
+  return `${t("read")} ${formatBytesPerSecond(process.disk_read_bytes_per_sec, t)} / ${t("write")} ${formatBytesPerSecond(process.disk_write_bytes_per_sec, t)}`;
 }
 
 function ProcessAuditFilters({ t, snapshot, filter, setFilter }: { t: (key: string) => string; snapshot: Snapshot; filter: ProcessFilter; setFilter: (filter: ProcessFilter) => void }) {
@@ -1611,14 +1921,14 @@ function ProcessAuditFilters({ t, snapshot, filter, setFilter }: { t: (key: stri
       </button>
       {runtime.map((item) => (
         <button className={`process-filter-chip runtime ${isSameProcessFilter(filter, { kind: "runtime", id: item.key || item.tool || "" }) ? "is-selected" : ""}`} type="button" key={`runtime-${item.key || item.tool}`} onClick={() => setFilter({ kind: "runtime", id: item.key || item.tool || "" })}>
-          <span>{toolDisplayName(item.display_name || item.tool)}</span>
+          <span>{t("tool")} · {toolDisplayName(item.display_name || item.tool)}</span>
           <strong>{item.pid_count ?? 0}</strong>
           <em>{`${processResourceText(t, item.cpu_percent, item.memory_bytes)} · ${processSummaryMix(t, item.direct_sessions, item.subagent_sessions, item.unknown_role_sessions, item.unmapped_processes)}`}</em>
         </button>
       ))}
       {hosts.slice(0, 4).map((item) => (
         <button className={`process-filter-chip host ${isSameProcessFilter(filter, { kind: "host", id: item.key || item.name || "" }) ? "is-selected" : ""}`} type="button" key={`host-${item.key || item.name}`} onClick={() => setFilter({ kind: "host", id: item.key || item.name || "" })}>
-          <span>{item.name || t("hostUnknown")}</span>
+          <span>{t("host")} · {item.name || t("hostUnknown")}</span>
           <strong>{item.pid_count ?? 0}</strong>
           <em>{`${processResourceText(t, item.cpu_percent, item.memory_bytes)} · ${processSummaryMix(t, item.direct_sessions, item.subagent_sessions, item.unknown_role_sessions, item.unmapped_processes)}`}</em>
         </button>
@@ -1647,8 +1957,32 @@ function processResourceText(t: (key: string) => string, cpu?: number, memory?: 
   return `${formatCPU(cpu)} ${t("cpu")} · ${formatMemory(memory, t)}`;
 }
 
+function formatBytesPerSecond(bytes?: number, t?: (key: string) => string): string {
+  if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes <= 0) return `0 B/s`;
+  return `${formatMemory(bytes, t ?? ((key: string) => key))}/s`;
+}
+
+function formatCompactCPU(value?: number): string {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return "0.00%";
+  if (value < 0.01) return "<.01%";
+  return `${value.toFixed(2)}%`;
+}
+
+function formatCompactMemory(bytes?: number): string {
+  if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes <= 0) return "n/a";
+  const units = ["B", "K", "M", "G", "T"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  const digits = value >= 100 || unit === 0 ? 0 : value >= 10 ? 1 : 2;
+  return `${value.toFixed(digits)}${units[unit]}`;
+}
+
 function sessionProcessResourceText(t: (key: string) => string, session: LiveSession): string {
-  if ((session.process_count ?? 0) <= 0) return t("unavailable");
+  if (sessionProcessPressure(session) <= 0) return t("unavailable");
   return processResourceText(t, session.process_cpu_percent, session.process_memory_bytes);
 }
 
@@ -1703,14 +2037,14 @@ function processSummaryMix(t: (key: string) => string, direct = 0, subagent = 0,
 }
 
 function ToolMix({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot }) {
-  const tools = Object.entries(snapshot.current_by_tool ?? {}).sort((a, b) => (b[1].session_concurrency ?? 0) - (a[1].session_concurrency ?? 0));
+  const tools = Object.entries(snapshot.current_by_tool ?? {}).sort((a, b) => currentKnownSessionCount(b[1]) - currentKnownSessionCount(a[1]));
   return (
     <div className="tool-mix">
       {tools.length ? tools.slice(0, 4).map(([tool, metrics]) => (
         <span className="tool-mix-item" key={tool}>
           <ToolIcon t={t} tool={tool} />
           <strong>{toolDisplayName(tool)}</strong>
-          <em>{metrics.active_burst_concurrency ?? 0}/{metrics.session_concurrency ?? 0}</em>
+          <em>{currentRecentMovementCount(metrics)}/{currentKnownSessionCount(metrics)}</em>
         </span>
       )) : <span className="muted-inline">{t("unavailable")}</span>}
     </div>
@@ -2030,10 +2364,10 @@ function Metrics({ t, snapshot, selected, compact }: { t: (key: string) => strin
   const summary = snapshot.summary ?? {};
   const items = selectionMetrics(t, snapshot, selected);
   const base = [
-    { key: t("metricFresh"), value: current.active_burst_concurrency ?? 0, cls: "is-accent", icon: <Activity size={15} /> },
-    { key: t("metricSessions"), value: current.session_concurrency ?? 0, cls: "", icon: <Bot size={15} /> },
-    { key: t("metricProcesses"), value: current.pid_concurrency ?? 0, cls: "", icon: <Server size={15} /> },
-    { key: t("metricMatched"), value: formatPct(summary.mapping_coverage_pct), cls: "is-ok", icon: <Gauge size={15} /> },
+    { key: t("metricFresh"), value: currentRecentMovementCount(current), cls: "is-accent", icon: <Activity size={15} /> },
+    { key: t("metricSessions"), value: currentKnownSessionCount(current), cls: "", icon: <Bot size={15} /> },
+    { key: t("metricProcesses"), value: currentProcessPressureCount(current), cls: "", icon: <Server size={15} /> },
+    { key: t("metricMatched"), value: formatPct(summaryMappingCoveragePct(summary)), cls: "is-ok", icon: <Gauge size={15} /> },
   ];
   return (
     <div className="metrics">
@@ -2188,6 +2522,7 @@ function ProjectTreeRow({
 }) {
   const sessions = sessionsForProject(snapshot, project);
   const counts = projectRoleCounts(project, sessions);
+  const processPressure = projectProcessPressureCount(project);
   const projectResources = projectProcessResources(snapshot, sessions);
   const resourceText = processResourceText(t, projectResources.cpu, projectResources.memory);
   const projectId = safeID(project.project);
@@ -2195,8 +2530,8 @@ function ProjectTreeRow({
   const evidenceItems = projectEvidenceItems(t, project, compact);
   const projectAge = formatAge(project.last_event_age_seconds, t);
   const projectMeta = projectAge;
-  const toolSummary = (project.tools ?? []).map((tool) => `${toolDisplayName(tool.tool)} ${tool.active_burst_count ?? 0}/${tool.session_count ?? 0}`).join(" · ") || t("unavailable");
-  const projectHoverDetail = `${counts.activeTotal} ${t("active")} / ${counts.total} ${t("sessions")} · ${project.process_count ?? 0} ${t("processes")} · ${resourceText}`;
+  const toolSummary = (project.tools ?? []).map((tool) => `${toolDisplayName(tool.tool)} ${toolRecentMovementCount(tool)}/${toolKnownSessionCount(tool)}`).join(" · ") || t("unavailable");
+  const projectHoverDetail = `${counts.activeTotal} ${t("active")} / ${counts.total} ${t("sessions")} · ${processPressure} ${t("processes")} · ${resourceText}`;
   const projectHoverMeta = `${t("lastEvent")} ${projectAge} · ${t("tools")}: ${toolSummary}`;
   const projectHoverPayload: HoverDetailPayload = { kind: "project", id: projectId, title, detail: projectHoverDetail, meta: projectHoverMeta };
   const selected = selection.type === "project" && selection.id === projectId;
@@ -2234,7 +2569,7 @@ function ProjectTreeRow({
           <span>{title}</span>
           <small>{projectMeta}</small>
         </button>
-        {compact ? <ProjectCompactMetrics t={t} counts={counts} processCount={project.process_count ?? 0} resourceText={resourceText} /> : <ProjectMetricMatrix t={t} counts={counts} processCount={project.process_count ?? 0} resourceText={resourceText} />}
+        {compact ? <ProjectCompactMetrics t={t} counts={counts} processCount={processPressure} cpu={projectResources.cpu} memory={projectResources.memory} /> : <ProjectMetricMatrix t={t} counts={counts} processCount={processPressure} resourceText={resourceText} />}
         <ToolStrip t={t} tools={project.tools ?? []} />
       </div>
       {expanded ? (
@@ -2255,7 +2590,7 @@ function ProjectTreeRow({
   );
 }
 
-function ProjectCompactMetrics({ t, counts, processCount, resourceText }: { t: (key: string) => string; counts: RoleCounts; processCount: number; resourceText: string }) {
+function ProjectCompactMetrics({ t, counts, processCount, cpu, memory }: { t: (key: string) => string; counts: RoleCounts; processCount: number; cpu: number; memory: number }) {
   const activeMainTitle = projectMetricCellTitle(t, "active", "main", counts.activeMain);
   const activeSubagentTitle = projectMetricCellTitle(t, "active", "subagent", counts.activeSub);
   const activeTotalTitle = projectMetricCellTitle(t, "active", "total", counts.activeTotal);
@@ -2265,6 +2600,7 @@ function ProjectCompactMetrics({ t, counts, processCount, resourceText }: { t: (
   const activeTitle = `${activeTotalTitle} · ${activeMainTitle} · ${activeSubagentTitle}`;
   const allTitle = `${allTotalTitle} · ${allMainTitle} · ${allSubagentTitle}`;
   const processTitle = projectMetricProcessTitle(t, processCount);
+  const resourceTitle = `${t("processCPU")}: ${formatCPU(cpu)} · ${t("processMemory")}: ${formatMemory(memory, t)}`;
   return (
     <div className="project-compact-metrics" aria-label={t("metricSessions")}>
       <span className="project-compact-cluster active" aria-label={activeTitle}>
@@ -2280,7 +2616,10 @@ function ProjectCompactMetrics({ t, counts, processCount, resourceText }: { t: (
       <span className="project-compact-proc" aria-label={processTitle}>
         <i>{t("processShort")}</i>
         <strong>{processCount}</strong>
-        <em>{resourceText}</em>
+      </span>
+      <span className="project-compact-resources" aria-label={resourceTitle}>
+        <em><b>{t("cpu")}</b><strong>{formatCompactCPU(cpu)}</strong></em>
+        <em><b>{t("memoryShort")}</b><strong>{formatCompactMemory(memory)}</strong></em>
       </span>
     </div>
   );
@@ -2316,21 +2655,6 @@ function ProjectMetricMatrix({ t, counts, processCount, resourceText }: { t: (ke
   );
 }
 
-function projectProcessResources(snapshot: Snapshot, sessions: LiveSession[]): { cpu: number; memory: number } {
-  const sessionKeys = new Set(sessions.map((session) => `${session.tool || ""}\x00${session.session_id || ""}`));
-  const sessionIDs = new Set(sessions.map((session) => session.session_id || "").filter(Boolean));
-  let cpu = 0;
-  let memory = 0;
-  for (const process of snapshot.live_processes ?? []) {
-    const matched = (process.mapped_session_evidence ?? []).some((evidence) => sessionKeys.has(`${evidence.tool || process.tool || ""}\x00${evidence.session_id || ""}`))
-      || (process.session_ids ?? []).some((id) => sessionIDs.has(id));
-    if (!matched) continue;
-    cpu += process.cpu_percent ?? 0;
-    memory += process.memory_bytes ?? 0;
-  }
-  return { cpu, memory };
-}
-
 function ProjectMetricNumber({ t, scope, metric, value }: { t: (key: string) => string; scope: ProjectMetricScope; metric: ProjectMetricObject; value: number }) {
   const title = projectMetricCellTitle(t, scope, metric, value);
   return <strong aria-label={title}>{value}</strong>;
@@ -2344,16 +2668,16 @@ function ToolStrip({ t, tools }: { t: (key: string) => string; tools: ProjectToo
         const toolName = tool.tool || "unknown";
         const baseTitle = formatCopy(t("projectToolBadgeTooltip"), {
           tool: toolDisplayName(toolName),
-          active: tool.active_burst_count ?? 0,
-          sessions: tool.session_count ?? 0,
+          active: toolRecentMovementCount(tool),
+          sessions: toolKnownSessionCount(tool),
         });
         const tokenTitle = tool.token_usage && tokenUsageHasValue(tool.token_usage) ? `${t("tokenUsage")}: ${formatTokenUsageSummary(tool.token_usage, t)}` : "";
         const title = tokenTitle ? `${baseTitle} ${tokenTitle}` : baseTitle;
         return (
           <span className="tool-mark" key={toolName} aria-label={title}>
             <ToolIcon t={t} tool={toolName} title={title} />
-            <strong>{tool.active_burst_count ?? 0}</strong>
-            <small>/{tool.session_count ?? 0}</small>
+            <strong>{toolRecentMovementCount(tool)}</strong>
+            <small>/{toolKnownSessionCount(tool)}</small>
           </span>
         );
       })}
@@ -2472,14 +2796,16 @@ function SessionLine({
   const sid = session.session_id || "";
   const host = session.host_apps?.[0];
   const evidenceItems = sessionEvidenceItems(t, session, compact);
-  const processText = compact ? `${session.process_count ?? 0}p` : `${session.process_count ?? 0} ${t("pid")}`;
+  const processPressure = sessionProcessPressure(session);
+  const processText = compact ? `${processPressure}p` : `${processPressure} ${t("pid")}`;
   const resourceText = sessionProcessResourceText(t, session);
   const selected = selection.type === "session" && safeID(sid) === selection.id;
   const title = session.agent_nickname || shortID(sid) || "session";
   const meta = `${formatAge(session.last_event_age_seconds, t)} · ${processText} · ${resourceText} · ${confidenceLabel(t, session.confidence)}`;
   const hostName = host?.name || t("hostUnknown");
   const sessionHoverTitle = `${title} · ${roleLabel(t, role)}`;
-  const sessionHoverMeta = `${t("mappingMethod")}: ${mappingMethodLabel(t, session.mapping_method)} · ${t("freshness")}: ${freshnessLabel(t, session.freshness || (session.active_burst ? "active" : "idle"))}`;
+  const hasRecentMovement = sessionHasRecentMovement(session);
+  const sessionHoverMeta = `${t("mappingMethod")}: ${mappingMethodLabel(t, session.mapping_method)} · ${t("freshness")}: ${freshnessLabel(t, session.freshness || (hasRecentMovement ? "active" : "idle"))}`;
   const sessionHoverMetrics = [
     { label: t("tool"), value: toolDisplayName(session.tool) },
     { label: t("host"), value: hostName },
@@ -2496,12 +2822,12 @@ function SessionLine({
     if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
     clearSessionHover();
   };
-  const visibleEvidenceItems = (session.process_count ?? 0) > 0
+  const visibleEvidenceItems = processPressure > 0
     ? [{ label: t("resources"), value: resourceText, tone: "resource" }, ...evidenceItems]
     : evidenceItems;
   if (compact) {
     return (
-      <div className={`session-line role-${role} ${session.active_burst ? "is-active" : ""} ${selected ? "is-selected" : ""} ${child ? "is-child" : ""}`} onPointerEnter={showSessionHover} onPointerMove={showSessionHover} onPointerLeave={clearSessionHover} onFocus={showSessionHover} onBlur={clearSessionFocusHover}>
+      <div className={`session-line role-${role} ${hasRecentMovement ? "is-active" : ""} ${selected ? "is-selected" : ""} ${child ? "is-child" : ""}`} onPointerEnter={showSessionHover} onPointerMove={showSessionHover} onPointerLeave={clearSessionHover} onFocus={showSessionHover} onBlur={clearSessionFocusHover}>
         <span className="session-role-slot">
           <RoleGlyph t={t} role={role} />
         </span>
@@ -2528,7 +2854,7 @@ function SessionLine({
     );
   }
   return (
-    <div className={`session-line role-${role} ${session.active_burst ? "is-active" : ""} ${selected ? "is-selected" : ""} ${child ? "is-child" : ""}`} onPointerEnter={showSessionHover} onPointerMove={showSessionHover} onPointerLeave={clearSessionHover} onFocus={showSessionHover} onBlur={clearSessionFocusHover}>
+    <div className={`session-line role-${role} ${hasRecentMovement ? "is-active" : ""} ${selected ? "is-selected" : ""} ${child ? "is-child" : ""}`} onPointerEnter={showSessionHover} onPointerMove={showSessionHover} onPointerLeave={clearSessionHover} onFocus={showSessionHover} onBlur={clearSessionFocusHover}>
       <span className="session-main">
         <RoleGlyph t={t} role={role} />
         <span className="session-title">
@@ -2591,6 +2917,7 @@ function SessionIdControl({
 }
 
 function SessionEvidencePanel({ t, session }: { t: (key: string) => string; session: LiveSession }) {
+  const hasRecentMovement = sessionHasRecentMovement(session);
   return (
     <section className="entity-panel">
       <div className="entity-title">
@@ -2606,7 +2933,7 @@ function SessionEvidencePanel({ t, session }: { t: (key: string) => string; sess
         <Readout label={t("threadSource")} value={threadSourceLabel(t, session.thread_source)} />
         <Readout label={t("parentThread")} value={session.parent_thread_id || t("unavailable")} />
         <Readout label={t("roleHint")} value={roleHintLabel(t, session.role_hint_source) || agentRoleLabel(t, session.agent_role) || session.agent_nickname || t("unavailable")} />
-        <Readout label={t("freshness")} value={freshnessLabel(t, session.freshness || (session.active_burst ? "active" : "idle"))} />
+        <Readout label={t("freshness")} value={freshnessLabel(t, session.freshness || (hasRecentMovement ? "active" : "idle"))} />
         <Readout label={t("observedDuration")} value={formatAge(session.observed_duration_seconds, t)} />
         <Readout label={t("activeDuration")} value={formatAge(session.active_duration_seconds, t)} />
         <Readout label={t("idleDuration")} value={formatAge(session.idle_duration_seconds, t)} />
@@ -2679,6 +3006,18 @@ function HostAppButton({ t, host }: { t: (key: string) => string; host: HostApp 
 function HostAppEmpty({ t, label = false }: { t: (key: string) => string; label?: boolean }) {
   const title = t("hostAppUnknown");
   return <span className="host-empty" aria-label={title}>{label ? t("host") : ""}</span>;
+}
+
+function ProcessHostInline({ t, host, fallback }: { t: (key: string) => string; host?: HostApp; fallback: string }) {
+  const title = host ? hostAppTitle(t, host) : t("hostAppUnknown");
+  return (
+    <span className={`popover-process-host ${host ? "" : "is-empty"}`} title={title} aria-label={title}>
+      <span className="host-icon" aria-hidden="true">
+        {host?.pid ? <img src={`/api/host-app-icon/${encodeURIComponent(String(host.pid))}`} alt="" loading="lazy" decoding="async" /> : <Terminal size={12} />}
+      </span>
+      <em>{fallback}</em>
+    </span>
+  );
 }
 
 function hostAppTitle(t: (key: string) => string, host: HostApp): string {

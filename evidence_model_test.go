@@ -544,6 +544,28 @@ func TestObserveProjectAttributionUsesTrustedEvidenceOnly(t *testing.T) {
 	}
 }
 
+func TestSetTraceProjectPathNormalizesBenchmarkWorkspace(t *testing.T) {
+	root := t.TempDir()
+	workspace := filepath.Join(
+		root,
+		"agentic-controlbook-benchmark",
+		".benchmark",
+		"evaluation",
+		"run-001",
+		"cases",
+		"example-case",
+		"workspace",
+	)
+	trace := &SessionTrace{}
+	setTraceProjectPath(trace, workspace, "transcript_cwd")
+	if trace.Project != "agentic-controlbook-benchmark" {
+		t.Fatalf("expected benchmark workspace to attribute to outer project, got %q", trace.Project)
+	}
+	if trace.ProjectSource != "transcript_cwd" {
+		t.Fatalf("expected transcript_cwd source, got %q", trace.ProjectSource)
+	}
+}
+
 func TestProjectLiveSessionsExposeFreshnessConfidenceAndProvenance(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
 	root := t.TempDir()
@@ -949,6 +971,40 @@ func TestBuildProjectFocusKeepsTranscriptProjectAndCWDHighConfidence(t *testing.
 		{Source: "transcript_cwd", Count: 1},
 	}) {
 		t.Fatalf("unexpected project attribution summary: %#v", alpha.ProjectAttributionSourceSummary)
+	}
+}
+
+func TestBuildProjectFocusKeepsMappedProcessSeparateFromRecentMovement(t *testing.T) {
+	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
+	sessions := []LiveSession{
+		{
+			Tool:      "codex",
+			SessionID: "process-backed-session",
+			Processes: map[int]struct{}{42: {}},
+			Trace: &SessionTrace{
+				Project:       "bench",
+				ProjectSource: "transcript_cwd",
+				ThreadSource:  "user",
+				FirstEvent:    now.Add(-2 * time.Hour),
+				LastEvent:     now.Add(-20 * time.Minute),
+			},
+			Mapping: LiveSessionMapping{TranscriptPath: true, ParsedTranscriptID: true},
+		},
+	}
+
+	projects := buildProjectFocus(sessions, 90*time.Second, now)
+	bench := requireProjectSnapshot(t, projects, "bench")
+	if bench.ActiveBurstCount != 0 {
+		t.Fatalf("expected stale transcript movement to stay out of active burst count, got %d", bench.ActiveBurstCount)
+	}
+	if bench.StaleSessionCount != 1 {
+		t.Fatalf("expected transcript freshness to remain stale, got %d", bench.StaleSessionCount)
+	}
+	if bench.ProcessCount != 1 {
+		t.Fatalf("expected mapped process to remain visible as process pressure, got %d", bench.ProcessCount)
+	}
+	if len(bench.Tools) != 1 || bench.Tools[0].ActiveBurstCount != 0 || bench.Tools[0].ProcessCount != 1 {
+		t.Fatalf("expected tool movement and process evidence to stay separate, got %#v", bench.Tools)
 	}
 }
 

@@ -13,13 +13,21 @@ Agent Load is an operator console, not a generic dashboard or landing page.
 The UI should feel like a local developer console for inspecting machine-local
 agent evidence.
 
+Data truth is the first design constraint. The interface may improve density,
+hierarchy, and visual craft, but it must not alter metric meaning or make
+separate semantic families look equivalent. Header numbers, project rows, trend
+charts, hover panels, and detail inspectors must agree through the metric
+semantic layer before visual polish is accepted.
+
 ## Required Structure
 
 - top bar with brand, refresh, language, and theme controls. Dashboard chrome may
   expose loopback/no-upload status, but compact popover live state belongs in the
   footer timestamp/cadence area so the title cluster stays action-focused.
-- popover surface with an online/trend switch, current meaning strip, scan
-  boundary, compact project/session atlas, and trend suite
+- popover surface with online/trend/system navigation. Online owns current
+  meaning, scan boundary, and compact project/session atlas. Trend owns
+  historical/runtime chart analysis. System owns whole-machine resource samples
+  and process diagnostics.
 - popover language control remains visible in compact mode; locale switching is
   a first-class operator control, not a dashboard-only setting. Direct links may
   specify `?lang=`, and the page-level `lang` attribute should use the resolved
@@ -88,6 +96,11 @@ agent evidence.
   Avoid separate chunky pills in the footer; use one-pixel dividers, planar
   accents, restrained hover states, and theme-specific contrast so the strip
   feels like an intentional control artifact rather than leftover chrome.
+- Compact footer timestamp and refresh cadence are primary status readouts and
+  must keep a protected width across locales. Dashboard launch is a secondary
+  shortcut in this surface; use an icon-only button with accessible label rather
+  than visible "Dashboard" text when the view switch already consumes the right
+  side of the footer.
 - When a compact popover leaves vertical slack below the audit list, treat the
   lower area as a quiet composed tail plane, not dead empty space. Use subtle
   fades, one-pixel rhythm marks, and the footer's state color to connect the
@@ -112,6 +125,36 @@ agent evidence.
   share of visible PIDs matched back to sessions. Raw process totals belong in
   a diagnostic pressure strip or process ledger using a formula such as
   `PID = matched to sessions + unmatched`.
+- Compact popover online and trend views should not carry process ledgers or
+  whole-machine resource dashboards. Put process diagnostics, system CPU,
+  memory, and network fluctuation into the system view so workload evidence and
+  machine pressure stay visually and semantically separate.
+- Compact popover trend view should prioritize session movement and project
+  distribution. Do not place raw process/runtime trend readouts or a process
+  selected-window inspector under the project heatmap; those diagnostics belong
+  in the system view. The project heatmap must have enough area to read project
+  proportions without feeling like a compressed footer.
+- Compact system view should use metric-appropriate components instead of one
+  repeated card form: CPU may use a gauge with load/uptime, memory and disk use
+  capacity rails, network uses throughput motion, and Agent process load uses
+  process-oriented rows. Process rows in the system view should show project
+  attribution directly so high CPU or memory can be traced without expansion.
+- Compact system resource color must be metric-state driven. Capacity rails,
+  CPU gauges, and throughput bars should derive fill, track, glow, and tile
+  wash from the same semantic pressure color for that metric. Avoid neutral
+  gray tracks, dirty yellow-blue blends, and decorative grids that make light
+  mode look muddy or imply an unrelated scale.
+- System resource labels and metadata remain audit text, not decoration. Keep
+  them small but readable, with stable line height and no clipping; if a metric
+  card compresses, wrap or reduce secondary metadata before cropping the
+  primary label or value.
+- Compact system process rows should use a two-line diagnostic structure. The
+  first line carries tool/process identity and project attribution without
+  losing the names; the second line carries PID, host app, CPU, memory, and I/O
+  rate. Tool or host icons should identify the process before the text.
+- Compact trend may keep a process trend lane, but it should use a simpler
+  curve or similar low-noise chart rather than a candlestick when the point is
+  runtime pressure rather than session movement.
 - Unmatched or unmapped processes still count for diagnostics, coverage, trend
   risk, and process ledgers, but they must not be counted as active agents or
   confirmed workload until they are mapped back to local session evidence.
@@ -166,6 +209,16 @@ agent evidence.
   secondary identity metadata. Keep the left identity lane to rank, disclosure,
   and truncated project name; move unavailable ages or other low-value metadata
   into hover/detail surfaces so right-side numerals never collide.
+- Compact project resource readouts should be independent from the process-count
+  numeral. Do not place CPU and memory as a long line inside the process cell;
+  keep active, all, process, CPU, and memory on fixed tabular rails so the main
+  counts stay readable and resource text cannot overlap the row's large
+  numerals.
+- Compact project movement counts must match the global recent-movement
+  definition: transcript activity inside the active window. Do not fold mapped
+  process evidence into the movement count; one visible process can map to many
+  historical sessions, so process pressure belongs in the separate process,
+  CPU, and memory rails.
 - Expanded popover session rows should fit role, agent mark, host mark, short id,
   last activity age, process count, and confidence onto one scan line whenever
   the width allows it. Detail panels may carry longer evidence.
@@ -207,6 +260,9 @@ agent evidence.
   Process resources must be labeled as process CPU and process memory, and token
   usage should appear as its own section with total/input/output/cache/reasoning
   values when available.
+- Hover inspector titles should be complete. Project or benchmark names may wrap
+  across lines inside the tooltip; do not ellipsize the title itself. Keep
+  secondary metadata compact or truncated instead.
 - Dense explanation blocks should default to a compact lead sentence and expose
   full details through an accessible disclosure control instead of permanently
   occupying popover height.

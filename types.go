@@ -22,6 +22,7 @@ type Snapshot struct {
 	ProjectFocus       []ProjectSnapshot           `json:"project_focus"`
 	CandidateWorkitems []CandidateWorkitemSnapshot `json:"candidate_workitems"`
 	AgeBuckets         []AgeBucketSnapshot         `json:"age_buckets"`
+	SystemResources    SystemResourceSnapshot      `json:"system_resources"`
 	LiveProcesses      []LiveProcessSnapshot       `json:"live_processes"`
 	LiveSessions       []LiveSessionSnapshot       `json:"live_sessions"`
 	RuntimeProcesses   []ProcessRuntimeSummary     `json:"runtime_process_summary,omitempty"`
@@ -296,6 +297,31 @@ type AgeBucketSnapshot struct {
 	Count int    `json:"count"`
 }
 
+type SystemResourceSnapshot struct {
+	SampledAt             string   `json:"sampled_at,omitempty"`
+	Supported             bool     `json:"supported"`
+	CPUPercent            float64  `json:"cpu_percent"`
+	LoadAverage1          float64  `json:"load_average_1"`
+	LoadAverage5          float64  `json:"load_average_5"`
+	LoadAverage15         float64  `json:"load_average_15"`
+	UptimeSeconds         int64    `json:"uptime_seconds"`
+	MemoryTotalBytes      uint64   `json:"memory_total_bytes"`
+	MemoryUsedBytes       uint64   `json:"memory_used_bytes"`
+	MemoryFreeBytes       uint64   `json:"memory_free_bytes"`
+	MemoryUsedPct         float64  `json:"memory_used_pct"`
+	DiskTotalBytes        uint64   `json:"disk_total_bytes"`
+	DiskUsedBytes         uint64   `json:"disk_used_bytes"`
+	DiskFreeBytes         uint64   `json:"disk_free_bytes"`
+	DiskUsedPct           float64  `json:"disk_used_pct"`
+	NetworkRxBytes        uint64   `json:"network_rx_bytes"`
+	NetworkTxBytes        uint64   `json:"network_tx_bytes"`
+	NetworkRxBytesPerSec  float64  `json:"network_rx_bytes_per_sec"`
+	NetworkTxBytesPerSec  float64  `json:"network_tx_bytes_per_sec"`
+	NetworkInterfaceCount int      `json:"network_interface_count"`
+	SampleIntervalSeconds float64  `json:"sample_interval_seconds"`
+	Notes                 []string `json:"notes,omitempty"`
+}
+
 type LiveProcessSnapshot struct {
 	PID                   int                      `json:"pid"`
 	Tool                  string                   `json:"tool"`
@@ -303,6 +329,10 @@ type LiveProcessSnapshot struct {
 	Command               string                   `json:"command"`
 	CPUPercent            float64                  `json:"cpu_percent,omitempty"`
 	MemoryBytes           int64                    `json:"memory_bytes,omitempty"`
+	DiskReadBytes         uint64                   `json:"disk_read_bytes,omitempty"`
+	DiskWriteBytes        uint64                   `json:"disk_write_bytes,omitempty"`
+	DiskReadBytesPerSec   float64                  `json:"disk_read_bytes_per_sec,omitempty"`
+	DiskWriteBytesPerSec  float64                  `json:"disk_write_bytes_per_sec,omitempty"`
 	Elapsed               string                   `json:"elapsed,omitempty"`
 	HostApp               *HostApp                 `json:"host_app,omitempty"`
 	SessionIDs            []string                 `json:"session_ids,omitempty"`
@@ -335,6 +365,14 @@ type ProcessSessionEvidence struct {
 	RoleConfidence      string   `json:"role_confidence,omitempty"`
 	LastEventAgeSeconds int      `json:"last_event_age_seconds,omitempty"`
 	Provenance          []string `json:"provenance,omitempty"`
+}
+
+type ProcessDiagnosticSnapshot struct {
+	PID          int      `json:"pid"`
+	Command      string   `json:"command,omitempty"`
+	SessionIDs   []string `json:"session_ids,omitempty"`
+	SessionPaths []string `json:"session_paths,omitempty"`
+	HostApp      *HostApp `json:"host_app,omitempty"`
 }
 
 type ProcessRuntimeSummary struct {
@@ -485,16 +523,20 @@ type transcriptCacheState struct {
 }
 
 type LiveProcess struct {
-	PID          int
-	PPID         int
-	Tool         string
-	Command      string
-	CPUPercent   float64
-	MemoryBytes  int64
-	Elapsed      string
-	HostApp      *HostApp
-	SessionFiles []TranscriptFile
-	SessionHints []string
+	PID                  int
+	PPID                 int
+	Tool                 string
+	Command              string
+	CPUPercent           float64
+	MemoryBytes          int64
+	DiskReadBytes        uint64
+	DiskWriteBytes       uint64
+	DiskReadBytesPerSec  float64
+	DiskWriteBytesPerSec float64
+	Elapsed              string
+	HostApp              *HostApp
+	SessionFiles         []TranscriptFile
+	SessionHints         []string
 }
 
 type LiveSession struct {

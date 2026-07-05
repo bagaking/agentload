@@ -13,6 +13,12 @@ Useful commands:
 
 When changing UI, edit `ui/src`, run the UI build, then run Go tests. The root
 `dist/` app bundle stays untracked.
+
+Data truth is the first product standard. UI polish must not change metric
+meaning, hide sampling gaps, or mix semantic families. Recent movement, known
+sessions, process pressure, CPU, memory, and role splits must route through the
+metric semantic layer and remain consistent across header metrics, project rows,
+trend charts, hover panels, and detail inspectors.
 <!-- BAGAKIT:LIVING-KNOWLEDGE:START -->
 This is a managed block for `bagakit-living-knowledge`. Do not hand-edit the
 managed region directly; refresh it through the skill operator instead.
@@ -72,4 +78,3 @@ reporting, the response footer may use:
 - `[[BAGAKIT]]`
 - `- LivingKnowledge: Surface=<updated shared surfaces or none>; Evidence=<commands/checks>; Next=<one deterministic next action>`
 <!-- BAGAKIT:LIVING-KNOWLEDGE:END -->
-

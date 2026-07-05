@@ -1,13 +1,14 @@
 import { formatAge, formatPct, formatTokenUsageSummary, shortID, tokenUsageHasValue, type Translate } from "./format";
-import type { RoleCounts, ToolSessionGroup } from "../types/app";
+import { normalizedRole, projectRecentMovementCount, sessionHasRecentMovement, type SessionRole } from "./metricSemantics";
+import type { ToolSessionGroup } from "../types/app";
 import type { LiveSession, ProjectSnapshot, Snapshot } from "../types/snapshot";
 
 export type EvidenceItem = { label: string; value: string; tone?: string };
-export type SessionRole = "main" | "subagent" | "unknown";
+export { normalizedRole, type SessionRole } from "./metricSemantics";
 
 export function orderedProjects(snapshot: Snapshot): ProjectSnapshot[] {
   return [...(snapshot.project_focus ?? [])].sort((a, b) => {
-    const activeDelta = (b.active_burst_count ?? 0) - (a.active_burst_count ?? 0);
+    const activeDelta = projectRecentMovementCount(b) - projectRecentMovementCount(a);
     if (activeDelta) return activeDelta;
     const attentionDelta = (b.attention_share_pct ?? 0) - (a.attention_share_pct ?? 0);
     if (attentionDelta) return attentionDelta;
@@ -24,47 +25,12 @@ export function sessionsForProject(snapshot: Snapshot, project: ProjectSnapshot)
   return [...(snapshot.live_sessions ?? [])]
     .filter((session) => projectKey(session.project).toLowerCase() === key)
     .sort((a, b) => {
-      if (Number(Boolean(a.active_burst)) !== Number(Boolean(b.active_burst))) return Number(Boolean(b.active_burst)) - Number(Boolean(a.active_burst));
+      if (Number(sessionHasRecentMovement(a)) !== Number(sessionHasRecentMovement(b))) return Number(sessionHasRecentMovement(b)) - Number(sessionHasRecentMovement(a));
       const ageA = typeof a.last_event_age_seconds === "number" ? a.last_event_age_seconds : Number.MAX_SAFE_INTEGER;
       const ageB = typeof b.last_event_age_seconds === "number" ? b.last_event_age_seconds : Number.MAX_SAFE_INTEGER;
       if (ageA !== ageB) return ageA - ageB;
       return sessionIdentity(a).localeCompare(sessionIdentity(b));
     });
-}
-
-export function projectRoleCounts(project: ProjectSnapshot, sessions: LiveSession[]): RoleCounts {
-  const counts: RoleCounts = {
-    main: project.main_agent_sessions ?? 0,
-    sub: project.subagent_sessions ?? 0,
-    unknown: project.unknown_role_sessions ?? 0,
-    total: project.session_count ?? 0,
-    activeMain: 0,
-    activeSub: 0,
-    activeUnknown: 0,
-    activeTotal: project.active_burst_count ?? 0,
-  };
-  if (sessions.length) {
-    counts.main = 0;
-    counts.sub = 0;
-    counts.unknown = 0;
-    counts.activeMain = 0;
-    counts.activeSub = 0;
-    counts.activeUnknown = 0;
-    sessions.forEach((session) => {
-      const role = normalizedRole(session.session_role);
-      if (role === "main") counts.main++;
-      else if (role === "subagent") counts.sub++;
-      else counts.unknown++;
-      if (session.active_burst) {
-        if (role === "main") counts.activeMain++;
-        else if (role === "subagent") counts.activeSub++;
-        else counts.activeUnknown++;
-      }
-    });
-    counts.total = sessions.length;
-    counts.activeTotal = counts.activeMain + counts.activeSub + counts.activeUnknown;
-  }
-  return counts;
 }
 
 export function projectEvidenceItems(t: Translate, project: ProjectSnapshot, compact: boolean): EvidenceItem[] {
@@ -125,7 +91,7 @@ export function buildToolSessionGroups(sessions: LiveSession[]): ToolSessionGrou
   sorted.forEach((session) => {
     const group = ensureGroup(session.tool);
     group.sessions.push(session);
-    if (session.active_burst) group.activeCount++;
+    if (sessionHasRecentMovement(session)) group.activeCount++;
     if (normalizedRole(session.session_role) === "main") group.mains.push(session);
   });
 
@@ -181,18 +147,11 @@ export function hiddenToolSessionCount(group: ToolSessionGroup, linkedLimit: num
 }
 
 export function compareSessionsByFreshness(a: LiveSession, b: LiveSession): number {
-  if (Number(Boolean(a.active_burst)) !== Number(Boolean(b.active_burst))) return Number(Boolean(b.active_burst)) - Number(Boolean(a.active_burst));
+  if (Number(sessionHasRecentMovement(a)) !== Number(sessionHasRecentMovement(b))) return Number(sessionHasRecentMovement(b)) - Number(sessionHasRecentMovement(a));
   const ageA = typeof a.last_event_age_seconds === "number" ? a.last_event_age_seconds : Number.MAX_SAFE_INTEGER;
   const ageB = typeof b.last_event_age_seconds === "number" ? b.last_event_age_seconds : Number.MAX_SAFE_INTEGER;
   if (ageA !== ageB) return ageA - ageB;
   return sessionIdentity(a).localeCompare(sessionIdentity(b));
-}
-
-export function normalizedRole(role?: string): SessionRole {
-  const value = String(role || "").trim().toLowerCase();
-  if (value === "main" || value === "main_agent" || value === "user") return "main";
-  if (value === "sub" || value === "subagent" || value === "agent") return "subagent";
-  return "unknown";
 }
 
 export function roleLabel(t: Translate, role: SessionRole): string {
@@ -270,10 +229,10 @@ export function sessionEvidenceItems(t: Translate, session: LiveSession, compact
     { label: t("mappingMethod"), value: mappingMethodLabel(t, session.mapping_method) },
     { label: session.parent_thread_id ? t("parentThread") : t("threadSource"), value: session.thread_source ? threadSourceLabel(t, session.thread_source) : relationship },
     { label: t("roleHint"), value: roleHintLabel(t, session.role_hint_source) || agentRoleLabel(t, session.agent_role) || session.agent_nickname || t("unavailable") },
-    { label: t("freshness"), value: freshnessLabel(t, session.freshness || (session.active_burst ? "active" : "idle")), tone: session.active_burst ? "active" : "" },
+    { label: t("freshness"), value: freshnessLabel(t, session.freshness || (sessionHasRecentMovement(session) ? "active" : "idle")), tone: sessionHasRecentMovement(session) ? "active" : "" },
   ];
   if (!compact && typeof session.active_duration_seconds === "number") {
-    items.push({ label: t("activeDuration"), value: formatAge(session.active_duration_seconds, t), tone: session.active_burst ? "active" : "" });
+    items.push({ label: t("activeDuration"), value: formatAge(session.active_duration_seconds, t), tone: sessionHasRecentMovement(session) ? "active" : "" });
   }
   return compact ? items.slice(0, 3) : items;
 }

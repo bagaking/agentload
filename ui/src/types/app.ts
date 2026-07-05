@@ -3,7 +3,7 @@ import type { LiveSession } from "./snapshot";
 export type Theme = "dark" | "light";
 export type RailTab = "projects" | "sessions" | "processes";
 export type LogTab = "summary" | "evidence" | "trend";
-export type PopoverView = "online" | "trend";
+export type PopoverView = "online" | "trend" | "system";
 
 export type Selection =
   | { type: "overview"; id: "overview" }

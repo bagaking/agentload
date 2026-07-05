@@ -17,6 +17,7 @@ export type Snapshot = {
   project_focus?: ProjectSnapshot[];
   candidate_workitems?: CandidateWorkitem[];
   age_buckets?: AgeBucketSnapshot[];
+  system_resources?: SystemResourceSnapshot;
   live_processes?: LiveProcess[];
   live_sessions?: LiveSession[];
   runtime_process_summary?: ProcessRuntimeSummary[];
@@ -111,6 +112,31 @@ export type AgeBucketSnapshot = {
   count?: number;
 };
 
+export type SystemResourceSnapshot = {
+  sampled_at?: string;
+  supported?: boolean;
+  cpu_percent?: number;
+  load_average_1?: number;
+  load_average_5?: number;
+  load_average_15?: number;
+  uptime_seconds?: number;
+  memory_total_bytes?: number;
+  memory_used_bytes?: number;
+  memory_free_bytes?: number;
+  memory_used_pct?: number;
+  disk_total_bytes?: number;
+  disk_used_bytes?: number;
+  disk_free_bytes?: number;
+  disk_used_pct?: number;
+  network_rx_bytes?: number;
+  network_tx_bytes?: number;
+  network_rx_bytes_per_sec?: number;
+  network_tx_bytes_per_sec?: number;
+  network_interface_count?: number;
+  sample_interval_seconds?: number;
+  notes?: string[];
+};
+
 export type ProjectTool = {
   tool?: string;
   session_count?: number;
@@ -141,6 +167,10 @@ export type LiveProcess = {
   command?: string;
   cpu_percent?: number;
   memory_bytes?: number;
+  disk_read_bytes?: number;
+  disk_write_bytes?: number;
+  disk_read_bytes_per_sec?: number;
+  disk_write_bytes_per_sec?: number;
   elapsed?: string;
   mapped_sessions?: number;
   mapped_active_sessions?: number;
@@ -151,6 +181,14 @@ export type LiveProcess = {
   evidence_summary?: string;
   mapped_session_evidence?: ProcessSessionEvidence[];
   session_ids?: string[];
+  host_app?: HostApp;
+};
+
+export type ProcessDiagnostic = {
+  pid?: number;
+  command?: string;
+  session_ids?: string[];
+  session_paths?: string[];
   host_app?: HostApp;
 };
 

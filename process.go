@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var sessionHintPatterns = []*regexp.Regexp{
@@ -26,6 +27,7 @@ func discoverLiveProcesses(ctx context.Context) ([]LiveProcess, []string) {
 	}
 
 	processTable := parseProcessTable(string(out))
+	now := time.Now()
 	processes := []LiveProcess{}
 	pids := []int{}
 	for _, process := range processTable {
@@ -37,15 +39,20 @@ func discoverLiveProcesses(ctx context.Context) ([]LiveProcess, []string) {
 			continue
 		}
 		hostApp := inferHostApp(process, processTable)
+		ioSample := sampleProcessIO(process.PID, now)
 		processes = append(processes, LiveProcess{
-			PID:         process.PID,
-			PPID:        process.PPID,
-			Tool:        tool,
-			Command:     strings.TrimSpace(process.Command),
-			HostApp:     hostApp,
-			CPUPercent:  process.CPUPercent,
-			MemoryBytes: process.MemoryBytes,
-			Elapsed:     process.Elapsed,
+			PID:                  process.PID,
+			PPID:                 process.PPID,
+			Tool:                 tool,
+			Command:              strings.TrimSpace(process.Command),
+			HostApp:              hostApp,
+			CPUPercent:           process.CPUPercent,
+			MemoryBytes:          process.MemoryBytes,
+			DiskReadBytes:        ioSample.ReadBytes,
+			DiskWriteBytes:       ioSample.WriteBytes,
+			DiskReadBytesPerSec:  ioSample.ReadBytesPerSec,
+			DiskWriteBytesPerSec: ioSample.WriteBytesPerSec,
+			Elapsed:              process.Elapsed,
 		})
 		pids = append(pids, process.PID)
 	}

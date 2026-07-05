@@ -13,6 +13,7 @@ import {
   type Time,
 } from "lightweight-charts";
 import { clampNumber, formatAge as formatRelativeAge, formatCopy, formatPct, type Translate } from "../lib/format";
+import { trendContextSessionValue, trendMappedProcessCount, trendMappingCoverageValue, trendPrimaryValue, trendUnmappedProcessCount } from "../lib/metricSemantics";
 import {
   TREND_RANGES,
   type ProjectHeatmapItem,
@@ -43,7 +44,8 @@ type TrendLaneSummary = {
   title: string;
   trendWindow?: TrendWindow;
   points: TrendPoint[];
-  selected?: TrendPoint;
+  data: TrendKLineDatum[];
+  selected?: TrendKLineDatum;
 };
 
 type ProjectHeatmapTile = ProjectHeatmapItem & {
@@ -142,13 +144,14 @@ export function TrendSuite({
                 t={t}
                 summary={summary}
                 isFocused={activeSummary?.lane === summary.lane}
+                compact={compact}
                 setFocusedLane={setFocusedLane}
                 setTrendSelection={setTrendSelection}
               />
             ))}
           </div>
           <ProjectHeatmap t={t} window={projectHeatmap} projectActivity={projectActivity} compact={compact} />
-          <TrendSelectionInspector t={t} summary={activeSummary} compact={compact} />
+          {compact ? null : <TrendSelectionInspector t={t} summary={activeSummary} compact={compact} />}
         </>
       ) : (
         <section className="empty-inline"><Gauge size={18} /><span>{t("noTrend")}</span></section>
@@ -328,12 +331,14 @@ function TrendLaneView({
   t,
   summary,
   isFocused,
+  compact,
   setFocusedLane,
   setTrendSelection,
 }: {
   t: Translate;
   summary: TrendLaneSummary;
   isFocused: boolean;
+  compact: boolean;
   setFocusedLane: (lane: TrendLane) => void;
   setTrendSelection: React.Dispatch<React.SetStateAction<Record<TrendLane, string | undefined>>>;
 }) {
@@ -369,7 +374,9 @@ function TrendLaneView({
           </strong>
         </button>
       </div>
-      {points.length ? (
+      {points.length ? (compact && lane === "runtime" ? (
+        <TrendRuntimeCurve t={t} summary={summary} selectedAt={selected?.at} onSelect={selectPoint} />
+      ) : (
         <TrendKLineChart
           t={t}
           lane={lane}
@@ -378,10 +385,66 @@ function TrendLaneView({
           selectedAt={selected?.at}
           onSelect={selectPoint}
         />
-      ) : (
+      )) : (
         <section className="empty-inline"><Gauge size={18} /><span>{t("noTrend")}</span></section>
       )}
     </article>
+  );
+}
+
+function TrendRuntimeCurve({ t, summary, selectedAt, onSelect }: { t: Translate; summary: TrendLaneSummary; selectedAt?: string; onSelect: (at?: string) => void }) {
+  const data = summary.data;
+  const width = 320;
+  const height = 88;
+  const pad = 10;
+  const maxValue = Math.max(1, ...data.map((item) => item.close));
+  const selected = selectedAt ? data.find((item) => item.at === selectedAt) ?? data[data.length - 1] : data[data.length - 1];
+  const pointAt = (index: number, item: TrendKLineDatum) => {
+    const x = data.length <= 1 ? width / 2 : pad + (index / (data.length - 1)) * (width - pad * 2);
+    const y = height - pad - (item.close / maxValue) * (height - pad * 2);
+    return { x, y };
+  };
+  const line = data.map((item, index) => {
+    const point = pointAt(index, item);
+    return `${point.x.toFixed(2)},${point.y.toFixed(2)}`;
+  }).join(" ");
+  const area = data.length ? `${pad},${height - pad} ${line} ${width - pad},${height - pad}` : "";
+  const selectedIndex = Math.max(0, data.findIndex((item) => item.at === selected?.at));
+  const selectedPoint = selected ? pointAt(selectedIndex, selected) : null;
+  return (
+    <div className="trend-runtime-curve" role="img" aria-label={`${summary.title} ${t("trend")}`}>
+      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+        <polygon className="runtime-curve-area" points={area} />
+        <polyline className="runtime-curve-line" points={line} />
+        {data.map((item, index) => {
+          const point = pointAt(index, item);
+          const isSelected = item.at === selected?.at;
+          return (
+            <circle
+              className={isSelected ? "is-selected" : ""}
+              key={item.at || index}
+              cx={point.x}
+              cy={point.y}
+              r={isSelected ? 3.4 : 2.2}
+              onClick={() => onSelect(item.at)}
+            />
+          );
+        })}
+        {selectedPoint ? (
+          <>
+            <line className="runtime-curve-crosshair" x1={selectedPoint.x} x2={selectedPoint.x} y1={pad} y2={height - pad} />
+            <line className="runtime-curve-crosshair" x1={pad} x2={width - pad} y1={selectedPoint.y} y2={selectedPoint.y} />
+          </>
+        ) : null}
+      </svg>
+      {selected ? (
+        <div className="runtime-curve-readout">
+          <span>{selected.at ? formatChartAxisLabel(selected.at) : t("unavailable")}</span>
+          <strong>{trendMetricValue(t, selected.close)} {t("processes")}</strong>
+          <em>{t("metricMatched")} {trendMappingCoverageValue(selected.point) !== null ? formatPct(trendMappingCoverageValue(selected.point) ?? undefined) : t("unavailable")}</em>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -559,7 +622,7 @@ function TrendKLineChart({
     return () => window.cancelAnimationFrame(frame);
   }, [selected, sizeKey]);
 
-  const hoverMetrics = hover ? trendSelectedReadoutParts(t, lane, hover.datum.point) : [];
+  const hoverMetrics = hover ? trendSelectedReadoutParts(t, lane, hover.datum) : [];
   const hoverDelta = hover ? hover.datum.close - hover.datum.open : 0;
 
   return (
@@ -701,17 +764,19 @@ function projectHeatmapWindowForRange(set: ProjectHeatmapSet | undefined, range:
 function trendLaneSummary(lane: TrendLane, title: string, trendWindow: TrendWindow | undefined, selectedAt?: string): TrendLaneSummary {
   const sampleKey = lane === "history" ? "transcript_sampled" : "runtime_sampled";
   const points = sampledPoints(trendWindow, sampleKey);
+  const data = trendKLineData(points, lane);
   return {
     lane,
     title,
     trendWindow,
     points,
-    selected: selectedTrendPoint(points, selectedAt),
+    data,
+    selected: selectedTrendDatum(data, selectedAt),
   };
 }
 
-function selectedTrendPoint(points: TrendPoint[], selectedAt?: string): TrendPoint | undefined {
-  return points.find((point) => point.at === selectedAt) ?? points[points.length - 1];
+function selectedTrendDatum(data: TrendKLineDatum[], selectedAt?: string): TrendKLineDatum | undefined {
+  return data.find((datum) => datum.at === selectedAt) ?? [...data].reverse().find((datum) => datum.value > 0) ?? data[data.length - 1];
 }
 
 function sampledPoints(window: TrendWindow | undefined, sampledKey: "transcript_sampled" | "runtime_sampled"): TrendPoint[] {
@@ -719,11 +784,10 @@ function sampledPoints(window: TrendWindow | undefined, sampledKey: "transcript_
 }
 
 function trendKLineData(points: TrendPoint[], lane: TrendLane): TrendKLineDatum[] {
-  const primaryKey: keyof TrendPoint = lane === "history" ? "active_burst_concurrency" : "pid_concurrency";
   const byTime = new Map<number, { at: string; value: number; point: TrendPoint }>();
   points.forEach((point) => {
     const at = point.at;
-    const value = trendNumericValue(point, primaryKey);
+    const value = trendPrimaryValue(lane, point);
     const ms = pointTimeMs(at);
     if (!at || value === null || ms === null) return;
     byTime.set(Math.floor(ms / 1000), { at, value, point });
@@ -812,18 +876,19 @@ function projectHeatmapTiles(items: ProjectHeatmapItem[]): ProjectHeatmapTile[] 
   return layout(entries, 0, 0, 100, 100);
 }
 
-function trendDetailMetrics(t: Translate, lane: TrendLane, point: TrendPoint): Array<{ label: string; value: string }> {
+function trendDetailMetrics(t: Translate, lane: TrendLane, datum: TrendKLineDatum): Array<{ label: string; value: string }> {
+  const point = datum.point;
   if (lane === "history") {
     return [
-      { label: t("metricFresh"), value: trendMetricValue(t, point.active_burst_concurrency) },
-      { label: t("metricSessions"), value: trendMetricValue(t, point.session_concurrency) },
+      { label: t("metricFresh"), value: trendMetricValue(t, datum.value) },
+      { label: t("metricSessions"), value: trendMetricValue(t, trendContextSessionValue(point) ?? undefined) },
     ];
   }
   return [
-    { label: t("metricProcesses"), value: trendMetricValue(t, point.pid_concurrency) },
-    { label: t("metricMatched"), value: typeof point.mapping_coverage_pct === "number" ? formatPct(point.mapping_coverage_pct) : t("unavailable") },
-    { label: t("mappedProcesses"), value: trendMetricValue(t, point.mapped_processes) },
-    { label: t("unmappedProcesses"), value: trendMetricValue(t, point.unmapped_processes) },
+    { label: t("metricProcesses"), value: trendMetricValue(t, datum.value) },
+    { label: t("metricMatched"), value: trendMappingCoverageValue(point) !== null ? formatPct(trendMappingCoverageValue(point) ?? undefined) : t("unavailable") },
+    { label: t("mappedProcesses"), value: trendMetricValue(t, trendMappedProcessCount(point) ?? undefined) },
+    { label: t("unmappedProcesses"), value: trendMetricValue(t, trendUnmappedProcessCount(point) ?? undefined) },
   ];
 }
 
@@ -831,23 +896,25 @@ function trendMetricValue(t: Translate, value?: number): string {
   return typeof value === "number" && Number.isFinite(value) ? String(value) : t("unavailable");
 }
 
-function trendSelectedReadout(t: Translate, lane: TrendLane, point: TrendPoint): string {
+function trendSelectedReadout(t: Translate, lane: TrendLane, datum: TrendKLineDatum): string {
+  const point = datum.point;
   if (lane === "history") {
-    return `${trendMetricValue(t, point.active_burst_concurrency)} / ${trendMetricValue(t, point.session_concurrency)}`;
+    return `${trendMetricValue(t, datum.value)} / ${trendMetricValue(t, trendContextSessionValue(point) ?? undefined)}`;
   }
-  return `${trendMetricValue(t, point.pid_concurrency)} / ${typeof point.mapping_coverage_pct === "number" ? formatPct(point.mapping_coverage_pct) : t("unavailable")}`;
+  return `${trendMetricValue(t, datum.value)} / ${trendMappingCoverageValue(point) !== null ? formatPct(trendMappingCoverageValue(point) ?? undefined) : t("unavailable")}`;
 }
 
-function trendSelectedReadoutParts(t: Translate, lane: TrendLane, point: TrendPoint): Array<{ label: string; value: string; role: "primary" | "context" }> {
+function trendSelectedReadoutParts(t: Translate, lane: TrendLane, datum: TrendKLineDatum): Array<{ label: string; value: string; role: "primary" | "context" }> {
+  const point = datum.point;
   if (lane === "history") {
     return [
-      { label: t("trendReadoutFresh"), value: trendMetricValue(t, point.active_burst_concurrency), role: "primary" },
-      { label: t("trendReadoutSessions"), value: trendMetricValue(t, point.session_concurrency), role: "context" },
+      { label: t("trendReadoutFresh"), value: trendMetricValue(t, datum.value), role: "primary" },
+      { label: t("trendReadoutSessions"), value: trendMetricValue(t, trendContextSessionValue(point) ?? undefined), role: "context" },
     ];
   }
   return [
-    { label: t("trendReadoutProcesses"), value: trendMetricValue(t, point.pid_concurrency), role: "primary" },
-    { label: t("trendReadoutMatched"), value: typeof point.mapping_coverage_pct === "number" ? formatPct(point.mapping_coverage_pct) : t("unavailable"), role: "context" },
+    { label: t("trendReadoutProcesses"), value: trendMetricValue(t, datum.value), role: "primary" },
+    { label: t("trendReadoutMatched"), value: trendMappingCoverageValue(point) !== null ? formatPct(trendMappingCoverageValue(point) ?? undefined) : t("unavailable"), role: "context" },
   ];
 }
 
@@ -865,8 +932,8 @@ function trendContextMetrics(t: Translate, window?: TrendWindow): Array<{ label:
   ];
 }
 
-function trendExplanationSections(t: Translate, lane: TrendLane, point: TrendPoint): Array<{ label: string; text: string }> {
-  const clicked = `${t("sampledBucket")} ${point.at ? formatDateTime(point.at) : t("unavailable")} · ${trendSelectedReadout(t, lane, point)}`;
+function trendExplanationSections(t: Translate, lane: TrendLane, datum: TrendKLineDatum): Array<{ label: string; text: string }> {
+  const clicked = `${t("sampledBucket")} ${datum.at ? formatDateTime(datum.at) : t("unavailable")} · ${trendSelectedReadout(t, lane, datum)}`;
   return [
     { label: t("trendWhatClicked"), text: clicked },
     { label: t("trendWhatMeans"), text: lane === "history" ? t("trendHistoryMeaning") : t("trendRuntimeMeaning") },
@@ -882,11 +949,6 @@ function formatTrendWindow(t: Translate, window: TrendWindow | ProjectHeatmapWin
   const first = firstAt ? formatChartAxisLabel(firstAt) : "";
   const last = lastAt ? formatChartAxisLabel(lastAt) : "";
   return first && last ? `${first} -> ${last}` : window?.range || t("unavailable");
-}
-
-function trendNumericValue(point: TrendPoint, key: keyof TrendPoint): number | null {
-  const value = point[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function pointTimeMs(value?: string): number | null {

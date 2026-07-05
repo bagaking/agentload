@@ -2259,7 +2259,7 @@ body[data-view="popover"] .warning-banner {
 .process-row {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(170px, 1.12fr) minmax(82px, .48fr) minmax(162px, .9fr) minmax(132px, .82fr) minmax(86px, .42fr) minmax(108px, .56fr);
+  grid-template-columns: minmax(160px, 1.02fr) minmax(76px, .38fr) minmax(156px, .86fr) minmax(150px, .78fr) minmax(122px, .68fr) minmax(84px, .38fr) minmax(104px, .46fr);
   align-items: center;
   gap: 8px;
   width: 100%;
@@ -2437,6 +2437,7 @@ body[data-view="popover"] .warning-banner {
 
 .process-row.head span,
 .process-cell,
+.process-project-cell,
 .process-host-cell {
   display: inline-flex;
   align-items: center;
@@ -2445,6 +2446,12 @@ body[data-view="popover"] .warning-banner {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.process-project-cell {
+  color: var(--fg);
+  font-size: 10px;
+  font-weight: 680;
 }
 
 .process-cell,
@@ -2687,69 +2694,113 @@ body[data-view="popover"] .warning-banner {
 .process-row-details {
   display: grid;
   grid-column: 1 / -1;
-  grid-template-columns: minmax(132px, .45fr) minmax(220px, .85fr) minmax(0, 1.25fr);
-  gap: 8px;
+  grid-template-columns: minmax(180px, .72fr) minmax(260px, 1.05fr) minmax(170px, .58fr);
+  gap: 8px 12px;
   min-width: 0;
-  padding: 2px 0 5px 23px;
+  padding: 5px 0 8px 23px;
 }
 
 .process-resource-detail,
-.process-command-full {
+.process-io-detail,
+.process-route-detail,
+.process-command-full,
+.process-session-full-list,
+.process-route-projects {
   display: grid;
   gap: 3px;
   min-width: 0;
 }
 
 .process-resource-detail span,
-.process-command-full span {
+.process-io-detail span,
+.process-route-detail > span,
+.process-command-full span,
+.process-session-full-list span,
+.process-route-projects span,
+.process-evidence-lines > span {
   color: var(--fg-faint);
   font-size: 9px;
+  font-weight: 760;
   text-transform: uppercase;
 }
 
-.process-resource-detail strong {
+.process-resource-detail strong,
+.process-io-detail strong {
   color: var(--fg);
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.2;
 }
 
-.process-resource-detail em {
+.process-resource-detail em,
+.process-io-detail em {
   min-width: 0;
-  overflow: hidden;
   color: var(--fg-faint);
   font-size: 10px;
   font-style: normal;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
 }
 
-.process-command-full code {
+.process-route-stack {
+  display: grid;
+  gap: 3px;
+}
+
+.process-route-stack em {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  gap: 7px;
+  color: var(--fg-muted);
+  font-size: 10px;
+  font-style: normal;
+}
+
+.process-route-stack b {
+  color: var(--fg-faint);
+  font-weight: 720;
+}
+
+.process-route-stack strong {
+  min-width: 0;
+  color: var(--fg);
+  font-weight: 680;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.process-command-full {
+  grid-column: span 2;
+}
+
+.process-command-full code,
+.process-session-full-list code,
+.process-route-projects code {
   display: block;
   min-width: 0;
-  max-height: 48px;
+  max-height: none;
   overflow: auto;
   color: var(--fg-muted);
   font-family: var(--font-mono);
   font-size: 10px;
   line-height: 1.35;
-  white-space: normal;
-  word-break: break-word;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .process-evidence-lines {
   display: grid;
-  gap: 3px;
+  grid-column: span 2;
+  gap: 4px;
   min-width: 0;
 }
 
 .process-evidence-line {
   display: grid;
-  grid-template-columns: 58px minmax(0, .75fr) minmax(0, 1fr);
-  align-items: center;
+  grid-template-columns: 58px minmax(120px, .42fr) minmax(160px, .58fr) minmax(0, 1fr);
+  align-items: start;
   gap: 7px;
-  min-height: 22px;
-  padding: 0;
+  min-height: 24px;
+  padding: 3px 0;
   border: 0;
   color: var(--fg-muted);
   background: transparent;
@@ -2767,16 +2818,22 @@ body[data-view="popover"] .warning-banner {
 }
 
 .process-evidence-line strong,
-.process-evidence-line em {
+.process-evidence-line em,
+.process-evidence-line code {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .process-evidence-line em {
   color: var(--fg-faint);
   font-style: normal;
+}
+
+.process-evidence-line code {
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
 }
 
 .process-host-cell .host-app {
@@ -5023,6 +5080,14 @@ body[data-view="popover"] .hover-inspector-body strong {
   line-height: 1.15;
 }
 
+body[data-view="popover"] .hover-inspector-body > strong {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
 body[data-view="popover"] .hover-inspector-body > em,
 body[data-view="popover"] .hover-inspector-body small {
   color: var(--console-text-soft);
@@ -5454,6 +5519,101 @@ body[data-view="popover"] .scan-readout strong {
 
 body[data-view="popover"] .popover-project-table {
   padding: 8px 10px 8px 20px;
+}
+
+body[data-view="popover"] .popover-process-panel {
+  padding: 8px 10px 8px 20px;
+  border-top: 1px solid var(--console-line-soft);
+}
+
+body[data-view="popover"] .popover-process-list {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid var(--console-line-soft);
+}
+
+body[data-view="popover"] .popover-process-card {
+  border-bottom: 1px solid var(--console-line-soft);
+}
+
+body[data-view="popover"] .popover-process-card.is-expanded {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--run) 5%, transparent), transparent 38%),
+    color-mix(in srgb, var(--fg) 1.4%, transparent);
+}
+
+body[data-view="popover"] .popover-process-head {
+  display: grid;
+  grid-template-columns: 14px 16px minmax(0, 1fr) auto minmax(76px, auto);
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 31px;
+  padding: 5px 0;
+  border: 0;
+  color: var(--console-text-soft);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+body[data-view="popover"] .popover-process-card.is-expanded .popover-process-head > svg:first-child {
+  transform: rotate(180deg);
+}
+
+body[data-view="popover"] .popover-process-head strong,
+body[data-view="popover"] .popover-process-head span,
+body[data-view="popover"] .popover-process-head em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .popover-process-head strong {
+  color: var(--fg);
+  font-size: 11px;
+  font-weight: 720;
+}
+
+body[data-view="popover"] .popover-process-head span,
+body[data-view="popover"] .popover-process-head em {
+  color: var(--console-text-faint);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-style: normal;
+}
+
+body[data-view="popover"] .popover-process-panel .process-row-details {
+  grid-template-columns: 1fr;
+  gap: 7px;
+  padding: 4px 0 9px 20px;
+}
+
+body[data-view="popover"] .popover-process-panel .process-command-full,
+body[data-view="popover"] .popover-process-panel .process-evidence-lines {
+  grid-column: auto;
+}
+
+body[data-view="popover"] .popover-process-panel .process-route-stack em {
+  grid-template-columns: 58px minmax(0, 1fr);
+}
+
+body[data-view="popover"] .popover-process-panel .process-command-full code,
+body[data-view="popover"] .popover-process-panel .process-session-full-list code,
+body[data-view="popover"] .popover-process-panel .process-route-projects code {
+  max-height: 118px;
+  font-size: 9.5px;
+}
+
+body[data-view="popover"] .popover-process-panel .process-evidence-line {
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 3px 7px;
+}
+
+body[data-view="popover"] .popover-process-panel .process-evidence-line code,
+body[data-view="popover"] .popover-process-panel .process-evidence-line em {
+  grid-column: 2;
 }
 
 body[data-view="popover"] .popover-project-head {
@@ -6033,7 +6193,7 @@ body[data-view="dashboard"] .process-ledger {
 }
 
 body[data-view="dashboard"] .process-row {
-  grid-template-columns: minmax(170px, 1.06fr) minmax(88px, .42fr) minmax(160px, .82fr) minmax(140px, .7fr) minmax(86px, .42fr) minmax(112px, .5fr);
+  grid-template-columns: minmax(168px, 1.02fr) minmax(78px, .38fr) minmax(166px, .82fr) minmax(146px, .72fr) minmax(128px, .68fr) minmax(82px, .36fr) minmax(104px, .46fr);
   min-height: 34px;
   gap: 8px;
 }
@@ -6200,7 +6360,7 @@ body[data-view="popover"] .popover-project-table .project-matrix {
   }
 
   body[data-view="dashboard"] .process-row {
-    grid-template-columns: minmax(160px, 1fr) minmax(76px, .42fr) minmax(148px, .8fr) minmax(118px, .72fr) minmax(78px, .38fr);
+    grid-template-columns: minmax(150px, 1fr) minmax(72px, .38fr) minmax(138px, .78fr) minmax(126px, .72fr) minmax(112px, .62fr) minmax(74px, .36fr);
   }
 
   body[data-view="dashboard"] .process-row.head span:last-child,
@@ -6916,7 +7076,7 @@ body[data-view="popover"] .session-tree-more {
 }
 
 body[data-view="dashboard"] .process-row {
-  grid-template-columns: minmax(168px, 1.02fr) minmax(80px, .42fr) minmax(148px, .78fr) minmax(128px, .72fr) minmax(82px, .38fr) minmax(108px, .48fr);
+  grid-template-columns: minmax(162px, 1.02fr) minmax(76px, .38fr) minmax(160px, .82fr) minmax(140px, .72fr) minmax(124px, .66fr) minmax(80px, .36fr) minmax(104px, .46fr);
   min-height: 25px;
   gap: 8px;
   padding: 4px 0;
@@ -6938,6 +7098,8 @@ body[data-view="dashboard"] .session-chip {
 
 body[data-view="dashboard"] .process-command-full code {
   font-size: 10px;
+  max-height: none;
+  white-space: pre-wrap;
 }
 
 body[data-view="dashboard"] .trend-suite.dashboard {
@@ -10005,10 +10167,10 @@ body[data-view="popover"] .popover-project-table .project-tree-row.expanded::bef
 }
 
 body[data-view="popover"] .popover-project-table .project-tree-head {
-  grid-template-columns: 14px 13px minmax(86px, .72fr) 34px 190px;
-  min-height: 31px;
+  grid-template-columns: 14px 13px minmax(72px, 1fr) 32px minmax(218px, 238px);
+  min-height: 35px;
   gap: 4px;
-  padding: 2px 1px 2px 3px;
+  padding: 3px 1px 3px 3px;
 }
 
 body[data-view="popover"] .popover-project-table .project-rank {
@@ -10041,7 +10203,7 @@ body[data-view="popover"] .popover-project-table .project-select {
 }
 
 body[data-view="popover"] .popover-project-table .project-select span {
-  font-size: 10.5px;
+  font-size: 10.2px;
   font-weight: 720;
   letter-spacing: .01em;
 }
@@ -10057,7 +10219,7 @@ body[data-view="popover"] .popover-project-table .tool-strip {
   grid-row: 1;
   align-self: center;
   justify-self: end;
-  max-width: 34px;
+  max-width: 32px;
   gap: 2px;
   margin: 0;
   overflow: hidden;
@@ -10094,12 +10256,13 @@ body[data-view="popover"] .popover-project-table .project-compact-metrics {
   grid-column: 5;
   grid-row: 1;
   display: grid;
-  grid-template-columns: 56px 56px 78px;
+  grid-template-columns: 46px 46px 34px minmax(78px, 1fr);
   align-items: stretch;
   justify-self: stretch;
-  min-width: 190px;
-  width: 190px;
-  height: 23px;
+  min-width: 218px;
+  width: 100%;
+  max-width: 238px;
+  height: 29px;
   gap: 0;
   color: var(--console-text-faint);
   font-variant-numeric: tabular-nums;
@@ -10107,12 +10270,14 @@ body[data-view="popover"] .popover-project-table .project-compact-metrics {
 }
 
 body[data-view="popover"] .popover-project-table .project-compact-cluster,
-body[data-view="popover"] .popover-project-table .project-compact-proc {
+body[data-view="popover"] .popover-project-table .project-compact-proc,
+body[data-view="popover"] .popover-project-table .project-compact-resources {
   position: relative;
   display: grid;
   align-content: center;
   min-height: 0;
   padding: 1px 5px;
+  overflow: hidden;
   border-radius: 0;
   background: transparent;
   box-shadow: none;
@@ -10120,7 +10285,8 @@ body[data-view="popover"] .popover-project-table .project-compact-proc {
 }
 
 body[data-view="popover"] .popover-project-table .project-compact-cluster::before,
-body[data-view="popover"] .popover-project-table .project-compact-proc::before {
+body[data-view="popover"] .popover-project-table .project-compact-proc::before,
+body[data-view="popover"] .popover-project-table .project-compact-resources::before {
   content: "";
   position: absolute;
   left: 0;
@@ -10132,8 +10298,9 @@ body[data-view="popover"] .popover-project-table .project-compact-proc::before {
 }
 
 body[data-view="popover"] .popover-project-table .project-compact-cluster {
-  grid-template-columns: minmax(0, 1fr) 2.4ch;
-  gap: 0 4px;
+  grid-template-columns: minmax(0, 1fr) 2.2ch;
+  grid-template-rows: 14px 11px;
+  gap: 0 3px;
   color: var(--ok);
   justify-content: stretch;
   justify-items: end;
@@ -10144,28 +10311,20 @@ body[data-view="popover"] .popover-project-table .project-compact-cluster.all {
 }
 
 body[data-view="popover"] .popover-project-table .project-compact-proc {
-  grid-template-columns: minmax(0, 1fr) 2.4ch;
-  justify-content: stretch;
-  justify-items: end;
+  grid-template-columns: 1fr;
+  grid-template-rows: 10px 17px;
+  justify-content: center;
+  justify-items: center;
   color: var(--run);
-  text-align: right;
-}
-
-body[data-view="popover"] .popover-project-table .project-compact-proc em {
-  grid-column: 1 / -1;
-  max-width: 72px;
-  color: color-mix(in srgb, var(--run) 66%, var(--console-text-faint));
-  font-family: var(--font-mono);
-  font-size: 6.2px;
-  line-height: 1.05;
+  text-align: center;
 }
 
 body[data-view="popover"] .popover-project-table .project-compact-cluster b,
 body[data-view="popover"] .popover-project-table .project-compact-proc i {
-  align-self: end;
+  align-self: center;
   color: color-mix(in srgb, var(--console-text-faint) 86%, transparent);
   font-family: var(--font-mono);
-  font-size: 6.2px;
+  font-size: 7.2px;
   font-style: normal;
   font-weight: 760;
   line-height: 1;
@@ -10174,18 +10333,18 @@ body[data-view="popover"] .popover-project-table .project-compact-proc i {
 
 body[data-view="popover"] .popover-project-table .project-compact-cluster strong,
 body[data-view="popover"] .popover-project-table .project-compact-proc strong {
-  align-self: end;
+  align-self: center;
   color: currentColor;
   display: block;
   font-family: var(--font-mono);
-  font-size: 12.8px;
+  font-size: 15.5px;
   font-weight: 780;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
-  line-height: .92;
-  min-width: 2.4ch;
+  line-height: .9;
+  min-width: 2.2ch;
   text-align: right;
-  width: 2.4ch;
+  width: 2.2ch;
 }
 
 body[data-view="popover"] .popover-project-table .project-compact-cluster em {
@@ -10193,11 +10352,59 @@ body[data-view="popover"] .popover-project-table .project-compact-cluster em {
   overflow: hidden;
   color: color-mix(in srgb, currentColor 58%, var(--console-text-faint));
   font-family: var(--font-mono);
-  font-size: 6.2px;
+  font-size: 7.1px;
   font-style: normal;
   font-weight: 620;
   line-height: 1.05;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  justify-self: stretch;
+  text-align: right;
+}
+
+body[data-view="popover"] .popover-project-table .project-compact-proc strong {
+  font-size: 16px;
+  text-align: center;
+}
+
+body[data-view="popover"] .popover-project-table .project-compact-resources {
+  grid-template-rows: 1fr 1fr;
+  gap: 1px;
+  color: color-mix(in srgb, var(--run) 74%, var(--console-text-faint));
+}
+
+body[data-view="popover"] .popover-project-table .project-compact-resources em {
+  display: grid;
+  grid-template-columns: 3.4ch minmax(0, 1fr);
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-family: var(--font-mono);
+  font-size: 7.4px;
+  font-style: normal;
+  line-height: 1;
+}
+
+body[data-view="popover"] .popover-project-table .project-compact-resources b {
+  overflow: hidden;
+  color: color-mix(in srgb, var(--console-text-faint) 86%, transparent);
+  font-size: 7px;
+  font-weight: 760;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+body[data-view="popover"] .popover-project-table .project-compact-resources strong {
+  min-width: 0;
+  overflow: hidden;
+  color: currentColor;
+  font-size: 8.4px;
+  font-weight: 720;
+  line-height: 1;
+  text-align: right;
+  text-overflow: clip;
   white-space: nowrap;
 }
 
@@ -10222,27 +10429,44 @@ body[data-view="popover"] .popover-project-table .project-compact-cluster em {
 
 @media (max-width: 430px) {
   body[data-view="popover"] .popover-project-table .project-tree-head {
-    grid-template-columns: 12px 12px minmax(62px, .65fr) 26px 164px;
+    grid-template-columns: 12px 12px minmax(48px, 1fr) 22px minmax(168px, 176px);
     gap: 3px;
   }
 
   body[data-view="popover"] .popover-project-table .tool-strip {
-    max-width: 26px;
+    max-width: 22px;
   }
 
   body[data-view="popover"] .popover-project-table .project-compact-metrics {
-    grid-template-columns: 48px 48px 68px;
-    min-width: 164px;
-    width: 164px;
+    grid-template-columns: 38px 38px 28px minmax(64px, 1fr);
+    min-width: 168px;
+    max-width: 176px;
   }
 
   body[data-view="popover"] .popover-project-table .project-compact-cluster,
-  body[data-view="popover"] .popover-project-table .project-compact-proc {
-    padding-inline: 4px;
+  body[data-view="popover"] .popover-project-table .project-compact-proc,
+  body[data-view="popover"] .popover-project-table .project-compact-resources {
+    padding-inline: 3px;
   }
 
   body[data-view="popover"] .popover-project-table .project-select span {
-    font-size: 9.6px;
+    font-size: 9.4px;
+  }
+
+  body[data-view="popover"] .popover-project-table .project-compact-cluster b,
+  body[data-view="popover"] .popover-project-table .project-compact-proc i,
+  body[data-view="popover"] .popover-project-table .project-compact-resources b {
+    font-size: 6.6px;
+  }
+
+  body[data-view="popover"] .popover-project-table .project-compact-cluster strong,
+  body[data-view="popover"] .popover-project-table .project-compact-proc strong {
+    font-size: 14.2px;
+  }
+
+  body[data-view="popover"] .popover-project-table .project-compact-cluster em,
+  body[data-view="popover"] .popover-project-table .project-compact-resources em {
+    font-size: 6.8px;
   }
 }
 
@@ -11853,4 +12077,1136 @@ body[data-view="popover"] .popover-instrument {
 
 :root[data-theme="light"] .project-heatmap-tile {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .58);
+}
+
+body[data-view="popover"] .popover-view-switch {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: 194px;
+}
+
+body[data-view="popover"] .popover-view-switch button {
+  padding: 0 6px;
+}
+
+body[data-view="popover"] .popover-view-panel.system:not([hidden]) {
+  display: block;
+}
+
+body[data-view="popover"] .system-shell {
+  display: grid;
+  gap: 9px;
+  padding: 9px 10px 10px 20px;
+}
+
+body[data-view="popover"] .system-headline {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+body[data-view="popover"] .system-headline h2 {
+  margin: 1px 0 0;
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 760;
+  letter-spacing: .01em;
+  line-height: 1.08;
+}
+
+body[data-view="popover"] .system-headline > span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--console-text-faint);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .system-resource-deck {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--console-line-soft) 72%, transparent);
+  border-radius: 5px;
+  background:
+    linear-gradient(120deg, color-mix(in srgb, var(--accent) 7%, transparent), transparent 44%),
+    color-mix(in srgb, var(--console-material-2) 54%, transparent);
+}
+
+body[data-view="popover"] .system-resource-card {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  min-height: 78px;
+  padding: 8px 9px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--bg) 17%, transparent);
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--fg) 2.5%, transparent);
+}
+
+body[data-view="popover"] .system-resource-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: .46;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent 40%),
+    repeating-linear-gradient(90deg, transparent 0 17px, color-mix(in srgb, var(--fg) 3.2%, transparent) 17px 18px);
+}
+
+body[data-view="popover"] .system-resource-card.memory::before {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent-hi) 12%, transparent), transparent 42%),
+    repeating-linear-gradient(90deg, transparent 0 17px, color-mix(in srgb, var(--fg) 3.2%, transparent) 17px 18px);
+}
+
+body[data-view="popover"] .system-resource-card.network::before {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--run) 12%, transparent), transparent 42%),
+    repeating-linear-gradient(90deg, transparent 0 17px, color-mix(in srgb, var(--fg) 3.2%, transparent) 17px 18px);
+}
+
+body[data-view="popover"] .system-resource-card.agent::before {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--run) 12%, transparent), transparent 42%),
+    repeating-linear-gradient(90deg, transparent 0 17px, color-mix(in srgb, var(--fg) 3.2%, transparent) 17px 18px);
+}
+
+body[data-view="popover"] .system-resource-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+body[data-view="popover"] .system-resource-card-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+body[data-view="popover"] .system-resource-card-head span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--console-text-soft);
+  font-size: 9.4px;
+  font-weight: 760;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .system-resource-card-head strong {
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 21px;
+  font-weight: 820;
+  line-height: .95;
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .system-resource-card.cpu .system-resource-card-head strong,
+body[data-view="popover"] .system-resource-card.network .system-resource-card-head strong {
+  color: var(--run);
+}
+
+body[data-view="popover"] .system-resource-card.memory .system-resource-card-head strong {
+  color: var(--accent);
+}
+
+body[data-view="popover"] .system-resource-card.agent .system-resource-card-head strong {
+  color: var(--run);
+}
+
+body[data-view="popover"] .system-resource-card > em {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--console-text-faint);
+  font-size: 9.5px;
+  font-style: normal;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .system-meter {
+  height: 2px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+
+body[data-view="popover"] .system-meter i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--run), var(--accent));
+}
+
+body[data-view="popover"] .network-wave {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  align-items: end;
+  height: 20px;
+  gap: 3px;
+}
+
+body[data-view="popover"] .network-wave i {
+  display: block;
+  min-height: 2px;
+  border-radius: 1px 1px 0 0;
+  background: linear-gradient(180deg, var(--run), color-mix(in srgb, var(--accent) 72%, var(--run)));
+}
+
+body[data-view="popover"] .system-resource-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 7px 9px;
+  color: var(--console-text-faint);
+  font-size: 10px;
+}
+
+body[data-view="popover"] .system-shell .popover-process-panel {
+  padding: 0;
+  border-top: 0;
+}
+
+body[data-view="popover"] .system-shell .popover-process-list {
+  max-height: none;
+}
+
+:root[data-theme="light"] body[data-view="popover"] .system-resource-deck {
+  background:
+    linear-gradient(120deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent 48%),
+    rgba(255, 255, 255, .48);
+}
+
+:root[data-theme="light"] body[data-view="popover"] .system-resource-card {
+  background: rgba(255, 255, 255, .36);
+}
+
+body[data-view="popover"] .trend-suite.compact {
+  grid-template-rows: auto auto auto;
+  gap: 9px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-duo {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-lane.runtime,
+body[data-view="popover"] .trend-suite.compact .trend-inspector.runtime {
+  display: none;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-lane.history {
+  padding-bottom: 8px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-chart.trend-kline-chart {
+  height: 156px;
+  min-height: 156px;
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap {
+  gap: 6px;
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap-map {
+  height: 156px;
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap-tile {
+  padding: 7px 8px;
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap-label {
+  font-size: 9px;
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap-tile b {
+  font-size: 16px;
+}
+
+body[data-view="popover"] .system-resource-deck {
+  grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr);
+}
+
+body[data-view="popover"] .system-resource-card {
+  min-height: 86px;
+}
+
+body[data-view="popover"] .system-resource-card.agent {
+  grid-column: 1 / -1;
+  min-height: 62px;
+}
+
+body[data-view="popover"] .system-resource-card.disk::before {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--ok) 10%, transparent), transparent 42%),
+    repeating-linear-gradient(90deg, transparent 0 17px, color-mix(in srgb, var(--fg) 3.2%, transparent) 17px 18px);
+}
+
+body[data-view="popover"] .system-resource-card.disk .system-resource-card-head strong {
+  color: var(--ok);
+}
+
+body[data-view="popover"] .system-resource-card.cpu {
+  grid-template-columns: minmax(0, 1fr) 52px;
+  align-items: center;
+  gap: 5px 8px;
+}
+
+body[data-view="popover"] .system-resource-card.cpu .system-resource-card-head {
+  grid-column: 1;
+}
+
+body[data-view="popover"] .cpu-orbit {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  justify-self: end;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background:
+    conic-gradient(var(--run) var(--system-pct), color-mix(in srgb, var(--fg) 8%, transparent) 0),
+    color-mix(in srgb, var(--console-material) 42%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--fg) 8%, transparent),
+    0 0 20px color-mix(in srgb, var(--run) 10%, transparent);
+}
+
+body[data-view="popover"] .cpu-orbit i {
+  display: block;
+  width: 31px;
+  height: 31px;
+  margin: 8.5px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--fg) 10%, transparent), transparent 58%),
+    color-mix(in srgb, var(--console-material-2) 92%, var(--bg));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 7%, transparent);
+}
+
+body[data-view="popover"] .system-chip-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  min-width: 0;
+}
+
+body[data-view="popover"] .system-chip-row span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding-top: 5px;
+  border-top: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  color: var(--console-text-faint);
+}
+
+body[data-view="popover"] .system-chip-row b {
+  overflow: hidden;
+  font-size: 7.6px;
+  font-weight: 760;
+  line-height: 1;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .system-chip-row em {
+  overflow: hidden;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 10.8px;
+  font-style: normal;
+  font-weight: 820;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .popover-process-head {
+  grid-template-columns: 14px 16px minmax(72px, 1fr) minmax(76px, .9fr) auto minmax(86px, auto);
+}
+
+body[data-view="popover"] .popover-process-project {
+  color: color-mix(in srgb, var(--fg) 70%, transparent) !important;
+  font-family: var(--font-sans) !important;
+  font-size: 10px !important;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+body[data-view="popover"] .system-shell .popover-process-head {
+  grid-template-columns: 14px 20px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: start;
+  min-height: 48px;
+  gap: 3px 8px;
+  padding: 7px 0;
+}
+
+body[data-view="popover"] .system-shell .popover-process-head > svg:first-child {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  margin-top: 3px;
+}
+
+body[data-view="popover"] .system-shell .popover-process-head > .tool-icon,
+body[data-view="popover"] .system-shell .popover-process-head > .tool-fallback {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  margin-top: 1px;
+}
+
+body[data-view="popover"] .system-shell .popover-process-mainline {
+  display: grid;
+  grid-column: 3;
+  grid-row: 1;
+  grid-template-columns: minmax(82px, .38fr) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+body[data-view="popover"] .system-shell .popover-process-mainline strong,
+body[data-view="popover"] .system-shell .popover-process-mainline b {
+  min-width: 0;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+body[data-view="popover"] .system-shell .popover-process-mainline strong {
+  color: var(--fg);
+  font-size: 11.5px;
+  font-weight: 800;
+  line-height: 1.12;
+}
+
+body[data-view="popover"] .system-shell .popover-process-mainline b {
+  color: color-mix(in srgb, var(--fg) 76%, transparent);
+  font-size: 10.4px;
+  font-weight: 760;
+  line-height: 1.12;
+}
+
+body[data-view="popover"] .system-shell .popover-process-subline {
+  grid-column: 3;
+  grid-row: 2;
+  min-width: 0;
+  overflow: visible;
+  color: var(--console-text-faint);
+  font-family: var(--font-mono);
+  font-size: 8.9px;
+  line-height: 1.25;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+body[data-view="popover"] .system-shell .popover-process-card {
+  border-bottom-color: color-mix(in srgb, var(--console-line-soft) 86%, transparent);
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-lane.runtime,
+body[data-view="popover"] .trend-suite.compact .trend-inspector.runtime {
+  display: grid;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-lane.runtime {
+  padding-bottom: 8px;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-lane.runtime .trend-lane-readout {
+  min-width: 134px;
+}
+
+.trend-runtime-curve {
+  position: relative;
+  min-height: 108px;
+  overflow: hidden;
+  border-radius: 7px;
+  background:
+    linear-gradient(120deg, color-mix(in srgb, var(--run) 10%, transparent), transparent 44%),
+    repeating-linear-gradient(90deg, transparent 0 35px, color-mix(in srgb, var(--fg) 4%, transparent) 35px 36px),
+    color-mix(in srgb, var(--console-material-2) 54%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 6%, transparent);
+}
+
+.trend-runtime-curve svg {
+  display: block;
+  width: 100%;
+  height: 108px;
+}
+
+.runtime-curve-area {
+  fill: color-mix(in srgb, var(--run) 14%, transparent);
+}
+
+.runtime-curve-line {
+  fill: none;
+  stroke: color-mix(in srgb, var(--run) 86%, var(--accent-hi));
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.2;
+  vector-effect: non-scaling-stroke;
+}
+
+.trend-runtime-curve circle {
+  cursor: pointer;
+  fill: color-mix(in srgb, var(--console-material) 92%, var(--bg));
+  stroke: color-mix(in srgb, var(--run) 76%, var(--fg));
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+}
+
+.trend-runtime-curve circle.is-selected {
+  fill: var(--fg);
+  stroke: color-mix(in srgb, var(--run) 90%, var(--fg));
+  stroke-width: 1.8;
+}
+
+.runtime-curve-crosshair {
+  stroke: color-mix(in srgb, var(--fg) 28%, transparent);
+  stroke-dasharray: 3 4;
+  stroke-width: .8;
+  vector-effect: non-scaling-stroke;
+}
+
+.runtime-curve-readout {
+  position: absolute;
+  right: 8px;
+  bottom: 7px;
+  display: grid;
+  gap: 2px;
+  min-width: 116px;
+  padding: 6px 7px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--console-material) 74%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 7%, transparent);
+}
+
+.runtime-curve-readout span,
+.runtime-curve-readout em {
+  overflow: hidden;
+  color: var(--console-text-faint);
+  font-size: 7.8px;
+  font-style: normal;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-curve-readout strong {
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 860;
+  line-height: 1;
+}
+
+:root[data-theme="light"] body[data-view="popover"] .cpu-orbit i {
+  background:
+    radial-gradient(circle at 50% 45%, rgba(255, 255, 255, .70), transparent 58%),
+    color-mix(in srgb, var(--console-material-2) 94%, white);
+}
+
+body[data-view="popover"] .system-shell,
+body[data-view="popover"] .trend-suite.compact .trend-lane.runtime {
+  --pressure: #8fa8ff;
+  --pressure-strong: #c5d2ff;
+  --pressure-soft: rgba(143, 168, 255, .14);
+  --pressure-line: rgba(143, 168, 255, .34);
+  --system-warm: #d7ba77;
+}
+
+:root[data-theme="light"] body[data-view="popover"] .system-shell,
+:root[data-theme="light"] body[data-view="popover"] .trend-suite.compact .trend-lane.runtime {
+  --pressure: #5577d8;
+  --pressure-strong: #315ec7;
+  --pressure-soft: rgba(85, 119, 216, .10);
+  --pressure-line: rgba(85, 119, 216, .24);
+  --system-warm: #9b7b34;
+}
+
+body[data-view="popover"] .system-shell .system-resource-card.cpu .system-resource-card-head strong,
+body[data-view="popover"] .system-shell .system-resource-card.network .system-resource-card-head strong,
+body[data-view="popover"] .system-shell .system-resource-card.agent .system-resource-card-head strong {
+  color: var(--pressure-strong);
+}
+
+body[data-view="popover"] .system-shell .system-resource-card.network::before,
+body[data-view="popover"] .system-shell .system-resource-card.agent::before {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--pressure) 13%, transparent), transparent 46%),
+    repeating-linear-gradient(90deg, transparent 0 17px, color-mix(in srgb, var(--fg) 3.2%, transparent) 17px 18px);
+}
+
+body[data-view="popover"] .system-shell .cpu-orbit {
+  background:
+    conic-gradient(var(--pressure) var(--system-pct), color-mix(in srgb, var(--fg) 7%, transparent) 0),
+    color-mix(in srgb, var(--console-material) 42%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--fg) 8%, transparent),
+    0 0 20px color-mix(in srgb, var(--pressure) 12%, transparent);
+}
+
+body[data-view="popover"] .system-shell .system-meter i {
+  background: linear-gradient(90deg, var(--system-warm), var(--pressure));
+}
+
+body[data-view="popover"] .system-shell .network-wave i {
+  background: linear-gradient(180deg, var(--pressure), color-mix(in srgb, var(--system-warm) 42%, var(--pressure)));
+}
+
+body[data-view="popover"] .system-shell .system-chip-row em,
+body[data-view="popover"] .system-shell .popover-process-mainline b {
+  color: color-mix(in srgb, var(--pressure-strong) 72%, var(--fg));
+}
+
+:root[data-theme="light"] body[data-view="popover"] .system-shell .system-resource-card {
+  background:
+    linear-gradient(135deg, var(--pressure-soft), transparent 46%),
+    rgba(255, 255, 255, .40);
+}
+
+:root[data-theme="light"] body[data-view="popover"] .system-shell .system-resource-card-head span,
+:root[data-theme="light"] body[data-view="popover"] .system-shell .system-resource-card > em,
+:root[data-theme="light"] body[data-view="popover"] .system-shell .popover-process-subline {
+  color: rgba(75, 86, 100, .76);
+}
+
+:root[data-theme="light"] body[data-view="popover"] .system-shell .system-meter {
+  background: rgba(49, 94, 199, .10);
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-lane.runtime .trend-kicker,
+body[data-view="popover"] .trend-suite.compact .trend-lane.runtime .trend-readout-value.primary b {
+  color: var(--pressure-strong);
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-lane.runtime .trend-runtime-curve {
+  background:
+    linear-gradient(120deg, var(--pressure-soft), transparent 44%),
+    repeating-linear-gradient(90deg, transparent 0 35px, color-mix(in srgb, var(--fg) 4%, transparent) 35px 36px),
+    color-mix(in srgb, var(--console-material-2) 54%, transparent);
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-lane.runtime .runtime-curve-area {
+  fill: var(--pressure-soft);
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-lane.runtime .runtime-curve-line {
+  stroke: color-mix(in srgb, var(--pressure) 82%, var(--accent-hi));
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-lane.runtime .trend-runtime-curve circle {
+  stroke: var(--pressure);
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-lane.runtime .trend-runtime-curve circle.is-selected {
+  stroke: var(--pressure-strong);
+}
+
+body[data-view="popover"] .system-shell {
+  gap: 7px;
+  padding: 8px 12px 9px 22px;
+}
+
+body[data-view="popover"] .system-resource-deck {
+  gap: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--pressure) 8%, transparent), transparent 44%),
+    linear-gradient(180deg, color-mix(in srgb, var(--console-material) 44%, transparent), color-mix(in srgb, var(--console-material-2) 18%, transparent));
+  box-shadow: none;
+}
+
+body[data-view="popover"] .system-resource-card {
+  min-height: 78px;
+  padding: 7px 10px 8px;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+body[data-view="popover"] .system-resource-card::before {
+  opacity: .28;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--pressure) 9%, transparent), transparent 48%),
+    repeating-linear-gradient(90deg, transparent 0 33px, color-mix(in srgb, var(--pressure) 5%, transparent) 33px 34px);
+}
+
+body[data-view="popover"] .system-resource-card + .system-resource-card {
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--pressure-line) 54%, transparent);
+}
+
+body[data-view="popover"] .system-resource-card:nth-child(3),
+body[data-view="popover"] .system-resource-card:nth-child(4),
+body[data-view="popover"] .system-resource-card.agent {
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--pressure-line) 48%, transparent);
+}
+
+body[data-view="popover"] .system-resource-card:nth-child(4) {
+  box-shadow:
+    inset 1px 0 0 color-mix(in srgb, var(--pressure-line) 54%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--pressure-line) 48%, transparent);
+}
+
+body[data-view="popover"] .system-resource-card.agent {
+  min-height: 55px;
+  padding-top: 8px;
+}
+
+body[data-view="popover"] .system-resource-card.network::before,
+body[data-view="popover"] .system-resource-card.disk::before,
+body[data-view="popover"] .system-resource-card.agent::before {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--pressure) 8%, transparent), transparent 50%),
+    repeating-linear-gradient(90deg, transparent 0 33px, color-mix(in srgb, var(--pressure) 5%, transparent) 33px 34px);
+}
+
+body[data-view="popover"] .system-resource-card-head span {
+  color: color-mix(in srgb, var(--fg-muted) 88%, var(--pressure));
+}
+
+body[data-view="popover"] .system-resource-card > em,
+body[data-view="popover"] .system-chip-row b {
+  color: color-mix(in srgb, var(--fg-faint) 84%, var(--pressure));
+}
+
+body[data-view="popover"] .system-chip-row span {
+  border-top-color: color-mix(in srgb, var(--pressure-line) 58%, transparent);
+}
+
+body[data-view="popover"] .system-meter {
+  height: 2px;
+  background: color-mix(in srgb, var(--pressure) 10%, transparent);
+}
+
+body[data-view="popover"] .system-meter i {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--pressure) 44%, var(--system-warm)), var(--pressure));
+}
+
+body[data-view="popover"] .network-wave i {
+  border-radius: 1px 1px 0 0;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--pressure) 86%, white), color-mix(in srgb, var(--pressure) 58%, transparent));
+}
+
+body[data-view="popover"] .cpu-orbit {
+  background:
+    conic-gradient(var(--pressure) var(--system-pct), color-mix(in srgb, var(--pressure) 9%, transparent) 0),
+    transparent;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--pressure-line) 68%, transparent),
+    0 0 18px color-mix(in srgb, var(--pressure) 10%, transparent);
+}
+
+:root[data-theme="light"] body[data-view="popover"] .system-resource-deck {
+  background:
+    linear-gradient(135deg, rgba(85, 119, 216, .075), transparent 46%),
+    linear-gradient(180deg, rgba(255, 255, 255, .58), rgba(246, 250, 252, .22));
+}
+
+:root[data-theme="light"] body[data-view="popover"] .system-resource-card {
+  background: transparent;
+}
+
+:root[data-theme="light"] body[data-view="popover"] .system-resource-card::before {
+  opacity: .34;
+  background:
+    linear-gradient(135deg, rgba(85, 119, 216, .08), transparent 50%),
+    repeating-linear-gradient(90deg, transparent 0 33px, rgba(85, 119, 216, .04) 33px 34px);
+}
+
+:root[data-theme="light"] body[data-view="popover"] .system-resource-card-head span,
+:root[data-theme="light"] body[data-view="popover"] .system-resource-card > em,
+:root[data-theme="light"] body[data-view="popover"] .system-chip-row b {
+  color: rgba(77, 91, 110, .76);
+}
+
+:root[data-theme="light"] body[data-view="popover"] .system-resource-card + .system-resource-card,
+:root[data-theme="light"] body[data-view="popover"] .system-resource-card:nth-child(4) {
+  box-shadow: inset 1px 0 0 rgba(85, 119, 216, .13);
+}
+
+:root[data-theme="light"] body[data-view="popover"] .system-resource-card:nth-child(3),
+:root[data-theme="light"] body[data-view="popover"] .system-resource-card.agent {
+  box-shadow: inset 0 1px 0 rgba(85, 119, 216, .12);
+}
+
+:root[data-theme="light"] body[data-view="popover"] .system-resource-card:nth-child(4) {
+  box-shadow:
+    inset 1px 0 0 rgba(85, 119, 216, .13),
+    inset 0 1px 0 rgba(85, 119, 216, .12);
+}
+
+body[data-view="popover"] .system-resource-card {
+  color: var(--metric-color, var(--pressure));
+}
+
+body[data-view="popover"] .system-resource-card::before,
+body[data-view="popover"] .system-resource-card.network::before,
+body[data-view="popover"] .system-resource-card.disk::before,
+body[data-view="popover"] .system-resource-card.agent::before {
+  opacity: .52;
+  background:
+    linear-gradient(135deg, var(--metric-soft, var(--pressure-soft)), transparent 52%),
+    repeating-linear-gradient(90deg, transparent 0 39px, var(--metric-soft, var(--pressure-soft)) 39px 40px);
+}
+
+body[data-view="popover"] .system-resource-card-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+body[data-view="popover"] .system-resource-card.cpu .system-resource-card-head {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 5px;
+}
+
+body[data-view="popover"] .system-resource-card-head span {
+  overflow: visible;
+  color: color-mix(in srgb, var(--metric-strong, var(--pressure-strong)) 42%, var(--fg-muted));
+  text-overflow: clip;
+  white-space: normal;
+}
+
+body[data-view="popover"] .system-resource-card-head strong,
+body[data-view="popover"] .system-resource-card.cpu .system-resource-card-head strong,
+body[data-view="popover"] .system-resource-card.network .system-resource-card-head strong,
+body[data-view="popover"] .system-resource-card.memory .system-resource-card-head strong,
+body[data-view="popover"] .system-resource-card.disk .system-resource-card-head strong,
+body[data-view="popover"] .system-resource-card.agent .system-resource-card-head strong {
+  color: var(--metric-strong, var(--pressure-strong));
+}
+
+body[data-view="popover"] .system-resource-card > em {
+  overflow: visible;
+  color: color-mix(in srgb, var(--metric-strong, var(--pressure-strong)) 26%, var(--fg-muted));
+  text-overflow: clip;
+  white-space: normal;
+}
+
+body[data-view="popover"] .system-meter {
+  background: var(--metric-track, var(--pressure-soft));
+}
+
+body[data-view="popover"] .system-meter i {
+  background: var(--metric-color, var(--pressure));
+}
+
+body[data-view="popover"] .network-wave {
+  align-items: end;
+  height: 27px;
+  padding-top: 2px;
+}
+
+body[data-view="popover"] .network-wave i {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--metric-color, var(--pressure)) 96%, white), var(--metric-color, var(--pressure)));
+  box-shadow: inset 0 -10px 16px color-mix(in srgb, var(--metric-strong, var(--pressure-strong)) 16%, transparent);
+}
+
+body[data-view="popover"] .cpu-orbit,
+body[data-view="popover"] .system-shell .cpu-orbit {
+  background:
+    conic-gradient(var(--metric-color, var(--pressure)) var(--system-pct), var(--metric-track, var(--pressure-soft)) 0),
+    transparent;
+  box-shadow:
+    inset 0 0 0 1px var(--metric-line, var(--pressure-line)),
+    0 0 18px color-mix(in srgb, var(--metric-color, var(--pressure)) 10%, transparent);
+}
+
+body[data-view="popover"] .cpu-orbit i {
+  background:
+    radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--metric-color, var(--pressure)) 7%, transparent), transparent 58%),
+    color-mix(in srgb, var(--console-material-2) 86%, transparent);
+}
+
+body[data-view="popover"] .system-chip-row span {
+  border-top-color: var(--metric-line, var(--pressure-line));
+}
+
+body[data-view="popover"] .system-chip-row em {
+  color: color-mix(in srgb, var(--metric-strong, var(--pressure-strong)) 72%, var(--fg));
+}
+
+:root[data-theme="light"] body[data-view="popover"] .system-resource-deck {
+  background:
+    linear-gradient(135deg, rgba(78, 121, 216, .055), transparent 48%),
+    linear-gradient(180deg, rgba(255, 255, 255, .64), rgba(246, 251, 253, .34));
+}
+
+:root[data-theme="light"] body[data-view="popover"] .system-resource-card::before,
+:root[data-theme="light"] body[data-view="popover"] .system-resource-card.network::before,
+:root[data-theme="light"] body[data-view="popover"] .system-resource-card.disk::before,
+:root[data-theme="light"] body[data-view="popover"] .system-resource-card.agent::before {
+  background:
+    linear-gradient(135deg, var(--metric-soft, rgba(85, 119, 216, .08)), transparent 52%),
+    repeating-linear-gradient(90deg, transparent 0 39px, color-mix(in srgb, var(--metric-color, #5577d8) 5%, transparent) 39px 40px);
+}
+
+:root[data-theme="light"] body[data-view="popover"] .system-resource-card-head span,
+:root[data-theme="light"] body[data-view="popover"] .system-resource-card > em,
+:root[data-theme="light"] body[data-view="popover"] .system-chip-row b {
+  color: color-mix(in srgb, var(--metric-strong, #315ec7) 32%, #52677f);
+}
+
+:root[data-theme="light"] body[data-view="popover"] .cpu-orbit i {
+  background:
+    radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--metric-color, #5577d8) 8%, white), transparent 58%),
+    rgba(255, 255, 255, .78);
+}
+
+/* System resource final pass: semantic pressure colors, no gray scaffolding. */
+body[data-view="popover"] .system-shell {
+  gap: 8px;
+  padding: 8px 10px 9px 16px;
+}
+
+body[data-view="popover"] .system-resource-deck {
+  gap: 1px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 3px;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--accent) 7%, transparent), transparent 42%),
+    linear-gradient(180deg, color-mix(in srgb, var(--console-material) 72%, transparent), color-mix(in srgb, var(--console-material-2) 44%, transparent));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 9%, transparent),
+    0 10px 26px color-mix(in srgb, black 11%, transparent);
+}
+
+body[data-view="popover"] .system-resource-card {
+  min-height: 75px;
+  padding: 7px 9px 8px;
+  overflow: hidden;
+  background:
+    linear-gradient(145deg, var(--metric-soft, var(--pressure-soft)), transparent 58%),
+    color-mix(in srgb, var(--console-material) 20%, transparent);
+  box-shadow:
+    inset 1px 0 0 color-mix(in srgb, var(--metric-color, var(--accent)) 11%, transparent),
+    inset 0 1px 0 color-mix(in srgb, white 4%, transparent);
+}
+
+body[data-view="popover"] .system-resource-card::before,
+body[data-view="popover"] .system-resource-card.memory::before,
+body[data-view="popover"] .system-resource-card.network::before,
+body[data-view="popover"] .system-resource-card.disk::before,
+body[data-view="popover"] .system-resource-card.agent::before {
+  inset: 0;
+  opacity: 1;
+  background:
+    linear-gradient(90deg, var(--metric-line, var(--pressure-line)), transparent 46%),
+    radial-gradient(circle at 86% 14%, color-mix(in srgb, var(--metric-color, var(--pressure)) 16%, transparent), transparent 34%);
+  mix-blend-mode: normal;
+}
+
+body[data-view="popover"] .system-resource-card.cpu {
+  min-height: 77px;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  gap: 5px 7px;
+}
+
+body[data-view="popover"] .system-resource-card.agent {
+  min-height: 52px;
+}
+
+body[data-view="popover"] .system-resource-card-head {
+  gap: 6px;
+  min-width: 0;
+}
+
+body[data-view="popover"] .system-resource-card.cpu .system-resource-card-head {
+  gap: 3px;
+}
+
+body[data-view="popover"] .system-resource-card-head span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: visible;
+  color: color-mix(in srgb, var(--metric-strong, var(--pressure-strong)) 40%, var(--fg-muted));
+  font-size: 9.8px;
+  font-weight: 760;
+  letter-spacing: .01em;
+  line-height: 1.18;
+  text-overflow: clip;
+  text-transform: uppercase;
+  white-space: normal;
+}
+
+body[data-view="popover"] .system-resource-card-head span svg {
+  flex: 0 0 auto;
+  color: var(--metric-color, var(--pressure));
+  opacity: .9;
+}
+
+body[data-view="popover"] .system-resource-card-head strong,
+body[data-view="popover"] .system-resource-card.cpu .system-resource-card-head strong,
+body[data-view="popover"] .system-resource-card.network .system-resource-card-head strong,
+body[data-view="popover"] .system-resource-card.memory .system-resource-card-head strong,
+body[data-view="popover"] .system-resource-card.disk .system-resource-card-head strong,
+body[data-view="popover"] .system-resource-card.agent .system-resource-card-head strong {
+  color: var(--metric-strong, var(--pressure-strong));
+  font-size: 20px;
+  line-height: .98;
+  text-shadow: 0 0 16px color-mix(in srgb, var(--metric-color, var(--pressure)) 11%, transparent);
+}
+
+body[data-view="popover"] .system-resource-card > em {
+  overflow: visible;
+  color: color-mix(in srgb, var(--metric-strong, var(--pressure-strong)) 28%, var(--fg-muted));
+  font-size: 9.8px;
+  line-height: 1.32;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+body[data-view="popover"] .system-meter {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--metric-color, var(--pressure)) 12%, transparent);
+}
+
+body[data-view="popover"] .system-meter i {
+  border-radius: 1px;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--metric-color, var(--pressure)) 76%, white 0%), var(--metric-strong, var(--pressure-strong)));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--metric-color, var(--pressure)) 18%, transparent);
+}
+
+body[data-view="popover"] .network-wave {
+  height: 29px;
+  gap: 4px;
+  padding-top: 1px;
+}
+
+body[data-view="popover"] .network-wave i {
+  min-height: 3px;
+  border-radius: 1px 1px 0 0;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--metric-color, var(--pressure)) 78%, white 8%), var(--metric-strong, var(--pressure-strong)));
+  box-shadow:
+    inset 0 -9px 14px color-mix(in srgb, var(--metric-strong, var(--pressure-strong)) 12%, transparent),
+    0 0 12px color-mix(in srgb, var(--metric-color, var(--pressure)) 13%, transparent);
+}
+
+body[data-view="popover"] .cpu-orbit,
+body[data-view="popover"] .system-shell .cpu-orbit {
+  width: 43px;
+  height: 43px;
+  background:
+    conic-gradient(var(--metric-strong, var(--pressure-strong)) var(--system-pct), color-mix(in srgb, var(--metric-color, var(--pressure)) 13%, transparent) 0),
+    color-mix(in srgb, var(--metric-color, var(--pressure)) 6%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--metric-color, var(--pressure)) 18%, transparent),
+    0 0 17px color-mix(in srgb, var(--metric-color, var(--pressure)) 10%, transparent);
+}
+
+body[data-view="popover"] .cpu-orbit i {
+  width: 28px;
+  height: 28px;
+  margin: 7.5px;
+  background:
+    radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--metric-color, var(--pressure)) 10%, transparent), transparent 58%),
+    color-mix(in srgb, var(--console-material-2) 92%, transparent);
+}
+
+body[data-view="popover"] .system-chip-row {
+  gap: 5px;
+}
+
+body[data-view="popover"] .system-chip-row span {
+  min-width: 0;
+  padding-top: 5px;
+  border-top: 1px solid color-mix(in srgb, var(--metric-color, var(--pressure)) 16%, transparent);
+}
+
+body[data-view="popover"] .system-chip-row b {
+  color: color-mix(in srgb, var(--metric-strong, var(--pressure-strong)) 34%, var(--fg-muted));
+  font-size: 8.8px;
+  line-height: 1.15;
+}
+
+body[data-view="popover"] .system-chip-row em {
+  color: color-mix(in srgb, var(--metric-strong, var(--pressure-strong)) 76%, var(--fg));
+  font-size: 10.2px;
+  line-height: 1.15;
+}
+
+:root[data-theme="light"] body[data-view="popover"] .system-resource-deck {
+  background:
+    linear-gradient(145deg, rgba(74, 111, 203, .055), transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, .82), rgba(245, 250, 253, .62));
+  box-shadow:
+    inset 0 0 0 1px rgba(78, 112, 174, .10),
+    0 10px 24px rgba(56, 77, 116, .08);
+}
+
+:root[data-theme="light"] body[data-view="popover"] .system-resource-card {
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--metric-color, #5577d8) 8%, transparent), transparent 60%),
+    rgba(255, 255, 255, .48);
+  box-shadow:
+    inset 1px 0 0 color-mix(in srgb, var(--metric-color, #5577d8) 12%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, .72);
+}
+
+:root[data-theme="light"] body[data-view="popover"] .system-resource-card::before,
+:root[data-theme="light"] body[data-view="popover"] .system-resource-card.memory::before,
+:root[data-theme="light"] body[data-view="popover"] .system-resource-card.network::before,
+:root[data-theme="light"] body[data-view="popover"] .system-resource-card.disk::before,
+:root[data-theme="light"] body[data-view="popover"] .system-resource-card.agent::before {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--metric-color, #5577d8) 12%, transparent), transparent 46%),
+    radial-gradient(circle at 86% 14%, color-mix(in srgb, var(--metric-color, #5577d8) 12%, transparent), transparent 34%);
+}
+
+:root[data-theme="light"] body[data-view="popover"] .system-resource-card-head span,
+:root[data-theme="light"] body[data-view="popover"] .system-resource-card > em,
+:root[data-theme="light"] body[data-view="popover"] .system-chip-row b {
+  color: color-mix(in srgb, var(--metric-strong, #315ec7) 36%, #41566d);
+}
+
+:root[data-theme="light"] body[data-view="popover"] .system-meter {
+  background: color-mix(in srgb, var(--metric-color, #5577d8) 11%, transparent);
+}
+
+:root[data-theme="light"] body[data-view="popover"] .cpu-orbit,
+:root[data-theme="light"] body[data-view="popover"] .system-shell .cpu-orbit {
+  background:
+    conic-gradient(var(--metric-strong, #315ec7) var(--system-pct), color-mix(in srgb, var(--metric-color, #5577d8) 12%, transparent) 0),
+    rgba(255, 255, 255, .58);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--metric-color, #5577d8) 18%, transparent),
+    0 0 16px color-mix(in srgb, var(--metric-color, #5577d8) 8%, transparent);
+}
+
+:root[data-theme="light"] body[data-view="popover"] .cpu-orbit i {
+  background:
+    radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--metric-color, #5577d8) 8%, transparent), transparent 58%),
+    rgba(255, 255, 255, .82);
 }

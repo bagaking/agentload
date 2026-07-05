@@ -1,0 +1,187 @@
+/* System view final layer.
+   Keep system resource and process diagnostics out of the legacy monolithic
+   stylesheet so this high-churn surface can be iterated without piling up
+   another override stack. */
+
+body[data-view="popover"] .system-resource-deck {
+  gap: 5px;
+  overflow: visible;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+body[data-view="popover"] .system-resource-card {
+  min-height: 70px;
+  padding: 8px 10px;
+  border-radius: 3px;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--metric-color, var(--accent)) 8%, transparent), transparent 58%),
+    color-mix(in srgb, var(--console-material) 50%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--metric-color, var(--accent)) 13%, transparent),
+    0 7px 18px color-mix(in srgb, black 7%, transparent);
+}
+
+body[data-view="popover"] .system-resource-card::before,
+body[data-view="popover"] .system-resource-card.memory::before,
+body[data-view="popover"] .system-resource-card.network::before,
+body[data-view="popover"] .system-resource-card.disk::before,
+body[data-view="popover"] .system-resource-card.agent::before {
+  opacity: .78;
+  background:
+    radial-gradient(circle at 90% 12%, color-mix(in srgb, var(--metric-color, var(--accent)) 13%, transparent), transparent 35%),
+    linear-gradient(90deg, color-mix(in srgb, var(--metric-color, var(--accent)) 10%, transparent), transparent 34%);
+}
+
+body[data-view="popover"] .system-resource-card.cpu {
+  min-height: 70px;
+  grid-template-columns: minmax(0, 1fr) 40px;
+}
+
+body[data-view="popover"] .system-resource-card.agent {
+  min-height: 48px;
+}
+
+body[data-view="popover"] .system-resource-card-head strong,
+body[data-view="popover"] .system-resource-card.cpu .system-resource-card-head strong,
+body[data-view="popover"] .system-resource-card.network .system-resource-card-head strong,
+body[data-view="popover"] .system-resource-card.memory .system-resource-card-head strong,
+body[data-view="popover"] .system-resource-card.disk .system-resource-card-head strong,
+body[data-view="popover"] .system-resource-card.agent .system-resource-card-head strong,
+body[data-view="popover"] .system-shell .system-resource-card.cpu .system-resource-card-head strong,
+body[data-view="popover"] .system-shell .system-resource-card.network .system-resource-card-head strong,
+body[data-view="popover"] .system-shell .system-resource-card.agent .system-resource-card-head strong {
+  color: var(--metric-strong, var(--pressure-strong));
+}
+
+body[data-view="popover"] .system-meter,
+:root[data-theme="light"] body[data-view="popover"] .system-shell .system-meter {
+  height: 3px;
+  background: color-mix(in srgb, var(--metric-color, var(--pressure)) 13%, transparent);
+}
+
+body[data-view="popover"] .system-meter i,
+body[data-view="popover"] .system-shell .system-meter i {
+  background: linear-gradient(90deg, var(--metric-color, var(--pressure)), var(--metric-strong, var(--pressure-strong)));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--metric-color, var(--pressure)) 16%, transparent);
+}
+
+body[data-view="popover"] .network-wave {
+  height: 28px;
+  gap: 5px;
+}
+
+body[data-view="popover"] .network-wave i,
+body[data-view="popover"] .system-shell .network-wave i {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--metric-color, var(--pressure)) 86%, white 4%), var(--metric-strong, var(--pressure-strong)));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--metric-color, var(--pressure)) 12%, transparent);
+}
+
+body[data-view="popover"] .cpu-orbit,
+body[data-view="popover"] .system-shell .cpu-orbit {
+  width: 40px;
+  height: 40px;
+  background:
+    conic-gradient(var(--metric-strong, var(--pressure-strong)) var(--system-pct), color-mix(in srgb, var(--metric-color, var(--pressure)) 12%, transparent) 0),
+    color-mix(in srgb, var(--metric-color, var(--pressure)) 5%, transparent);
+}
+
+body[data-view="popover"] .cpu-orbit i {
+  width: 26px;
+  height: 26px;
+  margin: 7px;
+}
+
+:root[data-theme="light"] body[data-view="popover"] .system-resource-card {
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--metric-color, #5577d8) 7%, transparent), transparent 58%),
+    rgba(255, 255, 255, .66);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--metric-color, #5577d8) 12%, transparent),
+    0 8px 18px rgba(58, 78, 111, .055);
+}
+
+:root[data-theme="light"] body[data-view="popover"] .system-resource-card-head span,
+:root[data-theme="light"] body[data-view="popover"] .system-resource-card > em,
+:root[data-theme="light"] body[data-view="popover"] .system-shell .system-resource-card-head span,
+:root[data-theme="light"] body[data-view="popover"] .system-shell .system-resource-card > em {
+  color: color-mix(in srgb, var(--metric-strong, #315ec7) 31%, #4a5d72);
+}
+
+body[data-view="popover"] .system-shell .popover-process-head {
+  grid-template-columns: 14px 20px minmax(0, 1fr) minmax(92px, .36fr);
+  grid-template-rows: auto auto;
+  min-height: 46px;
+  gap: 3px 8px;
+  padding: 6px 0;
+}
+
+body[data-view="popover"] .system-shell .popover-process-mainline {
+  grid-column: 3;
+  grid-row: 1;
+  grid-template-columns: minmax(62px, .28fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+}
+
+body[data-view="popover"] .system-shell .popover-process-mainline strong {
+  font-size: 12.2px;
+  line-height: 1.05;
+}
+
+body[data-view="popover"] .system-shell .popover-process-mainline b {
+  color: color-mix(in srgb, var(--metric-strong, var(--pressure-strong)) 64%, var(--fg));
+  font-size: 10.8px;
+  line-height: 1.12;
+}
+
+body[data-view="popover"] .popover-process-host {
+  display: inline-flex;
+  grid-column: 4;
+  grid-row: 1;
+  align-items: center;
+  justify-self: end;
+  max-width: 100%;
+  min-width: 0;
+  gap: 5px;
+  color: var(--console-text-soft);
+}
+
+body[data-view="popover"] .popover-process-host .host-icon {
+  width: 17px;
+  height: 17px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--metric-color, var(--accent)) 9%, var(--console-material));
+  border-color: color-mix(in srgb, var(--metric-color, var(--accent)) 18%, transparent);
+}
+
+body[data-view="popover"] .popover-process-host em {
+  min-width: 0;
+  overflow: hidden;
+  color: color-mix(in srgb, var(--fg-muted) 88%, var(--metric-color, var(--accent)));
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 720;
+  line-height: 1.05;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .popover-process-host.is-empty {
+  opacity: .62;
+}
+
+body[data-view="popover"] .system-shell .popover-process-subline {
+  grid-column: 3 / 5;
+  grid-row: 2;
+  color: color-mix(in srgb, var(--fg-muted) 76%, transparent);
+  font-size: 9.2px;
+  line-height: 1.22;
+}
+
+:root[data-theme="light"] body[data-view="popover"] .popover-process-host em {
+  color: color-mix(in srgb, var(--metric-strong, #315ec7) 34%, #53657a);
+}

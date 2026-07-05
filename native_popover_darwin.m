@@ -80,7 +80,7 @@
 - (instancetype)init {
     self = [super init];
     if (self != nil) {
-        self.width = 380.0;
+        self.width = 430.0;
         self.height = 560.0;
     }
     return self;

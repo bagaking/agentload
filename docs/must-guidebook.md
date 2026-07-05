@@ -28,8 +28,12 @@ This guidebook is the reading map for the shared knowledge root.
 
 ## Current Shared Pages
 
+- `docs/agent-load-metric-semantics.md` — Agent Load Metric Semantics
 - `docs/agent-load-parity-checklist.md` — Agent Load Parity Checklist
 - `docs/agent-load-ui-design-system.md` — Agent Load UI Design System
+- `docs/app-store-positioning.md` — App Store Positioning
+- `docs/apple-distribution-readiness.md` — Apple Distribution Readiness
 - `docs/neutral-observation-principles.md` — Neutral Observation Principles
 - `docs/norms-maintaining-reusable-items.md` — Maintaining Reusable Items
 - `docs/notes-reusable-items-knowledge.md` — Reusable Items - Knowledge
+- `docs/privacy-local-observation.md` — Privacy: Local Observation Draft
