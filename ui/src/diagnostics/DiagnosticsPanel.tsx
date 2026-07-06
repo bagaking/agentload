@@ -1,21 +1,32 @@
 import React, { useMemo, useState } from "react";
-import { AlertTriangle, Download, Radar, ShieldCheck, Sigma, Waves } from "lucide-react";
-import { formatDateTime, type Translate } from "../lib/format";
-import type { DiagnosticBaseline, DiagnosticCapability, DiagnosticSignal, MetricRegistryEntry, RuntimeTelemetrySnapshot, Snapshot } from "../types/snapshot";
+import {
+  Activity,
+  AlertTriangle,
+  Box,
+  ChevronRight,
+  Code2,
+  Cpu,
+  Database,
+  Download,
+  EyeOff,
+  FileText,
+  Folder,
+  Link2,
+  MessageSquare,
+  Radar,
+  ShieldCheck,
+  Target,
+  Terminal,
+} from "lucide-react";
+import { type Translate } from "../lib/format";
+import type { Snapshot } from "../types/snapshot";
+import { buildDiagnosticViewModel, diagnosticOmittedFieldLabel, type ChainNode, type DiagnosticTone, type EvidenceMetric, type PriorityRow } from "./diagnosticModel";
 
 type ExportState = "idle" | "working" | "done" | "failed";
 
 export function DiagnosticsPanel({ t, snapshot }: { t: Translate; snapshot: Snapshot }) {
-  const diagnostics = snapshot.diagnostics;
   const [exportState, setExportState] = useState<ExportState>("idle");
-  const anomalies = diagnostics?.anomaly_signals ?? [];
-  const gaps = diagnostics?.evidence_gaps ?? [];
-  const baselines = diagnostics?.baselines ?? [];
-  const capabilities = diagnostics?.capabilities ?? [];
-  const generated = diagnostics?.generated_at ? formatDateTime(diagnostics.generated_at) : snapshot.generated_at ? formatDateTime(snapshot.generated_at) : t("unavailable");
-  const signals = useMemo(() => [...anomalies, ...gaps], [anomalies, gaps]);
-  const baselineRows = useMemo(() => diagnosticBaselineRows(t, baselines), [t, baselines]);
-  const metricRegistry = useMemo(() => semanticRegistryPreview(snapshot.metric_registry ?? []), [snapshot.metric_registry]);
+  const viewModel = useMemo(() => buildDiagnosticViewModel(t, snapshot), [t, snapshot]);
 
   const downloadExport = async () => {
     setExportState("working");
@@ -43,290 +54,146 @@ export function DiagnosticsPanel({ t, snapshot }: { t: Translate; snapshot: Snap
       <div className="diagnostics-headline">
         <div>
           <span className="note-kicker">{t("diagnostics")}</span>
-          <h2>{t("diagnosticsPage")}</h2>
+          <h2>{t("diagnosticFactCheck")}</h2>
         </div>
-        <span>{t("liveSample")} · {generated}</span>
+        <span>{t("liveSample")} · {viewModel.generated}</span>
       </div>
 
-      <section className="diagnostics-score-grid" aria-label={t("diagnosticBaselines")}>
-        {baselineRows.length ? baselineRows.map((baseline) => (
-          <article className={`diagnostic-baseline status-${baseline.status || "unknown"}`} key={baseline.key || baseline.label}>
-            <span>{diagnosticBaselineLabel(t, baseline)}</span>
-            <strong>{diagnosticBaselineValue(t, baseline)}</strong>
-            <em>{diagnosticBaselineDetail(t, baseline)}</em>
-          </article>
-        )) : (
-          <article className="diagnostic-baseline status-empty">
-            <span>{t("diagnosticBaselines")}</span>
-            <strong>{t("unavailable")}</strong>
-            <em>{t("diagnosticNoSignals")}</em>
-          </article>
-        )}
+      <section className="diagnostic-evidence-strip" aria-label={t("diagnosticEvidenceHealth")}>
+        {viewModel.evidenceMetrics.map((metric) => <EvidenceMetricCell key={metric.key} metric={metric} />)}
+        <span className="diagnostic-no-forecast"><Radar size={12} />{t("diagnosticNoForecastBadge")}</span>
       </section>
 
-      <section className="diagnostic-signal-plane">
-        <div className="diagnostic-section-head">
-          <span><Radar size={14} />{t("diagnosticSignals")}</span>
-          <em>{anomalies.length} {t("anomalies")} · {gaps.length} {t("evidenceGaps")}</em>
+      <section className="diagnostic-priority-plane" aria-label={t("diagnosticPriority")}>
+        <div className="diagnostic-plane-head">
+          <span><Target size={15} />{t("diagnosticPriority")}</span>
+          <em>{viewModel.anomalyCount} {t("anomalies")} · {viewModel.gapCount} {t("evidenceGaps")}</em>
         </div>
-        {signals.length ? (
-          <div className="diagnostic-signal-list">
-            {signals.map((signal, index) => <DiagnosticSignalRow key={`${signal.kind}-${index}`} t={t} signal={signal} />)}
+        {viewModel.priorityRows.length ? (
+          <div className="diagnostic-priority-table">
+            <div className="diagnostic-priority-header" aria-hidden="true">
+              <span>{t("diagnosticIssue")}</span>
+              <span>{t("evidence")}</span>
+              <span>{t("source")}</span>
+              <span>{t("diagnosticNextCheck")}</span>
+            </div>
+            {viewModel.priorityRows.map((row) => <PrioritySignalRow key={row.key} row={row} />)}
           </div>
         ) : (
           <div className="diagnostic-empty"><ShieldCheck size={16} /><span>{t("diagnosticNoSignals")}</span></div>
         )}
       </section>
 
-      <section className="diagnostic-semantic-plane">
-        <div className="diagnostic-section-head">
-          <span><Sigma size={14} />{t("metricSemantics")}</span>
-          <em>{metricRegistry.length}</em>
+      <section className="diagnostic-chain-plane" aria-label={t("diagnosticEvidenceChain")}>
+        <div className="diagnostic-plane-head">
+          <span><Link2 size={15} />{t("diagnosticEvidenceChain")}</span>
+          <StatusLegend t={t} />
         </div>
-        <div className="diagnostic-semantic-grid">
-          {metricRegistry.map((metric) => <MetricRegistryRow key={metric.key || metric.label} t={t} metric={metric} />)}
+        <div className="diagnostic-chain-map">
+          <div className="diagnostic-chain-stage collectors">{t("diagnosticCollectors")}</div>
+          <div className="diagnostic-chain-stage semantics">{t("metricSemantics")}</div>
+          <div className="diagnostic-chain-stage export">{t("diagnosticExport")}</div>
+          {viewModel.chainNodes.map((node, index) => <ChainNodeItem key={node.key} node={node} index={index} total={viewModel.chainNodes.length} />)}
         </div>
       </section>
 
-      <section className="diagnostics-capability-export">
-        <div className="diagnostic-capabilities">
-          <div className="diagnostic-section-head">
-            <span><Waves size={14} />{t("diagnosticCapabilities")}</span>
-            <em>{capabilities.length}</em>
-          </div>
-          <div className="diagnostic-capability-list">
-            {capabilities.map((capability) => <DiagnosticCapabilityRow key={capability.key || capability.label} t={t} capability={capability} />)}
-          </div>
-          <RuntimeTelemetryRow t={t} telemetry={snapshot.runtime_telemetry} />
+      <section className="diagnostic-export-plane" aria-label={t("diagnosticExportBoundary")}>
+        <div className="diagnostic-export-title">
+          <span><ShieldCheck size={15} />{t("diagnosticExportBoundary")}</span>
+          <em>{t("diagnosticExportBoundaryCopy")}</em>
         </div>
-        <article className="diagnostic-export-card">
-          <div className="diagnostic-section-head">
-            <span><Download size={14} />{t("diagnosticExport")}</span>
-            <em>{t("safeExport")}</em>
-          </div>
-          <p>{t("diagnosticExportCopy")}</p>
-          <div className="diagnostic-omissions">
-            {(diagnostics?.export?.omitted_fields ?? []).map((item) => <span key={item}>{diagnosticOmittedFieldLabel(t, item)}</span>)}
-          </div>
-          <button type="button" className={`diagnostic-export-button is-${exportState}`} onClick={downloadExport} disabled={exportState === "working"}>
-            <Download size={14} />
-            <span>{exportState === "working" ? t("exportWorking") : exportState === "done" ? t("exportReady") : exportState === "failed" ? t("exportFailed") : t("downloadDiagnostics")}</span>
-          </button>
-        </article>
+        <div className="diagnostic-omissions">
+          {viewModel.omittedFields.map((item) => <span key={item}>{omittedFieldIcon(item)}{diagnosticOmittedFieldLabel(t, item)}</span>)}
+        </div>
+        <button type="button" className={`diagnostic-export-button is-${exportState}`} onClick={downloadExport} disabled={exportState === "working"}>
+          <Download size={14} />
+          <span>{exportState === "working" ? t("exportWorking") : exportState === "done" ? t("exportReady") : exportState === "failed" ? t("exportFailed") : t("downloadDiagnostics")}</span>
+        </button>
       </section>
     </section>
   );
 }
 
-function DiagnosticSignalRow({ t, signal }: { t: Translate; signal: DiagnosticSignal }) {
-  const severity = signal.severity || "info";
+function EvidenceMetricCell({ metric }: { metric: EvidenceMetric }) {
   return (
-    <article className={`diagnostic-signal severity-${severity}`}>
-      <AlertTriangle size={13} aria-hidden="true" />
-      <span>
-        <strong>{diagnosticSignalTitle(t, signal)}</strong>
-        <em>{diagnosticSignalDetail(t, signal)}</em>
+    <article className={`diagnostic-evidence-cell tone-${metric.tone}`} style={{ "--metric-pct": `${metric.percent}%` } as React.CSSProperties}>
+      <span className="diagnostic-evidence-label">{evidenceMetricIcon(metric.key)}<b>{metric.label}</b></span>
+      <strong>{metric.value}</strong>
+      <i aria-hidden="true"><em /></i>
+      <small>{metric.detail}</small>
+    </article>
+  );
+}
+
+function PrioritySignalRow({ row }: { row: PriorityRow }) {
+  return (
+    <article className={`diagnostic-priority-row tone-${row.tone}`}>
+      <span className="diagnostic-priority-issue">
+        <SeverityIcon tone={row.tone} />
+        <span>
+          <b>{row.title}</b>
+          <em>{row.detail}</em>
+        </span>
       </span>
-      <b>{signal.metric_key ? metricKeyLabel(t, signal.metric_key) : diagnosticSourceLabel(t, signal.source)}</b>
-    </article>
-  );
-}
-
-function DiagnosticCapabilityRow({ t, capability }: { t: Translate; capability: DiagnosticCapability }) {
-  return (
-    <article className={`diagnostic-capability status-${capability.status || "unknown"}`}>
-      <span>{diagnosticCapabilityLabel(t, capability)}</span>
-      <strong>{diagnosticStatusLabel(t, capability.status)}</strong>
-      <em>{diagnosticCapabilityDetail(t, capability)}</em>
-    </article>
-  );
-}
-
-function MetricRegistryRow({ t, metric }: { t: Translate; metric: MetricRegistryEntry }) {
-  return (
-    <article className="diagnostic-semantic-row">
-      <span>
-        <b>{metricKeyLabel(t, metric.key, metric.label)}</b>
-        <em>{metricFamilyLabel(t, metric.family)} · {metricUnitLabel(t, metric)}</em>
+      <span className="diagnostic-priority-evidence">
+        <strong>{row.evidence}</strong>
+        <em>{row.evidenceLabel}</em>
       </span>
-      <strong>{metricSourceLabel(t, metric)}</strong>
-      <small>{metricMissingStateLabel(t, metric)}</small>
+      <span className="diagnostic-source-badge">
+        <b>{row.source}</b>
+        <code>{row.sourceCode}</code>
+      </span>
+      <span className="diagnostic-priority-action">{row.action}<ChevronRight size={13} /></span>
     </article>
   );
 }
 
-function RuntimeTelemetryRow({ t, telemetry }: { t: Translate; telemetry?: RuntimeTelemetrySnapshot }) {
-  if (!telemetry) return null;
+function ChainNodeItem({ node, index, total }: { node: ChainNode; index: number; total: number }) {
   return (
-    <article className={`diagnostic-runtime-telemetry status-${telemetry.status || "unknown"}`}>
-      <div className="diagnostic-section-head">
-        <span><Waves size={14} />{t("runtimeTelemetry")}</span>
-        <em>{diagnosticStatusLabel(t, telemetry.status)}</em>
-      </div>
-      <p>{runtimeTelemetryDetail(t, telemetry)}</p>
-      <div className="diagnostic-adapter-row">
-        {(telemetry.adapters ?? []).map((adapter) => (
-          <span key={adapter.key || adapter.label}>
-            <b>{runtimeTelemetryAdapterLabel(t, adapter.key, adapter.label)}</b>
-            <strong>{diagnosticStatusLabel(t, adapter.status)}</strong>
-          </span>
-        ))}
-      </div>
+    <article className={`diagnostic-chain-node tone-${node.tone}`} style={{ "--node-index": index, "--node-total": total } as React.CSSProperties}>
+      <span>{chainNodeIcon(node.key)}</span>
+      <b>{node.label}</b>
+      <code>{node.code}</code>
+      <em>{node.status}</em>
     </article>
   );
 }
 
-function semanticRegistryPreview(items: MetricRegistryEntry[]): MetricRegistryEntry[] {
-  const preferred = ["recent_movement", "known_sessions", "process_pressure", "process_resources", "system_resources", "role_matrix", "token_usage", "runtime_telemetry"];
-  const byKey = new Map(items.map((item) => [item.key, item]));
-  return preferred.map((key) => byKey.get(key)).filter(Boolean) as MetricRegistryEntry[];
+function SeverityIcon({ tone }: { tone: DiagnosticTone }) {
+  if (tone === "warn" || tone === "watch") return <AlertTriangle size={17} />;
+  return <Radar size={17} />;
 }
 
-function diagnosticBaselineRows(t: Translate, baselines: DiagnosticBaseline[]): DiagnosticBaseline[] {
-  return [
-    ...baselines,
-    {
-      key: "prediction_safe_status",
-      label: t("predictionSafeStatus"),
-      value: t("predictionUnavailable"),
-      status: "unavailable",
-      detail: t("predictionUnavailableDetail"),
-      metric_key: "diagnostic_export",
-    },
-  ];
+function StatusLegend({ t }: { t: Translate }) {
+  return (
+    <span className="diagnostic-status-legend">
+      <i className="tone-ok" />{t("available")}
+      <i className="tone-empty" />{t("emptyStatus")}
+      <i className="tone-muted" />{t("notConfigured")}
+    </span>
+  );
 }
 
-function diagnosticBaselineLabel(t: Translate, baseline: DiagnosticBaseline): string {
-  if (baseline.key === "mapping_coverage") return t("baselineMappingCoverage");
-  if (baseline.key === "active_session_ratio") return t("baselineRecentMovementShare");
-  if (baseline.key === "low_confidence_sessions") return t("baselineLowConfidenceSessions");
-  if (baseline.key === "token_measured_sessions") return t("baselineTokenMeasuredSessions");
-  if (baseline.key === "prediction_safe_status") return t("predictionSafeStatus");
-  return baseline.key ? humanizeKey(baseline.key) : baseline.label || t("unknown");
+function evidenceMetricIcon(key: EvidenceMetric["key"]) {
+  if (key === "session_evidence") return <Database size={14} />;
+  if (key === "pid_link") return <Link2 size={14} />;
+  return <EyeOff size={14} />;
 }
 
-function diagnosticBaselineValue(t: Translate, baseline: DiagnosticBaseline): string {
-  const value = String(baseline.value || "").trim();
-  if (!value) return t("unavailable");
-  if (value === "no visible PIDs") return t("noVisiblePids");
-  return value;
+function chainNodeIcon(key: ChainNode["key"]) {
+  if (key === "passive_process_observer") return <Activity size={19} />;
+  if (key === "transcript_parser") return <FileText size={19} />;
+  if (key === "system_resources") return <Cpu size={19} />;
+  if (key === "runtime_telemetry_adapter") return <Radar size={19} />;
+  return <Download size={19} />;
 }
 
-function diagnosticBaselineDetail(t: Translate, baseline: DiagnosticBaseline): string {
-  if (baseline.key === "mapping_coverage") return t("baselineMappingCoverageDetail");
-  if (baseline.key === "active_session_ratio") return t("baselineRecentMovementShareDetail");
-  if (baseline.key === "low_confidence_sessions") return t("baselineLowConfidenceSessionsDetail");
-  if (baseline.key === "token_measured_sessions") return t("baselineTokenMeasuredSessionsDetail");
-  if (baseline.key === "prediction_safe_status") return t("predictionUnavailableDetail");
-  return baseline.metric_key ? metricKeyLabel(t, baseline.metric_key) : t("diagnosticEvidence");
-}
-
-function metricKeyLabel(t: Translate, key?: string, fallback?: string): string {
-  if (key === "recent_movement") return t("metricFresh");
-  if (key === "known_sessions") return t("metricKnownSessions");
-  if (key === "process_pressure") return t("processPressure");
-  if (key === "process_resources") return t("processResources");
-  if (key === "system_resources") return t("systemResources");
-  if (key === "role_matrix") return t("roleMatrix");
-  if (key === "token_usage") return t("tokenUsage");
-  if (key === "runtime_telemetry") return t("runtimeTelemetry");
-  if (key === "diagnostic_export") return t("diagnosticExport");
-  return fallback || key || t("unknown");
-}
-
-function diagnosticCapabilityLabel(t: Translate, capability: DiagnosticCapability): string {
-  if (capability.key === "passive_process_observer") return t("passiveProcessObserver");
-  if (capability.key === "transcript_parser") return t("transcriptParser");
-  if (capability.key === "system_resources") return t("systemResources");
-  if (capability.key === "runtime_telemetry_adapter") return t("runtimeTelemetry");
-  if (capability.key === "diagnostic_export") return t("diagnosticExport");
-  return capability.label || capability.key || t("unknown");
-}
-
-function diagnosticSignalTitle(t: Translate, signal: DiagnosticSignal): string {
-  const title = translateDiagnosticKey(t, "diagnosticSignal", signal.kind, "Title");
-  if (title) return title;
-  return signal.kind ? humanizeKey(signal.kind) : t("unknown");
-}
-
-function diagnosticSignalDetail(t: Translate, signal: DiagnosticSignal): string {
-  const detail = translateDiagnosticKey(t, "diagnosticSignal", signal.kind, "Detail") || t("diagnosticEvidenceDetail");
-  const evidence = String(signal.evidence || "").trim();
-  return evidence ? `${detail} · ${evidence}` : detail;
-}
-
-function diagnosticCapabilityDetail(t: Translate, capability: DiagnosticCapability): string {
-  return translateDiagnosticKey(t, "diagnosticCapability", capability.key, "Detail") || t("diagnosticEvidenceDetail");
-}
-
-function diagnosticSourceLabel(t: Translate, source?: string): string {
-  return translateDiagnosticKey(t, "diagnosticSource", source, "Label") || (source ? humanizeKey(source) : "");
-}
-
-function diagnosticOmittedFieldLabel(t: Translate, value: string): string {
-  const normalized = normalizeI18nKey(value);
-  const key = `diagnosticOmitted${normalized}`;
-  const translated = t(key);
-  return translated !== key ? translated : humanizeKey(value);
-}
-
-function metricFamilyLabel(t: Translate, family?: string): string {
-  return translateDiagnosticKey(t, "metricFamily", family, "Label") || (family ? humanizeKey(family) : t("unknown"));
-}
-
-function metricUnitLabel(t: Translate, metric: MetricRegistryEntry): string {
-  return translateDiagnosticKey(t, "metricUnit", metric.key, "Label") || metric.unit || t("unavailable");
-}
-
-function metricSourceLabel(t: Translate, metric: MetricRegistryEntry): string {
-  return translateDiagnosticKey(t, "metricSource", metric.key, "Label") || t("localSource");
-}
-
-function metricMissingStateLabel(t: Translate, metric: MetricRegistryEntry): string {
-  return translateDiagnosticKey(t, "metricMissing", metric.key, "Label") || t("unavailable");
-}
-
-function runtimeTelemetryDetail(t: Translate, telemetry: RuntimeTelemetrySnapshot): string {
-  if (telemetry.configured) return t("runtimeTelemetryConfiguredCopy");
-  return t("runtimeTelemetryCopy");
-}
-
-function runtimeTelemetryAdapterLabel(t: Translate, key?: string, fallback?: string): string {
-  return translateDiagnosticKey(t, "runtimeTelemetryAdapter", key, "Label") || fallback || key || t("unknown");
-}
-
-function translateDiagnosticKey(t: Translate, prefix: string, value?: string, suffix = ""): string {
-  const normalized = normalizeI18nKey(value);
-  if (!normalized) return "";
-  const key = `${prefix}${normalized}${suffix}`;
-  const translated = t(key);
-  return translated !== key ? translated : "";
-}
-
-function normalizeI18nKey(value?: string): string {
-  const text = String(value || "").trim();
-  if (!text) return "";
-  return text
-    .split(/[^a-zA-Z0-9]+/)
-    .filter(Boolean)
-    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
-    .join("");
-}
-
-function humanizeKey(value: string): string {
-  return String(value || "").trim().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
-}
-
-function diagnosticStatusLabel(t: Translate, status?: string): string {
-  const value = String(status || "").trim().toLowerCase();
-  if (value === "available") return t("available");
-  if (value === "not_configured") return t("notConfigured");
-  if (value === "unavailable") return t("unavailable");
-  if (value === "partial") return t("partial");
-  if (value === "empty") return t("emptyStatus");
-  if (value === "ok") return t("okStatus");
-  if (value === "watch") return t("watchStatus");
-  if (value === "warn") return t("warnStatus");
-  if (value === "idle") return t("idle");
-  return status || t("unknown");
+function omittedFieldIcon(value: string) {
+  const text = value.toLowerCase();
+  if (text.includes("prompt")) return <MessageSquare size={12} />;
+  if (text.includes("path")) return <Folder size={12} />;
+  if (text.includes("command")) return <Terminal size={12} />;
+  if (text.includes("env")) return <Code2 size={12} />;
+  if (text.includes("bundle")) return <Box size={12} />;
+  return <ShieldCheck size={12} />;
 }

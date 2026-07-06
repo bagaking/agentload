@@ -135,6 +135,17 @@ semantic layer before visual polish is accepted.
   Do not duplicate these controls into Trend or System. Trend may link runtime
   drilldowns to persisted samples; System may show current process evidence; the
   Diagnostics page explains whether the evidence is complete enough to trust.
+- Diagnostics must read as a fact-check and local evidence inspection surface,
+  not an AI report, generic health dashboard, or card pile. Put observed
+  evidence quality first, keep forecasting explicitly unavailable unless a real
+  model exists, and express every priority row as plain user-facing
+  issue/evidence/source/next-check language. Backend diagnostic keys may appear
+  only as compact source badges or export evidence, never as the primary title
+  in a localized UI.
+- Diagnostics layout should use a small set of reusable planes: an evidence
+  strip, a priority-check table, an evidence-chain map, and a safe-export
+  boundary. Avoid one-off diagnostic cards that repeat the same visual frame or
+  make the page feel generated rather than deliberately instrumented.
 - Compact popover tab panels share one content rhythm. Online, trend, and
   system views should use the same first-level side inset, top/bottom padding,
   section gap, heading scale, and secondary text scale; individual charts,
