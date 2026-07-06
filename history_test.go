@@ -323,6 +323,12 @@ func TestMergeRuntimeTrendsUsesLoadedHistoryAndCurrentSample(t *testing.T) {
 		ProjectFocus: []ProjectSnapshot{
 			{Project: "alpha", SessionCount: 4, ActiveBurstCount: 3, ProcessCount: 5, AttentionSharePct: 100},
 		},
+		RuntimeProcesses: []ProcessRuntimeSummary{
+			{Key: "codex", Tool: "codex", DisplayName: "Codex", PIDCount: 3},
+		},
+		HostAppProcesses: []HostAppProcessSummary{
+			{Key: "cursor", Name: "Cursor", PIDCount: 5},
+		},
 	}
 
 	snapshot = app.mergeRuntimeTrendsLocked(snapshot)
@@ -334,6 +340,12 @@ func TestMergeRuntimeTrendsUsesLoadedHistoryAndCurrentSample(t *testing.T) {
 	currentPoint := requireTrendPoint(t, oneDay.Points, now)
 	if currentPoint.PIDConcurrency != 5 {
 		t.Fatalf("expected current point pid 5, got %+v", currentPoint)
+	}
+	if len(currentPoint.RuntimeProcesses) != 1 || currentPoint.RuntimeProcesses[0].Tool != "codex" || currentPoint.RuntimeProcesses[0].PIDCount != 3 {
+		t.Fatalf("expected current point runtime process breakdown, got %+v", currentPoint.RuntimeProcesses)
+	}
+	if len(currentPoint.HostAppProcesses) != 1 || currentPoint.HostAppProcesses[0].Name != "Cursor" || currentPoint.HostAppProcesses[0].PIDCount != 5 {
+		t.Fatalf("expected current point host process breakdown, got %+v", currentPoint.HostAppProcesses)
 	}
 	if snapshot.History.LoadedSampleCount != 2 {
 		t.Fatalf("expected loaded sample count 2 after current append, got %+v", snapshot.History)

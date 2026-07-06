@@ -290,6 +290,44 @@ func TestTrendPointMarshalJSONOmitsMissingSampledRuntimeMetric(t *testing.T) {
 	requireTrendPointKeysAbsent(t, decoded, "mapping_coverage_pct")
 }
 
+func TestTrendPointMarshalJSONCarriesRuntimeBreakdowns(t *testing.T) {
+	point := TrendPoint{
+		At:                   time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		PIDConcurrency:       5,
+		HasPIDConcurrency:    true,
+		MappedProcesses:      4,
+		HasMappedProcesses:   true,
+		UnmappedProcesses:    1,
+		HasUnmappedProcesses: true,
+		RuntimeSampled:       true,
+		RuntimeProcesses: []ProcessRuntimeSummary{
+			{Key: "codex", Tool: "codex", DisplayName: "Codex", PIDCount: 3},
+			{Key: "claude", Tool: "claude", DisplayName: "Claude", PIDCount: 2},
+		},
+		HostAppProcesses: []HostAppProcessSummary{
+			{Key: "cursor", Name: "Cursor", PIDCount: 4},
+		},
+	}
+
+	decoded := marshalTrendPointJSON(t, point)
+	requireJSONBool(t, decoded, "runtime_sampled", true)
+	requireJSONInt(t, decoded, "pid_concurrency", 5)
+	var runtime []ProcessRuntimeSummary
+	if err := json.Unmarshal(decoded["runtime_process_summary"], &runtime); err != nil {
+		t.Fatalf("runtime_process_summary: %v", err)
+	}
+	if len(runtime) != 2 || runtime[0].Tool != "codex" || runtime[0].PIDCount != 3 {
+		t.Fatalf("unexpected runtime_process_summary: %+v", runtime)
+	}
+	var hosts []HostAppProcessSummary
+	if err := json.Unmarshal(decoded["host_app_process_summary"], &hosts); err != nil {
+		t.Fatalf("host_app_process_summary: %v", err)
+	}
+	if len(hosts) != 1 || hosts[0].Name != "Cursor" || hosts[0].PIDCount != 4 {
+		t.Fatalf("unexpected host_app_process_summary: %+v", hosts)
+	}
+}
+
 func TestBuildTranscriptTrendWindowsUsesEvidenceAtConfiguredSourceStart(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
 	evidenceStart := now.Add(-7 * 24 * time.Hour)

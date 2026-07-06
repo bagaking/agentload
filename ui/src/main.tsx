@@ -1223,7 +1223,7 @@ function PopoverHoverInspector({ t, detail }: { t: (key: string) => string; deta
 }
 
 function hoverPointFromEvent(event?: HoverDetailEvent): { x: number; y: number } {
-  if (event && "clientX" in event && event.clientX && event.clientY) {
+  if (event && "clientX" in event && Number.isFinite(event.clientX) && Number.isFinite(event.clientY)) {
     return { x: event.clientX, y: event.clientY };
   }
   const rect = event?.currentTarget.getBoundingClientRect();
@@ -1239,18 +1239,19 @@ function hoverPointFromEvent(event?: HoverDetailEvent): { x: number; y: number }
 function hoverInspectorStyle(state: HoverDetailState): React.CSSProperties {
   const viewportWidth = typeof window === "undefined" ? 420 : window.innerWidth;
   const viewportHeight = typeof window === "undefined" ? 560 : window.innerHeight;
+  const edge = 10;
   const width = state.detail.kind === "session"
     ? Math.min(348, Math.max(244, viewportWidth - 176))
     : Math.min(304, Math.max(220, viewportWidth - 196));
   const height = state.detail.kind === "session" && width < 280 ? 220 : state.detail.kind === "session" ? 156 : 132;
-  const gap = 14;
+  const gap = 12;
+  const verticalNudge = state.detail.kind === "session" ? 20 : 16;
   let left = state.x + gap;
-  let top = state.y - height - gap;
-  if (left + width > viewportWidth - 10) left = state.x - width - gap;
-  if (top < 10) top = state.y + gap;
-  if (top + height > viewportHeight - 10) top = state.y - height - gap;
-  left = Math.max(10, Math.min(left, Math.max(10, viewportWidth - width - 10)));
-  top = Math.max(10, Math.min(top, Math.max(10, viewportHeight - height - 10)));
+  let top = state.y - verticalNudge;
+  if (left + width > viewportWidth - edge) left = state.x - width - gap;
+  if (top + height > viewportHeight - edge) top = viewportHeight - height - edge;
+  left = Math.max(edge, Math.min(left, Math.max(edge, viewportWidth - width - edge)));
+  top = Math.max(edge, Math.min(top, Math.max(edge, viewportHeight - height - edge)));
   return {
     left,
     top,

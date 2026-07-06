@@ -19,6 +19,8 @@ type HistorySample struct {
 	Summary          SnapshotSummary          `json:"summary"`
 	CoordinationRisk HistoryCoordinationRisk  `json:"coordination_risk"`
 	Projects         []HistoryProjectSnapshot `json:"projects,omitempty"`
+	RuntimeProcesses []ProcessRuntimeSummary  `json:"runtime_process_summary,omitempty"`
+	HostAppProcesses []HostAppProcessSummary  `json:"host_app_process_summary,omitempty"`
 }
 
 type HistoryProjectSnapshot struct {
@@ -193,6 +195,8 @@ func (s localHistoryState) trendPoints() []TrendPoint {
 			UnmappedProcesses:     sample.Summary.UnmappedProcesses,
 			HasUnmappedProcesses:  true,
 			RuntimeSampled:        true,
+			RuntimeProcesses:      append([]ProcessRuntimeSummary(nil), sample.RuntimeProcesses...),
+			HostAppProcesses:      append([]HostAppProcessSummary(nil), sample.HostAppProcesses...),
 		})
 	}
 	return out
@@ -223,7 +227,9 @@ func historySampleFromSnapshot(snapshot Snapshot) HistorySample {
 			DuplicateOverlapSuspicionCount: snapshot.CoordinationRisk.DuplicateOverlapSuspicionCount,
 			DuplicateOverlapClusterCount:   snapshot.CoordinationRisk.DuplicateOverlapClusterCount,
 		},
-		Projects: make([]HistoryProjectSnapshot, 0, len(snapshot.ProjectFocus)),
+		Projects:         make([]HistoryProjectSnapshot, 0, len(snapshot.ProjectFocus)),
+		RuntimeProcesses: append([]ProcessRuntimeSummary(nil), snapshot.RuntimeProcesses...),
+		HostAppProcesses: append([]HostAppProcessSummary(nil), snapshot.HostAppProcesses...),
 	}
 	sample.At, _ = normalizeHistorySampleTimestamp(sample.At, time.Now())
 	for _, project := range snapshot.ProjectFocus {

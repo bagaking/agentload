@@ -53,6 +53,12 @@ semantic layer says so.
 - Trend charts, selected-point readouts, hover tooltips, and inspectors must use
   the same sampled datum. Do not draw a candle from one derived value and show a
   different raw point in the adjacent text.
+- Runtime trend drilldowns may split a selected bucket into persisted process
+  fields such as total visible PIDs, Coding Agent process distribution, host
+  process distribution, mapped processes, unmapped processes, and matched share.
+  Per-tool or per-process-type historical drilldowns must use distributions
+  recorded in that trend sample; do not infer them from the current snapshot for
+  past buckets.
 
 ## Implementation Ownership
 

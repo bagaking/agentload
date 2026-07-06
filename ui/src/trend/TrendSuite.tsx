@@ -25,6 +25,7 @@ import {
   type TrendSet,
   type TrendWindow,
 } from "./types";
+import { toolDisplayName, toolIconName } from "../lib/activityModel";
 
 export type TrendSnapshot = {
   trends?: TrendSet;
@@ -375,7 +376,10 @@ function TrendLaneView({
         </button>
       </div>
       {points.length ? (compact && lane === "runtime" ? (
-        <TrendRuntimeCurve t={t} summary={summary} selectedAt={selected?.at} onSelect={selectPoint} />
+        <>
+          <TrendRuntimeCurve t={t} summary={summary} selectedAt={selected?.at} onSelect={selectPoint} />
+          {isFocused ? <TrendRuntimeDrilldown t={t} summary={summary} /> : null}
+        </>
       ) : (
         <TrendKLineChart
           t={t}
@@ -437,15 +441,125 @@ function TrendRuntimeCurve({ t, summary, selectedAt, onSelect }: { t: Translate;
           </>
         ) : null}
       </svg>
-      {selected ? (
-        <div className="runtime-curve-readout">
-          <span>{selected.at ? formatChartAxisLabel(selected.at) : t("unavailable")}</span>
-          <strong>{trendMetricValue(t, selected.close)} {t("processes")}</strong>
-          <em>{t("metricMatched")} {trendMappingCoverageValue(selected.point) !== null ? formatPct(trendMappingCoverageValue(selected.point) ?? undefined) : t("unavailable")}</em>
-        </div>
-      ) : null}
     </div>
   );
+}
+
+function TrendRuntimeDrilldown({ t, summary }: { t: Translate; summary?: TrendLaneSummary }) {
+  const datum = summary?.selected;
+  if (!summary || summary.lane !== "runtime" || !datum) return null;
+  const point = datum.point;
+  const total = Math.max(0, datum.close);
+  const coverage = trendMappingCoverageValue(point);
+  const { mode, parts } = runtimeDrilldownParts(t, point, total);
+  return (
+    <aside className="trend-runtime-drilldown" aria-label={t("processPressure")}>
+      <div className="trend-runtime-drilldown-head">
+        <span>{t("processPressure")} · {mode}</span>
+        <strong>{datum.at ? formatDateTime(datum.at) : t("unavailable")}</strong>
+      </div>
+      <div className="trend-runtime-drilldown-total">
+        <strong>{trendMetricValue(t, total)}</strong>
+        <span>{t("processes")}</span>
+        <em>{t("trendReadoutMatched")} {coverage !== null ? formatPct(coverage) : t("unavailable")}</em>
+      </div>
+      <div className="trend-runtime-drilldown-meter" aria-hidden="true">
+        {parts.map((part) => (
+          <i className={part.tone} key={part.key} style={{ width: `${clampNumber(part.pct, 0, 100)}%` }} />
+        ))}
+      </div>
+      <div className="trend-runtime-drilldown-parts">
+        {parts.map((part) => (
+          <span className={part.tone} key={part.key}>
+            <TrendDrilldownMark part={part} />
+            <b>{part.label}</b>
+            <strong>{trendMetricValue(t, part.value)}</strong>
+          </span>
+        ))}
+      </div>
+    </aside>
+  );
+}
+
+type TrendDrilldownPart = {
+  key: string;
+  tone: string;
+  label: string;
+  value: number;
+  pct: number;
+  tool?: string;
+};
+
+function runtimeDrilldownParts(t: Translate, point: TrendPoint, total: number): { mode: string; parts: TrendDrilldownPart[] } {
+  const scale = Math.max(total, 1);
+  const toolItems = [...(point.runtime_process_summary ?? [])]
+    .filter((item) => (item.pid_count ?? 0) > 0)
+    .sort((a, b) => (b.pid_count ?? 0) - (a.pid_count ?? 0));
+  if (toolItems.length) {
+    return {
+      mode: t("codingAgents"),
+      parts: compactTrendParts(toolItems.map((item, index) => ({
+        key: item.key || item.tool || `tool-${index}`,
+        tone: `tool-${index % 4}`,
+        label: toolDisplayName(item.display_name || item.tool || item.key),
+        value: item.pid_count ?? 0,
+        pct: ((item.pid_count ?? 0) / scale) * 100,
+        tool: item.tool || item.key,
+      })), scale),
+    };
+  }
+  const hostItems = [...(point.host_app_process_summary ?? [])]
+    .filter((item) => (item.pid_count ?? 0) > 0)
+    .sort((a, b) => (b.pid_count ?? 0) - (a.pid_count ?? 0));
+  if (hostItems.length) {
+    return {
+      mode: t("hostProcesses"),
+      parts: compactTrendParts(hostItems.map((item, index) => ({
+        key: item.key || item.name || `host-${index}`,
+        tone: `host-${index % 4}`,
+        label: item.name || t("hostUnknown"),
+        value: item.pid_count ?? 0,
+        pct: ((item.pid_count ?? 0) / scale) * 100,
+      })), scale),
+    };
+  }
+  const mapped = trendMappedProcessCount(point);
+  const unmatched = trendUnmappedProcessCount(point);
+  const explained = Math.max(0, (mapped ?? 0) + (unmatched ?? 0));
+  const unknown = Math.max(0, total - explained);
+  return {
+    mode: t("processComposition"),
+    parts: [
+      { key: "mapped", tone: "mapped", label: t("mapped"), value: mapped ?? 0, pct: mapped !== null ? (mapped / scale) * 100 : 0 },
+      { key: "unmatched", tone: "unmatched", label: t("unmatched"), value: unmatched ?? 0, pct: unmatched !== null ? (unmatched / scale) * 100 : 0 },
+      ...(unknown > 0 ? [{ key: "unknown", tone: "unknown", label: t("unknown"), value: unknown, pct: (unknown / scale) * 100 }] : []),
+    ],
+  };
+}
+
+function compactTrendParts(parts: TrendDrilldownPart[], scale: number): TrendDrilldownPart[] {
+  if (parts.length <= 3) return parts;
+  const visible = parts.slice(0, 2);
+  const rest = parts.slice(2);
+  const restValue = rest.reduce((sum, item) => sum + item.value, 0);
+  return [
+    ...visible,
+    {
+      key: "other",
+      tone: "other",
+      label: `+${rest.length}`,
+      value: restValue,
+      pct: (restValue / Math.max(scale, 1)) * 100,
+    },
+  ];
+}
+
+function TrendDrilldownMark({ part }: { part: TrendDrilldownPart }) {
+  const icon = toolIconName(part.tool);
+  if (icon) {
+    return <img alt="" aria-hidden="true" src={`/api/tool-icon/${icon}`} />;
+  }
+  return <i aria-hidden="true">{part.label.slice(0, 1).toUpperCase()}</i>;
 }
 
 function TrendKLineChart({

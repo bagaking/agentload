@@ -24,8 +24,36 @@ export type TrendPoint = {
   mapped_processes?: number;
   unmapped_processes?: number;
   mapping_coverage_pct?: number;
+  runtime_process_summary?: TrendProcessRuntimeSummary[];
+  host_app_process_summary?: TrendHostAppProcessSummary[];
   transcript_sampled?: boolean;
   runtime_sampled?: boolean;
+};
+
+export type TrendProcessRuntimeSummary = {
+  key?: string;
+  tool?: string;
+  display_name?: string;
+  pid_count?: number;
+  mapped_processes?: number;
+  unmapped_processes?: number;
+  direct_sessions?: number;
+  subagent_sessions?: number;
+  unknown_role_sessions?: number;
+  active_sessions?: number;
+};
+
+export type TrendHostAppProcessSummary = {
+  key?: string;
+  name?: string;
+  pid?: number;
+  pid_count?: number;
+  mapped_processes?: number;
+  unmapped_processes?: number;
+  direct_sessions?: number;
+  subagent_sessions?: number;
+  unknown_role_sessions?: number;
+  active_sessions?: number;
 };
 
 export type ProjectHeatmapSet = { windows?: ProjectHeatmapWindow[] };

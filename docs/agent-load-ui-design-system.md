@@ -267,7 +267,11 @@ semantic layer before visual polish is accepted.
 - Popover row hover details must render outside the scroll-clipped ledger as a
   single global cursor-following layer. Avoid row-local absolute popovers, but
   keep the detail spatially tied to the pointer with a short hide delay so
-  moving across dense rows does not flash or stack competing panels.
+  moving across dense rows does not flash or stack competing panels. The global
+  hover layer should offset sideways from the pointer and use only a small
+  vertical nudge; do not default to placing it a full panel height above the
+  cursor, because that breaks the perceived relationship between the row and
+  its detail.
   In dense popovers, prefer a complete one-pixel outline, quiet corner light,
   and lightly translucent material over a strong single-side accent rail, which
   repeats too aggressively across project/session rows and blocks scan paths.
@@ -324,6 +328,18 @@ semantic layer before visual polish is accepted.
   context metrics. The primary value maps to the selected bead and gets the
   strongest numeric weight; context values such as sessions or matched share
   stay smaller and quieter so they are not mistaken for the plotted line.
+- Trend lane headers and chart-local hover/readout overlays must not repeat the
+  same selected-bucket absolute values. Put selected time, primary value, and
+  context value in the lane header. Chart-local overlays should only appear
+  when they add clear audit value beyond the header; compact runtime curves may
+  rely on the selected bead and crosshair without any floating readout.
+- Compact runtime trend clicks may open a lightweight floating drilldown inside
+  the runtime lane. The float should not change the trend page layout or capture
+  chart pointer events, and it should explain the selected process count using
+  persisted trend semantics. Prefer Coding Agent tool distribution when the
+  selected trend sample carries it, fall back to host-process distribution when
+  available, and only use mapped/unmatched composition when no sampled
+  distribution exists.
 - Compact trend readout separators should stay subordinate to the chart. Any
   vertical rail near the readout should be short, low-contrast, and one pixel
   wide so it does not compete with the selected trend marker.

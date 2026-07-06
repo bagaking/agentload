@@ -183,33 +183,37 @@ type TrendWindow struct {
 }
 
 type TrendPoint struct {
-	At                     string  `json:"at"`
-	ActiveBurstConcurrency int     `json:"active_burst_concurrency"`
-	HasActiveBurst         bool    `json:"-"`
-	SessionConcurrency     int     `json:"session_concurrency"`
-	HasSessionConcurrency  bool    `json:"-"`
-	TranscriptSampled      bool    `json:"transcript_sampled"`
-	PIDConcurrency         int     `json:"pid_concurrency"`
-	HasPIDConcurrency      bool    `json:"-"`
-	MappingCoveragePct     float64 `json:"mapping_coverage_pct"`
-	HasMappingCoveragePct  bool    `json:"-"`
-	MappedProcesses        int     `json:"mapped_processes"`
-	HasMappedProcesses     bool    `json:"-"`
-	UnmappedProcesses      int     `json:"unmapped_processes"`
-	HasUnmappedProcesses   bool    `json:"-"`
-	RuntimeSampled         bool    `json:"runtime_sampled"`
+	At                     string                  `json:"at"`
+	ActiveBurstConcurrency int                     `json:"active_burst_concurrency"`
+	HasActiveBurst         bool                    `json:"-"`
+	SessionConcurrency     int                     `json:"session_concurrency"`
+	HasSessionConcurrency  bool                    `json:"-"`
+	TranscriptSampled      bool                    `json:"transcript_sampled"`
+	PIDConcurrency         int                     `json:"pid_concurrency"`
+	HasPIDConcurrency      bool                    `json:"-"`
+	MappingCoveragePct     float64                 `json:"mapping_coverage_pct"`
+	HasMappingCoveragePct  bool                    `json:"-"`
+	MappedProcesses        int                     `json:"mapped_processes"`
+	HasMappedProcesses     bool                    `json:"-"`
+	UnmappedProcesses      int                     `json:"unmapped_processes"`
+	HasUnmappedProcesses   bool                    `json:"-"`
+	RuntimeSampled         bool                    `json:"runtime_sampled"`
+	RuntimeProcesses       []ProcessRuntimeSummary `json:"runtime_process_summary,omitempty"`
+	HostAppProcesses       []HostAppProcessSummary `json:"host_app_process_summary,omitempty"`
 }
 
 type trendPointJSON struct {
-	At                     string   `json:"at"`
-	ActiveBurstConcurrency *int     `json:"active_burst_concurrency,omitempty"`
-	SessionConcurrency     *int     `json:"session_concurrency,omitempty"`
-	TranscriptSampled      *bool    `json:"transcript_sampled,omitempty"`
-	PIDConcurrency         *int     `json:"pid_concurrency,omitempty"`
-	MappingCoveragePct     *float64 `json:"mapping_coverage_pct,omitempty"`
-	MappedProcesses        *int     `json:"mapped_processes,omitempty"`
-	UnmappedProcesses      *int     `json:"unmapped_processes,omitempty"`
-	RuntimeSampled         *bool    `json:"runtime_sampled,omitempty"`
+	At                     string                  `json:"at"`
+	ActiveBurstConcurrency *int                    `json:"active_burst_concurrency,omitempty"`
+	SessionConcurrency     *int                    `json:"session_concurrency,omitempty"`
+	TranscriptSampled      *bool                   `json:"transcript_sampled,omitempty"`
+	PIDConcurrency         *int                    `json:"pid_concurrency,omitempty"`
+	MappingCoveragePct     *float64                `json:"mapping_coverage_pct,omitempty"`
+	MappedProcesses        *int                    `json:"mapped_processes,omitempty"`
+	UnmappedProcesses      *int                    `json:"unmapped_processes,omitempty"`
+	RuntimeProcesses       []ProcessRuntimeSummary `json:"runtime_process_summary,omitempty"`
+	HostAppProcesses       []HostAppProcessSummary `json:"host_app_process_summary,omitempty"`
+	RuntimeSampled         *bool                   `json:"runtime_sampled,omitempty"`
 }
 
 func (p TrendPoint) MarshalJSON() ([]byte, error) {
@@ -238,6 +242,8 @@ func (p TrendPoint) MarshalJSON() ([]byte, error) {
 		if p.HasUnmappedProcesses {
 			payload.UnmappedProcesses = jsonValue(p.UnmappedProcesses)
 		}
+		payload.RuntimeProcesses = p.RuntimeProcesses
+		payload.HostAppProcesses = p.HostAppProcesses
 		payload.RuntimeSampled = jsonValue(true)
 	}
 	return json.Marshal(payload)
