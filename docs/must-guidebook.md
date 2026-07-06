@@ -28,6 +28,7 @@ This guidebook is the reading map for the shared knowledge root.
 
 ## Current Shared Pages
 
+- `docs/agent-load-diagnostic-intelligence-architecture.md` — Agent Load Diagnostic Intelligence Architecture
 - `docs/agent-load-metric-semantics.md` — Agent Load Metric Semantics
 - `docs/agent-load-parity-checklist.md` — Agent Load Parity Checklist
 - `docs/agent-load-ui-design-system.md` — Agent Load UI Design System

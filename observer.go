@@ -65,12 +65,14 @@ func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 	projectFocus := buildProjectFocus(liveSessions, o.cfg.IdleGap, now)
 	candidateWorkitems := buildCandidateWorkitems(liveSessionSnapshots)
 	snapshot := Snapshot{
-		GeneratedAt:   now.Format(time.RFC3339Nano),
-		Config:        o.snapshotConfig(claudeRoots, codexRoots, traeRoots),
-		Current:       current,
-		CurrentByTool: currentByTool,
-		HistoricPeaks: historicPeaks,
-		Trends:        buildTranscriptTrendWindows(data, now, o.cfg.Lookback),
+		GeneratedAt:      now.Format(time.RFC3339Nano),
+		Config:           o.snapshotConfig(claudeRoots, codexRoots, traeRoots),
+		Current:          current,
+		CurrentByTool:    currentByTool,
+		HistoricPeaks:    historicPeaks,
+		MetricRegistry:   defaultMetricRegistry(),
+		RuntimeTelemetry: defaultRuntimeTelemetrySnapshot(),
+		Trends:           buildTranscriptTrendWindows(data, now, o.cfg.Lookback),
 		TranscriptStats: TranscriptStats{
 			ScannedFiles:                     data.ScannedFiles,
 			ParsedFiles:                      data.ParsedFiles,
@@ -102,6 +104,7 @@ func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 		now,
 		o.cfg.IdleGap,
 	)
+	snapshot.Diagnostics = buildDiagnosticsSnapshot(snapshot, now)
 
 	snapshot.Notes = buildSnapshotNotes(snapshot, processNotes, sessionNotes)
 	return snapshot
@@ -1233,6 +1236,8 @@ func projectLiveSessions(sessions []LiveSession, idleGap time.Duration, now time
 			if !session.Trace.TokenUsage.Empty() {
 				tokenUsage := session.Trace.TokenUsage
 				item.TokenUsage = &tokenUsage
+				item.TokenUsageSource = "transcript_usage"
+				item.TokenUsageConfidence = "measured"
 			}
 		}
 		if observation.LastEventAt != "" {
@@ -1799,6 +1804,8 @@ func buildProjectFocus(sessions []LiveSession, idleGap time.Duration, now time.T
 		if !item.tokenUsage.Empty() {
 			tokenUsage := item.tokenUsage
 			project.TokenUsage = &tokenUsage
+			project.TokenUsageSource = "transcript_usage"
+			project.TokenUsageConfidence = "measured"
 		}
 		for tool, toolAgg := range item.tools {
 			toolSnapshot := ProjectToolSnapshot{
@@ -1810,6 +1817,8 @@ func buildProjectFocus(sessions []LiveSession, idleGap time.Duration, now time.T
 			if !toolAgg.tokenUsage.Empty() {
 				tokenUsage := toolAgg.tokenUsage
 				toolSnapshot.TokenUsage = &tokenUsage
+				toolSnapshot.TokenUsageSource = "transcript_usage"
+				toolSnapshot.TokenUsageConfidence = "measured"
 			}
 			project.Tools = append(project.Tools, toolSnapshot)
 		}

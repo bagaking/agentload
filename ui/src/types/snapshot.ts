@@ -13,6 +13,9 @@ export type Snapshot = {
   realtime_trends?: TrendSet;
   project_heatmaps?: ProjectHeatmapSet;
   history?: { retained_sample_count?: number; loaded_sample_count?: number; last_write_error?: string };
+  metric_registry?: MetricRegistryEntry[];
+  diagnostics?: DiagnosticSnapshot;
+  runtime_telemetry?: RuntimeTelemetrySnapshot;
   transcript_stats?: TranscriptStats;
   project_focus?: ProjectSnapshot[];
   candidate_workitems?: CandidateWorkitem[];
@@ -23,6 +26,74 @@ export type Snapshot = {
   runtime_process_summary?: ProcessRuntimeSummary[];
   host_app_process_summary?: HostAppProcessSummary[];
   notes?: string[];
+};
+
+export type MetricRegistryEntry = {
+  key?: string;
+  family?: string;
+  label?: string;
+  unit?: string;
+  source?: string;
+  window?: string;
+  missing_state?: string;
+  description?: string;
+};
+
+export type RuntimeTelemetrySnapshot = {
+  configured?: boolean;
+  status?: string;
+  event_count?: number;
+  last_event_at?: string;
+  adapters?: RuntimeTelemetryAdapterState[];
+  detail?: string;
+};
+
+export type RuntimeTelemetryAdapterState = {
+  key?: string;
+  label?: string;
+  status?: string;
+  detail?: string;
+};
+
+export type DiagnosticSnapshot = {
+  generated_at?: string;
+  anomaly_signals?: DiagnosticSignal[];
+  evidence_gaps?: DiagnosticSignal[];
+  baselines?: DiagnosticBaseline[];
+  capabilities?: DiagnosticCapability[];
+  export?: DiagnosticExportSummary;
+};
+
+export type DiagnosticSignal = {
+  kind?: string;
+  severity?: string;
+  title?: string;
+  detail?: string;
+  evidence?: string;
+  metric_key?: string;
+  source?: string;
+};
+
+export type DiagnosticBaseline = {
+  key?: string;
+  label?: string;
+  value?: string;
+  status?: string;
+  detail?: string;
+  metric_key?: string;
+};
+
+export type DiagnosticCapability = {
+  key?: string;
+  label?: string;
+  status?: string;
+  detail?: string;
+};
+
+export type DiagnosticExportSummary = {
+  endpoint?: string;
+  redaction?: string;
+  omitted_fields?: string[];
 };
 
 export type CurrentMetrics = {
@@ -99,6 +170,8 @@ export type ProjectSnapshot = {
   last_event_age_seconds?: number;
   last_event_at?: string;
   token_usage?: TokenUsage;
+  token_usage_source?: string;
+  token_usage_confidence?: string;
   tools?: ProjectTool[];
 };
 
@@ -153,6 +226,8 @@ export type ProjectTool = {
   active_burst_count?: number;
   process_count?: number;
   token_usage?: TokenUsage;
+  token_usage_source?: string;
+  token_usage_confidence?: string;
 };
 
 export type HostApp = {
@@ -276,6 +351,8 @@ export type LiveSession = {
   active_duration_seconds?: number;
   idle_duration_seconds?: number;
   token_usage?: TokenUsage;
+  token_usage_source?: string;
+  token_usage_confidence?: string;
   path?: string;
   provenance?: string[];
 };

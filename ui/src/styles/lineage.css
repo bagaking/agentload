@@ -1,0 +1,115 @@
+body[data-view="popover"] .popover-project-table .lineage-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(96px, .38fr);
+  gap: 4px 7px;
+  margin: 1px 4px 4px 20px;
+  padding: 5px 7px;
+  border-top: 1px solid color-mix(in srgb, var(--console-line-soft) 52%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--console-line-soft) 44%, transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 4%, transparent), color-mix(in srgb, var(--ok) 3%, transparent));
+}
+
+body[data-view="popover"] .lineage-summary-main {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  min-width: 0;
+}
+
+body[data-view="popover"] .lineage-stat {
+  display: grid;
+  grid-template-columns: 13px minmax(0, 1fr);
+  gap: 0 3px;
+  min-width: 0;
+  padding-right: 4px;
+  box-shadow: inset -1px 0 color-mix(in srgb, var(--console-line-soft) 46%, transparent);
+}
+
+body[data-view="popover"] .lineage-stat:last-child {
+  box-shadow: none;
+}
+
+body[data-view="popover"] .lineage-stat svg {
+  grid-row: 1 / 3;
+  align-self: center;
+  color: color-mix(in srgb, var(--accent-hi) 76%, var(--console-text-soft));
+}
+
+body[data-view="popover"] .lineage-stat b,
+body[data-view="popover"] .lineage-stat em,
+body[data-view="popover"] .lineage-token-cue b,
+body[data-view="popover"] .lineage-token-cue em,
+body[data-view="popover"] .lineage-tool-lanes b {
+  color: var(--console-text-faint);
+  font-size: 7.7px;
+  font-style: normal;
+  font-weight: 680;
+  line-height: 1.08;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .lineage-stat strong,
+body[data-view="popover"] .lineage-token-cue strong,
+body[data-view="popover"] .lineage-tool-lanes strong {
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 760;
+  line-height: 1;
+}
+
+body[data-view="popover"] .lineage-tool-lanes {
+  display: grid;
+  grid-column: 1 / 2;
+  gap: 3px;
+  min-width: 0;
+}
+
+body[data-view="popover"] .lineage-tool-lanes span {
+  display: grid;
+  grid-template-columns: minmax(34px, .42fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+body[data-view="popover"] .lineage-tool-lanes i {
+  height: 3px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--console-line-soft) 54%, transparent);
+}
+
+body[data-view="popover"] .lineage-tool-lanes i em {
+  display: block;
+  width: var(--lane-pct);
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--ok));
+}
+
+body[data-view="popover"] .lineage-token-cue {
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  min-width: 0;
+  padding-left: 7px;
+  border-left: 1px solid color-mix(in srgb, var(--console-line-soft) 56%, transparent);
+}
+
+body[data-view="dashboard"] .lineage-summary {
+  display: none;
+}
+
+@media (max-width: 430px) {
+  body[data-view="popover"] .popover-project-table .lineage-summary {
+    grid-template-columns: 1fr;
+  }
+
+  body[data-view="popover"] .lineage-token-cue {
+    grid-template-columns: auto auto 1fr;
+    align-items: center;
+    border-left: 0;
+    padding-left: 0;
+  }
+}

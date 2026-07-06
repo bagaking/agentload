@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -500,6 +501,123 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 	if !strings.Contains(app.lastSnapshot.TranscriptStats.Errors[1], sessionFileURI) ||
 		!strings.Contains(app.lastSnapshot.Notes[1], sessionFileURI) {
 		t.Fatalf("expected internal file URI evidence to remain, got errors=%+v notes=%+v", app.lastSnapshot.TranscriptStats.Errors, app.lastSnapshot.Notes)
+	}
+}
+
+func TestHandleDiagnosticExportAPIRedactsLocalEvidence(t *testing.T) {
+	root := t.TempDir()
+	sessionPath := filepath.Join(root, "sessions", "session.jsonl")
+	workspacePath := filepath.Join(root, "workspace", "agentload")
+	bundlePath := filepath.Join(root, "Terminal.app")
+	app := &trayApp{cfg: Config{RefreshInterval: 5 * time.Minute}}
+	app.lastSnapshot = Snapshot{
+		GeneratedAt: "2026-06-28T12:00:00Z",
+		Config: SnapshotConfig{
+			HistoryFile: sessionPath,
+			CodexRoots:  []string{workspacePath},
+		},
+		History: SnapshotHistory{StorePath: sessionPath, LastWriteError: "open " + filepath.Join(root, "state", "history.jsonl") + ": permission denied"},
+		LiveProcesses: []LiveProcessSnapshot{
+			{
+				PID:          42,
+				Tool:         "codex",
+				Command:      filepath.Join(root, "bin", "codex") + " --cwd=" + workspacePath + " " + sessionPath,
+				SessionPaths: []string{sessionPath},
+				HostApp:      &HostApp{PID: 7, Name: "Terminal", BundlePath: bundlePath},
+			},
+		},
+		LiveSessions: []LiveSessionSnapshot{
+			{Tool: "codex", SessionID: "session", Project: workspacePath, Path: sessionPath},
+		},
+		Diagnostics: DiagnosticSnapshot{
+			EvidenceGaps: []DiagnosticSignalSnapshot{
+				{Kind: "path_gap", Evidence: "read " + sessionPath, Detail: "cwd=" + workspacePath},
+			},
+		},
+	}
+	app.haveSnapshot = true
+	handler := app.handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/diagnostic-export", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d with body %q", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Disposition"); !strings.Contains(got, "agentload-diagnostics.json") {
+		t.Fatalf("expected diagnostic attachment header, got %q", got)
+	}
+	body := rec.Body.String()
+	for _, leaked := range []string{root, sessionPath, workspacePath, bundlePath} {
+		if strings.Contains(body, leaked) {
+			t.Fatalf("expected diagnostic export to redact %q, got body %q", leaked, body)
+		}
+	}
+	var got DiagnosticExportSnapshot
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode diagnostic export: %v", err)
+	}
+	if got.FormatVersion != 1 || got.Snapshot.Config.HistoryFile != "" || len(got.Snapshot.Config.CodexRoots) != 0 {
+		t.Fatalf("expected sanitized export snapshot, got %+v", got)
+	}
+	if strings.Contains(got.Snapshot.History.LastWriteError, root) {
+		t.Fatalf("expected sanitized history write error, got %q", got.Snapshot.History.LastWriteError)
+	}
+	if !slices.Contains(got.OmittedFields, "raw prompts") {
+		t.Fatalf("expected omitted fields to document raw prompts, got %+v", got.OmittedFields)
+	}
+	for _, omitted := range []string{"raw prompts", "absolute local paths", "full command arguments", "environment variables", "transcript file paths", "app bundle paths"} {
+		if !slices.Contains(got.OmittedFields, omitted) {
+			t.Fatalf("expected omitted fields to include %q, got %+v", omitted, got.OmittedFields)
+		}
+	}
+}
+
+func TestHandleProcessDiagnosticAPIRedactsLocalEvidence(t *testing.T) {
+	root := t.TempDir()
+	sessionPath := filepath.Join(root, "sessions", "session.jsonl")
+	workspacePath := filepath.Join(root, "workspace", "agentload")
+	bundlePath := filepath.Join(root, "Terminal.app")
+	app := &trayApp{cfg: Config{RefreshInterval: 5 * time.Minute}}
+	app.lastSnapshot = Snapshot{
+		GeneratedAt: "2026-06-28T12:00:00Z",
+		LiveProcesses: []LiveProcessSnapshot{
+			{
+				PID:          42,
+				Tool:         "codex",
+				Command:      filepath.Join(root, "bin", "codex") + " --cwd=" + workspacePath + " resume " + sessionPath,
+				SessionIDs:   []string{"session"},
+				SessionPaths: []string{sessionPath},
+				HostApp:      &HostApp{PID: 7, Name: "Terminal", BundlePath: bundlePath},
+			},
+		},
+	}
+	app.haveSnapshot = true
+	handler := app.handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/process-diagnostic/42", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d with body %q", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, leaked := range []string{root, sessionPath, workspacePath, bundlePath} {
+		if strings.Contains(body, leaked) {
+			t.Fatalf("expected process diagnostic to redact %q, got body %q", leaked, body)
+		}
+	}
+	var got ProcessDiagnosticSnapshot
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode process diagnostic: %v", err)
+	}
+	if got.Command == "" || !strings.Contains(got.Command, "codex") || len(got.SessionPaths) != 0 {
+		t.Fatalf("expected sanitized process diagnostic, got %+v", got)
+	}
+	if got.HostApp == nil || got.HostApp.Name != "Terminal" || got.HostApp.BundlePath != "" {
+		t.Fatalf("expected host app without bundle path, got %+v", got.HostApp)
 	}
 }
 

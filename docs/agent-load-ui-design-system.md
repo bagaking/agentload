@@ -24,10 +24,12 @@ semantic layer before visual polish is accepted.
 - top bar with brand, refresh, language, and theme controls. Dashboard chrome may
   expose loopback/no-upload status, but compact popover live state belongs in the
   footer timestamp/cadence area so the title cluster stays action-focused.
-- popover surface with online/trend/system navigation. Online owns current
-  meaning, scan boundary, and compact project/session atlas. Trend owns
+- popover surface with online/trend/system/diagnostics navigation. Online owns
+  current meaning, scan boundary, and compact project/session atlas. Trend owns
   historical/runtime chart analysis. System owns whole-machine resource samples
-  and process diagnostics.
+  and process diagnostics. Diagnostics owns anomaly/prediction-safe signals,
+  metric collection capability, evidence gaps, semantic contract readouts, and
+  safe diagnostic export.
 - popover language control remains visible in compact mode; locale switching is
   a first-class operator control, not a dashboard-only setting. Direct links may
   specify `?lang=`, and the page-level `lang` attribute should use the resolved
@@ -129,6 +131,10 @@ semantic layer before visual polish is accepted.
   whole-machine resource dashboards. Put process diagnostics, system CPU,
   memory, and network fluctuation into the system view so workload evidence and
   machine pressure stay visually and semantically separate.
+- Diagnostics is the only compact page for anomaly/forecast signals and export.
+  Do not duplicate these controls into Trend or System. Trend may link runtime
+  drilldowns to persisted samples; System may show current process evidence; the
+  Diagnostics page explains whether the evidence is complete enough to trust.
 - Compact popover tab panels share one content rhythm. Online, trend, and
   system views should use the same first-level side inset, top/bottom padding,
   section gap, heading scale, and secondary text scale; individual charts,
@@ -203,6 +209,11 @@ semantic layer before visual polish is accepted.
   block-level evidence stacks inside the popover; global audit should not
   require scrolling past full evidence cards to understand parent/child session
   shape.
+- Expanded project rows should include a compact lineage summary when space
+  allows. The summary may show direct/subagent mix, linked/unlinked branch
+  shape, process pressure, tool lanes, and measured token-session coverage, but
+  it must not replace the single-line session tree or promote process-only
+  evidence into confirmed sessions.
 - Tree selection and disclosure state are separate. Selecting a project or
   session must not make it impossible to collapse the row, and overflow labels
   such as `more` counts must be interactive open/close controls instead of dead
@@ -283,6 +294,10 @@ semantic layer before visual polish is accepted.
   Process resources must be labeled as process CPU and process memory, and token
   usage should appear as its own section with total/input/output/cache/reasoning
   values when available.
+- Token usage surfaces must show provenance when available. Transcript-derived
+  token usage is measured evidence; missing token usage is unavailable, not
+  zero, and should remain distinct in hover panels, detail inspectors, and
+  diagnostics.
 - Hover inspector titles should be complete. Project or benchmark names may wrap
   across lines inside the tooltip; do not ellipsize the title itself. Keep
   secondary metadata compact or truncated instead.

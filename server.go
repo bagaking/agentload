@@ -33,6 +33,7 @@ func (a *trayApp) handler() http.Handler {
 	mux.HandleFunc("/assets/", a.handleUIAsset)
 	mux.HandleFunc("/api/snapshot", a.handleSnapshotAPI)
 	mux.HandleFunc("/api/system-resources", a.handleSystemResourcesAPI)
+	mux.HandleFunc("/api/diagnostic-export", a.handleDiagnosticExportAPI)
 	mux.HandleFunc("/api/refresh", a.handleRefreshAPI)
 	mux.HandleFunc("/api/quit", a.handleQuitAPI)
 	mux.HandleFunc("/api/process-diagnostic/", a.handleProcessDiagnosticAPI)
@@ -60,6 +61,23 @@ func (a *trayApp) handleSystemResourcesAPI(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	_ = json.NewEncoder(w).Encode(sampleSystemResources())
+}
+
+func (a *trayApp) handleDiagnosticExportAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	snapshot := a.snapshotForClient(r.Context())
+	export := buildDiagnosticExport(snapshot, time.Now())
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Disposition", `attachment; filename="agentload-diagnostics.json"`)
+	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(export)
 }
 
 func (a *trayApp) handlePopoverPage(w http.ResponseWriter, r *http.Request) {
@@ -176,8 +194,8 @@ func (a *trayApp) handleProcessDiagnosticAPI(w http.ResponseWriter, r *http.Requ
 		http.NotFound(w, r)
 		return
 	}
-	snapshot, ok := a.snapshotForInternalUse(r.Context())
-	if !ok {
+	snapshot := a.snapshotForClient(r.Context())
+	if snapshot.GeneratedAt == "" {
 		http.NotFound(w, r)
 		return
 	}
@@ -187,10 +205,10 @@ func (a *trayApp) handleProcessDiagnosticAPI(w http.ResponseWriter, r *http.Requ
 		}
 		diagnostic := ProcessDiagnosticSnapshot{
 			PID:          process.PID,
-			Command:      process.Command,
+			Command:      sanitizeCommandForClient(process.Command),
 			SessionIDs:   append([]string(nil), process.SessionIDs...),
-			SessionPaths: append([]string(nil), process.SessionPaths...),
-			HostApp:      cloneHostApp(process.HostApp),
+			SessionPaths: nil,
+			HostApp:      sanitizedHostApp(process.HostApp),
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
@@ -304,6 +322,7 @@ func sanitizeSnapshotForClient(snapshot Snapshot) Snapshot {
 	snapshot.Config.TraeRoots = []string{}
 	snapshot.Config.HistoryFile = ""
 	snapshot.History.StorePath = ""
+	snapshot.History.LastWriteError = sanitizeTextForClient(snapshot.History.LastWriteError)
 	snapshot.TranscriptStats.Errors = sanitizeTextListForClient(snapshot.TranscriptStats.Errors)
 	snapshot.CoordinationRisk = sanitizeCoordinationRiskForClient(snapshot.CoordinationRisk)
 	snapshot.ProjectFocus = sanitizeProjectFocusForClient(snapshot.ProjectFocus)
@@ -313,8 +332,65 @@ func sanitizeSnapshotForClient(snapshot Snapshot) Snapshot {
 	snapshot.LiveSessions = sanitizeLiveSessionsForClient(snapshot.LiveSessions)
 	snapshot.RuntimeProcesses = sanitizeRuntimeProcessSummaryForClient(snapshot.RuntimeProcesses)
 	snapshot.HostAppProcesses = sanitizeHostAppProcessSummaryForClient(snapshot.HostAppProcesses)
+	snapshot.RuntimeTelemetry = sanitizeRuntimeTelemetryForClient(snapshot.RuntimeTelemetry)
+	snapshot.Diagnostics = sanitizeDiagnosticsForClient(snapshot.Diagnostics)
 	snapshot.Notes = sanitizeTextListForClient(snapshot.Notes)
 	return snapshot
+}
+
+func sanitizeRuntimeTelemetryForClient(telemetry RuntimeTelemetrySnapshot) RuntimeTelemetrySnapshot {
+	telemetry.Status = sanitizeTokenForClient(telemetry.Status)
+	telemetry.Detail = sanitizeTextForClient(telemetry.Detail)
+	if len(telemetry.Adapters) > 0 {
+		adapters := append([]RuntimeTelemetryAdapterState(nil), telemetry.Adapters...)
+		for i := range adapters {
+			adapters[i].Key = sanitizeTokenForClient(adapters[i].Key)
+			adapters[i].Label = sanitizeTextForClient(adapters[i].Label)
+			adapters[i].Status = sanitizeTokenForClient(adapters[i].Status)
+			adapters[i].Detail = sanitizeTextForClient(adapters[i].Detail)
+		}
+		telemetry.Adapters = adapters
+	}
+	return telemetry
+}
+
+func sanitizeDiagnosticsForClient(diagnostics DiagnosticSnapshot) DiagnosticSnapshot {
+	diagnostics.AnomalySignals = sanitizeDiagnosticSignalsForClient(diagnostics.AnomalySignals)
+	diagnostics.EvidenceGaps = sanitizeDiagnosticSignalsForClient(diagnostics.EvidenceGaps)
+	for i := range diagnostics.Baselines {
+		diagnostics.Baselines[i].Key = sanitizeTokenForClient(diagnostics.Baselines[i].Key)
+		diagnostics.Baselines[i].Label = sanitizeTextForClient(diagnostics.Baselines[i].Label)
+		diagnostics.Baselines[i].Value = sanitizeTextForClient(diagnostics.Baselines[i].Value)
+		diagnostics.Baselines[i].Status = sanitizeTokenForClient(diagnostics.Baselines[i].Status)
+		diagnostics.Baselines[i].Detail = sanitizeTextForClient(diagnostics.Baselines[i].Detail)
+		diagnostics.Baselines[i].MetricKey = sanitizeTokenForClient(diagnostics.Baselines[i].MetricKey)
+	}
+	for i := range diagnostics.Capabilities {
+		diagnostics.Capabilities[i].Key = sanitizeTokenForClient(diagnostics.Capabilities[i].Key)
+		diagnostics.Capabilities[i].Label = sanitizeTextForClient(diagnostics.Capabilities[i].Label)
+		diagnostics.Capabilities[i].Status = sanitizeTokenForClient(diagnostics.Capabilities[i].Status)
+		diagnostics.Capabilities[i].Detail = sanitizeTextForClient(diagnostics.Capabilities[i].Detail)
+	}
+	diagnostics.Export.Redaction = sanitizeTextForClient(diagnostics.Export.Redaction)
+	diagnostics.Export.OmittedFields = sanitizeTextListForClient(diagnostics.Export.OmittedFields)
+	return diagnostics
+}
+
+func sanitizeDiagnosticSignalsForClient(items []DiagnosticSignalSnapshot) []DiagnosticSignalSnapshot {
+	if len(items) == 0 {
+		return items
+	}
+	out := append([]DiagnosticSignalSnapshot(nil), items...)
+	for i := range out {
+		out[i].Kind = sanitizeTokenForClient(out[i].Kind)
+		out[i].Severity = sanitizeTokenForClient(out[i].Severity)
+		out[i].Title = sanitizeTextForClient(out[i].Title)
+		out[i].Detail = sanitizeTextForClient(out[i].Detail)
+		out[i].Evidence = sanitizeTextForClient(out[i].Evidence)
+		out[i].MetricKey = sanitizeTokenForClient(out[i].MetricKey)
+		out[i].Source = sanitizeTokenForClient(out[i].Source)
+	}
+	return out
 }
 
 func sanitizeCoordinationRiskForClient(risk CoordinationRiskSnapshot) CoordinationRiskSnapshot {
@@ -421,6 +497,16 @@ func sanitizeLiveProcessesForClient(processes []LiveProcessSnapshot) []LiveProce
 		}
 	}
 	return out
+}
+
+func sanitizedHostApp(host *HostApp) *HostApp {
+	if host == nil {
+		return nil
+	}
+	next := *host
+	next.Name = sanitizeTextForClient(next.Name)
+	next.BundlePath = ""
+	return &next
 }
 
 func sanitizeRuntimeProcessSummaryForClient(items []ProcessRuntimeSummary) []ProcessRuntimeSummary {

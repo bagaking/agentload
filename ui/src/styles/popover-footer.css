@@ -3,7 +3,7 @@
    timestamp/cadence cluster keeps enough width in every locale. */
 
 body[data-view="popover"] .popover-footer {
-  grid-template-columns: minmax(136px, 1fr) auto;
+  grid-template-columns: minmax(118px, 1fr) auto;
   gap: 7px;
 }
 
@@ -27,12 +27,14 @@ body[data-view="popover"] .popover-footer-controls {
 }
 
 body[data-view="popover"] .popover-view-switch {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  width: 178px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  width: 218px;
 }
 
 body[data-view="popover"] .popover-view-switch button {
-  padding: 0 5px;
+  gap: 3px;
+  padding: 0 4px;
+  font-size: 8.6px;
 }
 
 body[data-view="popover"] .footer-link {
@@ -53,11 +55,21 @@ body[data-view="popover"] .footer-link svg {
 
 @media (max-width: 760px) {
   body[data-view="popover"] .popover-view-switch {
-    width: 166px;
+    width: 206px;
   }
 
   body[data-view="popover"] .popover-view-switch button {
     gap: 3px;
     padding: 0 4px;
+  }
+}
+
+@media (max-width: 430px) {
+  body[data-view="popover"] .popover-view-switch {
+    width: 176px;
+  }
+
+  body[data-view="popover"] .popover-view-switch button span {
+    display: none;
   }
 }

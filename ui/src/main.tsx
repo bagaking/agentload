@@ -1,12 +1,15 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
-import { Activity, ArrowUpRight, Bot, ChevronDown, Copy, Cpu, ExternalLink, Gauge, GitBranch, HardDrive, Info, Languages, Layers, MemoryStick, Moon, Network, RefreshCw, Search, Server, Sun, Terminal, X } from "lucide-react";
+import { Activity, ArrowUpRight, Bot, ChevronDown, Copy, Cpu, ExternalLink, Gauge, GitBranch, HardDrive, Info, Languages, Layers, MemoryStick, Moon, Network, Radar, RefreshCw, Search, Server, Sun, Terminal, X } from "lucide-react";
 import { copy, type Lang } from "./i18n";
-import { agentRoleLabel, buildToolSessionGroups, confidenceLabel, freshnessLabel, hiddenToolSessionCount, mappingMethodLabel, normalizedRole, orderedProjects, projectEvidenceItems, roleHintLabel, roleLabel, sessionEvidenceItems, sessionIDsText, sessionIdentity, sessionsForProject, threadSourceLabel, toolBadgeLabel, toolDisplayName, toolIconName } from "./lib/activityModel";
+import { DiagnosticsPanel } from "./diagnostics/DiagnosticsPanel";
+import { agentRoleLabel, buildToolSessionGroups, confidenceLabel, freshnessLabel, hiddenToolSessionCount, mappingMethodLabel, normalizedRole, orderedProjects, projectEvidenceItems, roleHintLabel, roleLabel, sessionEvidenceItems, sessionIDsText, sessionIdentity, sessionsForProject, threadSourceLabel, tokenUsageProvenanceLabel, toolBadgeLabel, toolDisplayName, toolIconName } from "./lib/activityModel";
 import { activeWindowLabel, buildRailItems, coordinationPostureLabel, currentMeaningLead, currentMeaningPoints, currentPeerScale, dashboardProjectLead, dashboardProjectMeta, deferredScanValue, mappingHealthText, metricState, primaryEvidenceNote, renderLogText, resolveSelection, statusTone, transcriptScanNote, transcriptScanSummary } from "./lib/dashboardModel";
 import { clampPct, countLabel, formatAge, formatCPU, formatCopy, formatDateTime, formatMemory, formatPct, formatRefreshInterval, formatTokenCount, formatTokenUsageSummary, pctPart, safeID, shortID, tokenUsageHasValue } from "./lib/format";
 import { currentHasRecentMovement, currentKnownSessionCount, currentProcessPressureCount, currentRecentMovementCount, projectProcessPressureCount, projectProcessResources, projectRoleCounts, sessionHasRecentMovement, sessionProcessPressure, summaryMappedProcessCount, summaryMappingCoveragePct, summaryUnmappedProcessCount, toolKnownSessionCount, toolRecentMovementCount } from "./lib/metricSemantics";
+import { LineageSummary } from "./lineage/LineageSummary";
+import { ProcessSummaryStrip } from "./system/ProcessSummaryStrip";
 import { TrendSuite } from "./trend/TrendSuite";
 import { TREND_RANGES, type TrendLane, type TrendRange } from "./trend/types";
 import type { ActiveElementIdentity, LogTab, PopoverView, ProjectMetricObject, ProjectMetricScope, RailItem, RailTab, RefreshReason, RoleCounts, SelectedView, Selection, Theme, ViewportState } from "./types/app";
@@ -17,6 +20,9 @@ import "./styles/popover-footer.css";
 import "./styles/metric-help.css";
 import "./styles/popover-tabs.css";
 import "./styles/system-process.css";
+import "./styles/diagnostics.css";
+import "./styles/lineage.css";
+import "./styles/process-summary.css";
 
 const BRAND_NAME = "Agent Load";
 const ACTIVE = new Set(["active", "running", "queued"]);
@@ -471,6 +477,15 @@ function PopoverSurface({
             >
               <PopoverSystemPanel t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} active={popoverView === "system"} />
             </section>
+            <section
+              className="popover-view-panel diagnostics"
+              id="popover-panel-diagnostics"
+              role="tabpanel"
+              aria-labelledby="popover-view-diagnostics"
+              hidden={popoverView !== "diagnostics"}
+            >
+              <DiagnosticsPanel t={t} snapshot={snapshot} />
+            </section>
           </div>
         </div>
         {popoverView === "online" ? <PopoverHoverInspector t={t} detail={hoverDetail} /> : null}
@@ -509,7 +524,7 @@ function PopoverFooter({
       </div>
       <div className="popover-footer-controls">
         <div className="popover-view-switch" role="tablist" aria-label={t("view")}>
-          {(["online", "trend", "system"] as PopoverView[]).map((view) => (
+          {(["online", "trend", "system", "diagnostics"] as PopoverView[]).map((view) => (
             <button
               key={view}
               id={`popover-view-${view}`}
@@ -522,7 +537,7 @@ function PopoverFooter({
               data-focus-key={focusKey("popover-view", view)}
               onClick={() => setPopoverView(view)}
             >
-              {view === "online" ? <Activity size={13} /> : view === "trend" ? <Gauge size={13} /> : <Server size={13} />}
+              {view === "online" ? <Activity size={13} /> : view === "trend" ? <Gauge size={13} /> : view === "system" ? <Server size={13} /> : <Radar size={13} />}
               <span>{t(view)}</span>
             </button>
           ))}
@@ -965,6 +980,7 @@ function PopoverSystemPanel({ t, snapshot, selection, setSelection, active }: { 
         <span>{t("liveSample")} · {sampledAt}</span>
       </div>
       <SystemResourceDeck t={t} resources={resources} processCount={processes.length} processCPU={processTotals.cpu} processMemory={processTotals.memory} />
+      <ProcessSummaryStrip t={t} snapshot={snapshot} />
       <PopoverProcessPanel t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} />
     </section>
   );
@@ -2727,9 +2743,10 @@ function ToolStrip({ t, tools }: { t: (key: string) => string; tools: ProjectToo
         });
         const tokenTitle = tool.token_usage && tokenUsageHasValue(tool.token_usage) ? `${t("tokenUsage")}: ${formatTokenUsageSummary(tool.token_usage, t)}` : "";
         const title = tokenTitle ? `${baseTitle} ${tokenTitle}` : baseTitle;
+        const provenance = tool.token_usage_source ? ` ${t("tokenSource")}: ${tokenUsageProvenanceLabel(t, tool.token_usage_source, tool.token_usage_confidence)}` : "";
         return (
-          <span className="tool-mark" key={toolName} aria-label={title}>
-            <ToolIcon t={t} tool={toolName} title={title} />
+          <span className="tool-mark" key={toolName} aria-label={`${title}${provenance}`}>
+            <ToolIcon t={t} tool={toolName} title={`${title}${provenance}`} />
             <strong>{toolRecentMovementCount(tool)}</strong>
             <small>/{toolKnownSessionCount(tool)}</small>
           </span>
@@ -2770,6 +2787,7 @@ function SessionTree({
   }
   return (
     <div className="session-tree">
+      <LineageSummary t={t} groups={groups} sessions={sessions} />
       {visibleGroups.map((group) => {
         const visibleLinked = showOverflow ? group.linked : group.linked.slice(0, linkedLimit);
         const visibleUnlinked = showOverflow ? group.unlinked : group.unlinked.slice(0, unlinkedLimit);
@@ -2867,6 +2885,7 @@ function SessionLine({
     { label: t("processCount"), value: processText },
     { label: t("processCPU"), value: formatCPU(session.process_cpu_percent) },
     { label: t("processMemory"), value: formatMemory(session.process_memory_bytes, t) },
+    { label: t("tokenSource"), value: tokenUsageProvenanceLabel(t, session.token_usage_source, session.token_usage_confidence) },
   ];
   const tokenParts = sessionTokenUsageParts(t, session.token_usage);
   const sessionHoverPayload: HoverDetailPayload = { kind: "session", id: safeID(sid), title: sessionHoverTitle, metrics: sessionHoverMetrics, tokenParts, meta: sessionHoverMeta };
@@ -2993,6 +3012,7 @@ function SessionEvidencePanel({ t, session }: { t: (key: string) => string; sess
         <Readout label={t("idleDuration")} value={formatAge(session.idle_duration_seconds, t)} />
         <Readout label={t("resources")} value={sessionProcessResourceText(t, session)} />
         <Readout label={t("tokenUsage")} value={formatTokenUsageSummary(session.token_usage, t)} />
+        <Readout label={t("tokenSource")} value={tokenUsageProvenanceLabel(t, session.token_usage_source, session.token_usage_confidence)} />
         <Readout label={t("tools")} value={toolDisplayName(session.tool)} />
         <Readout label={t("host")} value={(session.host_apps ?? []).map((app) => app.name).join(", ") || t("unavailable")} />
         <Readout label={t("command")} value={session.path || t("unavailable")} />
@@ -3440,7 +3460,7 @@ function readerContextActive(view: "popover" | "dashboard", popoverView: Popover
   const root = shell ?? document;
   if (root.querySelector('[aria-expanded="true"]')) return true;
   if (view === "popover") {
-    if (popoverView === "trend") return true;
+    if (popoverView === "trend" || popoverView === "diagnostics") return true;
     const scroller = root.querySelector<HTMLElement>(".popover-current-scroll");
     if (scroller && scroller.scrollTop > 8) return true;
   }

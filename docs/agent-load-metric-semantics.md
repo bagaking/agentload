@@ -20,6 +20,9 @@ semantic layer says so.
 | System resources | `system_resources` | Whole-machine OS counters sampled independently from transcript scanning | Session activity, project attribution, or per-PID network guesses |
 | Role matrix | `main_agent_sessions`, `subagent_sessions`, `unknown_role_sessions` and active role splits | Session role inference from thread source, parent thread, lane paths, and independent-run evidence | Process role guesses without mapped session evidence |
 | Tool coverage | project/tool `session_count`, `active_burst_count`, `process_count` | Per-tool aggregation of known sessions, recent movement, and process pressure | Treating process pressure as recent movement |
+| Token usage | `token_usage`, `token_usage_source`, `token_usage_confidence` | Parsed local transcript usage fields when present | Inferring usage from process duration, CPU, memory, or elapsed time |
+| Runtime telemetry | `runtime_telemetry` | Optional local adapter state for future OpenTelemetry or JSONL events | Replacing local process/session evidence or treating unconfigured telemetry as failure |
+| Diagnostic export | `diagnostics.export` and `/api/diagnostic-export` | Sanitized local snapshot with omitted private fields documented | Raw prompts, absolute paths, full command arguments, environment variables, transcript paths |
 
 ## Rules
 
@@ -59,6 +62,15 @@ semantic layer says so.
   Per-tool or per-process-type historical drilldowns must use distributions
   recorded in that trend sample; do not infer them from the current snapshot for
   past buckets.
+- Prediction/anomaly signals and safe export live in the diagnostics surface.
+  They can summarize system pressure, mapping gaps, low-confidence sessions, and
+  missing collection capability, but they must report unavailable evidence as
+  unavailable rather than silently coercing it to zero.
+- Runtime telemetry is an optional adapter family. Until configured, it should
+  appear as `not_configured` capability, not as a warning against the local
+  observer. When configured in the future, telemetry may strengthen attribution
+  and timing but must not override the session/process semantic matrix without
+  an explicit merge rule.
 
 ## Implementation Ownership
 
@@ -66,6 +78,9 @@ semantic layer says so.
   live sessions and snapshot sessions become metric facts.
 - Frontend semantic helpers live in the UI metric semantic layer and define how
   snapshot fields are converted into row matrices and resource totals.
+- Metric registry fields in the snapshot are the user-facing index of the
+  semantic matrix. UI components may localize labels, but missing-state and
+  source-family meaning must stay aligned with this document.
 - Callers should use these helpers when computing project rows, tool rows,
   summary counts, or hover details. Direct arithmetic over raw fields is allowed
   only inside the semantic layer or in tests that explicitly assert the contract.

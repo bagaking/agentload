@@ -18,6 +18,9 @@ type Snapshot struct {
 	RealtimeTrends     TrendSet                    `json:"realtime_trends"`
 	ProjectHeatmaps    ProjectHeatmapSet           `json:"project_heatmaps"`
 	History            SnapshotHistory             `json:"history"`
+	MetricRegistry     []MetricRegistryEntry       `json:"metric_registry"`
+	Diagnostics        DiagnosticSnapshot          `json:"diagnostics"`
+	RuntimeTelemetry   RuntimeTelemetrySnapshot    `json:"runtime_telemetry"`
 	TranscriptStats    TranscriptStats             `json:"transcript_stats"`
 	ProjectFocus       []ProjectSnapshot           `json:"project_focus"`
 	CandidateWorkitems []CandidateWorkitemSnapshot `json:"candidate_workitems"`
@@ -77,6 +80,82 @@ type SnapshotSummary struct {
 	ProjectCount         int     `json:"project_count"`
 	HotProjectCount      int     `json:"hot_project_count"`
 	MappingCoveragePct   float64 `json:"mapping_coverage_pct"`
+}
+
+type MetricRegistryEntry struct {
+	Key          string `json:"key"`
+	Family       string `json:"family"`
+	Label        string `json:"label"`
+	Unit         string `json:"unit,omitempty"`
+	Source       string `json:"source"`
+	Window       string `json:"window,omitempty"`
+	MissingState string `json:"missing_state"`
+	Description  string `json:"description"`
+}
+
+type RuntimeTelemetrySnapshot struct {
+	Configured  bool                           `json:"configured"`
+	Status      string                         `json:"status"`
+	EventCount  int                            `json:"event_count"`
+	LastEventAt string                         `json:"last_event_at,omitempty"`
+	Adapters    []RuntimeTelemetryAdapterState `json:"adapters,omitempty"`
+	Detail      string                         `json:"detail,omitempty"`
+}
+
+type RuntimeTelemetryAdapterState struct {
+	Key    string `json:"key"`
+	Label  string `json:"label"`
+	Status string `json:"status"`
+	Detail string `json:"detail,omitempty"`
+}
+
+type DiagnosticSnapshot struct {
+	GeneratedAt    string                         `json:"generated_at,omitempty"`
+	AnomalySignals []DiagnosticSignalSnapshot     `json:"anomaly_signals,omitempty"`
+	EvidenceGaps   []DiagnosticSignalSnapshot     `json:"evidence_gaps,omitempty"`
+	Baselines      []DiagnosticBaselineSnapshot   `json:"baselines,omitempty"`
+	Capabilities   []DiagnosticCapabilitySnapshot `json:"capabilities,omitempty"`
+	Export         DiagnosticExportSummary        `json:"export"`
+}
+
+type DiagnosticSignalSnapshot struct {
+	Kind      string `json:"kind"`
+	Severity  string `json:"severity"`
+	Title     string `json:"title"`
+	Detail    string `json:"detail,omitempty"`
+	Evidence  string `json:"evidence,omitempty"`
+	MetricKey string `json:"metric_key,omitempty"`
+	Source    string `json:"source,omitempty"`
+}
+
+type DiagnosticBaselineSnapshot struct {
+	Key       string `json:"key"`
+	Label     string `json:"label"`
+	Value     string `json:"value"`
+	Status    string `json:"status"`
+	Detail    string `json:"detail,omitempty"`
+	MetricKey string `json:"metric_key,omitempty"`
+}
+
+type DiagnosticCapabilitySnapshot struct {
+	Key    string `json:"key"`
+	Label  string `json:"label"`
+	Status string `json:"status"`
+	Detail string `json:"detail,omitempty"`
+}
+
+type DiagnosticExportSummary struct {
+	Endpoint      string   `json:"endpoint,omitempty"`
+	Redaction     string   `json:"redaction,omitempty"`
+	OmittedFields []string `json:"omitted_fields,omitempty"`
+}
+
+type DiagnosticExportSnapshot struct {
+	FormatVersion int      `json:"format_version"`
+	GeneratedAt   string   `json:"generated_at"`
+	Snapshot      Snapshot `json:"snapshot"`
+	OmittedFields []string `json:"omitted_fields"`
+	Notes         []string `json:"notes"`
 }
 
 type CoordinationRiskSnapshot struct {
@@ -287,15 +366,19 @@ type ProjectSnapshot struct {
 	LastEventAt                     string                           `json:"last_event_at,omitempty"`
 	LastEventAgeSeconds             int                              `json:"last_event_age_seconds,omitempty"`
 	TokenUsage                      *TokenUsage                      `json:"token_usage,omitempty"`
+	TokenUsageSource                string                           `json:"token_usage_source,omitempty"`
+	TokenUsageConfidence            string                           `json:"token_usage_confidence,omitempty"`
 	Tools                           []ProjectToolSnapshot            `json:"tools,omitempty"`
 }
 
 type ProjectToolSnapshot struct {
-	Tool             string      `json:"tool"`
-	SessionCount     int         `json:"session_count"`
-	ActiveBurstCount int         `json:"active_burst_count"`
-	ProcessCount     int         `json:"process_count"`
-	TokenUsage       *TokenUsage `json:"token_usage,omitempty"`
+	Tool                 string      `json:"tool"`
+	SessionCount         int         `json:"session_count"`
+	ActiveBurstCount     int         `json:"active_burst_count"`
+	ProcessCount         int         `json:"process_count"`
+	TokenUsage           *TokenUsage `json:"token_usage,omitempty"`
+	TokenUsageSource     string      `json:"token_usage_source,omitempty"`
+	TokenUsageConfidence string      `json:"token_usage_confidence,omitempty"`
 }
 
 type AgeBucketSnapshot struct {
@@ -446,6 +529,8 @@ type LiveSessionSnapshot struct {
 	ActiveDurationSeconds        int         `json:"active_duration_seconds,omitempty"`
 	IdleDurationSeconds          int         `json:"idle_duration_seconds,omitempty"`
 	TokenUsage                   *TokenUsage `json:"token_usage,omitempty"`
+	TokenUsageSource             string      `json:"token_usage_source,omitempty"`
+	TokenUsageConfidence         string      `json:"token_usage_confidence,omitempty"`
 	ActiveBurst                  bool        `json:"active_burst"`
 	Freshness                    string      `json:"freshness"`
 	MappingMethod                string      `json:"mapping_method"`

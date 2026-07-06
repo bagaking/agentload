@@ -40,9 +40,13 @@ export function projectEvidenceItems(t: Translate, project: ProjectSnapshot, com
     project.token_usage && tokenUsageHasValue(project.token_usage)
       ? { label: t("tokenUsage"), value: formatTokenUsageSummary(project.token_usage, t), tone: "good" }
       : null;
+  const tokenSourceItem = project.token_usage_source
+    ? { label: t("tokenSource"), value: tokenUsageProvenanceLabel(t, project.token_usage_source, project.token_usage_confidence), tone: project.token_usage_confidence === "measured" ? "good" : "" }
+    : null;
   const items = [
     { label: t("attention"), value: formatPct(project.attention_share_pct), tone: (project.attention_share_pct ?? 0) > 50 ? "active" : "" },
     tokenItem,
+    tokenSourceItem,
     { label: t("basis"), value: project.attention_basis || t("unavailable") },
     { label: t("confidence"), value: confidenceLabel(t, project.confidence), tone: project.confidence === "high" ? "good" : "" },
     { label: t("attribution"), value: confidenceLabel(t, project.project_attribution_confidence), tone: project.project_attribution_confidence === "high" ? "good" : "" },
@@ -214,6 +218,29 @@ export function agentRoleLabel(t: Translate, value?: string): string {
   if (raw === "worker") return t("agentRoleWorker");
   if (raw === "explorer") return t("agentRoleExplorer");
   if (raw === "unknown") return t("unknown");
+  return enumDisplayValue(value);
+}
+
+export function tokenUsageProvenanceLabel(t: Translate, source?: string, confidence?: string): string {
+  const sourceLabel = tokenUsageSourceLabel(t, source);
+  const confidenceLabelValue = tokenUsageConfidenceLabel(t, confidence);
+  if (sourceLabel === t("unavailable")) return sourceLabel;
+  return `${sourceLabel} · ${confidenceLabelValue}`;
+}
+
+export function tokenUsageSourceLabel(t: Translate, value?: string): string {
+  const raw = enumToken(value);
+  if (!raw) return t("unavailable");
+  if (raw === "transcript_usage") return t("tokenSourceTranscriptUsage");
+  return enumDisplayValue(value);
+}
+
+export function tokenUsageConfidenceLabel(t: Translate, value?: string): string {
+  const raw = enumToken(value);
+  if (!raw) return t("unavailable");
+  if (raw === "measured") return t("tokenConfidenceMeasured");
+  if (raw === "estimated") return t("tokenConfidenceEstimated");
+  if (raw === "unavailable") return t("unavailable");
   return enumDisplayValue(value);
 }
 

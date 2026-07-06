@@ -1,0 +1,319 @@
+body[data-view="popover"] .diagnostics-shell {
+  gap: var(--popover-tab-gap, 8px);
+  padding: var(--popover-tab-pad-y, 8px) var(--popover-tab-pad-x, 9px) var(--popover-tab-pad-bottom, 9px);
+}
+
+.diagnostics-headline,
+.diagnostic-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.diagnostics-headline h2 {
+  margin: 1px 0 0;
+  font-size: var(--popover-tab-title, 12.2px);
+  line-height: 1.12;
+}
+
+.diagnostics-headline > span,
+.diagnostic-section-head em {
+  color: var(--muted);
+  font-size: var(--popover-tab-meta, 8.7px);
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.diagnostic-section-head span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--popover-tab-kicker, 8.8px);
+  font-weight: 740;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.diagnostics-score-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.diagnostic-baseline,
+.diagnostic-signal-plane,
+.diagnostic-semantic-plane,
+.diagnostic-export-card,
+.diagnostic-capabilities {
+  border: 1px solid color-mix(in srgb, var(--fg) 8%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel) 84%, transparent);
+}
+
+.diagnostic-baseline {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 7px 8px;
+  position: relative;
+  overflow: hidden;
+}
+
+.diagnostic-baseline::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: var(--metric-color, var(--accent));
+  opacity: .72;
+}
+
+.diagnostic-baseline.status-ok { --metric-color: var(--ok); }
+.diagnostic-baseline.status-watch,
+.diagnostic-baseline.status-partial,
+.diagnostic-baseline.status-unavailable { --metric-color: var(--run); }
+.diagnostic-baseline.status-warn { --metric-color: var(--bad); }
+
+.diagnostic-baseline span,
+.diagnostic-signal strong,
+.diagnostic-capability span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.diagnostic-baseline span {
+  color: var(--muted);
+  font-size: 8.6px;
+  font-weight: 700;
+}
+
+.diagnostic-baseline strong {
+  color: var(--fg);
+  font-size: 14px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.diagnostic-baseline em,
+.diagnostic-signal em,
+.diagnostic-capability em,
+.diagnostic-export-card p {
+  color: var(--muted);
+  font-size: 9px;
+  font-style: normal;
+  line-height: 1.25;
+}
+
+.diagnostic-signal-plane,
+.diagnostic-semantic-plane,
+.diagnostic-capabilities,
+.diagnostic-export-card {
+  padding: 7px;
+}
+
+.diagnostic-signal-list,
+.diagnostic-capability-list,
+.diagnostic-semantic-grid {
+  display: grid;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.diagnostic-signal,
+.diagnostic-capability,
+.diagnostic-semantic-row {
+  display: grid;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+
+.diagnostic-signal {
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  padding: 6px 7px;
+}
+
+.diagnostic-signal.severity-warn svg { color: var(--bad); }
+.diagnostic-signal.severity-info svg { color: var(--accent); }
+
+.diagnostic-signal span,
+.diagnostic-capability {
+  min-width: 0;
+}
+
+.diagnostic-signal strong {
+  display: block;
+  font-size: 10.5px;
+  line-height: 1.15;
+}
+
+.diagnostic-signal b {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 700;
+  max-width: 74px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diagnostics-capability-export {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(142px, .72fr);
+  gap: 7px;
+}
+
+.diagnostic-capability {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 5px 6px;
+}
+
+.diagnostic-semantic-row {
+  grid-template-columns: minmax(96px, .52fr) minmax(0, .58fr) minmax(0, 1fr);
+  padding: 5px 6px;
+}
+
+.diagnostic-semantic-row span {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.diagnostic-semantic-row b {
+  color: var(--fg);
+  font-size: 9.2px;
+  line-height: 1.12;
+}
+
+.diagnostic-semantic-row em,
+.diagnostic-semantic-row strong,
+.diagnostic-semantic-row small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 8.2px;
+  font-style: normal;
+  font-weight: 620;
+  line-height: 1.16;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diagnostic-semantic-row strong {
+  color: color-mix(in srgb, var(--fg) 70%, var(--muted));
+}
+
+.diagnostic-capability strong {
+  border-radius: 999px;
+  color: var(--fg);
+  font-size: 8px;
+  font-weight: 760;
+  padding: 2px 5px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.diagnostic-capability em {
+  grid-column: 1 / -1;
+}
+
+.diagnostic-export-card {
+  display: grid;
+  gap: 6px;
+}
+
+.diagnostic-runtime-telemetry {
+  display: grid;
+  gap: 5px;
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid color-mix(in srgb, var(--fg) 8%, transparent);
+}
+
+.diagnostic-runtime-telemetry p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.25;
+}
+
+.diagnostic-adapter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.diagnostic-adapter-row span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  border-radius: 4px;
+  padding: 3px 5px;
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+}
+
+.diagnostic-adapter-row b,
+.diagnostic-adapter-row strong {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 720;
+}
+
+.diagnostic-adapter-row strong {
+  color: var(--fg);
+}
+
+.diagnostic-omissions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.diagnostic-omissions span {
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 8px;
+  padding: 2px 4px;
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+}
+
+.diagnostic-export-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 28px;
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
+  border-radius: 5px;
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+  font-size: 9.5px;
+  font-weight: 760;
+}
+
+.diagnostic-export-button:disabled {
+  opacity: .72;
+}
+
+.diagnostic-empty {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 9.5px;
+}
+
+@media (max-width: 430px) {
+  .diagnostics-capability-export {
+    grid-template-columns: 1fr;
+  }
+
+  .diagnostic-semantic-row {
+    grid-template-columns: 1fr;
+  }
+}
