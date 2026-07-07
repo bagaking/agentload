@@ -105,6 +105,62 @@ func TestParseCodexTraceCapturesTokenUsage(t *testing.T) {
 	}
 }
 
+func TestParseCodexTraceCapturesCumulativeTokenUsage(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+	body := strings.Join([]string{
+		`{"timestamp":"2026-06-27T12:00:00Z","payload":{"id":"codex-session","cwd":"workspace/agentload","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":30,"reasoning_output_tokens":5,"total_tokens":150},"last_token_usage":{"input_tokens":100,"output_tokens":30,"total_tokens":130}}}}`,
+		`{"timestamp":"2026-06-27T12:01:00Z","payload":{"id":"codex-session","cwd":"workspace/agentload","info":{"total_token_usage":{"input_tokens":180,"cached_input_tokens":40,"output_tokens":70,"reasoning_output_tokens":9,"total_tokens":290},"last_token_usage":{"input_tokens":80,"output_tokens":40,"total_tokens":120}}}}`,
+	}, "\n") + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+
+	trace, err := parseCodexTrace(path)
+	if err != nil {
+		t.Fatalf("parseCodexTrace: %v", err)
+	}
+	if trace == nil {
+		t.Fatalf("expected trace")
+	}
+	want := TokenUsage{
+		InputTokens:           180,
+		OutputTokens:          70,
+		CacheReadInputTokens:  40,
+		ReasoningOutputTokens: 9,
+		TotalTokens:           290,
+	}
+	if trace.TokenUsage != want {
+		t.Fatalf("unexpected cumulative token usage: %+v, want %+v", trace.TokenUsage, want)
+	}
+}
+
+func TestParseCodexLaneTraceCapturesTokenUsage(t *testing.T) {
+	root := t.TempDir()
+	eventsPath := filepath.Join(root, "agentload", ".codex", ".codexl", "asagent", "lane-1", "events.jsonl")
+	if err := os.MkdirAll(filepath.Dir(eventsPath), 0o755); err != nil {
+		t.Fatalf("mkdir events dir: %v", err)
+	}
+	body := strings.Join([]string{
+		`{"thread_id":"lane-1"}`,
+		`{"payload":{"info":{"total_token_usage":{"input_tokens":10,"output_tokens":4,"total_tokens":14}}}}`,
+	}, "\n") + "\n"
+	if err := os.WriteFile(eventsPath, []byte(body), 0o644); err != nil {
+		t.Fatalf("write events: %v", err)
+	}
+
+	trace, err := parseCodexLaneTrace(eventsPath)
+	if err != nil {
+		t.Fatalf("parseCodexLaneTrace: %v", err)
+	}
+	if trace == nil {
+		t.Fatalf("expected trace")
+	}
+	if trace.TokenUsage != (TokenUsage{InputTokens: 10, OutputTokens: 4, TotalTokens: 14}) {
+		t.Fatalf("unexpected lane token usage: %+v", trace.TokenUsage)
+	}
+}
+
 func TestParseCodexLaneTraceFallsBackToConfigRootParent(t *testing.T) {
 	root := t.TempDir()
 	eventsPath := filepath.Join(root, "agentload", ".codex", ".codexl", "asagent", "lane-1", "events.jsonl")

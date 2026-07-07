@@ -1010,15 +1010,15 @@ func parseCodexLaneTrace(eventsPath string) (*SessionTrace, error) {
 		RoleHintSource: "codexl_lane_path",
 	}
 
-	_ = forEachJSONLLineUntil(eventsPath, func(line []byte) bool {
+	_ = forEachJSONLLine(eventsPath, func(line []byte) bool {
 		if threadID := firstNonEmptyString(
 			jsonStringField(line, "thread_id"),
 			jsonStringField(line, "session_id"),
 			jsonStringField(line, "sessionId"),
-		); threadID != "" {
+		); threadID != "" && trace.SessionID == filepath.Base(filepath.Dir(eventsPath)) {
 			trace.SessionID = threadID
-			return false
 		}
+		captureTokenUsage(trace, line)
 		return true
 	})
 
@@ -1179,6 +1179,10 @@ func captureTokenUsage(trace *SessionTrace, line []byte) {
 	if err := json.Unmarshal(line, &obj); err != nil {
 		return
 	}
+	if usage, ok := cumulativeTokenUsageFromJSONValue(obj); ok && !usage.Empty() {
+		trace.TokenUsage.Max(usage)
+		return
+	}
 	usage := tokenUsageFromJSONValue(obj)
 	if usage.Empty() {
 		return
@@ -1215,6 +1219,41 @@ func tokenUsageFromJSONValue(value interface{}) TokenUsage {
 	return out
 }
 
+func cumulativeTokenUsageFromJSONValue(value interface{}) (TokenUsage, bool) {
+	var out TokenUsage
+	if collectCumulativeTokenUsage(value, &out) {
+		return out, true
+	}
+	return TokenUsage{}, false
+}
+
+func collectCumulativeTokenUsage(value interface{}, out *TokenUsage) bool {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		if total, ok := mapFromKeys(v, "total_token_usage", "totalTokenUsage"); ok {
+			if usage, found := directTokenUsage(total); found {
+				out.Max(usage)
+				return true
+			}
+		}
+		found := false
+		for key, child := range v {
+			if shouldInspectTokenUsageChild(key) {
+				found = collectCumulativeTokenUsage(child, out) || found
+			}
+		}
+		return found
+	case []interface{}:
+		found := false
+		for _, child := range v {
+			found = collectCumulativeTokenUsage(child, out) || found
+		}
+		return found
+	default:
+		return false
+	}
+}
+
 func collectTokenUsage(value interface{}, out *TokenUsage) {
 	switch v := value.(type) {
 	case map[string]interface{}:
@@ -1243,7 +1282,7 @@ func shouldInspectTokenUsageChild(key string) bool {
 		return true
 	}
 	switch key {
-	case "payload", "message", "response", "result", "metadata", "data", "output":
+	case "payload", "message", "response", "result", "metadata", "data", "output", "info":
 		return true
 	default:
 		return false
@@ -1373,6 +1412,28 @@ func (u *TokenUsage) Add(other TokenUsage) {
 	} else {
 		u.TotalTokens += other.DerivedTotal()
 	}
+}
+
+func (u *TokenUsage) Max(other TokenUsage) {
+	if u == nil || other.Empty() {
+		return
+	}
+	u.InputTokens = maxInt(u.InputTokens, other.InputTokens)
+	u.OutputTokens = maxInt(u.OutputTokens, other.OutputTokens)
+	u.CacheCreationInputTokens = maxInt(u.CacheCreationInputTokens, other.CacheCreationInputTokens)
+	u.CacheReadInputTokens = maxInt(u.CacheReadInputTokens, other.CacheReadInputTokens)
+	u.ReasoningOutputTokens = maxInt(u.ReasoningOutputTokens, other.ReasoningOutputTokens)
+	u.TotalTokens = maxInt(u.TotalTokens, other.TotalTokens)
+	if u.TotalTokens == 0 {
+		u.TotalTokens = u.DerivedTotal()
+	}
+}
+
+func maxInt(a, b int) int {
+	if b > a {
+		return b
+	}
+	return a
 }
 
 func normalizeSessionRoleSource(raw string) string {

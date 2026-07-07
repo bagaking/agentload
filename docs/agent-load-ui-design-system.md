@@ -254,6 +254,10 @@ semantic layer before visual polish is accepted.
 - Expanded popover session rows should fit role, agent mark, host mark, short id,
   last activity age, process count, and confidence onto one scan line whenever
   the width allows it. Detail panels may carry longer evidence.
+- Expanded project session rows should behave like a compact ledger. Keep age,
+  PID pressure, and measured token total on fixed right-aligned rails so rows
+  can be scanned vertically. The row may show only the compact token total;
+  input/output/cache/reasoning splits belong in hover or detail inspectors.
 - Session execution duration is an evidence detail, not a top-level concurrency
   metric. Expose transcript-derived observed span and active burst duration in
   session detail surfaces, and keep global header metrics focused on current

@@ -13348,3 +13348,137 @@ body[data-view="popover"] .system-chip-row em {
     radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--metric-color, #5577d8) 8%, transparent), transparent 58%),
     rgba(255, 255, 255, .82);
 }
+
+/* Expanded project ledger density pass. Keep each session on a stable audit grid. */
+body[data-view="popover"] .popover-project-table .project-tree-row.expanded {
+  --expanded-tree-inset: 18px;
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-row.expanded .session-tree {
+  padding: 1px 4px 5px var(--expanded-tree-inset);
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-row.expanded .session-tool-block {
+  display: grid;
+  gap: 1px;
+  padding: 2px 0;
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-row.expanded .session-tool-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 17px;
+  padding: 1px 2px 1px 0;
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-row.expanded .session-tool-head span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-row.expanded .session-branch {
+  padding-left: 8px;
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-row.expanded .session-branch::before {
+  top: 5px;
+  bottom: 4px;
+  opacity: .58;
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-row.expanded .session-group-head {
+  min-height: 14px;
+  padding: 0;
+  font-size: 7.7px;
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-row.expanded .session-line {
+  grid-template-columns: 14px 31px minmax(112px, 1fr) minmax(108px, 128px);
+  align-items: center;
+  min-height: 22px;
+  gap: 4px;
+  padding: 1px 2px 1px 7px;
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-row.expanded .session-line::before {
+  width: 6px;
+  opacity: .78;
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-row.expanded .session-title {
+  gap: 4px;
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-row.expanded .session-id-control {
+  flex-basis: 18ch;
+  max-width: min(18ch, 100%);
+  height: 15px;
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-row.expanded .session-id-button strong {
+  font-size: 10px;
+  line-height: 1;
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-row.expanded .session-meta-button {
+  flex: 0 0 auto;
+  max-width: 38px;
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-row.expanded .session-meta-button small {
+  color: color-mix(in srgb, var(--console-text-faint) 78%, transparent);
+  font-size: 7.4px;
+}
+
+body[data-view="popover"] .popover-project-table .session-row-metrics {
+  display: grid;
+  grid-template-columns: 3.8ch 3.2ch minmax(0, 1fr);
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--console-text-faint);
+  font-family: var(--font-mono);
+  font-size: 8.3px;
+  line-height: 1;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+body[data-view="popover"] .popover-project-table .session-row-metrics em {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .popover-project-table .session-row-metrics .has-token {
+  color: color-mix(in srgb, var(--ok) 76%, var(--fg));
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-row.expanded .session-evidence-strip {
+  display: none;
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-row.expanded .session-tree-more {
+  margin: 2px 0 0 8px;
+  min-height: 18px;
+  padding: 2px 6px;
+  font-size: 8px;
+}
+
+@media (max-width: 430px) {
+  body[data-view="popover"] .popover-project-table .project-tree-row.expanded .session-line {
+    grid-template-columns: 13px 29px minmax(86px, 1fr) minmax(82px, 96px);
+  }
+
+  body[data-view="popover"] .popover-project-table .session-row-metrics {
+    grid-template-columns: 3.5ch 2.8ch minmax(0, 1fr);
+    gap: 3px;
+    font-size: 7.7px;
+  }
+}

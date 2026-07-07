@@ -2874,6 +2874,9 @@ function SessionLine({
   const selected = selection.type === "session" && safeID(sid) === selection.id;
   const title = session.agent_nickname || shortID(sid) || "session";
   const meta = `${formatAge(session.last_event_age_seconds, t)} · ${processText} · ${resourceText} · ${confidenceLabel(t, session.confidence)}`;
+  const rowTokenText = session.token_usage && tokenUsageHasValue(session.token_usage)
+    ? formatTokenCount(session.token_usage.total_tokens ?? tokenUsageDerivedTotalForHover(session.token_usage))
+    : t("unavailable");
   const hostName = host?.name || t("hostUnknown");
   const sessionHoverTitle = `${title} · ${roleLabel(t, role)}`;
   const hasRecentMovement = sessionHasRecentMovement(session);
@@ -2911,8 +2914,13 @@ function SessionLine({
         <span className="session-title">
           <SessionIdControl t={t} sid={sid} title={title} selected={selected} setSelection={setSelection} />
           <button className="session-meta-button" type="button" data-focus-key={focusKey("session-meta", sid || title)} onClick={() => setSelection({ type: "session", id: safeID(sid) })}>
-            <small>{meta}</small>
+            <small>{confidenceLabel(t, session.confidence)}</small>
           </button>
+        </span>
+        <span className="session-row-metrics" aria-label={meta}>
+          <em>{formatAge(session.last_event_age_seconds, t)}</em>
+          <em>{processText}</em>
+          <em className={session.token_usage && tokenUsageHasValue(session.token_usage) ? "has-token" : ""}>{rowTokenText}</em>
         </span>
         <div className="session-evidence-strip" aria-label={t("evidence")}>
           {visibleEvidenceItems.map((item) => (
