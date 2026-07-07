@@ -4987,15 +4987,15 @@ body[data-view="popover"] .popover-hover-inspector {
   position: fixed;
   z-index: 220;
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  gap: 7px;
+  grid-template-columns: 15px minmax(0, 1fr);
+  gap: 4px;
   align-items: start;
   width: min(var(--hover-width, 336px), calc(100vw - 20px));
   min-width: 0;
-  padding: 7px 8px;
+  padding: 4px 5px;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--fg) 13%, var(--border));
-  border-radius: 4px;
+  border-radius: 3px;
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--ok) 4.5%, transparent), transparent 34%),
     color-mix(in srgb, var(--surface-2) 90%, transparent);
@@ -5029,8 +5029,8 @@ body[data-view="popover"] .popover-hover-inspector::after {
 
 body[data-view="popover"] .popover-hover-inspector::after {
   right: 8px;
-  top: 6px;
-  width: 28px;
+  top: 5px;
+  width: 22px;
   height: 1px;
   background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ok) 34%, transparent));
   opacity: .58;
@@ -5052,8 +5052,8 @@ body[data-view="popover"] .popover-hover-inspector.project::after {
 body[data-view="popover"] .hover-inspector-mark {
   display: grid;
   place-items: center;
-  width: 18px;
-  height: 18px;
+  width: 15px;
+  height: 15px;
   margin-top: 1px;
   color: var(--ok);
   border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
@@ -5069,7 +5069,7 @@ body[data-view="popover"] .popover-hover-inspector.project .hover-inspector-mark
 
 body[data-view="popover"] .hover-inspector-body {
   display: grid;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -5084,25 +5084,29 @@ body[data-view="popover"] .hover-inspector-body small {
 
 body[data-view="popover"] .hover-inspector-body strong {
   color: var(--fg);
-  font-size: 11px;
+  font-size: 9.8px;
   font-weight: 760;
-  line-height: 1.15;
+  line-height: 1.12;
 }
 
 body[data-view="popover"] .hover-inspector-body > strong {
-  overflow: visible;
-  text-overflow: clip;
+  display: -webkit-box;
+  max-height: 2.25em;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: normal;
   overflow-wrap: anywhere;
   word-break: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 body[data-view="popover"] .hover-inspector-body > em,
 body[data-view="popover"] .hover-inspector-body small {
   color: var(--console-text-soft);
-  font-size: 9px;
+  font-size: 7.8px;
   font-style: normal;
-  line-height: 1.25;
+  line-height: 1.12;
 }
 
 body[data-view="popover"] .hover-inspector-body > em {
@@ -5111,40 +5115,60 @@ body[data-view="popover"] .hover-inspector-body > em {
 }
 
 body[data-view="popover"] .popover-hover-inspector .session-hover-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px 7px;
-  padding: 5px 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2px 4px;
+  padding: 3px 0;
   border-top: 1px solid color-mix(in srgb, var(--border-soft) 58%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--border-soft) 58%, transparent);
+}
+
+body[data-view="popover"] .popover-hover-inspector .session-hover-grid > span {
+  gap: 1px;
 }
 
 body[data-view="popover"] .popover-hover-inspector .session-hover-grid b,
 body[data-view="popover"] .popover-hover-inspector .session-hover-tokens > b {
   color: var(--fg-faint);
-  font-size: 8px;
+  font-size: 6.9px;
   letter-spacing: .02em;
+  line-height: 1;
 }
 
 body[data-view="popover"] .popover-hover-inspector .session-hover-grid em,
 body[data-view="popover"] .popover-hover-inspector .session-hover-tokens em {
   color: var(--fg);
-  font-size: 10px;
+  font-size: 8.6px;
+  line-height: 1.05;
 }
 
 body[data-view="popover"] .popover-hover-inspector .session-hover-tokens {
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: baseline;
-  gap: 6px;
+  gap: 2px;
   padding-top: 0;
   border-top: 0;
 }
 
+body[data-view="popover"] .popover-hover-inspector .session-hover-tokens > b {
+  display: none;
+}
+
 body[data-view="popover"] .popover-hover-inspector .session-hover-tokens > span {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 5px;
+  max-height: 20px;
   overflow: hidden;
 }
 
 body[data-view="popover"] .popover-hover-inspector .session-hover-tokens em {
   color: color-mix(in srgb, var(--ok) 78%, var(--fg));
+  gap: 2px;
+}
+
+body[data-view="popover"] .popover-hover-inspector .session-hover-tokens i {
+  color: var(--fg-faint);
+  font-size: 6.8px;
 }
 
 :root[data-theme="light"] body[data-view="popover"] .popover-hover-inspector {

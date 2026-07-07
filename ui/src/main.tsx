@@ -1283,11 +1283,11 @@ function hoverInspectorStyle(state: HoverDetailState): React.CSSProperties {
   const viewportHeight = typeof window === "undefined" ? 560 : window.innerHeight;
   const edge = 10;
   const width = state.detail.kind === "session"
-    ? Math.min(348, Math.max(244, viewportWidth - 176))
-    : Math.min(304, Math.max(220, viewportWidth - 196));
-  const height = state.detail.kind === "session" && width < 280 ? 220 : state.detail.kind === "session" ? 156 : 132;
-  const gap = 12;
-  const verticalNudge = state.detail.kind === "session" ? 20 : 16;
+    ? Math.min(292, Math.max(218, viewportWidth - 192))
+    : Math.min(268, Math.max(204, viewportWidth - 212));
+  const height = state.detail.kind === "session" && width < 250 ? 136 : state.detail.kind === "session" ? 112 : 96;
+  const gap = 9;
+  const verticalNudge = state.detail.kind === "session" ? 14 : 12;
   let left = state.x + gap;
   let top = state.y - verticalNudge;
   if (left + width > viewportWidth - edge) left = state.x - width - gap;

@@ -114,6 +114,10 @@ semantic layer before visual polish is accepted.
   fields needed to understand global state; secondary identifiers such as full
   local addresses, long paths, and verbose evidence belong in tooltips, detail
   panes, or disclosure surfaces.
+- Hover inspectors are cursor-proximate readouts, not detail panels. Keep them
+  narrow, shallow, and content-dense; use compact metric grids and one- or
+  two-line token chips so the reader can continue scanning adjacent rows while
+  the inspector is visible.
 - Dashboard process ledgers may keep a compact initial row window, but any cap
   must expose the hidden count through an open/close overflow control; observed
   process totals must never imply a fuller table than the operator can reach.
