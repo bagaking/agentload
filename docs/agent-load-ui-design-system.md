@@ -144,8 +144,8 @@ semantic layer before visual polish is accepted.
   evidence quality first, keep forecasting explicitly unavailable unless a real
   model exists, and express every priority row as plain user-facing
   issue/evidence/source/next-check language. Backend diagnostic keys may appear
-  only as compact source badges or export evidence, never as the primary title
-  in a localized UI.
+  only as hidden titles or export evidence; visible source badges should prefer
+  localized source names over raw codes such as parser or risk ids.
 - Diagnostics layout should use a small set of reusable planes: an evidence
   strip, a priority-check table, an evidence-chain map, and a safe-export
   boundary. Avoid one-off diagnostic cards that repeat the same visual frame or

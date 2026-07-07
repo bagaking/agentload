@@ -92,10 +92,14 @@ export function DiagnosticsPanel({ t, snapshot }: { t: Translate; snapshot: Snap
           <StatusLegend t={t} />
         </div>
         <div className="diagnostic-chain-map">
-          <div className="diagnostic-chain-stage collectors">{t("diagnosticCollectors")}</div>
-          <div className="diagnostic-chain-stage semantics">{t("metricSemantics")}</div>
-          <div className="diagnostic-chain-stage export">{t("diagnosticExport")}</div>
-          {viewModel.chainNodes.map((node, index) => <ChainNodeItem key={node.key} node={node} index={index} total={viewModel.chainNodes.length} />)}
+          {diagnosticChainGroups(t, viewModel.chainNodes).map((group) => (
+            <section key={group.key} className={`diagnostic-chain-group ${group.key}`}>
+              <span className="diagnostic-chain-stage">{group.label}</span>
+              <div className="diagnostic-chain-list">
+                {group.nodes.map((node) => <ChainNodeItem key={node.key} node={node} />)}
+              </div>
+            </section>
+          ))}
         </div>
       </section>
 
@@ -141,21 +145,37 @@ function PrioritySignalRow({ row }: { row: PriorityRow }) {
         <strong>{row.evidence}</strong>
         <em>{row.evidenceLabel}</em>
       </span>
-      <span className="diagnostic-source-badge">
+      <span className="diagnostic-source-badge" title={row.sourceCode ? `${row.source} · ${row.sourceCode}` : row.source} aria-label={row.source}>
         <b>{row.source}</b>
-        <code>{row.sourceCode}</code>
       </span>
       <span className="diagnostic-priority-action">{row.action}<ChevronRight size={13} /></span>
     </article>
   );
 }
 
-function ChainNodeItem({ node, index, total }: { node: ChainNode; index: number; total: number }) {
+type EvidenceChainGroup = {
+  key: "collectors" | "semantics" | "export";
+  label: string;
+  nodes: ChainNode[];
+};
+
+function diagnosticChainGroups(t: Translate, nodes: ChainNode[]): EvidenceChainGroup[] {
+  const byKey = new Map(nodes.map((node) => [node.key, node]));
+  const pick = (keys: ChainNode["key"][]) => keys.map((key) => byKey.get(key)).filter((node): node is ChainNode => Boolean(node));
+  return [
+    { key: "collectors", label: t("diagnosticCollectors"), nodes: pick(["passive_process_observer", "transcript_parser", "system_resources"]) },
+    { key: "semantics", label: t("metricSemantics"), nodes: pick(["runtime_telemetry_adapter"]) },
+    { key: "export", label: t("diagnosticExport"), nodes: pick(["diagnostic_export"]) },
+  ];
+}
+
+function ChainNodeItem({ node }: { node: ChainNode }) {
   return (
-    <article className={`diagnostic-chain-node tone-${node.tone}`} style={{ "--node-index": index, "--node-total": total } as React.CSSProperties}>
-      <span>{chainNodeIcon(node.key)}</span>
-      <b>{node.label}</b>
-      <code>{node.code}</code>
+    <article className={`diagnostic-chain-node tone-${node.tone}`} title={node.code ? `${node.label} · ${node.code}` : node.label}>
+      <span className="diagnostic-chain-node-icon">{chainNodeIcon(node.key)}</span>
+      <span className="diagnostic-chain-node-main">
+        <b>{node.label}</b>
+      </span>
       <em>{node.status}</em>
     </article>
   );

@@ -210,7 +210,7 @@ function signalSourceCode(value: string): string {
   if (key === "known_sessions" || key === "live_sessions") return "session_ev";
   if (key === "recent_movement" || key === "transcript_stats") return "log_scan";
   if (key === "system_resources") return "sys_metrics";
-  if (key === "coordination_risk") return "risk_mix";
+  if (key === "coordination_risk") return "risk";
   return key.replace(/[^a-zA-Z0-9_]+/g, "_").slice(0, 12) || "diag";
 }
 
