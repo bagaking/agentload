@@ -12591,89 +12591,57 @@ body[data-view="popover"] .trend-suite.compact .trend-lane.runtime .trend-lane-r
 }
 
 body[data-view="popover"] .trend-suite.compact .trend-runtime-drilldown {
-  position: absolute;
-  right: 12px;
-  bottom: 14px;
-  z-index: 8;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 5px 8px;
+  display: flex;
+  position: relative;
   align-items: center;
-  width: min(282px, calc(100% - 24px));
-  padding: 5px 6px 6px;
+  flex: 0 1 auto;
+  gap: 6px;
+  width: fit-content;
+  min-width: 0;
+  max-width: min(390px, 52vw);
+  min-height: 24px;
+  padding: 3px 7px 5px;
   pointer-events: none;
-  border: 1px solid color-mix(in srgb, var(--pressure) 18%, var(--border-soft));
-  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--pressure) 14%, var(--border-soft));
+  border-radius: 3px;
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--pressure) 10%, transparent), transparent 46%),
-    color-mix(in srgb, var(--console-material-2) 76%, transparent);
+    linear-gradient(90deg, color-mix(in srgb, var(--pressure) 6%, transparent), transparent 46%),
+    color-mix(in srgb, var(--console-material-2) 46%, transparent);
   box-shadow:
-    0 10px 22px color-mix(in srgb, #000 16%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--fg) 5%, transparent);
-  backdrop-filter: saturate(1.08);
-  -webkit-backdrop-filter: saturate(1.08);
+    0 6px 12px color-mix(in srgb, #000 8%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--fg) 4%, transparent);
+  backdrop-filter: blur(2px) saturate(1.04);
+  -webkit-backdrop-filter: blur(2px) saturate(1.04);
 }
 
 body[data-view="popover"] .trend-runtime-drilldown-head {
-  display: grid;
-  gap: 1px;
+  display: block;
+  flex: 0 0 auto;
   min-width: 0;
 }
 
 body[data-view="popover"] .trend-runtime-drilldown-head span,
-body[data-view="popover"] .trend-runtime-drilldown-total span,
-body[data-view="popover"] .trend-runtime-drilldown-total em,
 body[data-view="popover"] .trend-runtime-drilldown-parts b {
   overflow: hidden;
   color: color-mix(in srgb, var(--console-text-faint) 86%, transparent);
-  font-size: 7.2px;
+  font-size: 8px;
   font-weight: 780;
   line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-body[data-view="popover"] .trend-runtime-drilldown-head strong {
-  overflow: hidden;
-  color: color-mix(in srgb, var(--fg) 92%, var(--pressure-strong));
-  font-family: var(--font-mono);
-  font-size: 8.9px;
-  font-weight: 760;
-  line-height: 1.05;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-body[data-view="popover"] .trend-runtime-drilldown-total {
-  display: grid;
-  grid-template-columns: auto auto;
-  gap: 1px 5px;
-  align-items: baseline;
-  justify-self: end;
-  min-width: 0;
-  text-align: right;
-}
-
-body[data-view="popover"] .trend-runtime-drilldown-total strong {
-  color: var(--pressure-strong);
-  font-family: var(--font-mono);
-  font-size: 17px;
-  font-weight: 900;
-  line-height: .95;
-}
-
-body[data-view="popover"] .trend-runtime-drilldown-total em {
-  grid-column: 1 / -1;
-  font-style: normal;
-}
-
 body[data-view="popover"] .trend-runtime-drilldown-meter {
+  position: absolute;
+  right: 7px;
+  bottom: 2px;
+  left: 7px;
   display: flex;
-  grid-column: 1 / -1;
   min-width: 0;
-  height: 3px;
+  height: 1px;
   overflow: hidden;
   border-radius: 999px;
+  opacity: .76;
   background: color-mix(in srgb, var(--fg) 7%, transparent);
 }
 
@@ -12696,18 +12664,21 @@ body[data-view="popover"] .trend-runtime-drilldown-meter .other { background: co
 
 body[data-view="popover"] .trend-runtime-drilldown-parts {
   display: flex;
-  grid-column: 1 / -1;
-  gap: 4px;
+  align-items: center;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  gap: 6px;
   min-width: 0;
+  overflow: hidden;
 }
 
 body[data-view="popover"] .trend-runtime-drilldown-parts span {
-  display: grid;
-  grid-template-columns: 13px minmax(0, 1fr) auto;
-  gap: 3px;
+  display: inline-grid;
+  grid-template-columns: 13px minmax(0, auto) auto;
+  column-gap: 2px;
   align-items: center;
   min-width: 0;
-  flex: 1 1 0;
+  flex: 0 1 auto;
 }
 
 body[data-view="popover"] .trend-runtime-drilldown-parts img,
@@ -12734,13 +12705,14 @@ body[data-view="popover"] .trend-runtime-drilldown-parts i {
 
 body[data-view="popover"] .trend-runtime-drilldown-parts b {
   min-width: 0;
+  max-width: 58px;
 }
 
 body[data-view="popover"] .trend-runtime-drilldown-parts strong {
   overflow: hidden;
   color: var(--fg);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 10.8px;
   font-weight: 860;
   line-height: 1;
   text-overflow: ellipsis;

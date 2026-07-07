@@ -370,6 +370,12 @@ semantic layer before visual polish is accepted.
   selected trend sample carries it, fall back to host-process distribution when
   available, and only use mapped/unmatched composition when no sampled
   distribution exists.
+- Runtime trend drilldowns should stay subordinate to the chart. Prefer a
+  header-integrated distribution strip over chart-covering floats; if a float is
+  unavoidable, dock it near an edge, keep it translucent and shallow, and avoid
+  covering the selected curve or crosshair. Distribution items should be
+  content-sized inline clusters; keep icon, label, and value close together
+  instead of stretching each item across equal-width columns.
 - Compact trend readout separators should stay subordinate to the chart. Any
   vertical rail near the readout should be short, low-contrast, and one pixel
   wide so it does not compete with the selected trend marker.

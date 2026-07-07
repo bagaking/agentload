@@ -356,6 +356,7 @@ function TrendLaneView({
           <span className="trend-kicker">{title}</span>
           <small>{trendWindow?.range || t("unavailable")} · {points.length} {t("samples")}</small>
         </div>
+        {compact && lane === "runtime" && isFocused ? <TrendRuntimeDrilldown t={t} summary={summary} /> : null}
         <button
           aria-pressed={isFocused}
           className="trend-lane-readout"
@@ -376,10 +377,7 @@ function TrendLaneView({
         </button>
       </div>
       {points.length ? (compact && lane === "runtime" ? (
-        <>
-          <TrendRuntimeCurve t={t} summary={summary} selectedAt={selected?.at} onSelect={selectPoint} />
-          {isFocused ? <TrendRuntimeDrilldown t={t} summary={summary} /> : null}
-        </>
+        <TrendRuntimeCurve t={t} summary={summary} selectedAt={selected?.at} onSelect={selectPoint} />
       ) : (
         <TrendKLineChart
           t={t}
@@ -450,18 +448,11 @@ function TrendRuntimeDrilldown({ t, summary }: { t: Translate; summary?: TrendLa
   if (!summary || summary.lane !== "runtime" || !datum) return null;
   const point = datum.point;
   const total = Math.max(0, datum.close);
-  const coverage = trendMappingCoverageValue(point);
   const { mode, parts } = runtimeDrilldownParts(t, point, total);
   return (
     <aside className="trend-runtime-drilldown" aria-label={t("processPressure")}>
       <div className="trend-runtime-drilldown-head">
-        <span>{t("processPressure")} · {mode}</span>
-        <strong>{datum.at ? formatDateTime(datum.at) : t("unavailable")}</strong>
-      </div>
-      <div className="trend-runtime-drilldown-total">
-        <strong>{trendMetricValue(t, total)}</strong>
-        <span>{t("processes")}</span>
-        <em>{t("trendReadoutMatched")} {coverage !== null ? formatPct(coverage) : t("unavailable")}</em>
+        <span>{mode}</span>
       </div>
       <div className="trend-runtime-drilldown-meter" aria-hidden="true">
         {parts.map((part) => (
