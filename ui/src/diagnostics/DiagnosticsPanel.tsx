@@ -56,12 +56,14 @@ export function DiagnosticsPanel({ t, snapshot }: { t: Translate; snapshot: Snap
           <span className="note-kicker">{t("diagnostics")}</span>
           <h2>{t("diagnosticFactCheck")}</h2>
         </div>
-        <span>{t("liveSample")} · {viewModel.generated}</span>
+        <span className="diagnostic-head-meta">
+          <em>{t("liveSample")} · {viewModel.generated}</em>
+          <b><Radar size={11} />{t("diagnosticNoForecastBadge")}</b>
+        </span>
       </div>
 
       <section className="diagnostic-evidence-strip" aria-label={t("diagnosticEvidenceHealth")}>
         {viewModel.evidenceMetrics.map((metric) => <EvidenceMetricCell key={metric.key} metric={metric} />)}
-        <span className="diagnostic-no-forecast"><Radar size={12} />{t("diagnosticNoForecastBadge")}</span>
       </section>
 
       <section className="diagnostic-priority-plane" aria-label={t("diagnosticPriority")}>

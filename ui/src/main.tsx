@@ -3,14 +3,12 @@ import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { Activity, ArrowUpRight, Bot, ChevronDown, Copy, Cpu, ExternalLink, Gauge, GitBranch, HardDrive, Info, Languages, Layers, MemoryStick, Moon, Network, Radar, RefreshCw, Search, Server, Sun, Terminal, X } from "lucide-react";
 import { copy, type Lang } from "./i18n";
-import { DiagnosticsPanel } from "./diagnostics/DiagnosticsPanel";
 import { agentRoleLabel, buildToolSessionGroups, confidenceLabel, freshnessLabel, hiddenToolSessionCount, mappingMethodLabel, normalizedRole, orderedProjects, projectEvidenceItems, roleHintLabel, roleLabel, sessionEvidenceItems, sessionIDsText, sessionIdentity, sessionsForProject, threadSourceLabel, tokenUsageProvenanceLabel, toolBadgeLabel, toolDisplayName, toolIconName } from "./lib/activityModel";
 import { activeWindowLabel, buildRailItems, coordinationPostureLabel, currentMeaningLead, currentMeaningPoints, currentPeerScale, dashboardProjectLead, dashboardProjectMeta, deferredScanValue, mappingHealthText, metricState, primaryEvidenceNote, renderLogText, resolveSelection, statusTone, transcriptScanNote, transcriptScanSummary } from "./lib/dashboardModel";
 import { clampPct, countLabel, formatAge, formatCPU, formatCopy, formatDateTime, formatMemory, formatPct, formatRefreshInterval, formatTokenCount, formatTokenUsageSummary, pctPart, safeID, shortID, tokenUsageHasValue } from "./lib/format";
 import { currentHasRecentMovement, currentKnownSessionCount, currentProcessPressureCount, currentRecentMovementCount, projectProcessPressureCount, projectProcessResources, projectRoleCounts, sessionHasRecentMovement, sessionProcessPressure, summaryMappedProcessCount, summaryMappingCoveragePct, summaryUnmappedProcessCount, toolKnownSessionCount, toolRecentMovementCount } from "./lib/metricSemantics";
 import { LineageSummary } from "./lineage/LineageSummary";
 import { ProcessSummaryStrip } from "./system/ProcessSummaryStrip";
-import { TrendSuite } from "./trend/TrendSuite";
 import { TREND_RANGES, type TrendLane, type TrendRange } from "./trend/types";
 import type { ActiveElementIdentity, LogTab, PopoverView, ProjectMetricObject, ProjectMetricScope, RailItem, RailTab, RefreshReason, RoleCounts, SelectedView, Selection, Theme, ViewportState } from "./types/app";
 import type { AgeBucketSnapshot, HostApp, LiveProcess, LiveSession, ProcessDiagnostic, ProjectSnapshot, ProjectTool, Snapshot, SystemResourceSnapshot, TokenUsage } from "./types/snapshot";
@@ -23,6 +21,15 @@ import "./styles/system-process.css";
 import "./styles/diagnostics.css";
 import "./styles/lineage.css";
 import "./styles/process-summary.css";
+
+const TrendSuite = React.lazy(async () => {
+  const module = await import("./trend/TrendSuite");
+  return { default: module.TrendSuite };
+});
+const DiagnosticsPanel = React.lazy(async () => {
+  const module = await import("./diagnostics/DiagnosticsPanel");
+  return { default: module.DiagnosticsPanel };
+});
 
 const BRAND_NAME = "Agent Load";
 const ACTIVE = new Set(["active", "running", "queued"]);
@@ -458,15 +465,19 @@ function PopoverSurface({
               aria-labelledby="popover-view-trend"
               hidden={popoverView !== "trend"}
             >
-              <TrendSuite
-                t={t}
-                snapshot={snapshot}
-                compact
-                range={trendRange}
-                setRange={setTrendRange}
-                trendSelection={trendSelection}
-                setTrendSelection={setTrendSelection}
-              />
+              {popoverView === "trend" ? (
+                <React.Suspense fallback={<PanelLoading t={t} icon={<Gauge size={15} />} />}>
+                  <TrendSuite
+                    t={t}
+                    snapshot={snapshot}
+                    compact
+                    range={trendRange}
+                    setRange={setTrendRange}
+                    trendSelection={trendSelection}
+                    setTrendSelection={setTrendSelection}
+                  />
+                </React.Suspense>
+              ) : null}
             </section>
             <section
               className="popover-view-panel system"
@@ -484,7 +495,11 @@ function PopoverSurface({
               aria-labelledby="popover-view-diagnostics"
               hidden={popoverView !== "diagnostics"}
             >
-              <DiagnosticsPanel t={t} snapshot={snapshot} />
+              {popoverView === "diagnostics" ? (
+                <React.Suspense fallback={<PanelLoading t={t} icon={<Radar size={15} />} />}>
+                  <DiagnosticsPanel t={t} snapshot={snapshot} />
+                </React.Suspense>
+              ) : null}
             </section>
           </div>
         </div>
@@ -619,14 +634,16 @@ function DashboardSurface({
         </div>
       </section>
 
-      <TrendSuite
-        t={t}
-        snapshot={snapshot}
-        range={trendRange}
-        setRange={setTrendRange}
-        trendSelection={trendSelection}
-        setTrendSelection={setTrendSelection}
-      />
+      <React.Suspense fallback={<PanelLoading t={t} icon={<Gauge size={15} />} />}>
+        <TrendSuite
+          t={t}
+          snapshot={snapshot}
+          range={trendRange}
+          setRange={setTrendRange}
+          trendSelection={trendSelection}
+          setTrendSelection={setTrendSelection}
+        />
+      </React.Suspense>
 
       <section className="dash-ledger-band">
         <DashboardBandHead kicker={t("liveLedger")} title={t("processLedger")} meta={`${snapshot.live_processes?.length ?? 0} ${t("processes")}`} />
@@ -893,6 +910,15 @@ function EmptySurface({ t, compact = false, error = null }: { t: (key: string) =
         <p className="empty-sub">{detail}</p>
       </section>
     </main>
+  );
+}
+
+function PanelLoading({ t, icon }: { t: (key: string) => string; icon: React.ReactNode }) {
+  return (
+    <section className="empty-inline panel-loading" aria-live="polite">
+      {icon}
+      <span>{t("noData")}</span>
+    </section>
   );
 }
 

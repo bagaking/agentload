@@ -146,6 +146,10 @@ semantic layer before visual polish is accepted.
   strip, a priority-check table, an evidence-chain map, and a safe-export
   boundary. Avoid one-off diagnostic cards that repeat the same visual frame or
   make the page feel generated rather than deliberately instrumented.
+- Compact diagnostics must preserve first-screen audit density. The evidence
+  strip should stay horizontal in the popover whenever labels and numbers can
+  still fit; move explanatory badges into the heading or table chrome instead
+  of letting one badge force metric cards into a tall stacked layout.
 - Compact popover tab panels share one content rhythm. Online, trend, and
   system views should use the same first-level side inset, top/bottom padding,
   section gap, heading scale, and secondary text scale; individual charts,
@@ -424,6 +428,10 @@ semantic layer before visual polish is accepted.
   the plot plane should show selected bucket time, primary metric, context
   metrics, and bucket movement. Do not let attribution, package names, bundle
   names, or generic "powered by" copy occupy the chart hover path.
+- JavaScript-heavy tab bodies should be split at page ownership boundaries.
+  Trend visualizations, diagnostics, and other non-default surfaces may lazy
+  load behind their tab shell so the online popover remains quick to open; the
+  loading fallback must be compact and must not look like missing evidence.
 - Trend hover floats are part of the chart control layer, not content cards.
   They must render above the chart canvas and adjacent lane surfaces without
   clipping, keep to a compact two-row information shape, and use light material

@@ -1081,6 +1081,15 @@ kbd {
   color: var(--fg-faint);
   font-size: 12px;
 }
+
+.panel-loading {
+  min-height: 44px;
+  border: 1px solid color-mix(in srgb, var(--fg) 8%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
+  font-size: 10px;
+}
+
 .session-group {
   display: grid;
   gap: 5px;

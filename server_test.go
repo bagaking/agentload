@@ -26,20 +26,27 @@ func TestHandleUIAssetServesViteAssets(t *testing.T) {
 	if len(matches) == 0 {
 		t.Fatalf("expected at least one built vite js asset")
 	}
-	req := httptest.NewRequest(http.MethodGet, "/assets/"+filepath.Base(matches[0]), nil)
-	rec := httptest.NewRecorder()
+	slices.Sort(matches)
+	foundBrandCopy := false
+	for index, match := range matches {
+		req := httptest.NewRequest(http.MethodGet, "/assets/"+filepath.Base(match), nil)
+		rec := httptest.NewRecorder()
 
-	handler.ServeHTTP(rec, req)
+		handler.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d with body %q", rec.Code, rec.Body.String())
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected status 200 for %s, got %d with body %q", match, rec.Code, rec.Body.String())
+		}
+		contentType := rec.Header().Get("Content-Type")
+		if index == 0 && !strings.HasPrefix(contentType, "application/javascript") {
+			t.Fatalf("expected javascript content type, got %q", contentType)
+		}
+		if strings.Contains(rec.Body.String(), "Agent Load") {
+			foundBrandCopy = true
+		}
 	}
-	contentType := rec.Header().Get("Content-Type")
-	if !strings.HasPrefix(contentType, "application/javascript") {
-		t.Fatalf("expected javascript content type, got %q", contentType)
-	}
-	if !strings.Contains(rec.Body.String(), "Agent Load") {
-		t.Fatalf("expected built UI asset to contain brand copy")
+	if !foundBrandCopy {
+		t.Fatalf("expected at least one built UI chunk to contain brand copy")
 	}
 }
 
