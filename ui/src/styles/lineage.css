@@ -115,9 +115,15 @@ body[data-view="dashboard"] .lineage-summary {
 }
 
 body[data-view="popover"] .popover-project-table .lineage-summary {
-  grid-template-columns: minmax(235px, 1fr) minmax(118px, .4fr) minmax(82px, auto);
+  box-sizing: border-box;
+  width: calc(100% - 24px);
+  max-width: calc(100% - 24px);
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(86px, .4fr) minmax(58px, auto);
   align-items: stretch;
+  justify-self: stretch;
   gap: 4px;
+  overflow: hidden;
   margin: 1px 5px 3px 19px;
   padding: 3px 6px;
   background:
@@ -128,11 +134,15 @@ body[data-view="popover"] .popover-project-table .lineage-summary {
 body[data-view="popover"] .lineage-summary-main {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: center;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 body[data-view="popover"] .lineage-stat {
   grid-template-columns: 11px minmax(0, 1fr);
   gap: 0 3px;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 body[data-view="popover"] .lineage-stat svg {
@@ -158,14 +168,36 @@ body[data-view="popover"] .lineage-tool-lanes {
   grid-column: auto;
   align-content: center;
   gap: 2px;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 body[data-view="popover"] .lineage-tool-lanes span {
-  grid-template-columns: minmax(30px, .38fr) minmax(28px, 1fr) auto;
+  grid-template-columns: minmax(0, .38fr) minmax(0, 1fr) auto;
   gap: 4px;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 body[data-view="popover"] .lineage-token-cue {
   align-content: center;
+  max-width: 100%;
+  overflow: hidden;
   padding-left: 5px;
+}
+
+@media (max-width: 430px) {
+  body[data-view="popover"] .popover-project-table .lineage-summary {
+    width: calc(100% - 18px);
+    max-width: calc(100% - 18px);
+    grid-template-columns: minmax(0, 1fr);
+    margin-left: 13px;
+  }
+
+  body[data-view="popover"] .lineage-token-cue {
+    grid-template-columns: auto auto minmax(0, 1fr);
+    align-items: center;
+    padding-left: 0;
+    border-left: 0;
+  }
 }

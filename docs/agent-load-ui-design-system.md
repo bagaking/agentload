@@ -209,6 +209,11 @@ semantic layer before visual polish is accepted.
   button-like metric blocks. Use fixed columns, one-pixel dividers, faint
   alternating planes, and restrained state color so row separation is legible
   without making the list look chunky.
+- Project expansion must be a vertical disclosure only. Expanded session trees
+  must stay inside the same ledger width as collapsed rows; set explicit
+  shrink boundaries on row, head, tree, branch, lineage summary, and
+  session-line grids so session evidence, relationship summaries, or resource
+  columns cannot widen the popover list.
 - Compact project-row backgrounds may vary by tone, but their leading and
   trailing edges must stay on the same grid. Do not stagger row planes when the
   list is behaving like a ledger; rank, disclosure, project identity, tool
