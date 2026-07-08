@@ -201,6 +201,10 @@ semantic layer before visual polish is accepted.
   process count, and observed tool coverage before expansion. Expansion is for
   relationship inspection, not the first moment when distribution becomes
   visible.
+- Human-review cues must be visually distinct from active work. Use blue
+  micro-badges only for sessions whose local freshness evidence is idle/waiting;
+  do not count stale or unmapped process-only rows as finished agents, and do
+  not reuse the green active indicator for this state.
 - Compact project rows should not compress repeated counts into tiny matrix
   walls. When role/session/process numbers become dense, group them into a few
   readable ledger chips, use modest row breathing room, and add subtle tonal

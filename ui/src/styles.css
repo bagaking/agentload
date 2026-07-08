@@ -13557,3 +13557,160 @@ body[data-view="popover"] .popover-project-table .project-tree-row.expanded .ses
     grid-template-columns: 12px 27px minmax(0, 1fr) minmax(64px, 82px);
   }
 }
+
+/* Human-review cues: blue means locally idle and worth checking, not active work. */
+.attention-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--accent) 14%, transparent),
+    0 0 10px color-mix(in srgb, var(--accent) 26%, transparent);
+}
+
+.topbar-status-attention {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 27px;
+  max-width: 74px;
+  min-width: 0;
+  padding: 0 7px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--console-line));
+  border-radius: 8px;
+  color: color-mix(in srgb, var(--accent-hi) 84%, var(--fg));
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent 78%),
+    color-mix(in srgb, var(--console-material-2) 78%, transparent);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 8.2px;
+  font-weight: 760;
+  letter-spacing: .04em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.topbar-status-attention:hover,
+.topbar-status-attention:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--console-line));
+  color: var(--accent-hi);
+  outline: none;
+}
+
+.topbar-status-attention span:not(.attention-dot) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar-status-attention strong {
+  color: var(--fg);
+  font-size: 10.5px;
+  font-weight: 820;
+  font-variant-numeric: tabular-nums;
+}
+
+body[data-view="popover"] .topbar-status-attention {
+  max-width: 54px;
+  padding-inline: 6px;
+}
+
+body[data-view="popover"] .topbar-status-attention span:not(.attention-dot) {
+  max-width: 18px;
+}
+
+body[data-view="popover"] .popover-view-switch button {
+  position: relative;
+}
+
+body[data-view="popover"] .view-attention-count {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  display: grid;
+  min-width: 15px;
+  height: 15px;
+  place-items: center;
+  padding: 0 4px;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--console-material));
+  border-radius: 999px;
+  color: var(--fg);
+  background:
+    radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--accent-hi) 42%, transparent), transparent 58%),
+    color-mix(in srgb, var(--accent) 30%, var(--console-material-2));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 20%, transparent);
+  font-family: var(--font-mono);
+  font-size: 8.2px;
+  font-weight: 820;
+  line-height: 1;
+}
+
+body[data-view="popover"] .popover-project-table .project-tree-row.has-attention:not(.has-active)::after {
+  --project-row-tint: var(--accent);
+  --project-row-tint-alpha: 4.1%;
+}
+
+body[data-view="popover"] .popover-project-table .project-review-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  min-width: 0;
+  margin-left: 6px;
+  color: var(--accent-hi);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 790;
+  line-height: 1;
+}
+
+body[data-view="popover"] .popover-project-table .project-review-chip b {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 13%, transparent);
+}
+
+body[data-view="popover"] .popover-project-table .session-line.needs-review::after {
+  content: "";
+  position: absolute;
+  left: 17px;
+  top: 50%;
+  z-index: 1;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent),
+    0 0 9px color-mix(in srgb, var(--accent) 24%, transparent);
+  transform: translateY(-50%);
+}
+
+body[data-view="popover"] .popover-project-table .session-line.needs-review .role-glyph {
+  color: color-mix(in srgb, var(--accent-hi) 82%, var(--fg));
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+}
+
+:root[data-theme="light"] .topbar-status-attention {
+  color: var(--accent-hi);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent 78%),
+    color-mix(in srgb, var(--surface) 82%, transparent);
+}
+
+:root[data-theme="light"] body[data-view="popover"] .view-attention-count {
+  color: var(--fg);
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, .54), transparent 56%),
+    color-mix(in srgb, var(--accent) 20%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 26%, var(--border));
+}

@@ -6,7 +6,7 @@ import { copy, type Lang } from "./i18n";
 import { agentRoleLabel, buildToolSessionGroups, confidenceLabel, freshnessLabel, hiddenToolSessionCount, mappingMethodLabel, normalizedRole, orderedProjects, projectEvidenceItems, roleHintLabel, roleLabel, sessionEvidenceItems, sessionIDsText, sessionIdentity, sessionsForProject, threadSourceLabel, tokenUsageProvenanceLabel, toolBadgeLabel, toolDisplayName, toolIconName } from "./lib/activityModel";
 import { activeWindowLabel, buildRailItems, coordinationPostureLabel, currentMeaningLead, currentMeaningPoints, currentPeerScale, dashboardProjectLead, dashboardProjectMeta, deferredScanValue, mappingHealthText, metricState, primaryEvidenceNote, renderLogText, resolveSelection, statusTone, transcriptScanNote, transcriptScanSummary } from "./lib/dashboardModel";
 import { clampPct, countLabel, formatAge, formatCPU, formatCopy, formatDateTime, formatMemory, formatPct, formatRefreshInterval, formatTokenCount, formatTokenUsageSummary, pctPart, safeID, shortID, tokenUsageHasValue } from "./lib/format";
-import { currentHasRecentMovement, currentKnownSessionCount, currentProcessPressureCount, currentRecentMovementCount, projectProcessPressureCount, projectProcessResources, projectRoleCounts, sessionHasRecentMovement, sessionProcessPressure, summaryMappedProcessCount, summaryMappingCoveragePct, summaryUnmappedProcessCount, toolKnownSessionCount, toolRecentMovementCount } from "./lib/metricSemantics";
+import { currentHasRecentMovement, currentKnownSessionCount, currentProcessPressureCount, currentRecentMovementCount, projectProcessPressureCount, projectProcessResources, projectRoleCounts, sessionHasRecentMovement, sessionHumanReviewCount, sessionNeedsHumanReview, sessionProcessPressure, snapshotHumanReviewSessions, summaryMappedProcessCount, summaryMappingCoveragePct, summaryUnmappedProcessCount, toolKnownSessionCount, toolRecentMovementCount } from "./lib/metricSemantics";
 import { LineageSummary } from "./lineage/LineageSummary";
 import { ProcessSummaryStrip } from "./system/ProcessSummaryStrip";
 import { TREND_RANGES, type TrendLane, type TrendRange } from "./trend/types";
@@ -340,11 +340,13 @@ function App() {
         theme={theme}
         setTheme={setTheme}
         compact={compact}
+        snapshot={snapshot}
         running={running}
         error={error}
         refreshSnapshot={refreshSnapshot}
         refreshInterval={refreshInterval}
         cycleRefreshInterval={cycleRefreshInterval}
+        onOpenStatus={compact ? () => setPopoverView("online") : undefined}
       />
       {view === "popover" ? (
         <>
@@ -527,6 +529,7 @@ function PopoverFooter({
   const generated = snapshot?.generated_at ? formatDateTime(snapshot.generated_at) : t("noData");
   const active = currentHasRecentMovement(snapshot?.current);
   const stateLabel = snapshot ? metricState(snapshot, t) : t("noData");
+  const reviewCount = snapshotHumanReviewSessions(snapshot).length;
   return (
     <footer className={`popover-footer ${active ? "is-active" : ""}`}>
       <div className={`footer-meta ${active ? "is-active" : ""}`} role="status" title={stateLabel} aria-label={`${stateLabel} ${generated}`}>
@@ -539,7 +542,10 @@ function PopoverFooter({
       </div>
       <div className="popover-footer-controls">
         <div className="popover-view-switch" role="tablist" aria-label={t("view")}>
-          {(["online", "trend", "system", "diagnostics"] as PopoverView[]).map((view) => (
+          {(["online", "trend", "system", "diagnostics"] as PopoverView[]).map((view) => {
+            const showReviewBadge = view === "online" && reviewCount > 0;
+            const reviewTitle = showReviewBadge ? formatCopy(t("attentionAgentsTooltip"), { count: reviewCount }) : undefined;
+            return (
             <button
               key={view}
               id={`popover-view-${view}`}
@@ -551,11 +557,14 @@ function PopoverFooter({
               tabIndex={popoverView === view ? 0 : -1}
               data-focus-key={focusKey("popover-view", view)}
               onClick={() => setPopoverView(view)}
+              title={reviewTitle}
             >
               {view === "online" ? <Activity size={13} /> : view === "trend" ? <Gauge size={13} /> : view === "system" ? <Server size={13} /> : <Radar size={13} />}
               <span>{t(view)}</span>
+              {showReviewBadge ? <strong className="view-attention-count" aria-label={reviewTitle}>{reviewCount}</strong> : null}
             </button>
-          ))}
+            );
+          })}
         </div>
         <button className="footer-link" type="button" data-focus-key={focusKey("open-dashboard", "popover")} onClick={() => postHostAction("open_dashboard")} title={t("dashboard")} aria-label={t("dashboard")}>
           <ArrowUpRight size={14} />
@@ -2207,11 +2216,13 @@ function Topbar({
   theme,
   setTheme,
   compact,
+  snapshot,
   running,
   error,
   refreshSnapshot,
   refreshInterval,
   cycleRefreshInterval,
+  onOpenStatus,
 }: {
   t: (key: string) => string;
   lang: Lang;
@@ -2219,14 +2230,18 @@ function Topbar({
   theme: Theme;
   setTheme: (theme: Theme) => void;
   compact: boolean;
+  snapshot: Snapshot | null;
   running: boolean;
   error: string | null;
   refreshSnapshot: () => void;
   refreshInterval: number;
   cycleRefreshInterval: () => void;
+  onOpenStatus?: () => void;
 }) {
   const topbarStatusTone = error ? "bad" : running ? "running" : "idle";
   const showTopbarStatus = !!error || running;
+  const reviewCount = snapshotHumanReviewSessions(snapshot).length;
+  const reviewTitle = formatCopy(t("attentionAgentsTooltip"), { count: reviewCount });
   return (
     <header className="topbar">
       <div className="brand">
@@ -2249,6 +2264,13 @@ function Topbar({
           <button className={`icon-btn topbar-refresh-action ${running ? "is-refreshing" : ""}`} type="button" data-focus-key={focusKey("topbar-refresh")} onClick={refreshSnapshot} title={running ? t("running") : t("refresh")} aria-label={running ? t("running") : t("refresh")} aria-busy={running}>
             <RefreshCw size={16} className={running ? "spin" : ""} />
           </button>
+          {compact && reviewCount ? (
+            <button className="topbar-status-attention" type="button" data-focus-key={focusKey("topbar-status-attention")} onClick={onOpenStatus} title={reviewTitle} aria-label={reviewTitle}>
+              <span className="attention-dot" aria-hidden="true" />
+              <span>{t("status")}</span>
+              <strong>{reviewCount}</strong>
+            </button>
+          ) : null}
           {showTopbarStatus ? <Pill tone={topbarStatusTone}>{error ? t("failed") : running ? t("running") : t("idle")}</Pill> : null}
         </div>
       </div>
@@ -2627,7 +2649,9 @@ function ProjectTreeRow({
   const projectAge = formatAge(project.last_event_age_seconds, t);
   const projectMeta = projectAge;
   const toolSummary = (project.tools ?? []).map((tool) => `${toolDisplayName(tool.tool)} ${toolRecentMovementCount(tool)}/${toolKnownSessionCount(tool)}`).join(" · ") || t("unavailable");
-  const projectHoverDetail = `${counts.activeTotal} ${t("active")} / ${counts.total} ${t("sessions")} · ${processPressure} ${t("processes")} · ${resourceText}`;
+  const reviewCount = sessionHumanReviewCount(sessions);
+  const reviewTitle = formatCopy(t("attentionProjectTooltip"), { count: reviewCount });
+  const projectHoverDetail = `${counts.activeTotal} ${t("active")} / ${counts.total} ${t("sessions")} · ${processPressure} ${t("processes")} · ${resourceText}${reviewCount ? ` · ${reviewCount} ${t("attentionAgentsShort")}` : ""}`;
   const projectHoverMeta = `${t("lastEvent")} ${projectAge} · ${t("tools")}: ${toolSummary}`;
   const projectHoverPayload: HoverDetailPayload = { kind: "project", id: projectId, title, detail: projectHoverDetail, meta: projectHoverMeta };
   const selected = selection.type === "project" && selection.id === projectId;
@@ -2636,6 +2660,7 @@ function ProjectTreeRow({
     expanded ? "expanded" : "",
     selected ? "is-selected" : "",
     counts.activeTotal > 0 ? "has-active" : "",
+    reviewCount > 0 ? "has-attention" : "",
   ].filter(Boolean).join(" ");
   const selectProject = () => {
     if (selected) {
@@ -2663,6 +2688,7 @@ function ProjectTreeRow({
         </button>
         <button className="project-select" type="button" data-focus-key={focusKey("project", projectId)} onClick={selectProject} aria-current={selected ? "true" : undefined} aria-expanded={expanded} aria-label={title}>
           <span>{title}</span>
+          {reviewCount ? <i className="project-review-chip" title={reviewTitle} aria-label={reviewTitle}><b aria-hidden="true" />{reviewCount}</i> : null}
           <small>{projectMeta}</small>
         </button>
         {compact ? <ProjectCompactMetrics t={t} counts={counts} processCount={processPressure} cpu={projectResources.cpu} memory={projectResources.memory} /> : <ProjectMetricMatrix t={t} counts={counts} processCount={processPressure} resourceText={resourceText} />}
@@ -2906,8 +2932,10 @@ function SessionLine({
   const hostName = host?.name || t("hostUnknown");
   const sessionHoverTitle = `${title} · ${roleLabel(t, role)}`;
   const hasRecentMovement = sessionHasRecentMovement(session);
+  const needsReview = sessionNeedsHumanReview(session);
   const sessionHoverMeta = `${t("mappingMethod")}: ${mappingMethodLabel(t, session.mapping_method)} · ${t("freshness")}: ${freshnessLabel(t, session.freshness || (hasRecentMovement ? "active" : "idle"))}`;
   const sessionHoverMetrics = [
+    { label: t("reviewStatus"), value: needsReview ? t("attentionAgent") : t("notNeeded") },
     { label: t("tool"), value: toolDisplayName(session.tool) },
     { label: t("host"), value: hostName },
     { label: t("age"), value: formatAge(session.last_event_age_seconds, t) },
@@ -2929,7 +2957,7 @@ function SessionLine({
     : evidenceItems;
   if (compact) {
     return (
-      <div className={`session-line role-${role} ${hasRecentMovement ? "is-active" : ""} ${selected ? "is-selected" : ""} ${child ? "is-child" : ""}`} onPointerEnter={showSessionHover} onPointerMove={showSessionHover} onPointerLeave={clearSessionHover} onFocus={showSessionHover} onBlur={clearSessionFocusHover}>
+      <div className={`session-line role-${role} ${hasRecentMovement ? "is-active" : ""} ${needsReview ? "needs-review" : ""} ${selected ? "is-selected" : ""} ${child ? "is-child" : ""}`} onPointerEnter={showSessionHover} onPointerMove={showSessionHover} onPointerLeave={clearSessionHover} onFocus={showSessionHover} onBlur={clearSessionFocusHover}>
         <span className="session-role-slot">
           <RoleGlyph t={t} role={role} />
         </span>
@@ -2961,7 +2989,7 @@ function SessionLine({
     );
   }
   return (
-    <div className={`session-line role-${role} ${hasRecentMovement ? "is-active" : ""} ${selected ? "is-selected" : ""} ${child ? "is-child" : ""}`} onPointerEnter={showSessionHover} onPointerMove={showSessionHover} onPointerLeave={clearSessionHover} onFocus={showSessionHover} onBlur={clearSessionFocusHover}>
+    <div className={`session-line role-${role} ${hasRecentMovement ? "is-active" : ""} ${needsReview ? "needs-review" : ""} ${selected ? "is-selected" : ""} ${child ? "is-child" : ""}`} onPointerEnter={showSessionHover} onPointerMove={showSessionHover} onPointerLeave={clearSessionHover} onFocus={showSessionHover} onBlur={clearSessionFocusHover}>
       <span className="session-main">
         <RoleGlyph t={t} role={role} />
         <span className="session-title">

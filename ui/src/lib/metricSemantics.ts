@@ -16,6 +16,20 @@ export function sessionHasRecentMovement(session: LiveSession): boolean {
   return Boolean(session.active_burst);
 }
 
+export function sessionNeedsHumanReview(session: LiveSession): boolean {
+  const freshness = String(session.freshness || "").trim().toLowerCase();
+  if (sessionHasRecentMovement(session)) return false;
+  return freshness === "idle" || freshness === "done" || freshness === "waiting";
+}
+
+export function snapshotHumanReviewSessions(snapshot?: Snapshot | null): LiveSession[] {
+  return (snapshot?.live_sessions ?? []).filter(sessionNeedsHumanReview);
+}
+
+export function sessionHumanReviewCount(sessions: LiveSession[]): number {
+  return sessions.reduce((total, session) => total + (sessionNeedsHumanReview(session) ? 1 : 0), 0);
+}
+
 export function projectRecentMovementCount(project: { active_burst_count?: number }): number {
   return project.active_burst_count ?? 0;
 }
