@@ -2241,7 +2241,15 @@ function Topbar({
   const topbarStatusTone = error ? "bad" : running ? "running" : "idle";
   const showTopbarStatus = !!error || running;
   const reviewCount = snapshotHumanReviewSessions(snapshot).length;
-  const reviewTitle = formatCopy(t("attentionAgentsTooltip"), { count: reviewCount });
+  const activeCount = currentRecentMovementCount(snapshot?.current);
+  const mainCount = snapshot?.summary?.main_agent_sessions ?? 0;
+  const subagentCount = snapshot?.summary?.subagent_sessions ?? 0;
+  const reviewTitle = formatCopy(t("topbarStatusTooltip"), {
+    review: reviewCount,
+    active: activeCount,
+    main: mainCount,
+    subagent: subagentCount,
+  });
   return (
     <header className="topbar">
       <div className="brand">
@@ -2264,11 +2272,14 @@ function Topbar({
           <button className={`icon-btn topbar-refresh-action ${running ? "is-refreshing" : ""}`} type="button" data-focus-key={focusKey("topbar-refresh")} onClick={refreshSnapshot} title={running ? t("running") : t("refresh")} aria-label={running ? t("running") : t("refresh")} aria-busy={running}>
             <RefreshCw size={16} className={running ? "spin" : ""} />
           </button>
-          {compact && reviewCount ? (
-            <button className="topbar-status-attention" type="button" data-focus-key={focusKey("topbar-status-attention")} onClick={onOpenStatus} title={reviewTitle} aria-label={reviewTitle}>
+          {compact && snapshot ? (
+            <button className={`topbar-status-attention ${reviewCount ? "has-attention" : ""}`} type="button" data-focus-key={focusKey("topbar-status-attention")} onClick={onOpenStatus} title={reviewTitle} aria-label={reviewTitle}>
               <span className="attention-dot" aria-hidden="true" />
-              <span>{t("status")}</span>
-              <strong>{reviewCount}</strong>
+              <span className="status-rotator" aria-hidden="true">
+                <span className="status-frame"><em>{t("attentionMainShort")}</em><strong>{reviewCount}</strong></span>
+                <span className="status-frame"><em>{t("activeShort")}</em><strong>{activeCount}</strong></span>
+                <span className="status-frame"><em>{t("mainSubSplit")}</em><strong>{mainCount}/{subagentCount}</strong></span>
+              </span>
             </button>
           ) : null}
           {showTopbarStatus ? <Pill tone={topbarStatusTone}>{error ? t("failed") : running ? t("running") : t("idle")}</Pill> : null}

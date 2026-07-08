@@ -13558,7 +13558,7 @@ body[data-view="popover"] .popover-project-table .project-tree-row.expanded .ses
   }
 }
 
-/* Human-review cues: blue means locally idle and worth checking, not active work. */
+/* Human-review cues: blue means main conversation idle/waiting, not active work. */
 .attention-dot {
   display: inline-block;
   width: 5px;
@@ -13576,14 +13576,14 @@ body[data-view="popover"] .popover-project-table .project-tree-row.expanded .ses
   align-items: center;
   gap: 5px;
   height: 27px;
-  max-width: 74px;
+  max-width: 88px;
   min-width: 0;
   padding: 0 7px;
-  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--console-line));
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--console-line));
   border-radius: 8px;
-  color: color-mix(in srgb, var(--accent-hi) 84%, var(--fg));
+  color: color-mix(in srgb, var(--accent-hi) 62%, var(--console-text-soft));
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent 78%),
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 5%, transparent), transparent 78%),
     color-mix(in srgb, var(--console-material-2) 78%, transparent);
   cursor: pointer;
   font-family: var(--font-mono);
@@ -13595,6 +13595,19 @@ body[data-view="popover"] .popover-project-table .project-tree-row.expanded .ses
   white-space: nowrap;
 }
 
+.topbar-status-attention.has-attention {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--console-line));
+  color: color-mix(in srgb, var(--accent-hi) 86%, var(--fg));
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 11%, transparent), transparent 78%),
+    color-mix(in srgb, var(--console-material-2) 78%, transparent);
+}
+
+.topbar-status-attention:not(.has-attention) .attention-dot {
+  background: color-mix(in srgb, var(--accent) 54%, var(--console-text-faint));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
 .topbar-status-attention:hover,
 .topbar-status-attention:focus-visible {
   border-color: color-mix(in srgb, var(--accent) 42%, var(--console-line));
@@ -13602,26 +13615,87 @@ body[data-view="popover"] .popover-project-table .project-tree-row.expanded .ses
   outline: none;
 }
 
-.topbar-status-attention span:not(.attention-dot) {
+.status-rotator {
+  position: relative;
+  display: grid;
+  align-items: center;
+  width: 60px;
+  height: 13px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.status-frame {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  min-width: 0;
+  opacity: 0;
+  transform: translateY(7px);
+  animation: status-frame-cycle 9s cubic-bezier(.22, .61, .36, 1) infinite;
+}
+
+.status-frame:nth-child(2) {
+  animation-delay: 3s;
+}
+
+.status-frame:nth-child(3) {
+  animation-delay: 6s;
+}
+
+.status-frame em,
+.status-frame strong {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.topbar-status-attention strong {
+.status-frame em {
+  color: currentColor;
+  font-style: normal;
+}
+
+.status-frame strong {
   color: var(--fg);
   font-size: 10.5px;
   font-weight: 820;
   font-variant-numeric: tabular-nums;
 }
 
+@keyframes status-frame-cycle {
+  0%, 7% {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  11%, 30% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  34%, 100% {
+    opacity: 0;
+    transform: translateY(-7px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-frame {
+    animation: none;
+  }
+
+  .status-frame:first-child {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 body[data-view="popover"] .topbar-status-attention {
-  max-width: 54px;
+  max-width: 82px;
   padding-inline: 6px;
 }
 
-body[data-view="popover"] .topbar-status-attention span:not(.attention-dot) {
-  max-width: 18px;
+body[data-view="popover"] .topbar-status-attention .status-rotator {
+  width: 58px;
 }
 
 body[data-view="popover"] .popover-view-switch button {

@@ -43,6 +43,7 @@ export type ToolSessionGroup = {
   tool: string;
   sessions: LiveSession[];
   activeCount: number;
+  reviewCount: number;
   linked: SessionBranch[];
   unlinked: LiveSession[];
   unknown: LiveSession[];

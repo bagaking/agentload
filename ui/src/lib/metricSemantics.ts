@@ -18,6 +18,7 @@ export function sessionHasRecentMovement(session: LiveSession): boolean {
 
 export function sessionNeedsHumanReview(session: LiveSession): boolean {
   const freshness = String(session.freshness || "").trim().toLowerCase();
+  if (normalizedRole(session.session_role) !== "main") return false;
   if (sessionHasRecentMovement(session)) return false;
   return freshness === "idle" || freshness === "done" || freshness === "waiting";
 }

@@ -202,9 +202,10 @@ semantic layer before visual polish is accepted.
   relationship inspection, not the first moment when distribution becomes
   visible.
 - Human-review cues must be visually distinct from active work. Use blue
-  micro-badges only for sessions whose local freshness evidence is idle/waiting;
-  do not count stale or unmapped process-only rows as finished agents, and do
-  not reuse the green active indicator for this state.
+  micro-badges only for main conversations whose local freshness evidence is
+  idle/waiting; do not remind on subagents, unknown-role rows, stale sessions,
+  or unmapped process-only rows, and do not reuse the green active indicator for
+  this state.
 - Compact project rows should not compress repeated counts into tiny matrix
   walls. When role/session/process numbers become dense, group them into a few
   readable ledger chips, use modest row breathing room, and add subtle tonal
@@ -500,8 +501,10 @@ semantic layer before visual polish is accepted.
   labeled as refresh pause/off and must not be conflated with an idle session
   state.
 - The compact top bar should not repeat ambient idle state when the footer
-  already exposes timestamp and refresh cadence. Show top-bar status only when
-  it is actionable or exceptional, such as refreshing or failed.
+  already exposes timestamp and refresh cadence. If it carries session status,
+  make it an actionable rotating digest: main conversations needing review,
+  active-window movement, and main/subagent mix. Do not reduce it to unlabeled
+  abbreviations, and do not count stopped subagents as human-review work.
 - Observation timestamp areas should expose the user-facing refresh cadence as
   a compact click-to-cycle control. Raw refresh slot identifiers belong in
   protocol metadata or diagnostics, not in primary dashboard chrome.

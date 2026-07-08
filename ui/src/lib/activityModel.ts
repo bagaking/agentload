@@ -1,5 +1,5 @@
 import { formatAge, formatPct, formatTokenUsageSummary, shortID, tokenUsageHasValue, type Translate } from "./format";
-import { normalizedRole, projectRecentMovementCount, sessionHasRecentMovement, type SessionRole } from "./metricSemantics";
+import { normalizedRole, projectRecentMovementCount, sessionHasRecentMovement, sessionNeedsHumanReview, type SessionRole } from "./metricSemantics";
 import type { ToolSessionGroup } from "../types/app";
 import type { LiveSession, ProjectSnapshot, Snapshot } from "../types/snapshot";
 
@@ -24,13 +24,7 @@ export function sessionsForProject(snapshot: Snapshot, project: ProjectSnapshot)
   const key = projectKey(project.project).toLowerCase();
   return [...(snapshot.live_sessions ?? [])]
     .filter((session) => projectKey(session.project).toLowerCase() === key)
-    .sort((a, b) => {
-      if (Number(sessionHasRecentMovement(a)) !== Number(sessionHasRecentMovement(b))) return Number(sessionHasRecentMovement(b)) - Number(sessionHasRecentMovement(a));
-      const ageA = typeof a.last_event_age_seconds === "number" ? a.last_event_age_seconds : Number.MAX_SAFE_INTEGER;
-      const ageB = typeof b.last_event_age_seconds === "number" ? b.last_event_age_seconds : Number.MAX_SAFE_INTEGER;
-      if (ageA !== ageB) return ageA - ageB;
-      return sessionIdentity(a).localeCompare(sessionIdentity(b));
-    });
+    .sort(compareSessionsByFreshness);
 }
 
 export function projectEvidenceItems(t: Translate, project: ProjectSnapshot, compact: boolean): EvidenceItem[] {
@@ -68,6 +62,7 @@ export function buildToolSessionGroups(sessions: LiveSession[]): ToolSessionGrou
     tool: string;
     sessions: LiveSession[];
     activeCount: number;
+    reviewCount: number;
     mains: LiveSession[];
     childrenByParent: Map<string, LiveSession[]>;
     unlinked: LiveSession[];
@@ -83,6 +78,7 @@ export function buildToolSessionGroups(sessions: LiveSession[]): ToolSessionGrou
       tool: key,
       sessions: [],
       activeCount: 0,
+      reviewCount: 0,
       mains: [],
       childrenByParent: new Map(),
       unlinked: [],
@@ -96,6 +92,7 @@ export function buildToolSessionGroups(sessions: LiveSession[]): ToolSessionGrou
     const group = ensureGroup(session.tool);
     group.sessions.push(session);
     if (sessionHasRecentMovement(session)) group.activeCount++;
+    if (sessionNeedsHumanReview(session)) group.reviewCount++;
     if (normalizedRole(session.session_role) === "main") group.mains.push(session);
   });
 
@@ -123,6 +120,7 @@ export function buildToolSessionGroups(sessions: LiveSession[]): ToolSessionGrou
       tool: group.tool,
       sessions: group.sessions,
       activeCount: group.activeCount,
+      reviewCount: group.reviewCount,
       linked: group.mains
         .sort(compareSessionsByFreshness)
         .map((parent) => ({
@@ -133,6 +131,7 @@ export function buildToolSessionGroups(sessions: LiveSession[]): ToolSessionGrou
       unknown: group.unknown.sort(compareSessionsByFreshness),
     }))
     .sort((a, b) => {
+      if (a.reviewCount !== b.reviewCount) return b.reviewCount - a.reviewCount;
       if (a.activeCount !== b.activeCount) return b.activeCount - a.activeCount;
       if (a.sessions.length !== b.sessions.length) return b.sessions.length - a.sessions.length;
       return a.tool.localeCompare(b.tool);
@@ -151,6 +150,7 @@ export function hiddenToolSessionCount(group: ToolSessionGroup, linkedLimit: num
 }
 
 export function compareSessionsByFreshness(a: LiveSession, b: LiveSession): number {
+  if (Number(sessionNeedsHumanReview(a)) !== Number(sessionNeedsHumanReview(b))) return Number(sessionNeedsHumanReview(b)) - Number(sessionNeedsHumanReview(a));
   if (Number(sessionHasRecentMovement(a)) !== Number(sessionHasRecentMovement(b))) return Number(sessionHasRecentMovement(b)) - Number(sessionHasRecentMovement(a));
   const ageA = typeof a.last_event_age_seconds === "number" ? a.last_event_age_seconds : Number.MAX_SAFE_INTEGER;
   const ageB = typeof b.last_event_age_seconds === "number" ? b.last_event_age_seconds : Number.MAX_SAFE_INTEGER;
