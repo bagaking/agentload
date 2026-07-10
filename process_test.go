@@ -5,22 +5,49 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 )
 
-func TestParsePSLine(t *testing.T) {
-	uid, pid, command, ok := parsePSLine(`  501  4242 /Applications/Codex.app/Contents/MacOS/Codex --thread-id 123e4567-e89b-12d3-a456-426614174000`)
-	if !ok {
-		t.Fatalf("expected ps line to parse")
+func TestProcessIOSamplerEvictsPIDsMissingFromBatch(t *testing.T) {
+	processIOSampler.Lock()
+	defer processIOSampler.Unlock()
+	savedPrevious := processIOSampler.previous
+	savedBatchAt := processIOSampler.batchAt
+	defer func() {
+		processIOSampler.previous = savedPrevious
+		processIOSampler.batchAt = savedBatchAt
+	}()
+
+	t1 := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
+	t2 := t1.Add(30 * time.Second)
+	t3 := t2.Add(30 * time.Second)
+	processIOSampler.previous = map[int]processIOCounter{
+		1: {At: t1},
+		2: {At: t1},
 	}
-	if uid != 501 || pid != 4242 {
-		t.Fatalf("unexpected uid/pid: %d %d", uid, pid)
+	processIOSampler.batchAt = t1
+
+	// A new batch boundary keeps previous-batch entries so rates can still
+	// be derived for PIDs the new batch is about to sample.
+	rotateProcessIOBatchLocked(t2)
+	if len(processIOSampler.previous) != 2 {
+		t.Fatalf("rotation at the batch boundary must keep previous-batch entries, got %#v", processIOSampler.previous)
 	}
-	if command != `/Applications/Codex.app/Contents/MacOS/Codex --thread-id 123e4567-e89b-12d3-a456-426614174000` {
-		t.Fatalf("unexpected command: %q", command)
+	processIOSampler.previous[1] = processIOCounter{At: t2}
+
+	// Calls within the same batch share the same now and must not evict.
+	rotateProcessIOBatchLocked(t2)
+	if _, ok := processIOSampler.previous[2]; !ok {
+		t.Fatalf("same-batch rotation must not evict entries")
 	}
 
-	if _, _, _, ok := parsePSLine(`bad 4242 codex`); ok {
-		t.Fatalf("expected invalid ps line to fail")
+	// The next batch evicts pid 2, which the t2 batch never sampled.
+	rotateProcessIOBatchLocked(t3)
+	if _, ok := processIOSampler.previous[2]; ok {
+		t.Fatalf("pid absent from the previous batch must be evicted")
+	}
+	if _, ok := processIOSampler.previous[1]; !ok {
+		t.Fatalf("pid sampled in the previous batch must stay")
 	}
 }
 

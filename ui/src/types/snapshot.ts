@@ -188,6 +188,8 @@ export type AgeBucketSnapshot = {
 export type SystemResourceSnapshot = {
   sampled_at?: string;
   supported?: boolean;
+  thermal_state?: "nominal" | "fair" | "serious" | "critical";
+  thermal_state_supported?: boolean;
   cpu_percent?: number;
   load_average_1?: number;
   load_average_5?: number;
@@ -340,6 +342,7 @@ export type LiveSession = {
   host_apps?: HostApp[];
   active_burst?: boolean;
   freshness?: string;
+  needs_review?: boolean;
   mapping_method?: string;
   missing_transcript?: boolean;
   confidence?: string;

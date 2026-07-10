@@ -44,7 +44,7 @@ func TestBuildLiveSessionsTracksMappingEvidence(t *testing.T) {
 		},
 	}
 
-	sessions, _ := buildLiveSessions(processes, data)
+	sessions, _ := buildLiveSessionsAt(processes, data, 90*time.Second, time.Now())
 	if len(sessions) != 2 {
 		t.Fatalf("expected 2 live sessions, got %d", len(sessions))
 	}
@@ -89,7 +89,7 @@ func TestBuildLiveSessionsMergesFallbackTranscriptAndMatchingHint(t *testing.T) 
 		},
 	}
 
-	sessions, _ := buildLiveSessions(processes, &TranscriptData{Traces: map[string]*SessionTrace{}})
+	sessions, _ := buildLiveSessionsAt(processes, &TranscriptData{Traces: map[string]*SessionTrace{}}, 90*time.Second, time.Now())
 	if len(sessions) != 1 {
 		t.Fatalf("expected 1 merged live session, got %d", len(sessions))
 	}
@@ -133,7 +133,7 @@ func TestBuildLiveSessionsParsedTranscriptIDWinsOverConflictingHint(t *testing.T
 		},
 	}
 
-	sessions, notes := buildLiveSessions(processes, data)
+	sessions, notes := buildLiveSessionsAt(processes, data, 90*time.Second, time.Now())
 	if len(sessions) != 1 {
 		t.Fatalf("expected 1 live session after ignoring the weaker hint, got %d", len(sessions))
 	}
@@ -149,7 +149,7 @@ func TestBuildLiveSessionsParsedTranscriptIDWinsOverConflictingHint(t *testing.T
 		t.Fatalf("expected conflict note, got %#v", notes)
 	}
 
-	processSnapshots := projectLiveProcesses(processes, data)
+	processSnapshots := projectLiveProcessesWithSessions(processes, nil, nil, data)
 	if len(processSnapshots) != 1 {
 		t.Fatalf("expected 1 process snapshot, got %d", len(processSnapshots))
 	}
@@ -189,7 +189,7 @@ func TestBuildLiveSessionsParsedTranscriptIDSuppressesConflictingHintFromSibling
 		},
 	}
 
-	sessions, notes := buildLiveSessions(processes, data)
+	sessions, notes := buildLiveSessionsAt(processes, data, 90*time.Second, time.Now())
 	if len(sessions) != 1 {
 		t.Fatalf("expected only the parsed live session to survive normalization, got %d", len(sessions))
 	}
@@ -205,7 +205,7 @@ func TestBuildLiveSessionsParsedTranscriptIDSuppressesConflictingHintFromSibling
 		t.Fatalf("expected ignored weaker hint note, got %#v", notes)
 	}
 
-	processSnapshots := projectLiveProcesses(processes, data)
+	processSnapshots := projectLiveProcessesWithSessions(processes, nil, nil, data)
 	if len(processSnapshots) != 1 {
 		t.Fatalf("expected 1 process snapshot, got %d", len(processSnapshots))
 	}
@@ -228,7 +228,7 @@ func TestBuildLiveSessionsPrefersCommandHintOverFilenameFallback(t *testing.T) {
 		},
 	}
 
-	sessions, notes := buildLiveSessions(processes, &TranscriptData{Traces: map[string]*SessionTrace{}})
+	sessions, notes := buildLiveSessionsAt(processes, &TranscriptData{Traces: map[string]*SessionTrace{}}, 90*time.Second, time.Now())
 	if len(sessions) != 1 {
 		t.Fatalf("expected 1 live session, got %d", len(sessions))
 	}
@@ -253,7 +253,7 @@ func TestBuildLiveSessionsPrefersCommandHintOverFilenameFallback(t *testing.T) {
 		t.Fatalf("expected fallback conflict note, got %#v", notes)
 	}
 
-	processSnapshots := projectLiveProcesses(processes, &TranscriptData{Traces: map[string]*SessionTrace{}})
+	processSnapshots := projectLiveProcessesWithSessions(processes, nil, nil, &TranscriptData{Traces: map[string]*SessionTrace{}})
 	if len(processSnapshots) != 1 {
 		t.Fatalf("expected 1 process snapshot, got %d", len(processSnapshots))
 	}
@@ -370,7 +370,7 @@ func TestBuildLiveSessionsPropagatesHostApps(t *testing.T) {
 		t.Fatalf("unexpected session host app: %#v", got)
 	}
 
-	processSnapshots := projectLiveProcesses(processes, data)
+	processSnapshots := projectLiveProcessesWithSessions(processes, nil, nil, data)
 	if len(processSnapshots) != 1 || processSnapshots[0].HostApp == nil {
 		t.Fatalf("expected host app on process snapshot: %#v", processSnapshots)
 	}
@@ -536,9 +536,6 @@ func TestObserveProjectAttributionUsesTrustedEvidenceOnly(t *testing.T) {
 				if !slices.ContainsFunc(got.Reasons, func(item string) bool { return strings.Contains(item, reason) }) {
 					t.Fatalf("expected reason containing %q, got %#v", reason, got.Reasons)
 				}
-			}
-			if displayProjectName(tc.session) != tc.wantProject {
-				t.Fatalf("displayProjectName() = %q, want %q", displayProjectName(tc.session), tc.wantProject)
 			}
 		})
 	}
@@ -1046,7 +1043,7 @@ func TestBuildCandidateWorkitemsAndCoordinationRisk(t *testing.T) {
 		},
 	}
 
-	workitems := buildCandidateWorkitems(sessions)
+	workitems := buildCandidateWorkitems(sessions, nil)
 	if len(workitems) != 2 {
 		t.Fatalf("expected 2 candidate workitems, got %d", len(workitems))
 	}
@@ -1256,7 +1253,7 @@ func TestBuildCoordinationRiskCountsMissingTranscriptSessionsInLowConfidenceSign
 			{Project: "alpha", SessionCount: 2, ActiveBurstCount: 1, RecentSessionCount: 1, AttentionSharePct: 67, ProcessCount: 2},
 			{Project: "beta", SessionCount: 1, ActiveBurstCount: 0, RecentSessionCount: 0, AttentionSharePct: 33, ProcessCount: 1},
 		},
-		buildCandidateWorkitems(sessions),
+		buildCandidateWorkitems(sessions, nil),
 		CurrentMetrics{SessionConcurrency: 3},
 		HistoricPeaks{
 			SevenDay: PeakWindow{
@@ -1302,7 +1299,7 @@ func TestBuildCoordinationRiskIgnoresUnassignedBucketsForProjectSpread(t *testin
 			{Project: "alpha", SessionCount: 1, ActiveBurstCount: 1, RecentSessionCount: 1, AttentionSharePct: 30, ProcessCount: 1},
 			{Project: "unassigned", SessionCount: 1, ActiveBurstCount: 1, RecentSessionCount: 1, AttentionSharePct: 70, ProcessCount: 1},
 		},
-		buildCandidateWorkitems(sessions),
+		buildCandidateWorkitems(sessions, nil),
 		CurrentMetrics{SessionConcurrency: 2},
 		HistoricPeaks{
 			SevenDay: PeakWindow{
@@ -1356,7 +1353,7 @@ func TestBuildCoordinationRiskCountsDuplicateOverlapConservatively(t *testing.T)
 			{Project: "alpha", SessionCount: 5, ActiveBurstCount: 3, AttentionSharePct: 57},
 			{Project: "beta", SessionCount: 2, ActiveBurstCount: 0, AttentionSharePct: 43},
 		},
-		buildCandidateWorkitems(sessions),
+		buildCandidateWorkitems(sessions, nil),
 		CurrentMetrics{SessionConcurrency: 7},
 		HistoricPeaks{
 			SevenDay: PeakWindow{
@@ -1660,5 +1657,169 @@ func requireNoRiskSignal(t *testing.T, signals []RiskSignalSnapshot, kind string
 		if signal.Kind == kind {
 			t.Fatalf("unexpected risk signal %s: %#v", kind, signal)
 		}
+	}
+}
+
+func TestSessionNeedsReviewObservation(t *testing.T) {
+	cases := []struct {
+		name        string
+		role        string
+		freshness   string
+		activeBurst bool
+		want        bool
+	}{
+		{name: "main active", role: "main", freshness: "active", activeBurst: true, want: false},
+		{name: "main idle", role: "main", freshness: "idle", want: true},
+		{name: "main stale", role: "main", freshness: "stale", want: true},
+		{name: "main unknown freshness", role: "main", freshness: "unknown", want: false},
+		{name: "subagent active", role: "subagent", freshness: "active", activeBurst: true, want: false},
+		{name: "subagent idle", role: "subagent", freshness: "idle", want: false},
+		{name: "subagent stale", role: "subagent", freshness: "stale", want: false},
+		{name: "subagent unknown freshness", role: "subagent", freshness: "unknown", want: false},
+		{name: "unknown role idle", role: "unknown", freshness: "idle", want: false},
+		{name: "unknown role stale", role: "unknown", freshness: "stale", want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			observation := liveSessionObservation{Freshness: tc.freshness, ActiveBurst: tc.activeBurst}
+			if got := sessionNeedsReviewObservation(tc.role, observation); got != tc.want {
+				t.Fatalf("sessionNeedsReviewObservation(%q, %q) = %v, want %v", tc.role, tc.freshness, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestProjectLiveSessionsComputesNeedsReview(t *testing.T) {
+	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
+	idleGap := 90 * time.Second
+	mainSession := func(id string, lastEvent time.Time) LiveSession {
+		trace := &SessionTrace{
+			Tool:         "claude",
+			SessionID:    id,
+			ThreadSource: "user",
+		}
+		if !lastEvent.IsZero() {
+			trace.EventTimes = []time.Time{lastEvent}
+			trace.FirstEvent = lastEvent
+			trace.LastEvent = lastEvent
+		}
+		return LiveSession{
+			Tool:      "claude",
+			SessionID: id,
+			Path:      "fixtures/" + id + ".jsonl",
+			Trace:     trace,
+			Mapping:   LiveSessionMapping{ParsedTranscriptID: true},
+		}
+	}
+	subSession := mainSession("sub-stale", now.Add(-time.Hour))
+	subSession.Trace.ThreadSource = "subagent"
+	sessions := []LiveSession{
+		mainSession("main-active", now.Add(-30*time.Second)),
+		mainSession("main-idle", now.Add(-3*time.Minute)),
+		mainSession("main-stale", now.Add(-time.Hour)),
+		mainSession("main-no-timing", time.Time{}),
+		subSession,
+	}
+
+	snapshots := projectLiveSessions(sessions, idleGap, now)
+	want := map[string]bool{
+		"main-active":    false,
+		"main-idle":      true,
+		"main-stale":     true,
+		"main-no-timing": false,
+		"sub-stale":      false,
+	}
+	if len(snapshots) != len(want) {
+		t.Fatalf("expected %d session snapshots, got %d", len(want), len(snapshots))
+	}
+	for _, snapshot := range snapshots {
+		expected, ok := want[snapshot.SessionID]
+		if !ok {
+			t.Fatalf("unexpected session %q", snapshot.SessionID)
+		}
+		if snapshot.NeedsReview != expected {
+			t.Fatalf("session %q (freshness %q): NeedsReview = %v, want %v", snapshot.SessionID, snapshot.Freshness, snapshot.NeedsReview, expected)
+		}
+	}
+}
+
+func TestAttachProcessResourcesToSessionsDisclosesSharedProcesses(t *testing.T) {
+	sessions := []LiveSessionSnapshot{
+		{Tool: "claude", SessionID: "shared-1"},
+		{Tool: "claude", SessionID: "shared-2"},
+		{Tool: "claude", SessionID: "shared-3"},
+		{Tool: "codex", SessionID: "solo"},
+	}
+	processes := []LiveProcessSnapshot{
+		{
+			PID:         100,
+			Tool:        "claude",
+			CPUPercent:  12.5,
+			MemoryBytes: 1024,
+			MappedSessionEvidence: []ProcessSessionEvidence{
+				{Tool: "claude", SessionID: "shared-1"},
+				{Tool: "claude", SessionID: "shared-2"},
+				{Tool: "claude", SessionID: "shared-3"},
+			},
+		},
+		{
+			PID:         200,
+			Tool:        "codex",
+			CPUPercent:  3.5,
+			MemoryBytes: 512,
+			MappedSessionEvidence: []ProcessSessionEvidence{
+				// Duplicate evidence rows for one session must not double-add.
+				{Tool: "codex", SessionID: "solo"},
+				{Tool: "codex", SessionID: "solo"},
+			},
+		},
+	}
+
+	out := attachProcessResourcesToSessions(sessions, processes)
+	byID := map[string]LiveSessionSnapshot{}
+	for _, session := range out {
+		byID[session.SessionID] = session
+	}
+	for _, id := range []string{"shared-1", "shared-2", "shared-3"} {
+		session := byID[id]
+		if session.ProcessCPUPercent != 12.5 || session.ProcessMemoryBytes != 1024 {
+			t.Fatalf("session %q should keep full per-session attribution, got cpu=%v mem=%v", id, session.ProcessCPUPercent, session.ProcessMemoryBytes)
+		}
+		if session.SharedProcessCount != 1 {
+			t.Fatalf("session %q should disclose 1 shared process, got %d", id, session.SharedProcessCount)
+		}
+	}
+	solo := byID["solo"]
+	if solo.ProcessCPUPercent != 3.5 || solo.ProcessMemoryBytes != 512 {
+		t.Fatalf("solo session resources added more than once: cpu=%v mem=%v", solo.ProcessCPUPercent, solo.ProcessMemoryBytes)
+	}
+	if solo.SharedProcessCount != 0 {
+		t.Fatalf("solo session should not report shared processes, got %d", solo.SharedProcessCount)
+	}
+}
+
+func TestBuildCandidateWorkitemsDedupesSharedProcessPIDs(t *testing.T) {
+	sessions := []LiveSessionSnapshot{
+		{Tool: "claude", SessionID: "shared-1", Project: "alpha", Freshness: "active", ProcessCount: 1, Confidence: "high"},
+		{Tool: "claude", SessionID: "shared-2", Project: "alpha", Freshness: "active", ProcessCount: 1, Confidence: "high"},
+		{Tool: "claude", SessionID: "no-pid-evidence", Project: "alpha", Freshness: "active", ProcessCount: 2, Confidence: "high"},
+	}
+	sessionProcessIDs := map[string][]int{
+		liveSessionKeyForID("claude", "shared-1"): {100},
+		liveSessionKeyForID("claude", "shared-2"): {100},
+	}
+
+	workitems := buildCandidateWorkitems(sessions, sessionProcessIDs)
+	if len(workitems) != 1 {
+		t.Fatalf("expected 1 candidate workitem, got %d", len(workitems))
+	}
+	item := workitems[0]
+	// PID 100 counts once even though two sessions share it; the session
+	// without PID evidence falls back to its disclosed process count.
+	if item.ProcessCount != 3 {
+		t.Fatalf("expected deduped process count 3 (1 shared pid + 2 fallback), got %d", item.ProcessCount)
+	}
+	if item.SessionCount != 3 {
+		t.Fatalf("expected 3 sessions in workitem, got %d", item.SessionCount)
 	}
 }

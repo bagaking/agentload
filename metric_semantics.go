@@ -22,6 +22,17 @@ type ProcessEvidenceMetricFacts struct {
 	KnownSession   bool
 }
 
+// sessionNeedsReviewObservation is the backend source of truth for the
+// "needs human review" cue: a main session whose local log shows no recent
+// movement and whose freshness observation is idle or stale. It describes
+// observed evidence only; it is not a judgment that the session is stuck.
+func sessionNeedsReviewObservation(role string, observation liveSessionObservation) bool {
+	if normalizedRole(role) != "main" || observation.ActiveBurst {
+		return false
+	}
+	return observation.Freshness == "idle" || observation.Freshness == "stale"
+}
+
 func metricFactsForLiveSession(session LiveSession, observation liveSessionObservation) SessionMetricFacts {
 	role := observeSessionRole(session)
 	processIDs := make([]int, 0, len(session.Processes))
@@ -49,13 +60,6 @@ func metricFactsForSessionSnapshot(session LiveSessionSnapshot) SessionMetricFac
 			CPUPercent:  session.ProcessCPUPercent,
 			MemoryBytes: session.ProcessMemoryBytes,
 		},
-	}
-}
-
-func metricFactsForProcessSnapshot(process LiveProcessSnapshot) ProcessResourceTotals {
-	return ProcessResourceTotals{
-		CPUPercent:  process.CPUPercent,
-		MemoryBytes: process.MemoryBytes,
 	}
 }
 

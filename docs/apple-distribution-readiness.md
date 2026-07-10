@@ -131,43 +131,15 @@ Draft App Privacy answers:
 
 ## 3. Product Positioning
 
-Safe positioning:
+Public positioning, metadata drafts, avoided claims, and review-note copy live
+in [app-store-positioning.md](app-store-positioning.md); that page is the
+single source for submission wording.
 
-Agent Load is a local macOS menu bar utility for developers who run multiple AI
-coding agents. It helps the user understand current local agent activity,
-session freshness, process pressure, and recent project load on their own Mac.
+Readiness-specific positioning items:
 
-Avoid these claims:
-
-- team surveillance
-- employee monitoring
-- compliance audit
-- security scanner
-- background exfiltration or cloud analysis
-- guaranteed process attribution
-
-Preferred App Store category:
-
-- Developer Tools
-
-Draft subtitle:
-
-Local AI coding activity monitor
-
-Draft short description:
-
-Agent Load shows current local AI coding sessions, process pressure, and recent
-project activity from evidence on your Mac. It runs locally and does not upload
-your activity data.
-
-Draft review note:
-
-Agent Load is intended for a developer monitoring their own Mac. The app reads
-local process and local tool evidence to display current AI coding load and
-session freshness. It does not include advertising, analytics SDKs, tracking, or
-cloud upload. Local HTTP serving is bound to loopback for the embedded menu bar
-dashboard. If the submitted build is sandboxed, process and file access are
-limited to permitted system visibility and user-selected local evidence.
+- Preferred App Store category: Developer Tools.
+- Submission copy must match the positioning page at upload time and must be
+  re-checked when sandbox behavior changes what the app can observe.
 
 ## Open App Store Risks
 

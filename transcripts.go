@@ -3,7 +3,9 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -72,7 +74,7 @@ type transcriptScanFlight struct {
 	data *TranscriptData
 }
 
-func (o *Observer) transcriptData(claudeRoots, codexRoots, traeRoots []string, priority []TranscriptFile, now time.Time) (*TranscriptData, bool) {
+func (o *Observer) transcriptData(ctx context.Context, claudeRoots, codexRoots, traeRoots []string, priority []TranscriptFile, now time.Time) (*TranscriptData, bool) {
 	key := transcriptCacheKey(claudeRoots, codexRoots, traeRoots, priority, o.cfg.IdleGap, o.cfg.MinInterval, o.cfg.Lookback)
 	o.mu.Lock()
 	if o.cache.Data != nil && o.cache.Key == key && now.Before(o.cache.ExpiresAt) {
@@ -82,15 +84,27 @@ func (o *Observer) transcriptData(claudeRoots, codexRoots, traeRoots []string, p
 	}
 	if flight := o.inflight[key]; flight != nil {
 		done := flight.done
+		cachedData := cloneTranscriptData(o.cache.Data)
 		o.mu.Unlock()
-		<-done
-		return cloneTranscriptData(flight.data), false
+		select {
+		case <-done:
+			return cloneTranscriptData(flight.data), false
+		case <-ctx.Done():
+			// The in-flight scan keeps running for other waiters; the
+			// cancelled caller returns early with whatever cached data exists.
+			cached := cachedData != nil
+			if cachedData == nil {
+				cachedData = &TranscriptData{Traces: map[string]*SessionTrace{}}
+			}
+			cachedData.Errors = append(cachedData.Errors, fmt.Sprintf("transcript scan wait cancelled: %v", ctx.Err()))
+			return cachedData, cached
+		}
 	}
 	flight := &transcriptScanFlight{done: make(chan struct{})}
 	o.inflight[key] = flight
 	o.mu.Unlock()
 
-	data := o.scanTranscriptsWithOptions(claudeRoots, codexRoots, traeRoots, priority, transcriptScanOptions{
+	data := o.scanTranscriptsWithOptions(ctx, claudeRoots, codexRoots, traeRoots, priority, transcriptScanOptions{
 		HistoryCutoff:      now.Add(-o.cfg.Lookback),
 		ForegroundCutoff:   foregroundTranscriptCutoff(now, o.cfg.IdleGap),
 		HistoryLookback:    o.cfg.Lookback,
@@ -103,10 +117,14 @@ func (o *Observer) transcriptData(claudeRoots, codexRoots, traeRoots []string, p
 
 	o.mu.Lock()
 	flight.data = cloneTranscriptData(data)
-	o.cache = transcriptCacheState{
-		Key:       key,
-		ExpiresAt: savedAt.Add(o.cfg.TranscriptCacheTTL),
-		Data:      cloneTranscriptData(data),
+	// A cancelled scan produced partial data; keep it out of the cache so the
+	// next snapshot retries a full scan.
+	if ctx.Err() == nil {
+		o.cache = transcriptCacheState{
+			Key:       key,
+			ExpiresAt: savedAt.Add(o.cfg.TranscriptCacheTTL),
+			Data:      cloneTranscriptData(data),
+		}
 	}
 	delete(o.inflight, key)
 	close(flight.done)
@@ -132,7 +150,7 @@ func transcriptCacheKey(claudeRoots, codexRoots, traeRoots []string, priority []
 }
 
 func (o *Observer) scanTranscripts(claudeRoots, codexRoots, traeRoots []string, priority []TranscriptFile, cutoff time.Time, idleGap, minInterval time.Duration) *TranscriptData {
-	return o.scanTranscriptsWithOptions(claudeRoots, codexRoots, traeRoots, priority, transcriptScanOptions{
+	return o.scanTranscriptsWithOptions(context.Background(), claudeRoots, codexRoots, traeRoots, priority, transcriptScanOptions{
 		HistoryCutoff:      cutoff,
 		ForegroundCutoff:   cutoff,
 		HistoryLookback:    durationSinceCutoff(cutoff),
@@ -153,18 +171,19 @@ type transcriptScanOptions struct {
 	MinInterval        time.Duration
 }
 
-func (o *Observer) scanTranscriptsWithOptions(claudeRoots, codexRoots, traeRoots []string, priority []TranscriptFile, opts transcriptScanOptions) *TranscriptData {
+func (o *Observer) scanTranscriptsWithOptions(ctx context.Context, claudeRoots, codexRoots, traeRoots []string, priority []TranscriptFile, opts transcriptScanOptions) *TranscriptData {
 	collectionCutoff := opts.HistoryCutoff
 	if opts.DeferHistoryWalk && !opts.ForegroundCutoff.IsZero() {
 		collectionCutoff = opts.ForegroundCutoff
 	}
-	files := collectTranscriptCandidates(claudeRoots, codexRoots, traeRoots, priority, collectionCutoff, opts.ForegroundCutoff)
+	files, walkErrors := collectTranscriptCandidates(ctx, claudeRoots, codexRoots, traeRoots, priority, collectionCutoff, opts.ForegroundCutoff)
 	data := &TranscriptData{
 		Traces:                           make(map[string]*SessionTrace, len(files)),
 		ScannedFiles:                     len(files),
 		HistoricalScanDeferred:           opts.DeferHistoryWalk,
 		ForegroundScanLookbackSeconds:    int(opts.ForegroundLookback / time.Second),
 		ConfiguredHistoryLookbackSeconds: int(opts.HistoryLookback / time.Second),
+		Errors:                           walkErrors,
 	}
 
 	toParse := make([]transcriptCandidate, 0, len(files))
@@ -183,7 +202,6 @@ func (o *Observer) scanTranscriptsWithOptions(claudeRoots, codexRoots, traeRoots
 		case cached.Size == candidate.Size && cached.ModTime.Equal(candidate.ModTime):
 			if cached.Err != "" {
 				data.Errors = append(data.Errors, fmt.Sprintf("%s: %s", candidate.File.Path, cached.Err))
-				continue
 			}
 			if cached.Trace == nil || len(cached.Trace.EventTimes) == 0 {
 				continue
@@ -209,26 +227,41 @@ func (o *Observer) scanTranscriptsWithOptions(claudeRoots, codexRoots, traeRoots
 	o.mu.Unlock()
 
 	updates := map[string]fileTraceCache{}
-	parseResults := parseTranscriptCandidates(toParse)
-	parseResults = append(parseResults, parseAppendTranscriptCandidates(toAppend)...)
+	parseResults := parseTranscriptCandidates(ctx, toParse)
+	parseResults = append(parseResults, parseAppendTranscriptCandidates(ctx, toAppend)...)
+	abortedParses := 0
 	for _, result := range parseResults {
 		candidate := result.Candidate
+		if candidate.File.Path == "" {
+			// Job was never dispatched because the context was cancelled.
+			abortedParses++
+			continue
+		}
+		if isContextError(result.Err) {
+			// Skip the cache entry so the next scan retries this file.
+			abortedParses++
+			continue
+		}
 		endsWithNewline := fileEndsWithNewline(candidate.File.Path, candidate.Size)
 		if result.Err != nil {
 			data.Errors = append(data.Errors, fmt.Sprintf("%s: %v", candidate.File.Path, result.Err))
+			// A parse may return a degraded trace alongside its error (for
+			// example codex lane sidecar failures); keep both so the session
+			// evidence stays visible while the error is disclosed.
 			updates[candidate.File.Path] = fileTraceCache{
 				ModTime:         candidate.ModTime,
 				Size:            candidate.Size,
 				EndsWithNewline: endsWithNewline,
+				Trace:           cloneSessionTrace(result.Trace),
 				Err:             result.Err.Error(),
 			}
-			continue
-		}
-		updates[candidate.File.Path] = fileTraceCache{
-			ModTime:         candidate.ModTime,
-			Size:            candidate.Size,
-			EndsWithNewline: endsWithNewline,
-			Trace:           cloneSessionTrace(result.Trace),
+		} else {
+			updates[candidate.File.Path] = fileTraceCache{
+				ModTime:         candidate.ModTime,
+				Size:            candidate.Size,
+				EndsWithNewline: endsWithNewline,
+				Trace:           cloneSessionTrace(result.Trace),
+			}
 		}
 		if result.Trace == nil || len(result.Trace.EventTimes) == 0 {
 			continue
@@ -246,9 +279,53 @@ func (o *Observer) scanTranscriptsWithOptions(claudeRoots, codexRoots, traeRoots
 		}
 		o.mu.Unlock()
 	}
+	if ctx.Err() != nil {
+		data.Errors = append(data.Errors, fmt.Sprintf("transcript scan aborted early (%d files not parsed): %v", abortedParses, ctx.Err()))
+	} else {
+		o.pruneFileCache(files)
+	}
 	data.SessionSpans = buildSessionSpans(data.Traces, opts.MinInterval)
 	data.BurstSpans = buildBurstSpans(data.Traces, opts.IdleGap, opts.MinInterval)
 	return data
+}
+
+func isContextError(err error) bool {
+	return err != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded))
+}
+
+// pruneFileCache drops cache entries whose transcript file no longer exists on
+// disk. Only paths outside the current candidate set are stat'ed; candidates
+// were already stat'ed during collection.
+func (o *Observer) pruneFileCache(candidates []transcriptCandidate) {
+	current := make(map[string]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		current[candidate.File.Path] = struct{}{}
+	}
+	o.mu.Lock()
+	unseen := []string{}
+	for path := range o.fileCache {
+		if _, ok := current[path]; !ok {
+			unseen = append(unseen, path)
+		}
+	}
+	o.mu.Unlock()
+	if len(unseen) == 0 {
+		return
+	}
+	missing := []string{}
+	for _, path := range unseen {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			missing = append(missing, path)
+		}
+	}
+	if len(missing) == 0 {
+		return
+	}
+	o.mu.Lock()
+	for _, path := range missing {
+		delete(o.fileCache, path)
+	}
+	o.mu.Unlock()
 }
 
 func foregroundTranscriptLookback(idleGap time.Duration) time.Duration {
@@ -313,7 +390,7 @@ func canAppendParseTranscript(file TranscriptFile, cached fileTraceCache, candid
 	}
 }
 
-func parseTranscriptCandidates(candidates []transcriptCandidate) []transcriptParseResult {
+func parseTranscriptCandidates(ctx context.Context, candidates []transcriptCandidate) []transcriptParseResult {
 	results := make([]transcriptParseResult, len(candidates))
 	if len(candidates) == 0 {
 		return results
@@ -340,6 +417,10 @@ func parseTranscriptCandidates(candidates []transcriptCandidate) []transcriptPar
 		go func() {
 			defer wg.Done()
 			for item := range jobs {
+				if err := ctx.Err(); err != nil {
+					results[item.Index] = transcriptParseResult{Candidate: item.Candidate, Err: err}
+					continue
+				}
 				parseFunc := parseTranscriptFileFunc
 				if item.Candidate.TailParse {
 					parseFunc = parseTranscriptFileTailFunc
@@ -354,6 +435,9 @@ func parseTranscriptCandidates(candidates []transcriptCandidate) []transcriptPar
 		}()
 	}
 	for index, candidate := range candidates {
+		if ctx.Err() != nil {
+			break
+		}
 		jobs <- job{Index: index, Candidate: candidate}
 	}
 	close(jobs)
@@ -361,7 +445,7 @@ func parseTranscriptCandidates(candidates []transcriptCandidate) []transcriptPar
 	return results
 }
 
-func parseAppendTranscriptCandidates(candidates []transcriptAppendCandidate) []transcriptParseResult {
+func parseAppendTranscriptCandidates(ctx context.Context, candidates []transcriptAppendCandidate) []transcriptParseResult {
 	results := make([]transcriptParseResult, len(candidates))
 	if len(candidates) == 0 {
 		return results
@@ -388,6 +472,10 @@ func parseAppendTranscriptCandidates(candidates []transcriptAppendCandidate) []t
 		go func() {
 			defer wg.Done()
 			for item := range jobs {
+				if err := ctx.Err(); err != nil {
+					results[item.Index] = transcriptParseResult{Candidate: item.Candidate.Candidate, Err: err}
+					continue
+				}
 				trace, err := parseTranscriptFileAppendFunc(
 					item.Candidate.Candidate.File,
 					item.Candidate.Base,
@@ -402,6 +490,9 @@ func parseAppendTranscriptCandidates(candidates []transcriptAppendCandidate) []t
 		}()
 	}
 	for index, candidate := range candidates {
+		if ctx.Err() != nil {
+			break
+		}
 		jobs <- job{Index: index, Candidate: candidate}
 	}
 	close(jobs)
@@ -409,7 +500,8 @@ func parseAppendTranscriptCandidates(candidates []transcriptAppendCandidate) []t
 	return results
 }
 
-func collectTranscriptCandidates(claudeRoots, codexRoots, traeRoots []string, priority []TranscriptFile, historyCutoff, foregroundCutoff time.Time) []transcriptCandidate {
+func collectTranscriptCandidates(ctx context.Context, claudeRoots, codexRoots, traeRoots []string, priority []TranscriptFile, historyCutoff, foregroundCutoff time.Time) ([]transcriptCandidate, []string) {
+	scanErrors := []string{}
 	priorityKeys := map[string]struct{}{}
 	for _, file := range priority {
 		if file.Path == "" || file.Tool == "" {
@@ -455,27 +547,27 @@ func collectTranscriptCandidates(claudeRoots, codexRoots, traeRoots []string, pr
 
 	for _, root := range claudeRoots {
 		projectsDir := filepath.Join(root, "projects")
-		walkMatchingFiles(projectsDir, historyCutoff, func(path string, info os.FileInfo) {
+		scanErrors = append(scanErrors, walkMatchingFiles(ctx, projectsDir, historyCutoff, func(path string, info os.FileInfo) {
 			addFile(TranscriptFile{Tool: "claude", Path: path}, info)
-		})
+		})...)
 	}
 	for _, root := range codexRoots {
 		for _, dir := range []string{
 			filepath.Join(root, "sessions"),
 			filepath.Join(root, "archived_sessions"),
 		} {
-			walkMatchingFiles(dir, historyCutoff, func(path string, info os.FileInfo) {
+			scanErrors = append(scanErrors, walkMatchingFiles(ctx, dir, historyCutoff, func(path string, info os.FileInfo) {
 				addFile(TranscriptFile{Tool: "codex", Path: path}, info)
-			})
+			})...)
 		}
-		walkCodexLaneEvents(filepath.Join(root, ".codexl"), historyCutoff, func(path string, info os.FileInfo) {
+		scanErrors = append(scanErrors, walkCodexLaneEvents(ctx, filepath.Join(root, ".codexl"), historyCutoff, func(path string, info os.FileInfo) {
 			addFile(TranscriptFile{Tool: "codex", Path: path}, info)
-		})
+		})...)
 	}
 	for _, root := range traeRoots {
-		walkMatchingFiles(filepath.Join(root, "sessions"), historyCutoff, func(path string, info os.FileInfo) {
+		scanErrors = append(scanErrors, walkMatchingFiles(ctx, filepath.Join(root, "sessions"), historyCutoff, func(path string, info os.FileInfo) {
 			addFile(TranscriptFile{Tool: "trae", Path: path}, info)
-		})
+		})...)
 	}
 
 	files := make([]transcriptCandidate, 0, len(seen))
@@ -497,47 +589,69 @@ func collectTranscriptCandidates(claudeRoots, codexRoots, traeRoots []string, pr
 		}
 		return files[i].File.Tool < files[j].File.Tool
 	})
-	return files
+	return files, scanErrors
 }
 
-func walkMatchingFiles(root string, cutoff time.Time, fn func(path string, info os.FileInfo)) {
-	info, err := os.Stat(root)
-	if err != nil || !info.IsDir() {
-		return
-	}
-	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info == nil || info.IsDir() {
-			return nil
-		}
+func walkMatchingFiles(ctx context.Context, root string, cutoff time.Time, fn func(path string, info os.FileInfo)) []string {
+	return walkTranscriptTree(ctx, root, func(path string, info os.FileInfo) {
 		if !strings.HasSuffix(path, ".jsonl") {
-			return nil
+			return
 		}
 		if !cutoff.IsZero() && info.ModTime().Before(cutoff) {
-			return nil
+			return
 		}
 		fn(filepath.Clean(path), info)
-		return nil
 	})
 }
 
-func walkCodexLaneEvents(root string, cutoff time.Time, fn func(path string, info os.FileInfo)) {
-	info, err := os.Stat(root)
-	if err != nil || !info.IsDir() {
-		return
-	}
-	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info == nil || info.IsDir() {
-			return nil
-		}
+func walkCodexLaneEvents(ctx context.Context, root string, cutoff time.Time, fn func(path string, info os.FileInfo)) []string {
+	return walkTranscriptTree(ctx, root, func(path string, info os.FileInfo) {
 		if filepath.Base(path) != "events.jsonl" {
-			return nil
+			return
 		}
 		if !cutoff.IsZero() && info.ModTime().Before(cutoff) {
-			return nil
+			return
 		}
 		fn(filepath.Clean(path), info)
+	})
+}
+
+// walkTranscriptTree surfaces walk failures instead of discarding them so a
+// permission error stays distinguishable from "no sessions". Per-entry errors
+// skip only the failing subtree; a cancelled context aborts the whole walk.
+func walkTranscriptTree(ctx context.Context, root string, fn func(path string, info os.FileInfo)) []string {
+	info, err := os.Stat(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return []string{fmt.Sprintf("%s: %v", root, err)}
+	}
+	if !info.IsDir() {
+		return nil
+	}
+	errs := []string{}
+	walkErr := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", path, err))
+			if info != nil && info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if info == nil || info.IsDir() {
+			return nil
+		}
+		fn(path, info)
 		return nil
 	})
+	if walkErr != nil && !isContextError(walkErr) {
+		errs = append(errs, fmt.Sprintf("%s: %v", root, walkErr))
+	}
+	return errs
 }
 
 func fileMayContainEventsAfterCutoff(path string, info os.FileInfo, cutoff time.Time) bool {
@@ -1010,7 +1124,10 @@ func parseCodexLaneTrace(eventsPath string) (*SessionTrace, error) {
 		RoleHintSource: "codexl_lane_path",
 	}
 
-	_ = forEachJSONLLine(eventsPath, func(line []byte) bool {
+	// Sidecar read failures degrade the trace instead of voiding it; they are
+	// returned alongside the trace so the scan can disclose them.
+	sidecarErrs := []error{}
+	if err := forEachJSONLLine(eventsPath, func(line []byte) bool {
 		if threadID := firstNonEmptyString(
 			jsonStringField(line, "thread_id"),
 			jsonStringField(line, "session_id"),
@@ -1020,10 +1137,18 @@ func parseCodexLaneTrace(eventsPath string) (*SessionTrace, error) {
 		}
 		captureTokenUsage(trace, line)
 		return true
-	})
+	}); err != nil {
+		sidecarErrs = append(sidecarErrs, fmt.Errorf("lane events: %w", err))
+	}
 
-	requestObj, _ := readJSONFileMap(filepath.Join(filepath.Dir(eventsPath), "request.json"))
-	runObj, _ := readJSONFileMap(filepath.Join(filepath.Dir(eventsPath), "run.json"))
+	requestObj, err := readJSONFileMap(filepath.Join(filepath.Dir(eventsPath), "request.json"))
+	if err != nil && !os.IsNotExist(err) {
+		sidecarErrs = append(sidecarErrs, fmt.Errorf("lane request.json: %w", err))
+	}
+	runObj, err := readJSONFileMap(filepath.Join(filepath.Dir(eventsPath), "run.json"))
+	if err != nil && !os.IsNotExist(err) {
+		sidecarErrs = append(sidecarErrs, fmt.Errorf("lane run.json: %w", err))
+	}
 	requestedAt := firstNonZeroTime(
 		parseTimestampString(nestedString(requestObj, "request", "requested_at")),
 		parseTimestampString(nestedString(requestObj, "invocation", "requested_at")),
@@ -1072,9 +1197,9 @@ func parseCodexLaneTrace(eventsPath string) (*SessionTrace, error) {
 	trace.EventTimes = appendNonZeroTimes(trace.EventTimes, requestedAt, startedAt, completedAt, lastEvent)
 	finalizeTrace(trace)
 	if len(trace.EventTimes) == 0 {
-		return nil, nil
+		return nil, errors.Join(sidecarErrs...)
 	}
-	return trace, nil
+	return trace, errors.Join(sidecarErrs...)
 }
 
 func parseTraeTrace(path string) (*SessionTrace, error) {
@@ -1476,23 +1601,6 @@ func isClaudeActiveType(kind string) bool {
 	}
 }
 
-func extractCodexSessionID(obj map[string]interface{}) string {
-	return firstNonEmptyString(
-		nestedString(obj, "payload", "id"),
-		nestedString(obj, "payload", "session_id"),
-		nestedString(obj, "payload", "sessionId"),
-		stringValue(obj["session_id"]),
-		stringValue(obj["sessionId"]),
-	)
-}
-
-func extractCodexCWD(obj map[string]interface{}) string {
-	return firstNonEmptyString(
-		nestedString(obj, "payload", "cwd"),
-		nestedString(obj, "cwd"),
-	)
-}
-
 func finalizeTrace(trace *SessionTrace) {
 	if trace == nil || len(trace.EventTimes) == 0 {
 		return
@@ -1559,10 +1667,6 @@ func forEachJSONLLineFromOffset(path string, offset int64, fn func([]byte) bool)
 			return readErr
 		}
 	}
-}
-
-func forEachJSONLLineUntil(path string, fn func([]byte) bool) error {
-	return forEachJSONLLine(path, fn)
 }
 
 func fileEndsWithNewline(path string, size int64) bool {

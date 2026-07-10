@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -394,5 +395,199 @@ func TestFileMayContainEventsAfterCutoffKeepsRecentTail(t *testing.T) {
 	cutoff := time.Date(2026, 6, 27, 0, 0, 0, 0, time.UTC)
 	if !fileMayContainEventsAfterCutoff(path, info, cutoff) {
 		t.Fatalf("expected recent tail timestamp to stay eligible")
+	}
+}
+
+func TestTranscriptDataCancelledWaiterReturnsPromptly(t *testing.T) {
+	observer := newObserver(Config{
+		IdleGap:            90 * time.Second,
+		MinInterval:        15 * time.Second,
+		Lookback:           24 * time.Hour,
+		TranscriptCacheTTL: time.Minute,
+	})
+	key := transcriptCacheKey(nil, nil, nil, nil, observer.cfg.IdleGap, observer.cfg.MinInterval, observer.cfg.Lookback)
+	// Simulate a scan wedged on a hung volume: the flight never completes.
+	observer.inflight[key] = &transcriptScanFlight{done: make(chan struct{})}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	start := time.Now()
+	data, cached := observer.transcriptData(ctx, nil, nil, nil, nil, time.Now())
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("cancelled waiter should return promptly, took %s", elapsed)
+	}
+	if cached {
+		t.Fatalf("no cache existed, cached should be false")
+	}
+	if data == nil {
+		t.Fatalf("expected non-nil transcript data")
+	}
+	found := false
+	for _, message := range data.Errors {
+		if strings.Contains(message, "transcript scan wait cancelled") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected cancellation disclosure in errors, got %#v", data.Errors)
+	}
+}
+
+func TestTranscriptDataDoesNotCacheCancelledScan(t *testing.T) {
+	tmp := t.TempDir()
+	sessionsDir := filepath.Join(tmp, ".codex", "sessions")
+	if err := os.MkdirAll(sessionsDir, 0o755); err != nil {
+		t.Fatalf("mkdir sessions: %v", err)
+	}
+	path := filepath.Join(sessionsDir, "rollout-2026-06-28T11-30-00-abc.jsonl")
+	if err := os.WriteFile(path, []byte(`{"timestamp":"2026-06-28T11:30:00Z","session_id":"abc"}`+"\n"), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+	observer := newObserver(Config{
+		IdleGap:            90 * time.Second,
+		MinInterval:        15 * time.Second,
+		Lookback:           24 * time.Hour,
+		TranscriptCacheTTL: time.Minute,
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	data, cached := observer.transcriptData(ctx, nil, []string{filepath.Join(tmp, ".codex")}, nil, nil, time.Now())
+	if cached {
+		t.Fatalf("cancelled scan should not report cached data")
+	}
+	found := false
+	for _, message := range data.Errors {
+		if strings.Contains(message, "transcript scan aborted early") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected aborted-scan disclosure in errors, got %#v", data.Errors)
+	}
+	observer.mu.Lock()
+	cachedData := observer.cache.Data
+	observer.mu.Unlock()
+	if cachedData != nil {
+		t.Fatalf("partial cancelled scan must not populate the transcript cache")
+	}
+}
+
+func TestCollectTranscriptCandidatesSurfacesWalkErrors(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission errors are not observable as root")
+	}
+	tmp := t.TempDir()
+	projectsDir := filepath.Join(tmp, ".claude", "projects")
+	lockedDir := filepath.Join(projectsDir, "locked")
+	if err := os.MkdirAll(lockedDir, 0o755); err != nil {
+		t.Fatalf("mkdir locked dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(lockedDir, "hidden.jsonl"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("write hidden transcript: %v", err)
+	}
+	if err := os.Chmod(lockedDir, 0o000); err != nil {
+		t.Fatalf("chmod locked dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(lockedDir, 0o755) })
+
+	_, walkErrors := collectTranscriptCandidates(context.Background(), []string{filepath.Join(tmp, ".claude")}, nil, nil, nil, time.Time{}, time.Time{})
+	found := false
+	for _, message := range walkErrors {
+		if strings.Contains(message, lockedDir) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected walk error mentioning %q, got %#v", lockedDir, walkErrors)
+	}
+}
+
+func TestScanTranscriptsSurfacesWalkErrorsInData(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission errors are not observable as root")
+	}
+	tmp := t.TempDir()
+	projectsDir := filepath.Join(tmp, ".claude", "projects")
+	lockedDir := filepath.Join(projectsDir, "locked")
+	if err := os.MkdirAll(lockedDir, 0o755); err != nil {
+		t.Fatalf("mkdir locked dir: %v", err)
+	}
+	if err := os.Chmod(lockedDir, 0o000); err != nil {
+		t.Fatalf("chmod locked dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(lockedDir, 0o755) })
+
+	observer := newObserver(Config{
+		IdleGap:     90 * time.Second,
+		MinInterval: 15 * time.Second,
+		Lookback:    24 * time.Hour,
+	})
+	data := observer.scanTranscripts([]string{filepath.Join(tmp, ".claude")}, nil, nil, nil, time.Time{}, 90*time.Second, 15*time.Second)
+	found := false
+	for _, message := range data.Errors {
+		if strings.Contains(message, lockedDir) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected scan errors mentioning %q, got %#v", lockedDir, data.Errors)
+	}
+}
+
+func TestPruneFileCacheDropsMissingPaths(t *testing.T) {
+	tmp := t.TempDir()
+	candidatePath := filepath.Join(tmp, "candidate.jsonl")
+	uncandidatedPath := filepath.Join(tmp, "still-on-disk.jsonl")
+	missingPath := filepath.Join(tmp, "deleted.jsonl")
+	for _, path := range []string{candidatePath, uncandidatedPath} {
+		if err := os.WriteFile(path, []byte("{}\n"), 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+
+	observer := newObserver(Config{})
+	observer.fileCache[candidatePath] = fileTraceCache{}
+	observer.fileCache[uncandidatedPath] = fileTraceCache{}
+	observer.fileCache[missingPath] = fileTraceCache{}
+
+	observer.pruneFileCache([]transcriptCandidate{{File: TranscriptFile{Tool: "claude", Path: candidatePath}}})
+
+	observer.mu.Lock()
+	defer observer.mu.Unlock()
+	if _, ok := observer.fileCache[candidatePath]; !ok {
+		t.Fatalf("candidate path must stay cached")
+	}
+	if _, ok := observer.fileCache[uncandidatedPath]; !ok {
+		t.Fatalf("non-candidate path still on disk must stay cached")
+	}
+	if _, ok := observer.fileCache[missingPath]; ok {
+		t.Fatalf("path deleted from disk must be pruned from the cache")
+	}
+}
+
+func TestParseCodexLaneTraceSurfacesSidecarErrors(t *testing.T) {
+	root := t.TempDir()
+	laneDir := filepath.Join(root, "agentload", ".codex", ".codexl", "asagent", "lane-1")
+	if err := os.MkdirAll(laneDir, 0o755); err != nil {
+		t.Fatalf("mkdir lane dir: %v", err)
+	}
+	eventsPath := filepath.Join(laneDir, "events.jsonl")
+	if err := os.WriteFile(eventsPath, []byte("{\"thread_id\":\"lane-1\"}\n"), 0o644); err != nil {
+		t.Fatalf("write events: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(laneDir, "request.json"), []byte("{not json"), 0o644); err != nil {
+		t.Fatalf("write request.json: %v", err)
+	}
+
+	trace, err := parseCodexLaneTrace(eventsPath)
+	if err == nil || !strings.Contains(err.Error(), "request.json") {
+		t.Fatalf("expected sidecar error mentioning request.json, got %v", err)
+	}
+	if trace == nil {
+		t.Fatalf("sidecar failure should degrade the trace, not void it")
+	}
+	if trace.SessionID != "lane-1" {
+		t.Fatalf("expected degraded trace to keep session id, got %q", trace.SessionID)
 	}
 }

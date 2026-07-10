@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -111,9 +112,19 @@ func (a *trayApp) handleSnapshotAPI(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	snapshot := a.snapshotForClient(r.Context())
+	// The refresh slot decides the ETag, so conditional requests can short-circuit
+	// before the sanitize pass runs.
+	snapshot, ok := a.snapshotForInternalUse(r.Context())
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
+	if !ok {
+		if r.Method == http.MethodHead {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(Snapshot{})
+		return
+	}
 	var snapshotETag string
 	if snapshot.RefreshSlotID != "" {
 		snapshotETag = strconv.Quote(snapshot.RefreshSlotID)
@@ -128,8 +139,34 @@ func (a *trayApp) handleSnapshotAPI(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	enc := json.NewEncoder(w)
-	_ = enc.Encode(snapshot)
+	_, _ = w.Write(a.clientSnapshotJSON(snapshot))
+}
+
+// clientSnapshotJSON caches the sanitized, encoded snapshot per refresh slot so
+// repeated polls within one slot skip the sanitize pass.
+func (a *trayApp) clientSnapshotJSON(snapshot Snapshot) []byte {
+	slotID := snapshot.RefreshSlotID
+	if slotID != "" {
+		a.clientCacheMu.Lock()
+		if a.clientCacheSlot == slotID && a.clientCacheJSON != nil {
+			payload := a.clientCacheJSON
+			a.clientCacheMu.Unlock()
+			return payload
+		}
+		a.clientCacheMu.Unlock()
+	}
+	raw, err := json.Marshal(sanitizeSnapshotForClient(snapshot))
+	if err != nil {
+		return []byte("{}\n")
+	}
+	payload := append(raw, '\n')
+	if slotID != "" {
+		a.clientCacheMu.Lock()
+		a.clientCacheSlot = slotID
+		a.clientCacheJSON = payload
+		a.clientCacheMu.Unlock()
+	}
+	return payload
 }
 
 func etagListMatches(header, expected string) bool {
@@ -142,9 +179,60 @@ func etagListMatches(header, expected string) bool {
 	return false
 }
 
+// sameOriginRequest guards state-changing POSTs against cross-origin calls from
+// other local webpages. Requests without Origin/Referer (curl, native shell)
+// stay allowed; the WKWebView popover sends this server's own http origin.
+func sameOriginRequest(r *http.Request) bool {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		origin = strings.TrimSpace(r.Header.Get("Referer"))
+	}
+	if origin == "" {
+		return true
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	return originHostsEquivalent(parsed.Host, r.Host)
+}
+
+func originHostsEquivalent(originHost, requestHost string) bool {
+	oh, op := splitHostPortDefault(originHost)
+	rh, rp := splitHostPortDefault(requestHost)
+	return op == rp && normalizeLoopbackHost(oh) == normalizeLoopbackHost(rh)
+}
+
+func splitHostPortDefault(hostport string) (string, string) {
+	if host, port, err := net.SplitHostPort(hostport); err == nil {
+		return host, port
+	}
+	return hostport, "80"
+}
+
+func normalizeLoopbackHost(host string) string {
+	host = strings.ToLower(strings.Trim(host, "[]"))
+	switch host {
+	case "localhost", "::1", "0.0.0.0", "::":
+		return "127.0.0.1"
+	}
+	return host
+}
+
+func rejectCrossOrigin(w http.ResponseWriter, r *http.Request) bool {
+	if sameOriginRequest(r) {
+		return false
+	}
+	http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+	return true
+}
+
 func (a *trayApp) handleRefreshAPI(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if rejectCrossOrigin(w, r) {
 		return
 	}
 	slotID := a.requestRefreshForInterval(refreshIntervalFromRequest(r, a.cfg.RefreshInterval))
@@ -170,6 +258,9 @@ func refreshIntervalFromRequest(r *http.Request, fallback time.Duration) time.Du
 func (a *trayApp) handleQuitAPI(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if rejectCrossOrigin(w, r) {
 		return
 	}
 	jsonResponse(w, http.StatusOK, map[string]bool{"ok": true})
@@ -269,6 +360,9 @@ func (a *trayApp) handleOpenHostAppAPI(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if rejectCrossOrigin(w, r) {
+		return
+	}
 	app, ok := a.observedHostAppFromRequest(r, "/api/open-host-app/")
 	if !ok || strings.TrimSpace(app.BundlePath) == "" {
 		http.NotFound(w, r)
@@ -307,16 +401,26 @@ func (a *trayApp) snapshotForInternalUse(ctx context.Context) (Snapshot, bool) {
 	if a.observer == nil {
 		return Snapshot{}, false
 	}
-	ctx, cancel := context.WithTimeout(ctx, maxDuration(45*time.Second, a.cfg.Lookback/10))
+	ctx, cancel := context.WithTimeout(ctx, clampDuration(a.cfg.Lookback/10, 45*time.Second, 5*time.Minute))
 	defer cancel()
 	snapshot := a.observer.Snapshot(ctx)
 	if snapshot.RefreshSlotID == "" {
 		snapshot.RefreshSlotID = a.refreshSlotID(time.Now())
 	}
+	if snapshotScanAborted(ctx, snapshot) {
+		// Serve the partial result to this caller only; committing it would
+		// record undercounted history samples and cache incomplete state.
+		return snapshot, true
+	}
 	return a.rememberSnapshot(snapshot), true
 }
 
+// snapshotSanitizePasses counts full sanitize passes; test hook for the cached
+// /api/snapshot encode path.
+var snapshotSanitizePasses atomic.Int64
+
 func sanitizeSnapshotForClient(snapshot Snapshot) Snapshot {
+	snapshotSanitizePasses.Add(1)
 	snapshot.Config.ClaudeRoots = []string{}
 	snapshot.Config.CodexRoots = []string{}
 	snapshot.Config.TraeRoots = []string{}

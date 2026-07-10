@@ -18,7 +18,11 @@ Data truth is the first product standard. UI polish must not change metric
 meaning, hide sampling gaps, or mix semantic families. Recent movement, known
 sessions, process pressure, CPU, memory, and role splits must route through the
 metric semantic layer and remain consistent across header metrics, project rows,
-trend charts, hover panels, and detail inspectors.
+trend charts, hover panels, and detail inspectors. The contracts live in
+[docs/agent-load-metric-semantics.md](docs/agent-load-metric-semantics.md) and
+[docs/agent-load-ui-design-system.md](docs/agent-load-ui-design-system.md).
+
+The managed block below applies only when the bagakit tooling is installed.
 <!-- BAGAKIT:LIVING-KNOWLEDGE:START -->
 This is a managed block for `bagakit-living-knowledge`. Do not hand-edit the
 managed region directly; refresh it through the skill operator instead.

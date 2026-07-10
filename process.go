@@ -134,22 +134,6 @@ func parseProcessTableLine(line string) (processRow, bool) {
 	}, true
 }
 
-func parsePSLine(line string) (uid, pid int, command string, ok bool) {
-	fields := strings.Fields(strings.TrimSpace(line))
-	if len(fields) < 3 {
-		return 0, 0, "", false
-	}
-	uid, err := strconv.Atoi(fields[0])
-	if err != nil || uid < 0 {
-		return 0, 0, "", false
-	}
-	pid, err = strconv.Atoi(fields[1])
-	if err != nil || pid <= 0 {
-		return 0, 0, "", false
-	}
-	return uid, pid, strings.Join(fields[2:], " "), true
-}
-
 func inferHostApp(process processRow, processes map[int]processRow) *HostApp {
 	current := process
 	seen := map[int]struct{}{}

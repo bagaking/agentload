@@ -256,7 +256,7 @@ func buildDiagnosticCapabilities(snapshot Snapshot) []DiagnosticCapabilitySnapsh
 	return []DiagnosticCapabilitySnapshot{
 		{Key: "passive_process_observer", Label: "Passive process observer", Status: processStatus, Detail: "Local visible AI process rows and resource counters."},
 		{Key: "transcript_parser", Label: "Transcript parser", Status: transcriptStatus, Detail: "Local transcript/activity evidence for sessions, roles, timing, and token usage when present."},
-		{Key: "system_resources", Label: "System resource sampler", Status: systemStatus, Detail: "Whole-machine CPU, memory, disk, and network counters."},
+		{Key: "system_resources", Label: "System resource sampler", Status: systemStatus, Detail: "Whole-machine CPU, memory, disk, network, and public thermal-pressure state when available."},
 		{Key: "runtime_telemetry_adapter", Label: "Runtime telemetry adapter", Status: runtimeStatus, Detail: runtimeDetail},
 		{Key: "diagnostic_export", Label: "Safe diagnostic export", Status: "available", Detail: "Sanitized local evidence bundle available from /api/diagnostic-export."},
 	}

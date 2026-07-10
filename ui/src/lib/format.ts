@@ -28,6 +28,12 @@ export function formatCPU(value?: number): string {
   return `${value.toFixed(2)}%`;
 }
 
+export function formatCompactCPU(value?: number): string {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return "0.00%";
+  if (value < 0.01) return "<.01%";
+  return `${value.toFixed(2)}%`;
+}
+
 export function formatMemory(bytes?: number, t?: Translate): string {
   if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes <= 0) return t ? t("unavailable") : "n/a";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -39,6 +45,30 @@ export function formatMemory(bytes?: number, t?: Translate): string {
   }
   const digits = value >= 100 || unit === 0 ? 0 : value >= 10 ? 1 : 2;
   return `${value.toFixed(digits)} ${units[unit]}`;
+}
+
+export function formatBytesPerSecond(bytes?: number, t?: Translate): string {
+  if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes <= 0) return "0 B/s";
+  return `${formatMemory(bytes, t ?? ((key: string) => key))}/s`;
+}
+
+export function formatPacketRate(value?: number, t?: Translate): string {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return `0 ${t?.("packetsShort") ?? "pkt"}/s`;
+  const suffix = `${t?.("packetsShort") ?? "pkt"}/s`;
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M ${suffix}`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(value >= 10_000 ? 0 : 1)}K ${suffix}`;
+  return `${value.toFixed(value >= 100 ? 0 : value >= 10 ? 1 : 2)} ${suffix}`;
+}
+
+export function formatPrecisePct(value?: number): string {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return "0.00%";
+  if (value < 0.01) return "<0.01%";
+  return `${value.toFixed(2)}%`;
+}
+
+export function formatLoadAverage(value?: number): string {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return "0.00";
+  return value.toFixed(2);
 }
 
 export function formatDateTime(value: string): string {
@@ -111,10 +141,4 @@ export function shortID(value?: string): string {
 export function safeID(value?: string): string {
   const text = String(value || "unassigned").trim();
   return text || "unassigned";
-}
-
-export function compactCommand(value?: string): string {
-  const text = String(value || "").trim();
-  if (text.length <= 96) return text;
-  return `${text.slice(0, 92)}...`;
 }

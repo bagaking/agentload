@@ -1,17 +1,19 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
-import { Activity, ArrowUpRight, Bot, ChevronDown, Copy, Cpu, ExternalLink, Gauge, GitBranch, HardDrive, Info, Languages, Layers, MemoryStick, Moon, Network, Radar, RefreshCw, Search, Server, Sun, Terminal, X } from "lucide-react";
+import { Activity, ArrowUpRight, Bot, ChevronDown, Copy, ExternalLink, Gauge, GitBranch, Info, Languages, Layers, Moon, Radar, RefreshCw, Search, Server, Sun, Terminal, X } from "lucide-react";
 import { copy, type Lang } from "./i18n";
-import { agentRoleLabel, buildToolSessionGroups, confidenceLabel, freshnessLabel, hiddenToolSessionCount, mappingMethodLabel, normalizedRole, orderedProjects, projectEvidenceItems, roleHintLabel, roleLabel, sessionEvidenceItems, sessionIDsText, sessionIdentity, sessionsForProject, threadSourceLabel, tokenUsageProvenanceLabel, toolBadgeLabel, toolDisplayName, toolIconName } from "./lib/activityModel";
-import { activeWindowLabel, buildRailItems, coordinationPostureLabel, currentMeaningLead, currentMeaningPoints, currentPeerScale, dashboardProjectLead, dashboardProjectMeta, deferredScanValue, mappingHealthText, metricState, primaryEvidenceNote, renderLogText, resolveSelection, statusTone, transcriptScanNote, transcriptScanSummary } from "./lib/dashboardModel";
-import { clampPct, countLabel, formatAge, formatCPU, formatCopy, formatDateTime, formatMemory, formatPct, formatRefreshInterval, formatTokenCount, formatTokenUsageSummary, pctPart, safeID, shortID, tokenUsageHasValue } from "./lib/format";
+import { buildToolSessionGroups, confidenceLabel, freshnessLabel, hiddenToolSessionCount, mappingMethodLabel, normalizedRole, orderedProjects, projectEvidenceItems, roleLabel, sessionEvidenceItems, sessionIdentity, sessionsForProject, tokenUsageProvenanceLabel, toolBadgeLabel, toolDisplayName, toolIconName } from "./lib/activityModel";
+import { activeWindowLabel, buildRailItems, coordinationPostureLabel, currentMeaningLead, currentMeaningPoints, dashboardProjectMeta, deferredScanValue, mappingHealthText, metricState, primaryEvidenceNote, statusTone, transcriptScanNote, transcriptScanSummary } from "./lib/dashboardModel";
+import { clampPct, countLabel, formatAge, formatBytesPerSecond, formatCompactCPU, formatCPU, formatCopy, formatDateTime, formatMemory, formatPct, formatRefreshInterval, formatTokenCount, formatTokenUsageSummary, pctPart, safeID, shortID, tokenUsageHasValue } from "./lib/format";
 import { currentHasRecentMovement, currentKnownSessionCount, currentProcessPressureCount, currentRecentMovementCount, projectProcessPressureCount, projectProcessResources, projectRoleCounts, sessionHasRecentMovement, sessionHumanReviewCount, sessionNeedsHumanReview, sessionProcessPressure, snapshotHumanReviewSessions, summaryMappedProcessCount, summaryMappingCoveragePct, summaryUnmappedProcessCount, toolKnownSessionCount, toolRecentMovementCount } from "./lib/metricSemantics";
 import { LineageSummary } from "./lineage/LineageSummary";
 import { ProcessSummaryStrip } from "./system/ProcessSummaryStrip";
-import { TREND_RANGES, type TrendLane, type TrendRange } from "./trend/types";
-import type { ActiveElementIdentity, LogTab, PopoverView, ProjectMetricObject, ProjectMetricScope, RailItem, RailTab, RefreshReason, RoleCounts, SelectedView, Selection, Theme, ViewportState } from "./types/app";
-import type { AgeBucketSnapshot, HostApp, LiveProcess, LiveSession, ProcessDiagnostic, ProjectSnapshot, ProjectTool, Snapshot, SystemResourceSnapshot, TokenUsage } from "./types/snapshot";
+import { SystemResourceDeck } from "./system/SystemResourceDeck";
+import { useLiveSystemResources } from "./system/useLiveSystemResources";
+import type { TrendLane, TrendRange } from "./trend/types";
+import type { ActiveElementIdentity, PopoverView, ProjectMetricObject, ProjectMetricScope, RailItem, RailTab, RefreshReason, RoleCounts, Selection, Theme, ViewportState } from "./types/app";
+import type { AgeBucketSnapshot, HostApp, LiveProcess, LiveSession, ProcessDiagnostic, ProjectSnapshot, ProjectTool, Snapshot, TokenUsage } from "./types/snapshot";
 import "./styles.css";
 import "./styles/system-view.css";
 import "./styles/popover-footer.css";
@@ -21,6 +23,7 @@ import "./styles/system-process.css";
 import "./styles/diagnostics.css";
 import "./styles/lineage.css";
 import "./styles/process-summary.css";
+import "./styles/system-resource-inspector.css";
 
 const TrendSuite = React.lazy(async () => {
   const module = await import("./trend/TrendSuite");
@@ -32,15 +35,16 @@ const DiagnosticsPanel = React.lazy(async () => {
 });
 
 const BRAND_NAME = "Agent Load";
-const ACTIVE = new Set(["active", "running", "queued"]);
 const DEFAULT_REFRESH_INTERVAL_MS = 300_000;
-const MANUAL_REFRESH_SETTLE_MS = 450;
-const AUTO_REFRESH_SETTLE_MS = 650;
+// Refresh can outlast any fixed settle delay, so polls back off until the
+// backend publishes the requested slot (~15.5s budget), then give up quietly.
+const REFRESH_POLL_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000] as const;
 const READER_CONTEXT_TTL_MS = 20_000;
 const READER_REFRESH_FLOOR_MS = 60_000;
 const REFRESH_INTERVALS_MS = [30_000, 60_000, 120_000, 300_000, 0] as const;
 const REFRESH_INTERVAL_STORAGE_KEY = "agentload.refreshIntervalMs.v5";
 const INSPECTOR_INITIAL_LIMIT = 12;
+const POPOVER_VIEWS: readonly PopoverView[] = ["online", "trend", "system", "diagnostics"];
 const PROCESS_LEDGER_INITIAL_LIMIT = 40;
 type ProcessFilter =
   | { kind: "all"; id: "all" }
@@ -52,7 +56,7 @@ type HoverDetailPayload =
   | { kind: "session"; id: string; title: string; metrics: Array<{ label: string; value: string }>; tokenParts: Array<{ label: string; value: string }>; meta: string };
 type HoverDetailEvent = React.PointerEvent<HTMLElement> | React.FocusEvent<HTMLElement>;
 type HoverDetailSink = (detail: HoverDetailPayload | null, event?: HoverDetailEvent) => void;
-type HoverDetailState = { detail: HoverDetailPayload; x: number; y: number; visible: boolean };
+type HoverDetailState = { detail: HoverDetailPayload; visible: boolean };
 
 declare global {
   interface Window {
@@ -75,7 +79,6 @@ function App() {
   const [railTab, setRailTab] = useState<RailTab>("projects");
   const [query, setQuery] = useState("");
   const [selection, setSelection] = useState<Selection>({ type: "overview", id: "overview" });
-  const [logTab, setLogTab] = useState<LogTab>("summary");
   const [popoverView, setPopoverView] = useState<PopoverView>("online");
   const [trendRange, setTrendRange] = useState<TrendRange>("1D");
   const [trendSelection, setTrendSelection] = useState<Record<TrendLane, string | undefined>>({ history: undefined, runtime: undefined });
@@ -89,16 +92,12 @@ function App() {
   const fetchInFlightRef = useRef<Promise<void> | null>(null);
   const refreshTimerRef = useRef<number | null>(null);
   const readerActiveUntilRef = useRef(0);
-  const readerScheduleBumpAfterRef = useRef(0);
+  const popoverResizeRequestRef = useRef<(() => void) | null>(null);
   const [surfaceVersion, setSurfaceVersion] = useState(0);
 
   const t = useCallback((key: string) => copy[lang][key] || copy.en[key] || key, [lang]);
   const markReaderInteraction = useCallback(() => {
-    const now = Date.now();
-    readerActiveUntilRef.current = now + READER_CONTEXT_TTL_MS;
-    if (now < readerScheduleBumpAfterRef.current) return;
-    readerScheduleBumpAfterRef.current = now + 1000;
-    setSurfaceVersion((value) => value + 1);
+    readerActiveUntilRef.current = Date.now() + READER_CONTEXT_TTL_MS;
   }, []);
   const fetchSnapshot = useCallback(async (reason: RefreshReason = "auto") => {
     if (reason === "auto" && !surfaceVisible(view, popoverVisibleRef.current)) return;
@@ -125,7 +124,7 @@ function App() {
       lastSnapshotETagRef.current = response.headers.get("ETag") || "";
       lastSnapshotReceivedAtRef.current = Date.now();
       const token = next.refresh_slot_id || next.generated_at || "";
-      if (reason === "auto" && token && token === lastRenderTokenRef.current) {
+      if (token && token === lastRenderTokenRef.current) {
         snapshotRef.current = next;
         setError(null);
         return;
@@ -150,24 +149,36 @@ function App() {
     const suffix = params.size ? `?${params.toString()}` : "";
     const response = await fetch(`/api/refresh${suffix}`, { method: "POST", headers: { "Content-Type": "application/json" } });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const body = (await response.json().catch(() => null)) as { refresh_slot_id?: string } | null;
+    return typeof body?.refresh_slot_id === "string" ? body.refresh_slot_id : "";
   }, [refreshInterval]);
+  const awaitRefreshedSnapshot = useCallback(async (reason: RefreshReason, targetSlot: string) => {
+    const previousToken = lastRenderTokenRef.current;
+    const hasFreshSlot = () => (targetSlot ? lastRenderTokenRef.current === targetSlot : Boolean(lastRenderTokenRef.current) && lastRenderTokenRef.current !== previousToken);
+    if (hasFreshSlot()) return;
+    for (const wait of REFRESH_POLL_DELAYS_MS) {
+      await delay(wait);
+      if (reason === "auto" && !surfaceVisible(view, popoverVisibleRef.current)) return;
+      if (reason === "auto") await fetchSnapshot(reason).catch(() => undefined);
+      else await fetchSnapshot(reason);
+      if (hasFreshSlot()) return;
+    }
+  }, [fetchSnapshot, view]);
   const refreshSnapshot = useCallback(async () => {
     setRefreshing(true);
     try {
-      await requestRefreshSlot();
-      await delay(MANUAL_REFRESH_SETTLE_MS);
-      await fetchSnapshot("manual");
+      const targetSlot = await requestRefreshSlot();
+      await awaitRefreshedSnapshot("manual", targetSlot);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setRefreshing(false);
     }
-  }, [fetchSnapshot, requestRefreshSlot]);
+  }, [awaitRefreshedSnapshot, requestRefreshSlot]);
   const refreshAutomatically = useCallback(async () => {
-    await requestRefreshSlot().catch(() => undefined);
-    await delay(AUTO_REFRESH_SETTLE_MS);
-    await fetchSnapshot("auto").catch(() => undefined);
-  }, [fetchSnapshot, requestRefreshSlot]);
+    const targetSlot = await requestRefreshSlot().catch(() => "");
+    await awaitRefreshedSnapshot("auto", targetSlot);
+  }, [awaitRefreshedSnapshot, requestRefreshSlot]);
 
   useEffect(() => {
     void fetchSnapshot("initial").catch((err) => setError(err instanceof Error ? err.message : String(err)));
@@ -184,15 +195,28 @@ function App() {
       clearTimer();
       const delay = effectiveAutoRefreshDelay(view, popoverView, refreshInterval, popoverVisibleRef.current, shellRef.current, readerActiveUntilRef.current);
       if (!delay || cancelled) return;
-      refreshTimerRef.current = window.setTimeout(async () => {
+      const armedAt = Date.now();
+      const fire = async () => {
         refreshTimerRef.current = null;
         if (cancelled) return;
         if (!surfaceVisible(view, popoverVisibleRef.current)) return;
+        // Reader interaction can extend the wait after this timer was armed, so
+        // re-check the interaction refs lazily here instead of re-rendering the
+        // whole surface on every interaction just to reschedule.
+        const required = effectiveAutoRefreshDelay(view, popoverView, refreshInterval, popoverVisibleRef.current, shellRef.current, readerActiveUntilRef.current);
+        if (!required) return;
+        const readyAt = Math.max(armedAt, readerActiveUntilRef.current - READER_CONTEXT_TTL_MS) + required;
+        const remaining = readyAt - Date.now();
+        if (remaining > 0) {
+          refreshTimerRef.current = window.setTimeout(fire, remaining);
+          return;
+        }
         if (!fetchInFlightRef.current) {
           await refreshAutomatically();
         }
         if (!cancelled) schedule();
-      }, delay);
+      };
+      refreshTimerRef.current = window.setTimeout(fire, delay);
     };
     schedule();
     return () => {
@@ -263,7 +287,6 @@ function App() {
     if (view !== "popover") return;
     const target = shellRef.current;
     if (!target) return;
-    let observer: ResizeObserver | null = null;
     let resizeFrame = 0;
     let settledTimer = 0;
     let lastHeight = 0;
@@ -286,41 +309,31 @@ function App() {
       window.clearTimeout(settledTimer);
       settledTimer = window.setTimeout(requestResize, 120);
     };
-    const startResize = () => {
-      if (!surfaceVisible(view, popoverVisibleRef.current)) return;
-      if (!observer) {
-        observer = new ResizeObserver(requestResize);
-        observer.observe(target);
-      }
-      requestSettledResize();
-    };
-    const stopResize = () => {
-      observer?.disconnect();
-      observer = null;
-      if (resizeFrame) window.cancelAnimationFrame(resizeFrame);
-      resizeFrame = 0;
-      window.clearTimeout(settledTimer);
-      settledTimer = 0;
-    };
-    const onVisible = () => startResize();
-    const onHidden = () => stopResize();
+    const observer = new ResizeObserver(requestSettledResize);
+    observer.observe(target);
+    popoverResizeRequestRef.current = requestSettledResize;
+    const onVisible = () => requestSettledResize();
     const onDocumentVisibility = () => {
-      if (surfaceVisible(view, popoverVisibleRef.current)) startResize();
-      else stopResize();
+      if (surfaceVisible(view, popoverVisibleRef.current)) requestSettledResize();
     };
-    startResize();
+    requestSettledResize();
     window.addEventListener("agentLoadPopoverShown", onVisible);
-    window.addEventListener("agentLoadPopoverHidden", onHidden);
     document.addEventListener("visibilitychange", onDocumentVisibility);
     return () => {
-      stopResize();
+      popoverResizeRequestRef.current = null;
+      observer.disconnect();
+      if (resizeFrame) window.cancelAnimationFrame(resizeFrame);
+      window.clearTimeout(settledTimer);
       window.removeEventListener("agentLoadPopoverShown", onVisible);
-      window.removeEventListener("agentLoadPopoverHidden", onHidden);
       document.removeEventListener("visibilitychange", onDocumentVisibility);
     };
-  }, [error, logTab, popoverView, railTab, refreshInterval, selection, snapshot, trendRange, trendSelection, view]);
+  }, [view]);
+  // The shell box is viewport-sized, so the observer alone cannot see content
+  // growth; content-affecting state still triggers a cheap settled re-measure.
+  useEffect(() => {
+    popoverResizeRequestRef.current?.();
+  }, [error, popoverView, railTab, refreshInterval, selection, snapshot, trendRange, trendSelection]);
 
-  const selected = useMemo(() => resolveSelection(t, snapshot, selection, BRAND_NAME), [t, snapshot, selection]);
   const compact = view === "popover";
   const running = refreshing;
 
@@ -421,25 +434,46 @@ function PopoverSurface({
 }) {
   const [hoverDetail, setHoverDetailState] = useState<HoverDetailState | null>(null);
   const hideHoverDetailTimerRef = useRef<number | null>(null);
+  const hoverInspectorRef = useRef<HTMLElement | null>(null);
+  const hoverKindRef = useRef<HoverDetailPayload["kind"] | null>(null);
   const clearHoverDetailTimer = useCallback(() => {
     if (hideHoverDetailTimerRef.current !== null) {
       window.clearTimeout(hideHoverDetailTimerRef.current);
       hideHoverDetailTimerRef.current = null;
     }
   }, []);
+  // Position is written straight to the floating node so pointer moves never
+  // re-render the popover tree; only enter/leave update the payload state.
+  const positionHoverInspector = useCallback((x: number, y: number) => {
+    const node = hoverInspectorRef.current;
+    const kind = hoverKindRef.current;
+    if (!node || !kind) return;
+    const placement = hoverInspectorPlacement(kind, x, y);
+    node.style.left = `${placement.left}px`;
+    node.style.top = `${placement.top}px`;
+    node.style.setProperty("--hover-width", `${placement.width}px`);
+  }, []);
   const setHoverDetail = useCallback<HoverDetailSink>((detail, event) => {
     clearHoverDetailTimer();
     if (!detail) {
+      hoverKindRef.current = null;
       hideHoverDetailTimerRef.current = window.setTimeout(() => {
         setHoverDetailState((current) => current ? { ...current, visible: false } : null);
       }, 140);
       return;
     }
+    hoverKindRef.current = detail.kind;
+    setHoverDetailState({ detail, visible: true });
     const point = hoverPointFromEvent(event);
-    setHoverDetailState({ detail, x: point.x, y: point.y, visible: true });
-  }, [clearHoverDetailTimer]);
+    positionHoverInspector(point.x, point.y);
+  }, [clearHoverDetailTimer, positionHoverInspector]);
+  const onSurfacePointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!hoverKindRef.current) return;
+    positionHoverInspector(event.clientX, event.clientY);
+  }, [positionHoverInspector]);
   useEffect(() => {
     clearHoverDetailTimer();
+    hoverKindRef.current = null;
     setHoverDetailState(null);
   }, [clearHoverDetailTimer, popoverView, snapshot?.generated_at, snapshot?.refresh_slot_id]);
   useEffect(() => () => clearHoverDetailTimer(), [clearHoverDetailTimer]);
@@ -447,7 +481,7 @@ function PopoverSurface({
   if (!snapshot) return <EmptySurface t={t} compact error={error} />;
   return (
     <main className="popover-surface">
-      <div className="popover-current-surface">
+      <div className="popover-current-surface" onPointerMove={onSurfacePointerMove}>
         <div className="popover-current-scroll">
           <ErrorBanner t={t} error={error} compact />
           <div className="popover-view-shell">
@@ -505,7 +539,7 @@ function PopoverSurface({
             </section>
           </div>
         </div>
-        {popoverView === "online" ? <PopoverHoverInspector t={t} detail={hoverDetail} /> : null}
+        {popoverView === "online" ? <PopoverHoverInspector t={t} detail={hoverDetail} inspectorRef={hoverInspectorRef} /> : null}
       </div>
     </main>
   );
@@ -530,6 +564,18 @@ function PopoverFooter({
   const active = currentHasRecentMovement(snapshot?.current);
   const stateLabel = snapshot ? metricState(snapshot, t) : t("noData");
   const reviewCount = snapshotHumanReviewSessions(snapshot).length;
+  const onTablistKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const index = POPOVER_VIEWS.indexOf(popoverView);
+    let next: PopoverView | undefined;
+    if (event.key === "ArrowRight") next = POPOVER_VIEWS[(index + 1) % POPOVER_VIEWS.length];
+    else if (event.key === "ArrowLeft") next = POPOVER_VIEWS[(index - 1 + POPOVER_VIEWS.length) % POPOVER_VIEWS.length];
+    else if (event.key === "Home") next = POPOVER_VIEWS[0];
+    else if (event.key === "End") next = POPOVER_VIEWS[POPOVER_VIEWS.length - 1];
+    if (!next || next === popoverView) return;
+    event.preventDefault();
+    setPopoverView(next);
+    document.getElementById(`popover-view-${next}`)?.focus();
+  };
   return (
     <footer className={`popover-footer ${active ? "is-active" : ""}`}>
       <div className={`footer-meta ${active ? "is-active" : ""}`} role="status" title={stateLabel} aria-label={`${stateLabel} ${generated}`}>
@@ -541,8 +587,8 @@ function PopoverFooter({
         </button>
       </div>
       <div className="popover-footer-controls">
-        <div className="popover-view-switch" role="tablist" aria-label={t("view")}>
-          {(["online", "trend", "system", "diagnostics"] as PopoverView[]).map((view) => {
+        <div className="popover-view-switch" role="tablist" aria-label={t("view")} onKeyDown={onTablistKeyDown}>
+          {POPOVER_VIEWS.map((view) => {
             const showReviewBadge = view === "online" && reviewCount > 0;
             const reviewTitle = showReviewBadge ? formatCopy(t("attentionAgentsTooltip"), { count: reviewCount }) : undefined;
             return (
@@ -817,48 +863,6 @@ function DashboardInspectorStrip({
   );
 }
 
-function DashboardFrontTopline({
-  t,
-  snapshot,
-  refreshInterval,
-  cycleRefreshInterval,
-}: {
-  t: (key: string) => string;
-  snapshot: Snapshot;
-  refreshInterval: number;
-  cycleRefreshInterval: () => void;
-}) {
-  const stats = snapshot.transcript_stats ?? {};
-  return (
-    <div className="dash-front-topline">
-      <div className="dash-front-status">
-        <span className={`field-status ${statusTone(snapshot)}`}>{metricState(snapshot, t)}</span>
-        <span className="issue-stamp">{coordinationPostureLabel(snapshot, t)}</span>
-      </div>
-      <div className="dash-front-meta">
-        <div className="dash-front-meta-item stamp">
-          <span>{t("observed")}</span>
-          <strong>{snapshot.generated_at ? formatDateTime(snapshot.generated_at) : t("unavailable")}</strong>
-          <button className={`refresh-interval front-refresh-interval ${refreshInterval ? "" : "is-paused"}`} type="button" data-focus-key={focusKey("refresh-interval", "front")} onClick={cycleRefreshInterval} title={t("autoRefresh")} aria-label={t("autoRefresh")}>
-            <RefreshCw size={10} aria-hidden="true" />
-            <span>{formatRefreshInterval(refreshInterval, t)}</span>
-          </button>
-        </div>
-        <div className="dash-front-meta-item">
-          <span>{t("localSource")}</span>
-          <strong>{stats.cached ? t("cached") : t("fresh")}</strong>
-          <em>{transcriptScanNote(t, stats)}</em>
-        </div>
-        <div className="dash-front-meta-item">
-          <span>{t("projectCounts")}</span>
-          <strong>{dashboardProjectMeta(t, snapshot)}</strong>
-          <em>{dashboardProjectLead(t, snapshot)}</em>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function DashboardFieldGrid({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot }) {
   const current = snapshot.current ?? {};
   const summary = snapshot.summary ?? {};
@@ -943,33 +947,7 @@ function BandHead({ kicker, title, meta }: { kicker: string; title: string; meta
   );
 }
 
-function FieldIndex({ t, snapshot, compact = false }: { t: (key: string) => string; snapshot: Snapshot; compact?: boolean }) {
-  const current = snapshot.current ?? {};
-  const summary = snapshot.summary ?? {};
-  const scale = currentPeerScale(current);
-  const items = [
-    { key: "burst", label: t("metricFresh"), tip: t("tipActiveBurst"), value: currentRecentMovementCount(current), detail: t("active"), tone: "burst", pct: pctPart(currentRecentMovementCount(current), scale) },
-    { key: "sessions", label: t("metricSessions"), tip: t("tipSessions"), value: currentKnownSessionCount(current), detail: `${summary.active_sessions ?? 0} ${t("active")} · ${summary.idle_sessions ?? 0} ${t("idle")}`, tone: "session", pct: pctPart(currentKnownSessionCount(current), scale) },
-    { key: "pids", label: t("metricProcesses"), tip: t("tipPids"), value: currentProcessPressureCount(current), detail: `${summaryMappedProcessCount(summary)} ${t("mapped")} · ${summaryUnmappedProcessCount(summary)} ${t("unmatched")}`, tone: "pid", pct: pctPart(currentProcessPressureCount(current), scale) },
-  ];
-  return (
-    <section className={`field-index ${compact ? "compact" : ""}`}>
-      <BandHead kicker={t("runtimeField")} title={t("activityCounts")} meta={`${formatPct(summaryMappingCoveragePct(summary))} ${t("coverage")}`} />
-      <div className="field-grid">
-        {items.map((item) => (
-          <article className={`field-cell ${item.tone}`} key={item.key}>
-            <span><TermLabel label={item.label} tip={item.tip} /></span>
-            <strong>{item.value}</strong>
-            <em>{item.detail}</em>
-            <i aria-hidden="true"><b style={{ width: `${clampPct(item.pct, 4)}%` }} /></i>
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function PopoverAuditShell({
+const PopoverAuditShell = React.memo(function PopoverAuditShell({
   t,
   snapshot,
   selection,
@@ -998,10 +976,10 @@ function PopoverAuditShell({
       </section>
     </section>
   );
-}
+});
 
 function PopoverSystemPanel({ t, snapshot, selection, setSelection, active }: { t: (key: string) => string; snapshot: Snapshot; selection: Selection; setSelection: (value: Selection) => void; active: boolean }) {
-  const resources = useLiveSystemResources(snapshot.system_resources, active);
+  const { resources, history } = useLiveSystemResources(snapshot.system_resources, active);
   const processes = snapshot.live_processes ?? [];
   const processTotals = processResourceTotals(processes);
   const sampledAt = resources?.sampled_at ? formatDateTime(resources.sampled_at) : t("unavailable");
@@ -1014,173 +992,20 @@ function PopoverSystemPanel({ t, snapshot, selection, setSelection, active }: { 
         </div>
         <span>{t("liveSample")} · {sampledAt}</span>
       </div>
-      <SystemResourceDeck t={t} resources={resources} processCount={processes.length} processCPU={processTotals.cpu} processMemory={processTotals.memory} />
+      <SystemResourceDeck
+        t={t}
+        resources={resources}
+        history={history}
+        processCount={processes.length}
+        processCPU={processTotals.cpu}
+        processMemory={processTotals.memory}
+        mappedProcesses={summaryMappedProcessCount(snapshot.summary)}
+        unmappedProcesses={summaryUnmappedProcessCount(snapshot.summary)}
+      />
       <ProcessSummaryStrip t={t} snapshot={snapshot} />
       <PopoverProcessPanel t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} />
     </section>
   );
-}
-
-function useLiveSystemResources(initial: SystemResourceSnapshot | undefined, active: boolean): SystemResourceSnapshot | undefined {
-  const [resources, setResources] = useState<SystemResourceSnapshot | undefined>(initial);
-  useEffect(() => {
-    setResources(initial);
-  }, [initial?.sampled_at]);
-  useEffect(() => {
-    if (!active) return;
-    let cancelled = false;
-    let timer = 0;
-    const poll = async () => {
-      try {
-        const response = await fetch("/api/system-resources", { cache: "no-store" });
-        if (response.ok) {
-          const next = (await response.json()) as SystemResourceSnapshot;
-          if (!cancelled) setResources(next);
-        }
-      } catch {
-        // Keep the last good sample; the snapshot refresh path will surface broader failures.
-      } finally {
-        if (!cancelled) timer = window.setTimeout(poll, 2000);
-      }
-    };
-    void poll();
-    return () => {
-      cancelled = true;
-      if (timer) window.clearTimeout(timer);
-    };
-  }, [active]);
-  return resources;
-}
-
-function SystemResourceDeck({
-  t,
-  resources,
-  processCount,
-  processCPU,
-  processMemory,
-}: {
-  t: (key: string) => string;
-  resources?: SystemResourceSnapshot;
-  processCount: number;
-  processCPU: number;
-  processMemory: number;
-}) {
-  const cpu = resources?.cpu_percent ?? 0;
-  const memoryPct = resources?.memory_used_pct ?? 0;
-  const diskPct = resources?.disk_used_pct ?? 0;
-  const rxRate = resources?.network_rx_bytes_per_sec ?? 0;
-  const txRate = resources?.network_tx_bytes_per_sec ?? 0;
-  const rxPacketRate = resources?.network_rx_packets_per_sec ?? 0;
-  const txPacketRate = resources?.network_tx_packets_per_sec ?? 0;
-  const packetIssuePct = resources?.network_packet_issue_pct ?? 0;
-  const packetIssueRate = (resources?.network_error_packets_per_sec ?? 0) + (resources?.network_dropped_packets_per_sec ?? 0);
-  const networkScale = Math.max(1, rxRate, txRate);
-  const networkIntensity = clampPct(((rxRate + txRate) / 2_000_000) * 100, 4);
-  const memoryMeta = `${formatMemory(resources?.memory_used_bytes, t)} / ${formatMemory(resources?.memory_total_bytes, t)} · ${t("available")} ${formatMemory(resources?.memory_free_bytes, t)}`;
-  const diskMeta = `${formatMemory(resources?.disk_used_bytes, t)} / ${formatMemory(resources?.disk_total_bytes, t)} · ${t("available")} ${formatMemory(resources?.disk_free_bytes, t)}`;
-  const processMeta = `${processCount} ${t("processes")} · ${t("processCPU")} ${formatCompactCPU(processCPU)} · ${t("processMemory")} ${formatMemory(processMemory, t)}`;
-  return (
-    <section className="system-resource-deck" aria-label={t("systemResources")}>
-      <article className="system-resource-card cpu" style={systemMetricStyle(cpu)}>
-        <div className="system-resource-card-head">
-          <span><Cpu size={15} /><TermLabel label={t("systemCpu")} tip={t("tipSystemCpu")} /></span>
-          <strong>{formatCompactCPU(cpu)}</strong>
-        </div>
-        <div className="cpu-orbit" aria-hidden="true"><i /></div>
-        <div className="system-chip-row">
-          <span><b>{t("loadAvg")}</b><em>{formatLoadAverage(resources?.load_average_1)} / {formatLoadAverage(resources?.load_average_5)}</em></span>
-          <span><b>{t("uptime")}</b><em>{formatAge(resources?.uptime_seconds, t)}</em></span>
-        </div>
-      </article>
-      <SystemCapacityCard
-        tone="memory"
-        icon={<MemoryStick size={15} />}
-        label={t("systemMemory")}
-        tip={t("tipSystemMemory")}
-        value={formatPct(memoryPct)}
-        meta={memoryMeta}
-        pct={memoryPct}
-      />
-      <article className="system-resource-card network" aria-label={t("networkFlow")} style={systemMetricStyle(networkIntensity)}>
-        <div className="system-resource-card-head">
-          <span><Network size={15} /><TermLabel label={t("networkFlow")} tip={t("tipNetworkFlow")} /></span>
-          <strong className="network-throughput">
-            <span><b>{t("inbound")}</b>{formatBytesPerSecond(rxRate, t)}</span>
-            <span><b>{t("outbound")}</b>{formatBytesPerSecond(txRate, t)}</span>
-          </strong>
-        </div>
-        <div className="network-wave">
-          <i style={{ height: `${clampPct((rxRate / networkScale) * 100, 4)}%` }} />
-          <i style={{ height: `${clampPct((txRate / networkScale) * 100, 4)}%` }} />
-          <i style={{ height: `${clampPct(((rxRate + txRate) / 2 / networkScale) * 100, 4)}%` }} />
-          <i style={{ height: `${clampPct((txRate / networkScale) * 100, 4)}%` }} />
-          <i style={{ height: `${clampPct((rxRate / networkScale) * 100, 4)}%` }} />
-        </div>
-        <em className="network-health-grid">
-          <span><b>{t("packetRate")}</b><strong>{formatPacketRate(rxPacketRate + txPacketRate, t)}</strong></span>
-          <span><b>{t("packetIssue")}</b><strong>{formatPrecisePct(packetIssuePct)}</strong></span>
-          <span><b>{t("packetIssueRate")}</b><strong>{formatPacketRate(packetIssueRate, t)}</strong></span>
-          <span><b>{t("interfaces")}</b><strong>{resources?.network_interface_count ?? 0}</strong></span>
-        </em>
-      </article>
-      <SystemCapacityCard
-        tone="disk"
-        icon={<HardDrive size={15} />}
-        label={t("systemDisk")}
-        tip={t("tipSystemDisk")}
-        value={formatPct(diskPct)}
-        meta={diskMeta}
-        pct={diskPct}
-      />
-      <SystemCapacityCard
-        tone="agent"
-        icon={<Server size={15} />}
-        label={t("agentProcessLoad")}
-        tip={t("tipAgentProcessLoad")}
-        value={String(processCount)}
-        meta={processMeta}
-        pct={Math.min(100, processCPU)}
-      />
-      {resources?.supported === false ? <p className="system-resource-note">{(resources.notes ?? []).join(" · ") || t("unsupported")}</p> : null}
-    </section>
-  );
-}
-
-function SystemCapacityCard({ tone, icon, label, tip, value, meta, pct }: { tone: string; icon: React.ReactNode; label: string; tip: string; value: string; meta: string; pct: number }) {
-  return (
-    <article className={`system-resource-card ${tone}`} style={systemMetricStyle(pct)}>
-      <div className="system-resource-card-head">
-        <span>{icon}<TermLabel label={label} tip={tip} /></span>
-        <strong>{value}</strong>
-      </div>
-      <div className="system-meter" aria-hidden="true"><i style={{ width: `${clampPct(pct, 2)}%` }} /></div>
-      <em>{meta}</em>
-    </article>
-  );
-}
-
-function systemMetricStyle(value?: number): React.CSSProperties {
-  const pct = clampPct(value ?? 0, 0);
-  const palette = pct >= 90
-    ? { color: "#c85f73", strong: "#b6435b", soft: "rgba(200, 95, 115, .105)", line: "rgba(200, 95, 115, .22)" }
-    : pct >= 75
-      ? { color: "#6f73df", strong: "#535cc8", soft: "rgba(111, 115, 223, .105)", line: "rgba(111, 115, 223, .22)" }
-      : pct >= 55
-        ? { color: "#1f9f8a", strong: "#147e72", soft: "rgba(31, 159, 138, .10)", line: "rgba(31, 159, 138, .20)" }
-        : { color: "#5577d8", strong: "#315ec7", soft: "rgba(85, 119, 216, .105)", line: "rgba(85, 119, 216, .20)" };
-  return {
-    "--system-pct": `${pct}%`,
-    "--metric-color": palette.color,
-    "--metric-strong": palette.strong,
-    "--metric-soft": palette.soft,
-    "--metric-line": palette.line,
-    "--metric-track": `color-mix(in srgb, ${palette.color} 11%, transparent)`,
-  } as React.CSSProperties;
-}
-
-function formatLoadAverage(value?: number): string {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return "0.00";
-  return value.toFixed(2);
 }
 
 function PopoverProcessPanel({ t, snapshot, selection, setSelection }: { t: (key: string) => string; snapshot: Snapshot; selection: Selection; setSelection: (value: Selection) => void }) {
@@ -1246,11 +1071,10 @@ function PopoverProcessPanel({ t, snapshot, selection, setSelection }: { t: (key
   );
 }
 
-function PopoverHoverInspector({ t, detail }: { t: (key: string) => string; detail: HoverDetailState | null }) {
+function PopoverHoverInspector({ t, detail, inspectorRef }: { t: (key: string) => string; detail: HoverDetailState | null; inspectorRef: React.RefObject<HTMLElement | null> }) {
   const payload = detail?.detail ?? null;
-  const style = detail ? hoverInspectorStyle(detail) : undefined;
   return (
-    <aside className={`popover-hover-inspector ${payload ? `${detail?.visible ? "is-visible" : ""} ${payload.kind}` : ""}`} style={style} aria-hidden={payload ? "false" : "true"} aria-live="polite">
+    <aside ref={inspectorRef as React.RefObject<HTMLElement>} className={`popover-hover-inspector ${payload ? `${detail?.visible ? "is-visible" : ""} ${payload.kind}` : ""}`} aria-hidden={payload ? "false" : "true"} aria-live="polite">
       {payload ? (
         <>
           <span className="hover-inspector-mark" aria-hidden="true">
@@ -1287,27 +1111,23 @@ function hoverPointFromEvent(event?: HoverDetailEvent): { x: number; y: number }
   return { x: 24, y: 24 };
 }
 
-function hoverInspectorStyle(state: HoverDetailState): React.CSSProperties {
+function hoverInspectorPlacement(kind: HoverDetailPayload["kind"], x: number, y: number): { left: number; top: number; width: number } {
   const viewportWidth = typeof window === "undefined" ? 420 : window.innerWidth;
   const viewportHeight = typeof window === "undefined" ? 560 : window.innerHeight;
   const edge = 10;
-  const width = state.detail.kind === "session"
+  const width = kind === "session"
     ? Math.min(292, Math.max(218, viewportWidth - 192))
     : Math.min(268, Math.max(204, viewportWidth - 212));
-  const height = state.detail.kind === "session" && width < 250 ? 136 : state.detail.kind === "session" ? 112 : 96;
+  const height = kind === "session" && width < 250 ? 136 : kind === "session" ? 112 : 96;
   const gap = 9;
-  const verticalNudge = state.detail.kind === "session" ? 14 : 12;
-  let left = state.x + gap;
-  let top = state.y - verticalNudge;
-  if (left + width > viewportWidth - edge) left = state.x - width - gap;
+  const verticalNudge = kind === "session" ? 14 : 12;
+  let left = x + gap;
+  let top = y - verticalNudge;
+  if (left + width > viewportWidth - edge) left = x - width - gap;
   if (top + height > viewportHeight - edge) top = viewportHeight - height - edge;
   left = Math.max(edge, Math.min(left, Math.max(edge, viewportWidth - width - edge)));
   top = Math.max(edge, Math.min(top, Math.max(edge, viewportHeight - height - edge)));
-  return {
-    left,
-    top,
-    "--hover-width": `${width}px`,
-  } as React.CSSProperties;
+  return { left, top, width };
 }
 
 function PopoverRuntimeInstrument({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot }) {
@@ -1484,7 +1304,7 @@ function EvidenceHealth({ t, snapshot }: { t: (key: string) => string; snapshot:
   );
 }
 
-function ProjectAtlas({
+const ProjectAtlas = React.memo(function ProjectAtlas({
   t,
   snapshot,
   selection,
@@ -1536,8 +1356,8 @@ function ProjectAtlas({
               setSelection={setSelection}
               compact={compact}
               expanded={openProjects.has(projectId)}
-              onToggle={() => toggleProject(projectId)}
-              onOpen={() => openProject(projectId)}
+              onToggle={toggleProject}
+              onOpen={openProject}
               rank={index + 1}
               setHoverDetail={setHoverDetail}
             />
@@ -1557,7 +1377,7 @@ function ProjectAtlas({
       </div>
     </section>
   );
-}
+});
 
 function DashboardSideRails({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot }) {
   return (
@@ -1769,7 +1589,7 @@ function CandidateWorkitemsRail({ t, snapshot, limit = 5 }: { t: (key: string) =
   );
 }
 
-function ProcessLedger({ t, snapshot, selection, setSelection }: { t: (key: string) => string; snapshot: Snapshot; selection: Selection; setSelection: (value: Selection) => void }) {
+const ProcessLedger = React.memo(function ProcessLedger({ t, snapshot, selection, setSelection }: { t: (key: string) => string; snapshot: Snapshot; selection: Selection; setSelection: (value: Selection) => void }) {
   const [showOverflow, setShowOverflow] = useState(false);
   const [filter, setFilter] = useState<ProcessFilter>({ kind: "all", id: "all" });
   const rows = useMemo(() => [...(snapshot.live_processes ?? [])].sort((a, b) => {
@@ -1815,9 +1635,9 @@ function ProcessLedger({ t, snapshot, selection, setSelection }: { t: (key: stri
       </div>
     </div>
   );
-}
+});
 
-function ProcessLedgerRow({ t, process, selection, setSelection }: { t: (key: string) => string; process: LiveProcess; selection: Selection; setSelection: (value: Selection) => void }) {
+const ProcessLedgerRow = React.memo(function ProcessLedgerRow({ t, process, selection, setSelection }: { t: (key: string) => string; process: LiveProcess; selection: Selection; setSelection: (value: Selection) => void }) {
   const processID = String(process.pid ?? "");
   const sessions = process.session_ids ?? [];
   const evidence = process.mapped_session_evidence ?? [];
@@ -1880,7 +1700,7 @@ function ProcessLedgerRow({ t, process, selection, setSelection }: { t: (key: st
       {expanded ? <ProcessDiagnosticDetails t={t} process={process} setSelection={setSelection} /> : null}
     </div>
   );
-}
+});
 
 function ProcessDiagnosticDetails({ t, process, setSelection }: { t: (key: string) => string; process: LiveProcess; setSelection: (value: Selection) => void }) {
   const processID = String(process.pid ?? "");
@@ -2048,31 +1868,6 @@ function processResourceText(t: (key: string) => string, cpu?: number, memory?: 
   return `${formatCPU(cpu)} ${t("cpu")} · ${formatMemory(memory, t)}`;
 }
 
-function formatBytesPerSecond(bytes?: number, t?: (key: string) => string): string {
-  if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes <= 0) return `0 B/s`;
-  return `${formatMemory(bytes, t ?? ((key: string) => key))}/s`;
-}
-
-function formatPacketRate(value?: number, t?: (key: string) => string): string {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return `0 ${t?.("packetsShort") ?? "pkt"}/s`;
-  const suffix = `${t?.("packetsShort") ?? "pkt"}/s`;
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M ${suffix}`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(value >= 10_000 ? 0 : 1)}K ${suffix}`;
-  return `${value.toFixed(value >= 100 ? 0 : value >= 10 ? 1 : 2)} ${suffix}`;
-}
-
-function formatPrecisePct(value?: number): string {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return "0.00%";
-  if (value < 0.01) return "<0.01%";
-  return `${value.toFixed(2)}%`;
-}
-
-function formatCompactCPU(value?: number): string {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return "0.00%";
-  if (value < 0.01) return "<.01%";
-  return `${value.toFixed(2)}%`;
-}
-
 function formatCompactMemory(bytes?: number): string {
   if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes <= 0) return "n/a";
   const units = ["B", "K", "M", "G", "T"];
@@ -2153,59 +1948,6 @@ function ToolMix({ t, snapshot }: { t: (key: string) => string; snapshot: Snapsh
         </span>
       )) : <span className="muted-inline">{t("unavailable")}</span>}
     </div>
-  );
-}
-
-function LedgerNavigation({
-  t,
-  activeTab,
-  setActiveTab,
-  query,
-  setQuery,
-  items,
-  selection,
-  setSelection,
-}: {
-  t: (key: string) => string;
-  activeTab: RailTab;
-  setActiveTab: (tab: RailTab) => void;
-  query: string;
-  setQuery: (value: string) => void;
-  items: RailItem[];
-  selection: Selection;
-  setSelection: (value: Selection) => void;
-}) {
-  return (
-    <section className="ledger-nav">
-      <div className="ledger-nav-head">
-        <div className="rail-tabs" role="tablist">
-          {(["projects", "sessions", "processes"] as RailTab[]).map((tab) => (
-            <button key={tab} className={`rail-tab ${activeTab === tab ? "is-active" : ""}`} type="button" role="tab" data-focus-key={focusKey("ledger-nav-tab", tab)} onClick={() => setActiveTab(tab)}>
-              {tab === "projects" ? <GitBranch size={14} /> : tab === "sessions" ? <Bot size={14} /> : <Server size={14} />}
-              {t(tab)}
-            </button>
-          ))}
-        </div>
-        <div className="rail-search">
-          <Search size={15} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("search")} autoComplete="off" spellCheck={false} />
-        </div>
-      </div>
-      <div className="ledger-nav-list">
-        {items.slice(0, 8).map((item) => (
-          <button
-            className={`ledger-chip ${selection.id === item.id && selection.type === item.type ? "is-selected" : ""}`}
-            type="button"
-            key={`${item.type}-${item.id}`}
-            data-focus-key={focusKey("ledger-nav-item", item.type, item.id)}
-            onClick={() => setSelection({ type: item.type, id: item.id } as Selection)}
-          >
-            <span>{item.title}</span>
-            <em>{item.value}</em>
-          </button>
-        ))}
-      </div>
-    </section>
   );
 }
 
@@ -2310,292 +2052,6 @@ function Topbar({
   );
 }
 
-function Rail({
-  t,
-  activeTab,
-  setActiveTab,
-  query,
-  setQuery,
-  items,
-  selection,
-  setSelection,
-  compact,
-}: {
-  t: (key: string) => string;
-  activeTab: RailTab;
-  setActiveTab: (tab: RailTab) => void;
-  query: string;
-  setQuery: (value: string) => void;
-  items: RailItem[];
-  selection: Selection;
-  setSelection: (value: Selection) => void;
-  compact: boolean;
-}) {
-  const tabs: Array<{ id: RailTab; icon: React.ReactNode }> = [
-    { id: "projects", icon: <GitBranch size={14} /> },
-    { id: "sessions", icon: <Bot size={14} /> },
-    { id: "processes", icon: <Server size={14} /> },
-  ];
-  return (
-    <aside className="rail">
-      <div className="rail-tabs" role="tablist">
-        {tabs.map((tab) => (
-          <button key={tab.id} className={`rail-tab ${activeTab === tab.id ? "is-active" : ""}`} type="button" role="tab" data-focus-key={focusKey("rail-tab", tab.id)} onClick={() => setActiveTab(tab.id)}>
-            {tab.icon}
-            {t(tab.id)}
-          </button>
-        ))}
-      </div>
-      <div className="rail-panel">
-        <div className="rail-search">
-          <Search size={15} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("search")} autoComplete="off" spellCheck={false} />
-        </div>
-        <div className="rail-list" role="listbox" aria-label={t(activeTab)}>
-          <button className={`act ${selection.type === "overview" ? "is-selected" : ""}`} data-kind="scan" type="button" data-focus-key={focusKey("rail-item", "overview")} onClick={() => setSelection({ type: "overview", id: "overview" })}>
-            <div className="act-top">
-              <span className="act-title">{t("overview")}</span>
-              <span className="act-state" />
-            </div>
-            <div className="act-desc">{t("emptySub")}</div>
-            <code className="act-cmd">/api/snapshot</code>
-          </button>
-          <div className="rail-group-title">
-            {t(activeTab)}
-            <span className="count">{items.length}</span>
-          </div>
-          {items.map((item) => (
-            <button
-              className={`act ${selection.id === item.id && selection.type === item.type ? "is-selected" : ""} ${ACTIVE.has(item.status) ? "is-running" : item.status === "done" ? "is-done" : item.status === "failed" ? "is-failed" : ""}`}
-              data-kind={item.kind}
-              data-focus-key={focusKey("rail-item", item.type, item.id)}
-              key={`${item.type}-${item.id}`}
-              type="button"
-              onClick={() => setSelection({ type: item.type, id: item.id } as Selection)}
-            >
-              <div className="act-top">
-                <span className="act-title">{item.title}</span>
-                <span className="act-state" />
-              </div>
-              <div className="act-desc">{item.description}</div>
-              <code className="act-cmd">{item.command}</code>
-              {!compact ? (
-                <div className="act-tags">
-                  {item.tags.map((tag) => <span className="tag" key={tag}>{tag}</span>)}
-                  <span className="tag tag-real">{item.value}</span>
-                </div>
-              ) : null}
-            </button>
-          ))}
-        </div>
-      </div>
-    </aside>
-  );
-}
-
-function Pane({
-  t,
-  snapshot,
-  selected,
-  selection,
-  setSelection,
-  logTab,
-  setLogTab,
-  refreshSnapshot,
-  compact,
-}: {
-  t: (key: string) => string;
-  snapshot: Snapshot | null;
-  selected: SelectedView;
-  selection: Selection;
-  setSelection: (value: Selection) => void;
-  logTab: LogTab;
-  setLogTab: (value: LogTab) => void;
-  refreshSnapshot: () => void;
-  compact: boolean;
-}) {
-  if (!snapshot) {
-    return (
-      <main className="pane">
-        <section className="empty-pane">
-          <div className="empty-glyph"><Terminal size={34} /></div>
-          <p className="empty-title">{t("noData")}</p>
-          <p className="empty-sub">{t("emptySub")}</p>
-        </section>
-      </main>
-    );
-  }
-  return (
-    <main className="pane">
-      <section className="result">
-        <div className="run-head">
-          <div className="run-head-main">
-            <span className={`badge badge-${selected.status}`}>{selected.status}</span>
-            <h1>{selected.title}</h1>
-          </div>
-          <div className="run-head-meta">
-            <code className="cmd">{selected.command}</code>
-            <button className="ghost-btn" type="button" data-focus-key={focusKey("detail-refresh")} onClick={refreshSnapshot}>{t("refresh")}</button>
-            {!compact ? <button className="ghost-btn" type="button" data-focus-key={focusKey("detail-overview")} onClick={() => setSelection({ type: "overview", id: "overview" })}>{t("overview")}</button> : null}
-          </div>
-        </div>
-        <Timeline t={t} snapshot={snapshot} selected={selected} />
-        <Metrics t={t} snapshot={snapshot} selected={selected} compact={compact} />
-        <ProjectWorkspace t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} compact={compact} />
-        <div className="logwrap">
-          <div className="logtabs">
-            {(["summary", "evidence", "trend"] as LogTab[]).map((tab) => (
-              <button className={`logtab ${logTab === tab ? "is-active" : ""}`} type="button" key={tab} data-focus-key={focusKey("log-tab", tab)} onClick={() => setLogTab(tab)}>
-                {t(tab)}
-              </button>
-            ))}
-            <div className="logtabs-spacer" />
-            {selection.type === "overview" ? <span className="find-count">{snapshot.generated_at ? formatDateTime(snapshot.generated_at) : ""}</span> : null}
-          </div>
-          <div className="logbody">
-            <pre className="log">{renderLogText(t, snapshot, selected, logTab)}</pre>
-          </div>
-        </div>
-      </section>
-    </main>
-  );
-}
-
-function Timeline({ t, snapshot, selected }: { t: (key: string) => string; snapshot: Snapshot; selected: SelectedView }) {
-  const stats = snapshot.transcript_stats;
-  const hasScan = (stats?.scanned_files ?? 0) > 0;
-  const mapped = (snapshot.summary?.mapping_coverage_pct ?? 0) > 0;
-  const hasHistory = (snapshot.history?.retained_sample_count ?? 0) > 0;
-  return (
-    <div className="timeline">
-      <Step label={t("scan")} state={hasScan ? "done" : "active"} />
-      <div className="tl-line" />
-      <Step label={t("mapping")} state={mapped ? "done" : selected.status === "failed" ? "failed" : "active"} />
-      <div className="tl-line" />
-      <Step label={t("history")} state={hasHistory ? "done" : "empty"} />
-      <div className="tl-spacer" />
-      <div className="tl-time">{snapshot.generated_at ? formatDateTime(snapshot.generated_at) : "0ms"}</div>
-    </div>
-  );
-}
-
-function Step({ label, state }: { label: string; state: "done" | "active" | "failed" | "empty" }) {
-  return (
-    <div className={`tl-step ${state === "empty" ? "" : `is-${state}`}`}>
-      <span className="tl-dot" />
-      <span className="tl-label">{label}</span>
-    </div>
-  );
-}
-
-function Metrics({ t, snapshot, selected, compact }: { t: (key: string) => string; snapshot: Snapshot; selected: SelectedView; compact: boolean }) {
-  const current = snapshot.current ?? {};
-  const summary = snapshot.summary ?? {};
-  const items = selectionMetrics(t, snapshot, selected);
-  const base = [
-    { key: t("metricFresh"), value: currentRecentMovementCount(current), cls: "is-accent", icon: <Activity size={15} />, tip: t("tipActiveBurst") },
-    { key: t("metricSessions"), value: currentKnownSessionCount(current), cls: "", icon: <Bot size={15} />, tip: t("tipSessions") },
-    { key: t("metricProcesses"), value: currentProcessPressureCount(current), cls: "", icon: <Server size={15} />, tip: t("tipPids") },
-    { key: t("metricMatched"), value: formatPct(summaryMappingCoveragePct(summary)), cls: "is-ok", icon: <Gauge size={15} />, tip: t("tipMappingHealth") },
-  ];
-  return (
-    <div className="metrics">
-      {(compact ? items.concat(base).slice(0, 4) : items.concat(base).slice(0, 8)).map((metric) => (
-        <div className={`metric ${metric.cls}`} key={metric.key}>
-          <b>{metric.icon}{metric.tip ? <TermLabel label={String(metric.key)} tip={metric.tip} /> : <span>{metric.key}</span>}</b>
-          <span>{metric.value}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function ProjectWorkspace({
-  t,
-  snapshot,
-  selection,
-  setSelection,
-  compact,
-}: {
-  t: (key: string) => string;
-  snapshot: Snapshot;
-  selection: Selection;
-  setSelection: (value: Selection) => void;
-  compact: boolean;
-}) {
-  const projects = useMemo(() => orderedProjects(snapshot), [snapshot]);
-  const selectedProject = selection.type === "project" ? projects.find((project) => safeID(project.project) === selection.id) : undefined;
-  const selectedSession = selection.type === "session" ? (snapshot.live_sessions ?? []).find((session) => safeID(session.session_id) === selection.id) : undefined;
-  const selectedProcess = selection.type === "process" ? (snapshot.live_processes ?? []).find((process) => String(process.pid ?? "") === selection.id) : undefined;
-  const { openProjects, openProject, toggleProject } = useProjectDisclosure(projects, compact ? 0 : 2);
-  const selectedProjectId = selectedProject ? safeID(selectedProject.project) : "";
-  const lastSelectedProjectRef = useRef("");
-
-  useEffect(() => {
-    if (selectedProjectId && lastSelectedProjectRef.current !== selectedProjectId) {
-      openProject(selectedProjectId);
-    }
-    lastSelectedProjectRef.current = selectedProjectId;
-  }, [openProject, selectedProjectId]);
-
-  if (selection.type === "session" && selectedSession) {
-    return <SessionEvidencePanel t={t} session={selectedSession} />;
-  }
-  if (selection.type === "process" && selectedProcess) {
-    return <ProcessEvidencePanel t={t} process={selectedProcess} />;
-  }
-  if (selectedProject) {
-    const isExpanded = openProjects.has(selectedProjectId);
-    return (
-      <div className="workspace">
-        <ScanBoundary t={t} snapshot={snapshot} compact={compact} />
-        <ProjectTreeRow
-          t={t}
-          snapshot={snapshot}
-          project={selectedProject}
-          selection={selection}
-          setSelection={setSelection}
-          compact={compact}
-          expanded={isExpanded}
-          onToggle={() => toggleProject(selectedProjectId)}
-          onOpen={() => openProject(selectedProjectId)}
-          rank={1}
-        />
-      </div>
-    );
-  }
-  return (
-    <div className="workspace">
-      <ScanBoundary t={t} snapshot={snapshot} compact={compact} />
-      <div className="project-tree-list">
-        {projects.length ? projects.map((project, index) => {
-          const projectId = safeID(project.project);
-          return (
-            <ProjectTreeRow
-              key={projectId}
-              t={t}
-              snapshot={snapshot}
-              project={project}
-              selection={selection}
-              setSelection={setSelection}
-              compact={compact}
-              expanded={openProjects.has(projectId)}
-              onToggle={() => toggleProject(projectId)}
-              onOpen={() => openProject(projectId)}
-              rank={index + 1}
-            />
-          );
-        }) : (
-          <section className="empty-inline">
-            <Layers size={18} />
-            <span>{t("noData")}</span>
-          </section>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function ScanBoundary({ t, snapshot, compact }: { t: (key: string) => string; snapshot: Snapshot; compact: boolean }) {
   const stats = snapshot.transcript_stats ?? {};
   const pieces = [
@@ -2624,7 +2080,7 @@ function ScanBoundary({ t, snapshot, compact }: { t: (key: string) => string; sn
   );
 }
 
-function ProjectTreeRow({
+const ProjectTreeRow = React.memo(function ProjectTreeRow({
   t,
   snapshot,
   project,
@@ -2644,12 +2100,12 @@ function ProjectTreeRow({
   setSelection: (value: Selection) => void;
   compact: boolean;
   expanded: boolean;
-  onToggle?: () => void;
-  onOpen?: () => void;
+  onToggle?: (id: string) => void;
+  onOpen?: (id: string) => void;
   rank?: number;
   setHoverDetail?: HoverDetailSink;
 }) {
-  const sessions = sessionsForProject(snapshot, project);
+  const sessions = useMemo(() => sessionsForProject(snapshot, project), [snapshot, project]);
   const counts = projectRoleCounts(project, sessions);
   const processPressure = projectProcessPressureCount(project);
   const projectResources = projectProcessResources(snapshot, sessions);
@@ -2675,12 +2131,12 @@ function ProjectTreeRow({
   ].filter(Boolean).join(" ");
   const selectProject = () => {
     if (selected) {
-      onToggle?.();
+      onToggle?.(projectId);
       return;
     }
     setSelection({ type: "project", id: projectId });
     if (!expanded) {
-      onOpen?.();
+      onOpen?.(projectId);
     }
   };
   const disclosureLabel = expanded ? t("collapseDetails") : t("expandDetails");
@@ -2692,9 +2148,9 @@ function ProjectTreeRow({
   };
   return (
     <article className={rowClassName}>
-      <div className="project-tree-head" onPointerEnter={showProjectHover} onPointerMove={showProjectHover} onPointerLeave={clearProjectHover} onFocus={showProjectHover} onBlur={clearProjectFocusHover}>
+      <div className="project-tree-head" onPointerEnter={showProjectHover} onPointerLeave={clearProjectHover} onFocus={showProjectHover} onBlur={clearProjectFocusHover}>
         <span className="project-rank">{rank ?? "-"}</span>
-        <button className="project-disclosure" type="button" onClick={onToggle} aria-expanded={expanded} aria-label={disclosureLabel}>
+        <button className="project-disclosure" type="button" onClick={() => onToggle?.(projectId)} aria-expanded={expanded} aria-label={disclosureLabel}>
           <ChevronDown size={15} aria-hidden="true" />
         </button>
         <button className="project-select" type="button" data-focus-key={focusKey("project", projectId)} onClick={selectProject} aria-current={selected ? "true" : undefined} aria-expanded={expanded} aria-label={title}>
@@ -2721,7 +2177,7 @@ function ProjectTreeRow({
       {setHoverDetail ? null : <RowHoverDetail title={title} detail={projectHoverDetail} meta={projectHoverMeta} />}
     </article>
   );
-}
+});
 
 function ProjectCompactMetrics({ t, counts, processCount, cpu, memory }: { t: (key: string) => string; counts: RoleCounts; processCount: number; cpu: number; memory: number }) {
   const activeMainTitle = projectMetricCellTitle(t, "active", "main", counts.activeMain);
@@ -2819,7 +2275,7 @@ function ToolStrip({ t, tools }: { t: (key: string) => string; tools: ProjectToo
   );
 }
 
-function SessionTree({
+const SessionTree = React.memo(function SessionTree({
   t,
   sessions,
   selection,
@@ -2834,7 +2290,7 @@ function SessionTree({
   compact: boolean;
   setHoverDetail?: HoverDetailSink;
 }) {
-  const groups = buildToolSessionGroups(sessions);
+  const groups = useMemo(() => buildToolSessionGroups(sessions), [sessions]);
   const groupLimit = compact ? 2 : 4;
   const linkedLimit = compact ? 2 : 3;
   const childLimit = compact ? 3 : 3;
@@ -2908,9 +2364,9 @@ function SessionTree({
       ) : null}
     </div>
   );
-}
+});
 
-function SessionLine({
+const SessionLine = React.memo(function SessionLine({
   t,
   session,
   selection,
@@ -2968,7 +2424,7 @@ function SessionLine({
     : evidenceItems;
   if (compact) {
     return (
-      <div className={`session-line role-${role} ${hasRecentMovement ? "is-active" : ""} ${needsReview ? "needs-review" : ""} ${selected ? "is-selected" : ""} ${child ? "is-child" : ""}`} onPointerEnter={showSessionHover} onPointerMove={showSessionHover} onPointerLeave={clearSessionHover} onFocus={showSessionHover} onBlur={clearSessionFocusHover}>
+      <div className={`session-line role-${role} ${hasRecentMovement ? "is-active" : ""} ${needsReview ? "needs-review" : ""} ${selected ? "is-selected" : ""} ${child ? "is-child" : ""}`} onPointerEnter={showSessionHover} onPointerLeave={clearSessionHover} onFocus={showSessionHover} onBlur={clearSessionFocusHover}>
         <span className="session-role-slot">
           <RoleGlyph t={t} role={role} />
         </span>
@@ -3000,7 +2456,7 @@ function SessionLine({
     );
   }
   return (
-    <div className={`session-line role-${role} ${hasRecentMovement ? "is-active" : ""} ${needsReview ? "needs-review" : ""} ${selected ? "is-selected" : ""} ${child ? "is-child" : ""}`} onPointerEnter={showSessionHover} onPointerMove={showSessionHover} onPointerLeave={clearSessionHover} onFocus={showSessionHover} onBlur={clearSessionFocusHover}>
+    <div className={`session-line role-${role} ${hasRecentMovement ? "is-active" : ""} ${needsReview ? "needs-review" : ""} ${selected ? "is-selected" : ""} ${child ? "is-child" : ""}`} onPointerEnter={showSessionHover} onPointerLeave={clearSessionHover} onFocus={showSessionHover} onBlur={clearSessionFocusHover}>
       <span className="session-main">
         <RoleGlyph t={t} role={role} />
         <span className="session-title">
@@ -3025,7 +2481,7 @@ function SessionLine({
       {setHoverDetail ? null : <SessionHoverDetail t={t} title={sessionHoverTitle} metrics={sessionHoverMetrics} tokenParts={tokenParts} meta={sessionHoverMeta} />}
     </div>
   );
-}
+});
 
 function SessionIdControl({
   t,
@@ -3059,62 +2515,6 @@ function SessionIdControl({
         <Copy size={10} />
       </button>
     </span>
-  );
-}
-
-function SessionEvidencePanel({ t, session }: { t: (key: string) => string; session: LiveSession }) {
-  const hasRecentMovement = sessionHasRecentMovement(session);
-  return (
-    <section className="entity-panel">
-      <div className="entity-title">
-        <Bot size={17} />
-        <strong>{session.project || t("unassigned")}</strong>
-        <span>{roleLabel(t, normalizedRole(session.session_role))}</span>
-      </div>
-      <div className="entity-grid">
-        <Readout label={t("sessionID")} value={session.session_id || t("unavailable")} />
-        <Readout label={t("role")} value={roleLabel(t, normalizedRole(session.session_role))} />
-        <Readout label={t("roleConfidence")} value={confidenceLabel(t, session.role_confidence)} />
-        <Readout label={t("mappingMethod")} value={mappingMethodLabel(t, session.mapping_method)} />
-        <Readout label={t("threadSource")} value={threadSourceLabel(t, session.thread_source)} />
-        <Readout label={t("parentThread")} value={session.parent_thread_id || t("unavailable")} />
-        <Readout label={t("roleHint")} value={roleHintLabel(t, session.role_hint_source) || agentRoleLabel(t, session.agent_role) || session.agent_nickname || t("unavailable")} />
-        <Readout label={t("freshness")} value={freshnessLabel(t, session.freshness || (hasRecentMovement ? "active" : "idle"))} />
-        <Readout label={t("observedDuration")} value={formatAge(session.observed_duration_seconds, t)} />
-        <Readout label={t("activeDuration")} value={formatAge(session.active_duration_seconds, t)} />
-        <Readout label={t("idleDuration")} value={formatAge(session.idle_duration_seconds, t)} />
-        <Readout label={t("resources")} value={sessionProcessResourceText(t, session)} />
-        <Readout label={t("tokenUsage")} value={formatTokenUsageSummary(session.token_usage, t)} />
-        <Readout label={t("tokenSource")} value={tokenUsageProvenanceLabel(t, session.token_usage_source, session.token_usage_confidence)} />
-        <Readout label={t("tools")} value={toolDisplayName(session.tool)} />
-        <Readout label={t("host")} value={(session.host_apps ?? []).map((app) => app.name).join(", ") || t("unavailable")} />
-        <Readout label={t("command")} value={session.path || t("unavailable")} />
-      </div>
-    </section>
-  );
-}
-
-function ProcessEvidencePanel({ t, process }: { t: (key: string) => string; process: LiveProcess }) {
-  return (
-    <section className="entity-panel">
-      <div className="entity-title">
-        <Server size={17} />
-        <strong>{processIdentity(process, t)}</strong>
-        <span>{t("pid")} {process.pid ?? t("unavailable")}</span>
-      </div>
-      <div className="entity-grid">
-        <Readout label={t("resources")} value={processResourceText(t, process.cpu_percent, process.memory_bytes)} />
-        <Readout label={t("runtimeDuration")} value={process.elapsed || t("unavailable")} />
-        <Readout label={t("metricMatched")} value={String(process.mapped_sessions ?? 0)} />
-        <Readout label={t("active")} value={String(process.mapped_active_sessions ?? 0)} />
-        <Readout label={t("roleMix")} value={`${t("mainShort")} ${process.main_sessions ?? 0} · ${t("subagentShort")} ${process.subagent_sessions ?? 0} · ${t("unknown")} ${process.unknown_role_sessions ?? 0}`} />
-        <Readout label={t("mappingMethod")} value={(process.match_methods ?? []).map((method) => mappingMethodLabel(t, method)).join(", ") || t("unavailable")} />
-        <Readout label={t("sessions")} value={sessionIDsText(t, process.session_ids)} />
-        <Readout label={t("tools")} value={toolDisplayName(process.tool)} />
-        <Readout label={t("host")} value={process.host_app?.name || t("unavailable")} />
-        <Readout label={t("command")} value={process.command || t("unavailable")} />
-      </div>
-    </section>
   );
 }
 
@@ -3247,7 +2647,7 @@ function LanguageControl({ t, lang, setLang }: { t: (key: string) => string; lan
   );
 }
 
-function TermLabel({ label, tip }: { label: string; tip: string }) {
+const TermLabel = React.memo(function TermLabel({ label, tip }: { label: string; tip: string }) {
   const tipId = useId();
   const [open, setOpen] = useState(false);
   const [locked, setLocked] = useState(false);
@@ -3318,7 +2718,6 @@ function TermLabel({ label, tip }: { label: string; tip: string }) {
       aria-expanded={open}
       data-tip={tip}
       onPointerEnter={show}
-      onPointerMove={show}
       onPointerLeave={hide}
       onFocus={show}
       onBlur={() => {
@@ -3332,7 +2731,7 @@ function TermLabel({ label, tip }: { label: string; tip: string }) {
       {tooltip && typeof document !== "undefined" ? createPortal(tooltip, document.body) : tooltip}
     </span>
   );
-}
+});
 
 function RowHoverDetail({ title, detail, meta }: { title: string; detail: string; meta?: string }) {
   return (
@@ -3425,17 +2824,6 @@ function Pill({ tone, children }: { tone: "safe" | "idle" | "running" | "bad"; c
       {children}
     </span>
   );
-}
-
-function selectionMetrics(t: (key: string) => string, snapshot: Snapshot, selected: SelectedView) {
-  const stats = snapshot.transcript_stats;
-  const risk = snapshot.coordination_risk;
-  return [
-    { key: t("resultKind"), value: selected.kind, cls: "is-accent", icon: <Terminal size={15} />, tip: t("tipResultKind") },
-    { key: t("source"), value: stats?.cached ? t("cached") : t("fresh"), cls: "", icon: <Activity size={15} />, tip: t("tipScanner") },
-    { key: t("samples"), value: snapshot.history?.retained_sample_count ?? 0, cls: "", icon: <Gauge size={15} />, tip: t("tipSampleHistory") },
-    { key: t("topProject"), value: risk?.top_project || t("none"), cls: "", icon: <GitBranch size={15} />, tip: t("tipTopProject") },
-  ];
 }
 
 function RoleGlyph({ t, role }: { t: (key: string) => string; role: "main" | "subagent" | "unknown" }) {

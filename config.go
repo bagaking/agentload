@@ -83,7 +83,7 @@ func (c Config) snapshotConfig() SnapshotConfig {
 
 func defaultClaudeRoots() []string {
 	return parseRoots(
-		firstNonEmpty(
+		firstNonEmptyString(
 			os.Getenv("AGENTLOAD_CLAUDE_DIRS"),
 			os.Getenv("CLAUDE_CONFIG_DIR"),
 		),
@@ -93,7 +93,7 @@ func defaultClaudeRoots() []string {
 
 func defaultCodexRoots() []string {
 	return parseRoots(
-		firstNonEmpty(
+		firstNonEmptyString(
 			os.Getenv("AGENTLOAD_CODEX_DIRS"),
 			os.Getenv("CODEX_HOME"),
 		),
@@ -103,7 +103,7 @@ func defaultCodexRoots() []string {
 
 func defaultTraeRoots() []string {
 	return parseRoots(
-		firstNonEmpty(
+		firstNonEmptyString(
 			os.Getenv("AGENTLOAD_TRAE_DIRS"),
 			os.Getenv("TRAE_CLI_HOME"),
 		),
@@ -126,7 +126,7 @@ func defaultHistoryFile() string {
 }
 
 func resolveHistoryFile(raw string) string {
-	return cleanUserPath(firstNonEmpty(strings.TrimSpace(raw), defaultHistoryFile()))
+	return cleanUserPath(firstNonEmptyString(strings.TrimSpace(raw), defaultHistoryFile()))
 }
 
 func parseRoots(raw string, defaults []string) []string {
@@ -160,15 +160,6 @@ func existingDirs(items []string) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
 }
 
 func envOr(key, fallback string) string {

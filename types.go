@@ -389,6 +389,8 @@ type AgeBucketSnapshot struct {
 type SystemResourceSnapshot struct {
 	SampledAt                   string   `json:"sampled_at,omitempty"`
 	Supported                   bool     `json:"supported"`
+	ThermalState                string   `json:"thermal_state,omitempty"`
+	ThermalStateSupported       bool     `json:"thermal_state_supported"`
 	CPUPercent                  float64  `json:"cpu_percent"`
 	LoadAverage1                float64  `json:"load_average_1"`
 	LoadAverage5                float64  `json:"load_average_5"`
@@ -519,6 +521,7 @@ type LiveSessionSnapshot struct {
 	Project                      string      `json:"project"`
 	Path                         string      `json:"path"`
 	ProcessCount                 int         `json:"process_count"`
+	SharedProcessCount           int         `json:"shared_process_count"`
 	ProcessCPUPercent            float64     `json:"process_cpu_percent,omitempty"`
 	ProcessMemoryBytes           int64       `json:"process_memory_bytes,omitempty"`
 	HostApps                     []HostApp   `json:"host_apps,omitempty"`
@@ -533,6 +536,7 @@ type LiveSessionSnapshot struct {
 	TokenUsageConfidence         string      `json:"token_usage_confidence,omitempty"`
 	ActiveBurst                  bool        `json:"active_burst"`
 	Freshness                    string      `json:"freshness"`
+	NeedsReview                  bool        `json:"needs_review"`
 	MappingMethod                string      `json:"mapping_method"`
 	MissingTranscript            bool        `json:"missing_transcript"`
 	Confidence                   string      `json:"confidence"`

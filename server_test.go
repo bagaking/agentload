@@ -340,6 +340,154 @@ func TestHandleSnapshotAPIFillsRefreshSlotForCachedSnapshot(t *testing.T) {
 	}
 }
 
+func TestHandleSnapshotAPINotModifiedSkipsSanitizeAndCachesPayload(t *testing.T) {
+	app := &trayApp{}
+	app.rememberSnapshot(Snapshot{
+		GeneratedAt:   "2026-06-28T12:00:00Z",
+		RefreshSlotID: "30s:2026-06-28T12:00:00Z",
+	})
+	handler := app.handler()
+	base := snapshotSanitizePasses.Load()
+
+	condReq := httptest.NewRequest(http.MethodGet, "/api/snapshot", nil)
+	condReq.Header.Set("If-None-Match", strconv.Quote("30s:2026-06-28T12:00:00Z"))
+	condRec := httptest.NewRecorder()
+	handler.ServeHTTP(condRec, condReq)
+	if condRec.Code != http.StatusNotModified {
+		t.Fatalf("expected status 304, got %d with body %q", condRec.Code, condRec.Body.String())
+	}
+	if got := snapshotSanitizePasses.Load(); got != base {
+		t.Fatalf("expected 304 path to skip sanitize, got %d extra passes", got-base)
+	}
+
+	firstReq := httptest.NewRequest(http.MethodGet, "/api/snapshot", nil)
+	firstRec := httptest.NewRecorder()
+	handler.ServeHTTP(firstRec, firstReq)
+	if firstRec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d with body %q", firstRec.Code, firstRec.Body.String())
+	}
+	if got := snapshotSanitizePasses.Load(); got != base+1 {
+		t.Fatalf("expected one sanitize pass for first GET, got %d", got-base)
+	}
+
+	secondReq := httptest.NewRequest(http.MethodGet, "/api/snapshot", nil)
+	secondRec := httptest.NewRecorder()
+	handler.ServeHTTP(secondRec, secondReq)
+	if secondRec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d with body %q", secondRec.Code, secondRec.Body.String())
+	}
+	if got := snapshotSanitizePasses.Load(); got != base+1 {
+		t.Fatalf("expected repeat GET within slot to reuse cached payload, got %d passes", got-base)
+	}
+	if firstRec.Body.String() != secondRec.Body.String() {
+		t.Fatalf("expected identical cached payloads, got %q and %q", firstRec.Body.String(), secondRec.Body.String())
+	}
+}
+
+func TestHandleSnapshotAPIInvalidatesClientCacheOnSlotChange(t *testing.T) {
+	app := &trayApp{}
+	app.rememberSnapshot(Snapshot{
+		GeneratedAt:   "2026-06-28T12:00:00Z",
+		RefreshSlotID: "30s:2026-06-28T12:00:00Z",
+	})
+	handler := app.handler()
+
+	firstRec := httptest.NewRecorder()
+	handler.ServeHTTP(firstRec, httptest.NewRequest(http.MethodGet, "/api/snapshot", nil))
+	if firstRec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", firstRec.Code)
+	}
+
+	app.rememberSnapshot(Snapshot{
+		GeneratedAt:   "2026-06-28T12:00:30Z",
+		RefreshSlotID: "30s:2026-06-28T12:00:30Z",
+	})
+	secondRec := httptest.NewRecorder()
+	handler.ServeHTTP(secondRec, httptest.NewRequest(http.MethodGet, "/api/snapshot", nil))
+	if secondRec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", secondRec.Code)
+	}
+	if !strings.Contains(secondRec.Body.String(), `"refresh_slot_id":"30s:2026-06-28T12:00:30Z"`) {
+		t.Fatalf("expected new slot payload after cache invalidation, got %q", secondRec.Body.String())
+	}
+}
+
+func TestStateChangingPostsRejectCrossOriginRequests(t *testing.T) {
+	tests := []struct {
+		name     string
+		origin   string
+		referer  string
+		wantCode int
+	}{
+		{name: "absent origin allowed", wantCode: http.StatusAccepted},
+		{name: "same origin allowed", origin: "http://127.0.0.1:8123", wantCode: http.StatusAccepted},
+		{name: "localhost equivalent allowed", origin: "http://localhost:8123", wantCode: http.StatusAccepted},
+		{name: "same origin referer allowed", referer: "http://127.0.0.1:8123/dashboard", wantCode: http.StatusAccepted},
+		{name: "cross host blocked", origin: "http://evil.example:8123", wantCode: http.StatusForbidden},
+		{name: "cross port blocked", origin: "http://127.0.0.1:9999", wantCode: http.StatusForbidden},
+		{name: "cross host referer blocked", referer: "http://evil.example/page", wantCode: http.StatusForbidden},
+		{name: "null origin blocked", origin: "null", wantCode: http.StatusForbidden},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := &trayApp{
+				cfg:       Config{RefreshInterval: 30 * time.Second},
+				refreshCh: make(chan struct{}, 1),
+			}
+			handler := app.handler()
+			req := httptest.NewRequest(http.MethodPost, "/api/refresh", nil)
+			req.Host = "127.0.0.1:8123"
+			if tt.origin != "" {
+				req.Header.Set("Origin", tt.origin)
+			}
+			if tt.referer != "" {
+				req.Header.Set("Referer", tt.referer)
+			}
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != tt.wantCode {
+				t.Fatalf("expected status %d, got %d with body %q", tt.wantCode, rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestHandleQuitAPIRejectsCrossOrigin(t *testing.T) {
+	app := &trayApp{}
+	handler := app.handler()
+	req := httptest.NewRequest(http.MethodPost, "/api/quit", nil)
+	req.Host = "127.0.0.1:8123"
+	req.Header.Set("Origin", "http://evil.example")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status 403, got %d", rec.Code)
+	}
+}
+
+func TestHandleOpenHostAppAPIRejectsCrossOrigin(t *testing.T) {
+	app := &trayApp{}
+	handler := app.handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/open-host-app/42", nil)
+	req.Host = "127.0.0.1:8123"
+	req.Header.Set("Origin", "http://evil.example:8123")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status 403, got %d", rec.Code)
+	}
+
+	sameReq := httptest.NewRequest(http.MethodPost, "/api/open-host-app/42", nil)
+	sameReq.Host = "127.0.0.1:8123"
+	sameReq.Header.Set("Origin", "http://127.0.0.1:8123")
+	sameRec := httptest.NewRecorder()
+	handler.ServeHTTP(sameRec, sameReq)
+	if sameRec.Code != http.StatusNotFound {
+		t.Fatalf("expected same-origin request to pass origin check with 404, got %d", sameRec.Code)
+	}
+}
+
 func TestHandleSnapshotAPIRedactsConfigPaths(t *testing.T) {
 	app := &trayApp{cfg: Config{RefreshInterval: 5 * time.Minute}}
 	app.lastSnapshot = Snapshot{

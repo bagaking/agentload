@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestCounterDelta(t *testing.T) {
 	tests := []struct {
@@ -20,4 +23,56 @@ func TestCounterDelta(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSampleSystemResourcesUsesBackgroundSamplerWhenRunning(t *testing.T) {
+	stopSystemResourceSampler()
+	// A long interval keeps the test deterministic: only the immediate startup
+	// sample is ever stored.
+	startSystemResourceSampler(time.Hour)
+	t.Cleanup(stopSystemResourceSampler)
+
+	var cached SystemResourceSnapshot
+	ok := false
+	for i := 0; i < 500 && !ok; i++ {
+		cached, ok = latestBackgroundSystemResourceSample()
+		if !ok {
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	if !ok {
+		t.Fatalf("expected background sampler to store a startup sample")
+	}
+	if got := sampleSystemResources(); got.SampledAt != cached.SampledAt {
+		t.Fatalf("expected cached background sample %q, got %q", cached.SampledAt, got.SampledAt)
+	}
+	if got := sampleSystemResources(); got.SampledAt != cached.SampledAt {
+		t.Fatalf("expected repeated polls to reuse the background sample, got %q", got.SampledAt)
+	}
+
+	stopSystemResourceSampler()
+	if _, ok := latestBackgroundSystemResourceSample(); ok {
+		t.Fatalf("expected stopped sampler to drop its cached sample")
+	}
+}
+
+func TestSampleSystemResourcesFallsBackToDirectSampling(t *testing.T) {
+	stopSystemResourceSampler()
+	got := sampleSystemResources()
+	if got.SampledAt == "" {
+		t.Fatalf("expected direct sample to carry a timestamp")
+	}
+	if _, err := time.Parse(time.RFC3339Nano, got.SampledAt); err != nil {
+		t.Fatalf("expected RFC3339Nano sampled_at, got %q: %v", got.SampledAt, err)
+	}
+}
+
+func TestStartSystemResourceSamplerIsIdempotent(t *testing.T) {
+	stopSystemResourceSampler()
+	startSystemResourceSampler(time.Hour)
+	t.Cleanup(stopSystemResourceSampler)
+	startSystemResourceSampler(time.Hour)
+	stopSystemResourceSampler()
+	// A second stop must not panic on the already-stopped sampler.
+	stopSystemResourceSampler()
 }

@@ -17,7 +17,7 @@ semantic layer says so.
 | Known sessions | `session_concurrency`, `session_count`, `main_agent_sessions`, `subagent_sessions`, `unknown_role_sessions` | Observed session evidence from transcripts, command hints, or fallback session ids | Process-only rows with no mapped session evidence |
 | Process pressure | `pid_concurrency`, `process_count`, `mapped_processes`, `unmapped_processes`, `multi_mapped_processes` | Visible local AI process rows and their session mappings | Transcript-only sessions without visible processes |
 | Process resources | `cpu_percent`, `memory_bytes`, disk I/O counters/rates, process elapsed values | Visible process table and local per-PID process counters, summed only for matched process ids when shown at project/session scope | Token usage, transcript movement, or session count |
-| System resources | `system_resources` | Whole-machine OS counters sampled independently from transcript scanning | Session activity, project attribution, or per-PID network guesses |
+| System resources | `system_resources` | Whole-machine OS counters sampled independently from transcript scanning, plus public macOS thermal-pressure state when available | Session activity, project attribution, exact hardware temperature/fan readings, or per-PID network guesses |
 | Role matrix | `main_agent_sessions`, `subagent_sessions`, `unknown_role_sessions` and active role splits | Session role inference from thread source, parent thread, lane paths, and independent-run evidence | Process role guesses without mapped session evidence |
 | Tool coverage | project/tool `session_count`, `active_burst_count`, `process_count` | Per-tool aggregation of known sessions, recent movement, and process pressure | Treating process pressure as recent movement |
 | Token usage | `token_usage`, `token_usage_source`, `token_usage_confidence` | Parsed local transcript usage fields when present, including cumulative token-count events when the local trace exposes them | Inferring usage from process duration, CPU, memory, or elapsed time |
@@ -47,6 +47,10 @@ semantic layer says so.
 - Whole-machine CPU, memory, and network counters are system pressure, not agent
   workload. They may refresh more often than snapshots, but they must stay in
   their own system resource field and UI surface.
+- macOS thermal pressure is a public system state, not a Celsius temperature.
+  Exact hardware temperature and fan RPM remain unavailable unless a reliable,
+  public source is added; they must never be estimated from CPU usage or shown
+  as zero.
 - Whole-machine network counters should foreground inbound and outbound
   throughput. Interface packet errors and input drops may be shown as a local
   packet issue rate, but the UI must not present that number as an end-to-end

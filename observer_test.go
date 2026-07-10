@@ -435,7 +435,7 @@ func TestForegroundTranscriptScanDefersOlderNonPriorityFiles(t *testing.T) {
 		parseTranscriptFileTailFunc = originalTail
 	})
 
-	data := observer.scanTranscriptsWithOptions(nil, []string{filepath.Join(tmp, ".codex")}, nil, []TranscriptFile{{Tool: "codex", Path: priorityPath}}, transcriptScanOptions{
+	data := observer.scanTranscriptsWithOptions(context.Background(), nil, []string{filepath.Join(tmp, ".codex")}, nil, []TranscriptFile{{Tool: "codex", Path: priorityPath}}, transcriptScanOptions{
 		HistoryCutoff:      time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC),
 		ForegroundCutoff:   time.Date(2026, 6, 28, 11, 0, 0, 0, time.UTC),
 		HistoryLookback:    24 * time.Hour,
@@ -499,7 +499,7 @@ func TestForegroundTranscriptScanCanDeferHistoryWalk(t *testing.T) {
 		MinInterval: 15 * time.Second,
 		Lookback:    24 * time.Hour,
 	})
-	data := observer.scanTranscriptsWithOptions(nil, []string{filepath.Join(tmp, ".codex")}, nil, []TranscriptFile{{Tool: "codex", Path: priorityPath}}, transcriptScanOptions{
+	data := observer.scanTranscriptsWithOptions(context.Background(), nil, []string{filepath.Join(tmp, ".codex")}, nil, []TranscriptFile{{Tool: "codex", Path: priorityPath}}, transcriptScanOptions{
 		HistoryCutoff:      time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC),
 		ForegroundCutoff:   time.Date(2026, 6, 28, 11, 0, 0, 0, time.UTC),
 		HistoryLookback:    24 * time.Hour,
@@ -548,7 +548,7 @@ func TestForegroundTranscriptScanDefersFreshMTimeWhenTailIsOlder(t *testing.T) {
 	}
 	t.Cleanup(func() { parseTranscriptFileFunc = original })
 
-	data := observer.scanTranscriptsWithOptions(nil, []string{filepath.Join(tmp, ".codex")}, nil, nil, transcriptScanOptions{
+	data := observer.scanTranscriptsWithOptions(context.Background(), nil, []string{filepath.Join(tmp, ".codex")}, nil, nil, transcriptScanOptions{
 		HistoryCutoff:      time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC),
 		ForegroundCutoff:   time.Date(2026, 6, 28, 11, 0, 0, 0, time.UTC),
 		HistoryLookback:    24 * time.Hour,

@@ -21,6 +21,7 @@ type processIOCounter struct {
 var processIOSampler = struct {
 	sync.Mutex
 	previous map[int]processIOCounter
+	batchAt  time.Time
 }{previous: map[int]processIOCounter{}}
 
 func sampleProcessIO(pid int, now time.Time) processIOSample {
@@ -30,6 +31,7 @@ func sampleProcessIO(pid int, now time.Time) processIOSample {
 	}
 	processIOSampler.Lock()
 	defer processIOSampler.Unlock()
+	rotateProcessIOBatchLocked(now)
 
 	out := processIOSample{ReadBytes: readBytes, WriteBytes: writeBytes}
 	if previous, exists := processIOSampler.previous[pid]; exists && now.After(previous.At) {
@@ -41,4 +43,20 @@ func sampleProcessIO(pid int, now time.Time) processIOSample {
 	}
 	processIOSampler.previous[pid] = processIOCounter{ReadBytes: readBytes, WriteBytes: writeBytes, At: now}
 	return out
+}
+
+// rotateProcessIOBatchLocked evicts counters for PIDs that the just-finished
+// discovery batch did not sample. Every call in one batch shares the same now,
+// so a newer now marks the batch boundary; entries older than the previous
+// batch time belong to exited processes. Caller must hold the sampler lock.
+func rotateProcessIOBatchLocked(now time.Time) {
+	if !now.After(processIOSampler.batchAt) {
+		return
+	}
+	for pid, previous := range processIOSampler.previous {
+		if previous.At.Before(processIOSampler.batchAt) {
+			delete(processIOSampler.previous, pid)
+		}
+	}
+	processIOSampler.batchAt = now
 }

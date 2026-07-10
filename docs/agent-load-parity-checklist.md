@@ -6,6 +6,11 @@ title: Agent Load Parity Checklist
 
 Handle: `f-225rx4b7x`
 
+> Status: point-in-time audit. Line-number citations below have drifted since
+> the audit (`ui/src/main.tsx` has since been reduced), and the popover now has
+> four tabs (Online/Trend/System/Diagnostics) while this checklist verified two.
+> Re-verify citations before relying on them.
+
 This page is the shared verification checklist for Agent Load parity work. Each
 item intentionally starts as `unimplemented` until a current-state audit proves
 the requirement with repo-local evidence. Do not mark an item complete from

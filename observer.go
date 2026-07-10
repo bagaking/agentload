@@ -18,7 +18,7 @@ func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 	now := time.Now()
 	extraClaudeRoots, extraCodexRoots, extraTraeRoots, priority := rootsFromLiveProcesses(processes)
 	claudeRoots, codexRoots, traeRoots := o.mergeKnownRoots(extraClaudeRoots, extraCodexRoots, extraTraeRoots)
-	data, cached := o.transcriptData(claudeRoots, codexRoots, traeRoots, priority, scanStart)
+	data, cached := o.transcriptData(ctx, claudeRoots, codexRoots, traeRoots, priority, scanStart)
 	liveSessions, sessionNotes := buildLiveSessionsAt(processes, data, o.cfg.IdleGap, now)
 
 	currentByTool := map[string]ToolMetrics{
@@ -63,7 +63,7 @@ func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 	liveProcessSnapshots := projectLiveProcessesWithSessions(processes, liveSessions, liveSessionSnapshots, data)
 	liveSessionSnapshots = attachProcessResourcesToSessions(liveSessionSnapshots, liveProcessSnapshots)
 	projectFocus := buildProjectFocus(liveSessions, o.cfg.IdleGap, now)
-	candidateWorkitems := buildCandidateWorkitems(liveSessionSnapshots)
+	candidateWorkitems := buildCandidateWorkitems(liveSessionSnapshots, sessionProcessIDsByKey(liveSessions))
 	snapshot := Snapshot{
 		GeneratedAt:      now.Format(time.RFC3339Nano),
 		Config:           o.snapshotConfig(claudeRoots, codexRoots, traeRoots),
@@ -524,10 +524,6 @@ func configRootsFromCommand(tool, command string) []string {
 	return out
 }
 
-func buildLiveSessions(processes []LiveProcess, data *TranscriptData) ([]LiveSession, []string) {
-	return buildLiveSessionsAt(processes, data, 90*time.Second, time.Now())
-}
-
 func buildLiveSessionsAt(processes []LiveProcess, data *TranscriptData, idleGap time.Duration, now time.Time) ([]LiveSession, []string) {
 	tracesByID := buildTracesByID(data)
 	sessions := map[string]*LiveSession{}
@@ -670,47 +666,12 @@ func liveSessionKeyForPath(file TranscriptFile) string {
 	return file.Tool + "\x00path:" + file.Path
 }
 
-func mergeLiveSession(dst, src *LiveSession) {
-	if dst == nil || src == nil || dst == src {
-		return
-	}
-	if dst.Tool == "" {
-		dst.Tool = src.Tool
-	}
-	if dst.SessionID == "" {
-		dst.SessionID = src.SessionID
-	}
-	if dst.Path == "" {
-		dst.Path = src.Path
-	}
-	if dst.Trace == nil {
-		dst.Trace = src.Trace
-	}
-	if dst.Processes == nil {
-		dst.Processes = map[int]struct{}{}
-	}
-	for pid := range src.Processes {
-		dst.Processes[pid] = struct{}{}
-	}
-	if dst.HostApps == nil && len(src.HostApps) > 0 {
-		dst.HostApps = map[int]HostApp{}
-	}
-	for pid, app := range src.HostApps {
-		dst.HostApps[pid] = app
-	}
-	mergeLiveSessionMapping(&dst.Mapping, src.Mapping)
-}
-
 func mergeLiveSessionMapping(dst *LiveSessionMapping, src LiveSessionMapping) {
 	dst.TranscriptPath = dst.TranscriptPath || src.TranscriptPath
 	dst.TranscriptActivity = dst.TranscriptActivity || src.TranscriptActivity
 	dst.ParsedTranscriptID = dst.ParsedTranscriptID || src.ParsedTranscriptID
 	dst.CommandHint = dst.CommandHint || src.CommandHint
 	dst.FallbackSessionID = dst.FallbackSessionID || src.FallbackSessionID
-}
-
-func projectLiveProcesses(processes []LiveProcess, data *TranscriptData) []LiveProcessSnapshot {
-	return projectLiveProcessesWithSessions(processes, nil, nil, data)
 }
 
 func projectLiveProcessesWithSessions(processes []LiveProcess, liveSessions []LiveSession, liveSessionSnapshots []LiveSessionSnapshot, data *TranscriptData) []LiveProcessSnapshot {
@@ -875,6 +836,7 @@ func attachProcessResourcesToSessions(sessions []LiveSessionSnapshot, processes 
 		index[liveSessionKeyForID(session.Tool, session.SessionID)] = i
 	}
 	for _, process := range processes {
+		attached := map[int]struct{}{}
 		for _, evidence := range process.MappedSessionEvidence {
 			if evidence.SessionID == "" {
 				continue
@@ -888,8 +850,18 @@ func attachProcessResourcesToSessions(sessions []LiveSessionSnapshot, processes 
 			if !ok {
 				continue
 			}
+			attached[i] = struct{}{}
+		}
+		// Per-session attribution keeps the full process CPU/memory on every
+		// attached session ("resources of processes attached to this session").
+		// SharedProcessCount discloses when that attribution overlaps other
+		// sessions so aggregates and UIs can avoid double counting.
+		for i := range attached {
 			out[i].ProcessCPUPercent += process.CPUPercent
 			out[i].ProcessMemoryBytes += process.MemoryBytes
+			if len(attached) > 1 {
+				out[i].SharedProcessCount++
+			}
 		}
 	}
 	return out
@@ -1210,6 +1182,7 @@ func projectLiveSessions(sessions []LiveSession, idleGap time.Duration, now time
 			ProcessCount:                 facts.ProcessPressure,
 			ActiveBurst:                  facts.RecentMovement,
 			Freshness:                    observation.Freshness,
+			NeedsReview:                  sessionNeedsReviewObservation(facts.Role, observation),
 			MappingMethod:                observation.MappingMethod,
 			MissingTranscript:            observation.MissingTranscript,
 			Confidence:                   observation.Confidence,
@@ -1859,7 +1832,25 @@ func buildProjectFocus(sessions []LiveSession, idleGap time.Duration, now time.T
 	return out
 }
 
-func buildCandidateWorkitems(sessions []LiveSessionSnapshot) []CandidateWorkitemSnapshot {
+// sessionProcessIDsByKey exposes per-session PID evidence so aggregates over
+// session snapshots can dedupe shared processes instead of re-counting them.
+func sessionProcessIDsByKey(sessions []LiveSession) map[string][]int {
+	out := map[string][]int{}
+	for _, session := range sessions {
+		key := liveSessionKeyForID(session.Tool, session.SessionID)
+		if key == "" {
+			continue
+		}
+		ids := out[key]
+		for pid := range session.Processes {
+			ids = append(ids, pid)
+		}
+		out[key] = ids
+	}
+	return out
+}
+
+func buildCandidateWorkitems(sessions []LiveSessionSnapshot, sessionProcessIDs map[string][]int) []CandidateWorkitemSnapshot {
 	type aggregate struct {
 		key                                string
 		project                            string
@@ -1867,6 +1858,7 @@ func buildCandidateWorkitems(sessions []LiveSessionSnapshot) []CandidateWorkitem
 		freshnessBucket                    string
 		sessionCount                       int
 		processCount                       int
+		processPIDs                        map[int]struct{}
 		sessionIDs                         []string
 		seenSessionIDs                     map[string]struct{}
 		provenanceCounts                   map[string]int
@@ -1896,6 +1888,7 @@ func buildCandidateWorkitems(sessions []LiveSessionSnapshot) []CandidateWorkitem
 				project:                            projectName,
 				tool:                               session.Tool,
 				freshnessBucket:                    freshnessBucket,
+				processPIDs:                        map[int]struct{}{},
 				seenSessionIDs:                     map[string]struct{}{},
 				provenanceCounts:                   map[string]int{},
 				confidenceCounts:                   map[string]int{},
@@ -1905,7 +1898,16 @@ func buildCandidateWorkitems(sessions []LiveSessionSnapshot) []CandidateWorkitem
 			groups[key] = item
 		}
 		item.sessionCount++
-		item.processCount += session.ProcessCount
+		// Dedupe by PID when the session carries PID evidence: one process
+		// mapped to several sessions in this bucket must count once. Sessions
+		// without PID evidence fall back to their disclosed process count.
+		if pids, ok := sessionProcessIDs[liveSessionKeyForID(session.Tool, session.SessionID)]; ok {
+			for _, pid := range pids {
+				item.processPIDs[pid] = struct{}{}
+			}
+		} else {
+			item.processCount += session.ProcessCount
+		}
 		item.confidenceCounts[session.Confidence]++
 		projectAttributionConfidence := strings.TrimSpace(session.ProjectAttributionConfidence)
 		if projectAttributionConfidence == "" {
@@ -1963,7 +1965,7 @@ func buildCandidateWorkitems(sessions []LiveSessionSnapshot) []CandidateWorkitem
 			Tool:                            item.tool,
 			FreshnessBucket:                 item.freshnessBucket,
 			SessionCount:                    item.sessionCount,
-			ProcessCount:                    item.processCount,
+			ProcessCount:                    item.processCount + len(item.processPIDs),
 			SessionIDs:                      item.sessionIDs,
 			Canonical:                       false,
 			InferenceMode:                   "project_tool_freshness",
@@ -2319,15 +2321,6 @@ func formatConfidenceBreakdown(breakdown []ConfidenceCountSnapshot) string {
 	return strings.Join(parts, ", ")
 }
 
-func confidenceCount(breakdown []ConfidenceCountSnapshot, level string) int {
-	for _, item := range breakdown {
-		if item.Level == level {
-			return item.Count
-		}
-	}
-	return 0
-}
-
 func competingProjectCount(activeProjectCount, recentProjectCount, projectCount int) int {
 	switch {
 	case activeProjectCount > 1:
@@ -2473,10 +2466,6 @@ func formatDurationLabel(duration time.Duration) string {
 
 func coordinationPosture(signals []RiskSignalSnapshot) string {
 	return "observed"
-}
-
-func displayProjectName(session LiveSession) string {
-	return observeProjectAttribution(session).Project
 }
 
 func traceProjectAttribution(trace *SessionTrace) (project, source, reason string) {

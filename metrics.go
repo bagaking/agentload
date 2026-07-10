@@ -204,22 +204,6 @@ func peakConcurrency(intervals []Interval, windowStart, windowEnd time.Time) Pea
 	return best
 }
 
-func concurrencyAt(intervals []Interval, at time.Time) int {
-	if at.IsZero() {
-		return 0
-	}
-	count := 0
-	for _, interval := range intervals {
-		if interval.Start.IsZero() || interval.End.IsZero() {
-			continue
-		}
-		if (interval.Start.Equal(at) || interval.Start.Before(at)) && interval.End.After(at) {
-			count++
-		}
-	}
-	return count
-}
-
 type trendSpec struct {
 	label string
 	span  time.Duration
@@ -482,46 +466,6 @@ func bucketRuntimeSamples(samples []runtimeTrendSample, from, to time.Time, step
 		}
 		out = append(out, point)
 		lastBucket = bucket
-	}
-	return out
-}
-
-func appendRuntimeSample(samples []TrendPoint, sample TrendPoint, cutoff time.Time) []TrendPoint {
-	out := samples[:0]
-	for _, existing := range samples {
-		ts, err := time.Parse(time.RFC3339, existing.At)
-		if err != nil || ts.Before(cutoff) {
-			continue
-		}
-		out = append(out, existing)
-	}
-	if len(out) > 0 && out[len(out)-1].At == sample.At {
-		out[len(out)-1] = sample
-		return out
-	}
-	out = append(out, sample)
-	sort.Slice(out, func(i, j int) bool {
-		ti, errI := time.Parse(time.RFC3339, out[i].At)
-		tj, errJ := time.Parse(time.RFC3339, out[j].At)
-		if errI != nil || errJ != nil {
-			return out[i].At < out[j].At
-		}
-		return ti.Before(tj)
-	})
-	return out
-}
-
-func runtimeSamplesForWindow(samples []TrendPoint, from, to time.Time) []TrendPoint {
-	out := make([]TrendPoint, 0, len(samples))
-	for _, sample := range samples {
-		ts, err := time.Parse(time.RFC3339, sample.At)
-		if err != nil {
-			continue
-		}
-		if ts.Before(from) || ts.After(to) {
-			continue
-		}
-		out = append(out, sample)
 	}
 	return out
 }

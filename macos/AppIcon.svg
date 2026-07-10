@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="plate" x1="188" y1="92" x2="836" y2="930" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#132032"/>
+      <stop offset=".52" stop-color="#0a111d"/>
+      <stop offset="1" stop-color="#050811"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="184" y1="84" x2="846" y2="918" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#dbeafe" stop-opacity=".72"/>
+      <stop offset=".38" stop-color="#38bdf8" stop-opacity=".36"/>
+      <stop offset="1" stop-color="#6ee7b7" stop-opacity=".26"/>
+    </linearGradient>
+    <linearGradient id="arc" x1="222" y1="701" x2="809" y2="230" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6ee7b7"/>
+      <stop offset=".55" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#dbeafe"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="360" y1="734" x2="687" y2="298" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6ee7b7"/>
+      <stop offset=".45" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#bfdbfe"/>
+    </linearGradient>
+    <radialGradient id="nodeGlow" cx="0" cy="0" r="1" gradientTransform="matrix(138 0 0 138 738 274)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e0f2fe"/>
+      <stop offset=".32" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#38bdf8" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="drop" x="112" y="78" width="800" height="852" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="30" stdDeviation="30" flood-color="#020617" flood-opacity=".52"/>
+      <feDropShadow dx="0" dy="-8" stdDeviation="20" flood-color="#38bdf8" flood-opacity=".12"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" fill="none"/>
+  <g filter="url(#drop)">
+    <rect x="132" y="104" width="760" height="816" rx="182" fill="url(#plate)"/>
+    <rect x="146" y="118" width="732" height="788" rx="168" fill="none" stroke="url(#edge)" stroke-width="12" opacity=".82"/>
+  </g>
+  <path d="M238 650c88-183 191-276 310-276 113 0 169-86 244-197" fill="none" stroke="url(#arc)" stroke-width="40" stroke-linecap="round" opacity=".96"/>
+  <path d="M238 650c88-183 191-276 310-276 113 0 169-86 244-197" fill="none" stroke="#e0f2fe" stroke-width="10" stroke-linecap="round" opacity=".55"/>
+  <g fill="url(#bar)">
+    <rect x="286" y="562" width="94" height="228" rx="47"/>
+    <rect x="465" y="421" width="94" height="369" rx="47"/>
+    <rect x="644" y="274" width="94" height="516" rx="47"/>
+  </g>
+  <g opacity=".34">
+    <rect x="316" y="594" width="34" height="154" rx="17" fill="#ecfeff"/>
+    <rect x="495" y="454" width="34" height="252" rx="17" fill="#ecfeff"/>
+    <rect x="674" y="306" width="34" height="360" rx="17" fill="#ecfeff"/>
+  </g>
+  <circle cx="742" cy="256" r="104" fill="url(#nodeGlow)" opacity=".72"/>
+  <circle cx="742" cy="256" r="54" fill="#38bdf8"/>
+  <circle cx="742" cy="256" r="22" fill="#e0f2fe" opacity=".88"/>
+  <path d="M266 798h492" stroke="#dbeafe" stroke-width="20" stroke-linecap="round" opacity=".24"/>
+</svg>

@@ -177,6 +177,17 @@ semantic layer before visual polish is accepted.
   wash from the same semantic pressure color for that metric. Avoid neutral
   gray tracks, dirty yellow-blue blends, and decorative grids that make light
   mode look muddy or imply an unrelated scale.
+- System resource selectors must read as one unframed telemetry plane, not a
+  repeated card stack. The first read is an equal three-value headline strip;
+  capacity, network, thermal, and Agent process evidence follow as icon-led
+  rows separated only by hairlines. The selected inspector stays compact by
+  default with only its trend visible; a discrete disclosure reveals exact fact
+  rails, source, and scope. Its trend is limited to samples observed while the
+  panel is open. Keep whole-machine readings separate from the per-PID process
+  ledger.
+- Thermal pressure may appear when the public macOS API supplies it, but its
+  label must not imply a temperature. Show exact temperature and fan RPM as
+  unavailable rather than inferring either value from load.
 - System resource labels and metadata remain audit text, not decoration. Keep
   them small but readable, with stable line height and no clipping; if a metric
   card compresses, wrap or reduce secondary metadata before cropping the

@@ -16,6 +16,7 @@ rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 
 CGO_ENABLED=1 go build -trimpath -o "$APP_DIR/Contents/MacOS/$EXECUTABLE_NAME" .
+cp "$ROOT/macos/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
 
 sed \
   -e "s/__EXECUTABLE_NAME__/$EXECUTABLE_NAME/g" \

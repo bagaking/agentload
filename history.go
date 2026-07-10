@@ -13,6 +13,10 @@ import (
 
 const historyRetentionWindow = 30 * 24 * time.Hour
 
+// Compaction rewrites the JSONL store when the file holds materially more
+// lines than the retained window: >25% overhead or more than this many excess lines.
+const historyCompactionExcessLineLimit = 500
+
 type HistorySample struct {
 	At               string                   `json:"at"`
 	Current          CurrentMetrics           `json:"current"`
@@ -53,39 +57,6 @@ type HistoryCoordinationRisk struct {
 	LoadPeakAt                     string  `json:"load_peak_at,omitempty"`
 	DuplicateOverlapSuspicionCount int     `json:"duplicate_overlap_suspicion_count"`
 	DuplicateOverlapClusterCount   int     `json:"duplicate_overlap_cluster_count"`
-}
-
-type HistoryProjectAllocation struct {
-	Project                  string  `json:"project"`
-	SampleCount              int     `json:"sample_count"`
-	AverageAttentionSharePct float64 `json:"average_attention_share_pct"`
-	PeakAttentionSharePct    float64 `json:"peak_attention_share_pct"`
-	MaxSessionCount          int     `json:"max_session_count"`
-	MaxActiveBurstCount      int     `json:"max_active_burst_count"`
-	MaxProcessCount          int     `json:"max_process_count"`
-}
-
-type HistoryGrowth struct {
-	SampleCount             int    `json:"sample_count"`
-	From                    string `json:"from,omitempty"`
-	To                      string `json:"to,omitempty"`
-	PIDConcurrencyStart     int    `json:"pid_concurrency_start"`
-	PIDConcurrencyEnd       int    `json:"pid_concurrency_end"`
-	PIDConcurrencyDelta     int    `json:"pid_concurrency_delta"`
-	SessionConcurrencyStart int    `json:"session_concurrency_start"`
-	SessionConcurrencyEnd   int    `json:"session_concurrency_end"`
-	SessionConcurrencyDelta int    `json:"session_concurrency_delta"`
-	ActiveBurstStart        int    `json:"active_burst_start"`
-	ActiveBurstEnd          int    `json:"active_burst_end"`
-	ActiveBurstDelta        int    `json:"active_burst_delta"`
-}
-
-type HistoryRuntimePeaks struct {
-	PIDConcurrency         PeakPoint `json:"pid_concurrency"`
-	SessionConcurrency     PeakPoint `json:"session_concurrency"`
-	ActiveBurstConcurrency PeakPoint `json:"active_burst_concurrency"`
-	MappedProcesses        PeakPoint `json:"mapped_processes"`
-	UnmappedProcesses      PeakPoint `json:"unmapped_processes"`
 }
 
 type localHistoryState struct {
@@ -142,22 +113,80 @@ func loadLocalHistoryState(path string, now time.Time) (localHistoryState, error
 	if err := scanner.Err(); err != nil {
 		return state, err
 	}
+	if historyFileNeedsCompaction(state.loadedSampleCount+state.corruptLineCount, len(state.samples)) {
+		if err := rewriteHistorySampleFile(state.path, state.samples); err != nil {
+			return state, err
+		}
+	}
 	return state, nil
+}
+
+func historyFileNeedsCompaction(fileLineCount, retainedCount int) bool {
+	excess := fileLineCount - retainedCount
+	if excess <= 0 {
+		return false
+	}
+	return excess > historyCompactionExcessLineLimit || excess*4 > retainedCount
+}
+
+func rewriteHistorySampleFile(path string, samples []HistorySample) error {
+	if strings.TrimSpace(path) == "" {
+		return errors.New("history file path is empty")
+	}
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".compact-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	cleanup := func(err error) error {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return err
+	}
+	for _, sample := range samples {
+		raw, err := json.Marshal(sample)
+		if err != nil {
+			return cleanup(err)
+		}
+		if _, err := tmp.Write(append(raw, '\n')); err != nil {
+			return cleanup(err)
+		}
+	}
+	if err := tmp.Chmod(0o644); err != nil {
+		return cleanup(err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath)
+		return err
+	}
+	return nil
 }
 
 func (s *localHistoryState) recordSample(sample HistorySample) error {
 	var at time.Time
 	sample.At, at = normalizeHistorySampleTimestamp(sample.At, time.Now())
+	err := appendHistorySampleFile(s.path, sample)
+	s.recordSampleInMemory(sample, at, err)
+	return err
+}
+
+// recordSampleInMemory merges an already-persisted (or failed-to-persist) sample
+// so callers can run the file append outside the snapshot lock.
+func (s *localHistoryState) recordSampleInMemory(sample HistorySample, at time.Time, writeErr error) {
 	s.loadedSampleCount++
 	var dropped int
 	s.samples, dropped = appendRetainedHistorySample(s.samples, sample, at.Add(-historyRetentionWindow))
 	s.droppedSampleCount += dropped
-	if err := appendHistorySampleFile(s.path, sample); err != nil {
-		s.lastWriteError = err.Error()
-		return err
+	if writeErr != nil {
+		s.lastWriteError = writeErr.Error()
+		return
 	}
 	s.lastWriteError = ""
-	return nil
 }
 
 func (s localHistoryState) snapshotMetadata() SnapshotHistory {
@@ -323,59 +352,6 @@ func filterHistorySamplesByRange(samples []HistorySample, from, to time.Time) []
 	return out
 }
 
-func deriveProjectAllocation(samples []HistorySample, from, to time.Time) []HistoryProjectAllocation {
-	filtered := filterHistorySamplesByRange(samples, from, to)
-	type aggregate struct {
-		HistoryProjectAllocation
-		attentionTotal float64
-	}
-	aggregates := map[string]*aggregate{}
-	for _, sample := range filtered {
-		for _, project := range sample.Projects {
-			name := strings.TrimSpace(project.Project)
-			if name == "" {
-				continue
-			}
-			entry := aggregates[name]
-			if entry == nil {
-				entry = &aggregate{HistoryProjectAllocation: HistoryProjectAllocation{Project: name}}
-				aggregates[name] = entry
-			}
-			entry.SampleCount++
-			entry.attentionTotal += project.AttentionSharePct
-			if project.AttentionSharePct > entry.PeakAttentionSharePct {
-				entry.PeakAttentionSharePct = project.AttentionSharePct
-			}
-			if project.SessionCount > entry.MaxSessionCount {
-				entry.MaxSessionCount = project.SessionCount
-			}
-			if project.ActiveBurstCount > entry.MaxActiveBurstCount {
-				entry.MaxActiveBurstCount = project.ActiveBurstCount
-			}
-			if project.ProcessCount > entry.MaxProcessCount {
-				entry.MaxProcessCount = project.ProcessCount
-			}
-		}
-	}
-	out := make([]HistoryProjectAllocation, 0, len(aggregates))
-	for _, entry := range aggregates {
-		if entry.SampleCount > 0 {
-			entry.AverageAttentionSharePct = entry.attentionTotal / float64(entry.SampleCount)
-		}
-		out = append(out, entry.HistoryProjectAllocation)
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].AverageAttentionSharePct == out[j].AverageAttentionSharePct {
-			if out[i].PeakAttentionSharePct == out[j].PeakAttentionSharePct {
-				return out[i].Project < out[j].Project
-			}
-			return out[i].PeakAttentionSharePct > out[j].PeakAttentionSharePct
-		}
-		return out[i].AverageAttentionSharePct > out[j].AverageAttentionSharePct
-	})
-	return out
-}
-
 func buildProjectHeatmapWindows(samples []HistorySample, now time.Time) ProjectHeatmapSet {
 	if now.IsZero() {
 		now = time.Now()
@@ -481,49 +457,6 @@ func historySamplesCoverRange(samples []HistorySample, from time.Time) bool {
 		}
 	}
 	return !earliest.IsZero() && !earliest.After(from)
-}
-
-func deriveSessionRuntimeGrowth(samples []HistorySample, from, to time.Time) HistoryGrowth {
-	filtered := filterHistorySamplesByRange(samples, from, to)
-	if len(filtered) == 0 {
-		return HistoryGrowth{}
-	}
-	first := filtered[0]
-	last := filtered[len(filtered)-1]
-	return HistoryGrowth{
-		SampleCount:             len(filtered),
-		From:                    first.At,
-		To:                      last.At,
-		PIDConcurrencyStart:     first.Current.PIDConcurrency,
-		PIDConcurrencyEnd:       last.Current.PIDConcurrency,
-		PIDConcurrencyDelta:     last.Current.PIDConcurrency - first.Current.PIDConcurrency,
-		SessionConcurrencyStart: first.Current.SessionConcurrency,
-		SessionConcurrencyEnd:   last.Current.SessionConcurrency,
-		SessionConcurrencyDelta: last.Current.SessionConcurrency - first.Current.SessionConcurrency,
-		ActiveBurstStart:        first.Current.ActiveBurstConcurrency,
-		ActiveBurstEnd:          last.Current.ActiveBurstConcurrency,
-		ActiveBurstDelta:        last.Current.ActiveBurstConcurrency - first.Current.ActiveBurstConcurrency,
-	}
-}
-
-func reconstructRuntimePeaks(samples []HistorySample, from, to time.Time) HistoryRuntimePeaks {
-	filtered := filterHistorySamplesByRange(samples, from, to)
-	peaks := HistoryRuntimePeaks{}
-	for _, sample := range filtered {
-		updatePeakPoint(&peaks.PIDConcurrency, sample.Current.PIDConcurrency, sample.At)
-		updatePeakPoint(&peaks.SessionConcurrency, sample.Current.SessionConcurrency, sample.At)
-		updatePeakPoint(&peaks.ActiveBurstConcurrency, sample.Current.ActiveBurstConcurrency, sample.At)
-		updatePeakPoint(&peaks.MappedProcesses, sample.Summary.MappedProcesses, sample.At)
-		updatePeakPoint(&peaks.UnmappedProcesses, sample.Summary.UnmappedProcesses, sample.At)
-	}
-	return peaks
-}
-
-func updatePeakPoint(peak *PeakPoint, value int, at string) {
-	if peak.At == "" || value > peak.Value {
-		peak.Value = value
-		peak.At = at
-	}
 }
 
 func normalizeHistorySampleTimestamp(raw string, fallback time.Time) (string, time.Time) {

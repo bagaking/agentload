@@ -36,12 +36,99 @@ var systemResourceSampler = struct {
 	previousAt time.Time
 }{}
 
+const systemResourceSampleInterval = 2 * time.Second
+
+// backgroundSystemResourceSampler owns the delta baseline at a fixed cadence so
+// CPU%/network rates do not depend on whichever client polled last. It is never
+// started implicitly; trayApp startup starts it explicitly.
+var backgroundSystemResourceSampler = struct {
+	sync.Mutex
+	running bool
+	have    bool
+	latest  SystemResourceSnapshot
+	stop    chan struct{}
+}{}
+
+func startSystemResourceSampler(interval time.Duration) {
+	if interval <= 0 {
+		interval = systemResourceSampleInterval
+	}
+	s := &backgroundSystemResourceSampler
+	s.Lock()
+	if s.running {
+		s.Unlock()
+		return
+	}
+	s.running = true
+	s.stop = make(chan struct{})
+	stop := s.stop
+	s.Unlock()
+	go func() {
+		storeBackgroundSystemResourceSample(sampleSystemResourcesNow())
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				storeBackgroundSystemResourceSample(sampleSystemResourcesNow())
+			case <-stop:
+				return
+			}
+		}
+	}()
+}
+
+func stopSystemResourceSampler() {
+	s := &backgroundSystemResourceSampler
+	s.Lock()
+	defer s.Unlock()
+	if !s.running {
+		return
+	}
+	close(s.stop)
+	s.running = false
+	s.have = false
+	s.latest = SystemResourceSnapshot{}
+	s.stop = nil
+}
+
+func storeBackgroundSystemResourceSample(snapshot SystemResourceSnapshot) {
+	s := &backgroundSystemResourceSampler
+	s.Lock()
+	defer s.Unlock()
+	if !s.running {
+		return
+	}
+	s.latest = snapshot
+	s.have = true
+}
+
+func latestBackgroundSystemResourceSample() (SystemResourceSnapshot, bool) {
+	s := &backgroundSystemResourceSampler
+	s.Lock()
+	defer s.Unlock()
+	if !s.running || !s.have {
+		return SystemResourceSnapshot{}, false
+	}
+	return s.latest, true
+}
+
 func sampleSystemResources() SystemResourceSnapshot {
+	if snapshot, ok := latestBackgroundSystemResourceSample(); ok {
+		return snapshot
+	}
+	return sampleSystemResourcesNow()
+}
+
+func sampleSystemResourcesNow() SystemResourceSnapshot {
 	now := time.Now()
 	counters, supported, notes := readSystemResourceCounters()
+	thermalState, thermalStateSupported := readSystemThermalState()
 	snapshot := SystemResourceSnapshot{
 		SampledAt:             now.Format(time.RFC3339Nano),
 		Supported:             supported,
+		ThermalState:          thermalState,
+		ThermalStateSupported: thermalStateSupported,
 		CPUPercent:            0,
 		LoadAverage1:          counters.LoadAverage1,
 		LoadAverage5:          counters.LoadAverage5,
@@ -64,6 +151,9 @@ func sampleSystemResources() SystemResourceSnapshot {
 		NetworkRxDrops:        counters.NetworkRxDrops,
 		NetworkInterfaceCount: counters.NetworkInterfaces,
 		Notes:                 append([]string(nil), notes...),
+	}
+	if !thermalStateSupported {
+		snapshot.Notes = append(snapshot.Notes, "Thermal pressure state is unavailable from public macOS process information.")
 	}
 	if !supported {
 		return snapshot

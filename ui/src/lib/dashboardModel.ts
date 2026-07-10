@@ -1,84 +1,8 @@
 import { freshnessLabel, normalizedRole, orderedProjects, roleLabel } from "./activityModel";
-import { formatAge, formatCPU, formatCopy, formatDateTime, formatMemory, formatPct, safeID, shortID, type Translate } from "./format";
-import { currentHasAnyMetric, currentHasRecentMovement, currentKnownSessionCount, currentProcessPressureCount, currentRecentMovementCount, projectHasRecentMovement, projectKnownSessionCount, projectProcessPressureCount, projectRecentMovementCount, sessionHasRecentMovement, sessionProcessPressure, summaryMappedProcessCount, summaryMappingCoveragePct, summaryUnmappedProcessCount, trendContextSessionValue, trendMappedProcessCount, trendPrimaryValue } from "./metricSemantics";
-import type { LogTab, RailItem, RailTab, SelectedView, Selection } from "../types/app";
-import type { CurrentMetrics, Snapshot, TranscriptStats } from "../types/snapshot";
-import type { TrendPoint, TrendSet, TrendWindow } from "../trend/types";
-
-export function resolveSelection(t: Translate, snapshot: Snapshot | null, selection: Selection, brandName: string): SelectedView {
-  if (!snapshot || selection.type === "overview") {
-    return {
-      title: brandName,
-      kind: "scan",
-      status: snapshot ? "done" : "empty",
-      command: "/api/snapshot",
-      summary: {},
-      details: [],
-    };
-  }
-  if (selection.type === "project") {
-    const project = (snapshot.project_focus ?? []).find((item) => safeID(item.project) === selection.id);
-    return {
-      title: project?.project || t("unassigned"),
-      kind: "scan",
-      status: project && projectHasRecentMovement(project) ? "running" : "done",
-      command: `project:${project?.project || "unassigned"}`,
-      summary: {
-        sessions: project?.session_count ?? 0,
-        active: project ? projectRecentMovementCount(project) : 0,
-        processes: project ? projectProcessPressureCount(project) : 0,
-      },
-      details: [
-        `attention_share_pct=${formatPct(project?.attention_share_pct)}`,
-        `confidence=${project?.confidence || "unknown"}`,
-        `recent_sessions=${project?.recent_session_count ?? 0}`,
-        `stale_sessions=${project?.stale_session_count ?? 0}`,
-      ],
-    };
-  }
-  if (selection.type === "session") {
-    const session = (snapshot.live_sessions ?? []).find((item) => safeID(item.session_id) === selection.id);
-    return {
-      title: session?.project || shortID(session?.session_id) || t("session"),
-      kind: "query",
-      status: session && sessionHasRecentMovement(session) ? "running" : "done",
-      command: session?.path || `session:${session?.session_id || "unknown"}`,
-      summary: {
-        tool: session?.tool || "unknown",
-        role: session?.session_role || "unknown",
-        processes: session ? sessionProcessPressure(session) : 0,
-      },
-      details: [
-        `session_id=${session?.session_id || "unknown"}`,
-        `freshness=${session?.freshness || "unknown"}`,
-        `mapping_method=${session?.mapping_method || "unknown"}`,
-        `confidence=${session?.confidence || "unknown"}`,
-      ],
-    };
-  }
-  const process = (snapshot.live_processes ?? []).find((item) => String(item.pid ?? "") === selection.id);
-  return {
-    title: `${process?.display_name || process?.tool || t("process")} · ${process?.pid ?? t("pid")}`,
-    kind: "verify",
-    status: (process?.mapped_sessions ?? 0) > 0 ? "done" : "failed",
-    command: process?.command || `pid:${process?.pid || "unknown"}`,
-    summary: {
-      pid: process?.pid ?? 0,
-      tool: process?.tool || "unknown",
-      mapped: process?.mapped_sessions ?? 0,
-      direct: process?.main_sessions ?? 0,
-      subagent: process?.subagent_sessions ?? 0,
-      cpu: formatCPU(process?.cpu_percent),
-      memory: formatMemory(process?.memory_bytes, t),
-    },
-    details: [
-      `session_ids=${(process?.session_ids ?? []).join(",") || "none"}`,
-      `role_mix=direct:${process?.main_sessions ?? 0},subagent:${process?.subagent_sessions ?? 0},unknown:${process?.unknown_role_sessions ?? 0}`,
-      `resources=${formatCPU(process?.cpu_percent)} cpu, ${formatMemory(process?.memory_bytes, t)}`,
-      `host_app=${process?.host_app?.name || "unknown"}`,
-    ],
-  };
-}
+import { formatAge, formatCPU, formatCopy, formatMemory, formatPct, safeID, shortID, type Translate } from "./format";
+import { currentHasAnyMetric, currentHasRecentMovement, currentKnownSessionCount, currentProcessPressureCount, currentRecentMovementCount, projectHasRecentMovement, projectKnownSessionCount, projectProcessPressureCount, projectRecentMovementCount, sessionHasRecentMovement, summaryMappedProcessCount, summaryMappingCoveragePct, summaryUnmappedProcessCount } from "./metricSemantics";
+import type { RailItem, RailTab } from "../types/app";
+import type { CoordinationRisk, Snapshot, TranscriptStats } from "../types/snapshot";
 
 export function buildRailItems(t: Translate, snapshot: Snapshot | null, tab: RailTab, query: string): RailItem[] {
   if (!snapshot) return [];
@@ -176,13 +100,6 @@ export function dashboardProjectMeta(t: Translate, snapshot: Snapshot): string {
   return `${projectCount} ${t("projects")} / ${hotCount} ${t("active")}`;
 }
 
-export function dashboardProjectLead(t: Translate, snapshot: Snapshot): string {
-  const top = orderedProjects(snapshot)[0];
-  if (!top?.project) return t("unavailable");
-  const attention = typeof top.attention_share_pct === "number" ? `${formatPct(top.attention_share_pct)} · ` : "";
-  return `${attention}${top.project}`;
-}
-
 export function transcriptScanSummary(t: Translate, stats: TranscriptStats, retainedSamples?: number): string {
   const parsed = stats.parsed_files ?? 0;
   const scanned = stats.scanned_files ?? 0;
@@ -227,8 +144,8 @@ export function mappingHealthText(t: Translate, snapshot: Snapshot): string {
 export function primaryEvidenceNote(t: Translate, snapshot: Snapshot): string {
   const risk = snapshot.coordination_risk ?? {};
   const summary = snapshot.summary ?? {};
-  const firstSignal = risk.signals?.find((signal) => signal.evidence)?.evidence;
-  if (firstSignal) return normalizeEvidenceNote(t, firstSignal);
+  const firstSignal = risk.signals?.find((signal) => signal.evidence);
+  if (firstSignal) return localizedSignalNote(t, risk, firstSignal) ?? normalizeEvidenceNote(t, firstSignal.evidence ?? "");
   const firstNote = [...(snapshot.notes ?? []), ...(snapshot.transcript_stats?.errors ?? [])].find((note) => note);
   if (firstNote) return normalizeEvidenceNote(t, firstNote);
   const unmapped = risk.orphan_process_count ?? summaryUnmappedProcessCount(summary);
@@ -239,40 +156,6 @@ export function primaryEvidenceNote(t: Translate, snapshot: Snapshot): string {
   const pids = currentProcessPressureCount(snapshot.current);
   if (mapped || pids) return `${mapped}/${pids} ${t("processEvidenceMapped")}`;
   return t("noSignals");
-}
-
-export function renderLogText(t: Translate, snapshot: Snapshot, selected: SelectedView, tab: LogTab): string {
-  if (tab === "summary") {
-    return JSON.stringify(
-      {
-        selected: selected.title,
-        status: selected.status,
-        metrics: selected.summary,
-        current: snapshot.current,
-        summary: snapshot.summary,
-      },
-      null,
-      2,
-    );
-  }
-  if (tab === "evidence") {
-    const notes = [...(snapshot.notes ?? []), ...(snapshot.transcript_stats?.errors ?? []), ...selected.details];
-    if (!notes.length) return `${t("evidence")}: ${t("none")}`;
-    return notes.map((line, index) => `${String(index + 1).padStart(2, "0")}  ${line}`).join("\n");
-  }
-  const history = bestWindow(snapshot.trends);
-  const runtime = bestWindow(snapshot.realtime_trends);
-  const points = mergeTrendPoints(history?.points ?? [], runtime?.points ?? []).slice(-18);
-  return points
-    .map((point) => {
-      const at = point.at ? formatDateTime(point.at) : t("unavailable");
-      return `${at}  fresh=${trendPrimaryValue("history", point) ?? "-"} sessions=${trendContextSessionValue(point) ?? "-"} pids=${trendPrimaryValue("runtime", point) ?? "-"} mapped=${trendMappedProcessCount(point) ?? "-"}`;
-    })
-    .join("\n") || `${t("trend")}: ${t("noTrend")}`;
-}
-
-export function currentPeerScale(current: CurrentMetrics): number {
-  return Math.max(1, currentRecentMovementCount(current), currentKnownSessionCount(current), currentProcessPressureCount(current));
 }
 
 export function statusTone(snapshot: Snapshot): "active" | "idle" | "warn" {
@@ -294,22 +177,18 @@ export function coordinationPostureLabel(snapshot: Snapshot, t: Translate): stri
   return t("fresh");
 }
 
+// Signals carry a structured kind while the matching count lives on the risk
+// payload, so known kinds localize without parsing the English evidence text.
+function localizedSignalNote(t: Translate, risk: CoordinationRisk, signal: { kind?: string; evidence?: string }): string | null {
+  if (signal.kind === "unmatched_processes" && typeof risk.orphan_process_count === "number") {
+    return formatCopy(t("unmatchedSignalWarning"), { count: risk.orphan_process_count });
+  }
+  return null;
+}
+
 function normalizeEvidenceNote(t: Translate, note: string): string {
   const text = String(note || "").trim();
   const unmatched = text.match(/^(\d+)\s+(?:visible\s+)?live processes (?:are not currently matched to local session evidence|have no mapped session)\.?$/i);
   if (unmatched) return formatCopy(t("unmatchedSignalWarning"), { count: unmatched[1] });
   return text;
-}
-
-function bestWindow(set?: TrendSet): TrendWindow | undefined {
-  return set?.windows?.find((window) => window.range === "1D") ?? set?.windows?.[0];
-}
-
-function mergeTrendPoints(history: TrendPoint[], runtime: TrendPoint[]): TrendPoint[] {
-  const byAt = new Map<string, TrendPoint>();
-  [...history, ...runtime].forEach((point) => {
-    const key = point.at || `${byAt.size}`;
-    byAt.set(key, { ...(byAt.get(key) ?? {}), ...point, at: key });
-  });
-  return Array.from(byAt.values()).sort((a, b) => String(a.at).localeCompare(String(b.at)));
 }

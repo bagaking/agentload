@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -153,9 +154,6 @@ func TestLocalHistoryStoreRetainsDistinctSameSecondSamples(t *testing.T) {
 	if len(replayed) != 2 {
 		t.Fatalf("expected replay helpers to retain both same-second samples, got %d", len(replayed))
 	}
-	if growth := deriveSessionRuntimeGrowth(reloaded.samples, now, now.Add(time.Second)); growth.SampleCount != 2 {
-		t.Fatalf("expected growth replay to include both same-second samples, got %+v", growth)
-	}
 }
 
 func TestLocalHistoryStoreIgnoresCorruptAndPartialLines(t *testing.T) {
@@ -275,6 +273,132 @@ func TestLocalHistoryStoreRetentionDropsOldSamplesWithoutBackfill(t *testing.T) 
 	}
 	if thirtyDay.Points[0].At != now.Add(-2*time.Hour).Format(time.RFC3339) {
 		t.Fatalf("expected retained point at %s, got %+v", now.Add(-2*time.Hour).Format(time.RFC3339), thirtyDay.Points[0])
+	}
+}
+
+func TestLoadLocalHistoryStateCompactsFileWithMaterialOverhead(t *testing.T) {
+	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
+	path := filepath.Join(t.TempDir(), "history.jsonl")
+
+	var content []byte
+	for i := 0; i < 10; i++ {
+		raw, err := json.Marshal(makeHistorySample(now.Add(-40*24*time.Hour).Add(time.Duration(i)*time.Minute),
+			CurrentMetrics{PIDConcurrency: i},
+			SnapshotSummary{MappedProcesses: i},
+			nil,
+		))
+		if err != nil {
+			t.Fatalf("marshal stale sample: %v", err)
+		}
+		content = append(content, append(raw, '\n')...)
+	}
+	retained := []HistorySample{
+		makeHistorySample(now.Add(-2*time.Hour), CurrentMetrics{PIDConcurrency: 3}, SnapshotSummary{MappedProcesses: 2}, nil),
+		makeHistorySample(now.Add(-time.Hour), CurrentMetrics{PIDConcurrency: 4}, SnapshotSummary{MappedProcesses: 3}, nil),
+	}
+	for _, sample := range retained {
+		raw, err := json.Marshal(sample)
+		if err != nil {
+			t.Fatalf("marshal retained sample: %v", err)
+		}
+		content = append(content, append(raw, '\n')...)
+	}
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatalf("write history fixture: %v", err)
+	}
+
+	state, err := loadLocalHistoryState(path, now)
+	if err != nil {
+		t.Fatalf("loadLocalHistoryState: %v", err)
+	}
+	if len(state.samples) != 2 || state.droppedSampleCount != 10 {
+		t.Fatalf("expected 2 retained and 10 dropped samples, got %d retained %d dropped", len(state.samples), state.droppedSampleCount)
+	}
+
+	rewritten, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read compacted history: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(rewritten)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected compacted file with 2 lines, got %d: %q", len(lines), string(rewritten))
+	}
+	for i, line := range lines {
+		var sample HistorySample
+		if err := json.Unmarshal([]byte(line), &sample); err != nil {
+			t.Fatalf("decode compacted line %d: %v", i, err)
+		}
+		if sample.At != retained[i].At {
+			t.Fatalf("expected compacted line %d at %s, got %s", i, retained[i].At, sample.At)
+		}
+	}
+
+	reloaded, err := loadLocalHistoryState(path, now)
+	if err != nil {
+		t.Fatalf("reload compacted history: %v", err)
+	}
+	if reloaded.loadedSampleCount != 2 || reloaded.droppedSampleCount != 0 || len(reloaded.samples) != 2 {
+		t.Fatalf("expected clean reload after compaction, got %+v", reloaded.snapshotMetadata())
+	}
+}
+
+func TestLoadLocalHistoryStateKeepsFileWithSmallOverhead(t *testing.T) {
+	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
+	path := filepath.Join(t.TempDir(), "history.jsonl")
+
+	var content []byte
+	appendSample := func(at time.Time) {
+		raw, err := json.Marshal(makeHistorySample(at, CurrentMetrics{PIDConcurrency: 1}, SnapshotSummary{MappedProcesses: 1}, nil))
+		if err != nil {
+			t.Fatalf("marshal sample: %v", err)
+		}
+		content = append(content, append(raw, '\n')...)
+	}
+	appendSample(now.Add(-40 * 24 * time.Hour))
+	for i := 0; i < 10; i++ {
+		appendSample(now.Add(-time.Duration(i+1) * time.Hour))
+	}
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatalf("write history fixture: %v", err)
+	}
+
+	state, err := loadLocalHistoryState(path, now)
+	if err != nil {
+		t.Fatalf("loadLocalHistoryState: %v", err)
+	}
+	if len(state.samples) != 10 || state.droppedSampleCount != 1 {
+		t.Fatalf("expected 10 retained and 1 dropped sample, got %d retained %d dropped", len(state.samples), state.droppedSampleCount)
+	}
+
+	kept, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read history file: %v", err)
+	}
+	if string(kept) != string(content) {
+		t.Fatalf("expected small overhead to leave the file untouched")
+	}
+}
+
+func TestHistoryFileNeedsCompactionThresholds(t *testing.T) {
+	tests := []struct {
+		name     string
+		lines    int
+		retained int
+		want     bool
+	}{
+		{name: "clean file", lines: 10, retained: 10, want: false},
+		{name: "small overhead stays", lines: 11, retained: 10, want: false},
+		{name: "over quarter overhead compacts", lines: 13, retained: 10, want: true},
+		{name: "excess line limit compacts", lines: 2501, retained: 2000, want: true},
+		{name: "all lines stale compacts", lines: 5, retained: 0, want: true},
+		{name: "empty file stays", lines: 0, retained: 0, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := historyFileNeedsCompaction(tt.lines, tt.retained); got != tt.want {
+				t.Fatalf("historyFileNeedsCompaction(%d, %d) = %v, want %v", tt.lines, tt.retained, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -450,27 +574,6 @@ func TestReplayHelpersUseObservedSamplesOnly(t *testing.T) {
 		),
 	}
 
-	from := now.Add(-6 * time.Hour)
-	to := now
-	allocation := deriveProjectAllocation(samples, from, to)
-	if len(allocation) != 2 {
-		t.Fatalf("expected 2 projects in allocation replay, got %d", len(allocation))
-	}
-	if allocation[0].Project != "beta" {
-		t.Fatalf("expected beta to lead allocation replay, got %+v", allocation)
-	}
-	beta := requireHistoryProjectAllocation(t, allocation, "beta")
-	if beta.SampleCount != 3 {
-		t.Fatalf("expected beta sample count 3, got %+v", beta)
-	}
-	if math.Abs(beta.AverageAttentionSharePct-63.3333333) > 0.01 {
-		t.Fatalf("expected beta avg attention about 63.33, got %+v", beta)
-	}
-	alpha := requireHistoryProjectAllocation(t, allocation, "alpha")
-	if alpha.SampleCount != 2 || alpha.MaxSessionCount != 2 {
-		t.Fatalf("expected alpha replay max/session counts from in-range samples only, got %+v", alpha)
-	}
-
 	heatmaps := buildProjectHeatmapWindows(samples, now)
 	oneDayHeatmap := requireProjectHeatmapWindow(t, heatmaps, "1D")
 	if oneDayHeatmap.SampleWindowCount != 3 || oneDayHeatmap.SessionWindowCount != 14 {
@@ -489,34 +592,6 @@ func TestReplayHelpersUseObservedSamplesOnly(t *testing.T) {
 	}
 	if oneDayHeatmap.Items[0].Project != "beta" {
 		t.Fatalf("expected heatmap items sorted by session-window investment, got %+v", oneDayHeatmap.Items)
-	}
-
-	growth := deriveSessionRuntimeGrowth(samples, from, to)
-	if growth.SampleCount != 3 {
-		t.Fatalf("expected 3 in-range samples for growth, got %+v", growth)
-	}
-	if growth.PIDConcurrencyStart != 4 || growth.PIDConcurrencyEnd != 5 || growth.PIDConcurrencyDelta != 1 {
-		t.Fatalf("unexpected pid growth: %+v", growth)
-	}
-	if growth.SessionConcurrencyStart != 2 || growth.SessionConcurrencyEnd != 5 || growth.SessionConcurrencyDelta != 3 {
-		t.Fatalf("unexpected session growth: %+v", growth)
-	}
-	if growth.ActiveBurstStart != 1 || growth.ActiveBurstEnd != 2 || growth.ActiveBurstDelta != 1 {
-		t.Fatalf("unexpected active burst growth: %+v", growth)
-	}
-
-	peaks := reconstructRuntimePeaks(samples, from, to)
-	if peaks.PIDConcurrency.Value != 6 || peaks.PIDConcurrency.At != now.Add(-3*time.Hour).Format(time.RFC3339) {
-		t.Fatalf("expected in-range pid peak at -3h, got %+v", peaks.PIDConcurrency)
-	}
-	if peaks.SessionConcurrency.Value != 5 || peaks.SessionConcurrency.At != now.Add(-time.Hour).Format(time.RFC3339) {
-		t.Fatalf("expected in-range session peak at -1h, got %+v", peaks.SessionConcurrency)
-	}
-	if peaks.ActiveBurstConcurrency.Value != 3 || peaks.ActiveBurstConcurrency.At != now.Add(-3*time.Hour).Format(time.RFC3339) {
-		t.Fatalf("expected in-range active peak at -3h, got %+v", peaks.ActiveBurstConcurrency)
-	}
-	if peaks.MappedProcesses.Value != 5 || peaks.MappedProcesses.At != now.Add(-3*time.Hour).Format(time.RFC3339) {
-		t.Fatalf("expected in-range mapped-process peak at -3h, got %+v", peaks.MappedProcesses)
 	}
 }
 
@@ -542,17 +617,6 @@ func persistedTime(sample HistorySample) time.Time {
 		return time.Time{}
 	}
 	return t
-}
-
-func requireHistoryProjectAllocation(t *testing.T, allocations []HistoryProjectAllocation, project string) HistoryProjectAllocation {
-	t.Helper()
-	for _, allocation := range allocations {
-		if allocation.Project == project {
-			return allocation
-		}
-	}
-	t.Fatalf("missing allocation replay for %s", project)
-	return HistoryProjectAllocation{}
 }
 
 func requireProjectHeatmapWindow(t *testing.T, heatmaps ProjectHeatmapSet, label string) ProjectHeatmapWindow {

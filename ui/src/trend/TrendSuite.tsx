@@ -116,10 +116,12 @@ export function TrendSuite({
   const projectHeatmap = projectHeatmapWindowForRange(snapshot.project_heatmaps, effectiveRange);
   const projectActivity = useMemo(() => projectHeatmapActivityByProject(snapshot.project_focus), [snapshot.project_focus]);
   const [focusedLane, setFocusedLane] = useState<TrendLane>("history");
-  const laneSummaries: TrendLaneSummary[] = [
+  // Stable summary (and points) identities keep the chart data effect from
+  // re-firing on focus-only re-renders.
+  const laneSummaries: TrendLaneSummary[] = useMemo(() => [
     trendLaneSummary("history", t("historyLane"), history, trendSelection.history),
     trendLaneSummary("runtime", t("runtimeLane"), runtime, trendSelection.runtime),
-  ].filter((summary) => Boolean(summary.trendWindow || summary.points.length));
+  ].filter((summary) => Boolean(summary.trendWindow || summary.points.length)), [t, history, runtime, trendSelection.history, trendSelection.runtime]);
   const activeSummary = laneSummaries.find((summary) => summary.lane === focusedLane && summary.selected) ?? laneSummaries.find((summary) => summary.selected);
   return (
     <section className={`trend-suite ${compact ? "compact" : "dashboard"}`}>
@@ -573,10 +575,19 @@ function TrendKLineChart({
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const areaRef = useRef<ISeriesApi<"Area"> | null>(null);
   const data = useMemo(() => trendKLineData(points, lane), [points, lane]);
+  // The chart instance outlives snapshot polls, so click/crosshair handlers and
+  // the data pushes read the latest values through refs instead of effect deps.
+  const dataRef = useRef(data);
+  const onSelectRef = useRef(onSelect);
   const selected = selectedAt ? data.find((item) => item.at === selectedAt) ?? data[data.length - 1] : data[data.length - 1];
   const [overlay, setOverlay] = useState<TrendKLineOverlay | null>(null);
   const [hover, setHover] = useState<TrendKLineHover | null>(null);
   const [sizeKey, setSizeKey] = useState(0);
+  const theme = useResolvedTheme();
+
+  useEffect(() => {
+    onSelectRef.current = onSelect;
+  }, [onSelect]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -614,7 +625,7 @@ function TrendKLineChart({
         secondsVisible: false,
         fixLeftEdge: true,
         fixRightEdge: true,
-        barSpacing: data.length > 72 ? 4.2 : data.length > 36 ? 6.6 : 9.2,
+        barSpacing: trendBarSpacing(dataRef.current.length),
         minBarSpacing: 2.8,
       },
       crosshair: {
@@ -649,17 +660,17 @@ function TrendKLineChart({
       lastValueVisible: false,
     });
     const handleClick = (param: { time?: Time }) => {
-      if (!param.time || !data.length) return;
-      const clicked = nearestKLineDatum(data, param.time);
-      onSelect(clicked?.at);
+      if (!param.time || !dataRef.current.length) return;
+      const clicked = nearestKLineDatum(dataRef.current, param.time);
+      onSelectRef.current(clicked?.at);
     };
     const handleCrosshairMove = (param: MouseEventParams<Time>) => {
       const point = param.point;
-      if (!param.time || !point || point.x < 0 || point.y < 0 || !data.length) {
+      if (!param.time || !point || point.x < 0 || point.y < 0 || !dataRef.current.length) {
         setHover(null);
         return;
       }
-      const hovered = nearestKLineDatum(data, param.time);
+      const hovered = nearestKLineDatum(dataRef.current, param.time);
       if (!hovered) {
         setHover(null);
         return;
@@ -679,6 +690,11 @@ function TrendKLineChart({
     chartRef.current = chart;
     candleRef.current = candles;
     areaRef.current = area;
+    if (dataRef.current.length) {
+      applyTrendKLineData(chart, candles, area, dataRef.current);
+    }
+    // Re-sync the selection overlay with the freshly created chart.
+    setSizeKey((value) => value + 1);
     const resizeObserver = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (!entry) return;
@@ -697,16 +713,15 @@ function TrendKLineChart({
       candleRef.current = null;
       areaRef.current = null;
     };
-  }, [data, lane, onSelect]);
+  }, [lane, theme]);
 
   useEffect(() => {
+    dataRef.current = data;
     const chart = chartRef.current;
     const candleSeries = candleRef.current;
     const areaSeries = areaRef.current;
     if (!chart || !candleSeries || !areaSeries) return;
-    candleSeries.setData(data.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
-    areaSeries.setData(data.map(({ time, close }) => ({ time, value: close })));
-    chart.timeScale().fitContent();
+    applyTrendKLineData(chart, candleSeries, areaSeries, data);
     setHover(null);
   }, [data]);
 
@@ -915,6 +930,31 @@ function trendKLineData(points: TrendPoint[], lane: TrendLane): TrendKLineDatum[
       low: Math.min(open, close),
     };
   });
+}
+
+function applyTrendKLineData(chart: IChartApi, candleSeries: ISeriesApi<"Candlestick">, areaSeries: ISeriesApi<"Area">, data: TrendKLineDatum[]) {
+  candleSeries.setData(data.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
+  areaSeries.setData(data.map(({ time, close }) => ({ time, value: close })));
+  chart.timeScale().applyOptions({ barSpacing: trendBarSpacing(data.length) });
+  chart.timeScale().fitContent();
+}
+
+function trendBarSpacing(count: number): number {
+  return count > 72 ? 4.2 : count > 36 ? 6.6 : 9.2;
+}
+
+// Chart colors are resolved from computed styles at creation time, so the
+// create effect must re-run when the document theme flips.
+function useResolvedTheme(): string {
+  const [theme, setTheme] = useState(() => document.documentElement.dataset.theme || "dark");
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setTheme(document.documentElement.dataset.theme || "dark");
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => observer.disconnect();
+  }, []);
+  return theme;
 }
 
 function nearestKLineDatum(data: TrendKLineDatum[], time: Time): TrendKLineDatum | undefined {

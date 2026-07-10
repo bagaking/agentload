@@ -41,6 +41,13 @@ type trayApp struct {
 	lastSlot     string
 	history      localHistoryState
 
+	// historyFileMu serializes JSONL appends so disk I/O never runs under lastMu.
+	historyFileMu sync.Mutex
+
+	clientCacheMu   sync.Mutex
+	clientCacheSlot string
+	clientCacheJSON []byte
+
 	mCurrent       *systray.MenuItem
 	mFocus         *systray.MenuItem
 	mPeak          *systray.MenuItem
@@ -74,6 +81,7 @@ func newTrayApp(cfg Config, observer *Observer, logger *log.Logger, listener net
 }
 
 func (a *trayApp) run() error {
+	startSystemResourceSampler(systemResourceSampleInterval)
 	go func() {
 		if err := a.server.Serve(a.listener); err != nil && err != http.ErrServerClosed {
 			a.logger.Printf("http server failed: %v", err)
@@ -124,6 +132,7 @@ func (a *trayApp) onExit() {
 	nativePopoverHide()
 	nativePopoverInstallStatusClickFallback("")
 	nativePopoverConfigureDashboard("")
+	stopSystemResourceSampler()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := a.server.Shutdown(ctx); err != nil && !strings.Contains(strings.ToLower(err.Error()), "closed network connection") {
@@ -259,12 +268,33 @@ func (a *trayApp) refreshSlotIDForInterval(now time.Time, interval time.Duration
 }
 
 func (a *trayApp) refreshOnce(slotID string) {
-	ctx, cancel := context.WithTimeout(context.Background(), maxDuration(90*time.Second, a.cfg.Lookback/10))
+	ctx, cancel := context.WithTimeout(context.Background(), clampDuration(a.cfg.Lookback/10, 90*time.Second, 5*time.Minute))
 	defer cancel()
 	snapshot := a.observer.Snapshot(ctx)
 	snapshot.RefreshSlotID = slotID
+	if snapshotScanAborted(ctx, snapshot) {
+		// Show the partial result but keep it out of history/cache so trends
+		// and heatmaps only build from complete samples; the next slot rescans.
+		a.applySnapshot(snapshot)
+		return
+	}
 	snapshot = a.rememberSnapshot(snapshot)
 	a.applySnapshot(snapshot)
+}
+
+// snapshotScanAborted reports whether a snapshot came from a cancelled/expired
+// context or an aborted transcript scan; such partial samples would undercount
+// concurrency if committed to history or served as the cached snapshot.
+func snapshotScanAborted(ctx context.Context, snapshot Snapshot) bool {
+	if ctx.Err() != nil {
+		return true
+	}
+	for _, scanErr := range snapshot.TranscriptStats.Errors {
+		if strings.Contains(scanErr, "transcript scan aborted early") || strings.Contains(scanErr, "transcript scan wait cancelled") {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *trayApp) setRefreshing(value bool) {
@@ -280,24 +310,42 @@ func (a *trayApp) isRefreshing() bool {
 }
 
 func (a *trayApp) rememberSnapshot(snapshot Snapshot) Snapshot {
+	sample := historySampleFromSnapshot(snapshot)
+	var sampleTime time.Time
+	sample.At, sampleTime = normalizeHistorySampleTimestamp(sample.At, time.Now())
+	// The JSONL append runs before taking lastMu so /api/snapshot readers never
+	// wait on disk I/O; historyFileMu alone keeps append ordering.
+	appendErr := a.appendHistorySample(sample)
+	if appendErr != nil && a.logger != nil {
+		a.logger.Printf("local history append failed: %v", appendErr)
+	}
 	a.lastMu.Lock()
-	snapshot = a.mergeRuntimeTrendsLocked(snapshot)
+	snapshot = a.mergeRecordedSampleLocked(snapshot, sample, sampleTime, appendErr)
 	a.lastSnapshot = snapshot
 	a.haveSnapshot = true
 	a.lastMu.Unlock()
 	return snapshot
 }
 
+func (a *trayApp) appendHistorySample(sample HistorySample) error {
+	a.historyFileMu.Lock()
+	defer a.historyFileMu.Unlock()
+	return appendHistorySampleFile(a.history.path, sample)
+}
+
 func (a *trayApp) mergeRuntimeTrendsLocked(snapshot Snapshot) Snapshot {
 	sample := historySampleFromSnapshot(snapshot)
-	sampleTime, ok := historySampleTime(sample)
-	if !ok {
-		sampleTime = time.Now()
-		sample.At = sampleTime.Format(time.RFC3339)
+	var sampleTime time.Time
+	sample.At, sampleTime = normalizeHistorySampleTimestamp(sample.At, time.Now())
+	appendErr := a.appendHistorySample(sample)
+	if appendErr != nil && a.logger != nil {
+		a.logger.Printf("local history append failed: %v", appendErr)
 	}
-	if err := a.history.recordSample(sample); err != nil && a.logger != nil {
-		a.logger.Printf("local history append failed: %v", err)
-	}
+	return a.mergeRecordedSampleLocked(snapshot, sample, sampleTime, appendErr)
+}
+
+func (a *trayApp) mergeRecordedSampleLocked(snapshot Snapshot, sample HistorySample, sampleTime time.Time, appendErr error) Snapshot {
+	a.history.recordSampleInMemory(sample, sampleTime, appendErr)
 	snapshot.RealtimeTrends = buildRealtimeTrendWindows(a.history.trendPoints(), sampleTime)
 	snapshot.ProjectHeatmaps = buildProjectHeatmapWindows(a.history.samples, sampleTime)
 	snapshot.History = a.history.snapshotMetadata()
@@ -497,14 +545,14 @@ func formatTimestamp(raw string) string {
 	return raw
 }
 
-func maxDuration(values ...time.Duration) time.Duration {
-	var best time.Duration
-	for _, value := range values {
-		if value > best {
-			best = value
-		}
+func clampDuration(value, floor, ceiling time.Duration) time.Duration {
+	if value < floor {
+		return floor
 	}
-	return best
+	if value > ceiling {
+		return ceiling
+	}
+	return value
 }
 
 func renderStatusIcon(metrics CurrentMetrics, loading bool) []byte {

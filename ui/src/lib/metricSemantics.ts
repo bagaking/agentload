@@ -17,10 +17,13 @@ export function sessionHasRecentMovement(session: LiveSession): boolean {
 }
 
 export function sessionNeedsHumanReview(session: LiveSession): boolean {
+  // Backend needs_review is the source of truth; the heuristic below only
+  // covers snapshots from older backends that predate the field.
+  if (typeof session.needs_review === "boolean") return session.needs_review;
   const freshness = String(session.freshness || "").trim().toLowerCase();
   if (normalizedRole(session.session_role) !== "main") return false;
   if (sessionHasRecentMovement(session)) return false;
-  return freshness === "idle" || freshness === "done" || freshness === "waiting";
+  return freshness === "idle" || freshness === "stale";
 }
 
 export function snapshotHumanReviewSessions(snapshot?: Snapshot | null): LiveSession[] {
