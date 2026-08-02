@@ -276,7 +276,7 @@ func (a *trayApp) refreshOnce(slotID string) {
 	defer cancel()
 	snapshot := a.observer.Snapshot(ctx)
 	snapshot.RefreshSlotID = slotID
-	a.liveTokenRate.addSnapshotRoots(snapshot.Config)
+	a.liveTokenRate.addSnapshotRoots(snapshot.Config, snapshot.LiveTokenRateFiles)
 	if snapshotScanAborted(ctx, snapshot) {
 		// Show the partial result but keep it out of history/cache so trends
 		// and heatmaps only build from complete samples; the next slot rescans.

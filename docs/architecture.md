@@ -102,6 +102,10 @@ feed historic peaks and transcript trend windows.
   only when names are added or removed. Vendor-owned non-transcript branches
   such as Trae `*.artifacts` trees are pruned before recursion, so historical
   session artifacts do not consume the directory budget or periodic scan time.
+  Roots discovered from visible processes reuse the observer's exact priority
+  transcript paths for baselines and are watcher-only while native coverage is
+  available; adding a custom root therefore does not recursively index its
+  historical session or lane tree.
   On macOS, recursive FSEvents file notifications surface newly created and
   resumed old JSONL files without recurring full-tree walks; tracked appends are
   then read from their private cursors. Dropped events fail closed and force one

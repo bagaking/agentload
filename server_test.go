@@ -559,6 +559,10 @@ func TestHandleSnapshotAPIRedactsConfigPaths(t *testing.T) {
 	app := &trayApp{cfg: Config{RefreshInterval: 5 * time.Minute}}
 	app.lastSnapshot = Snapshot{
 		GeneratedAt: "2026-06-28T12:00:00Z",
+		LiveTokenRateFiles: []TranscriptFile{{
+			Tool: "codex",
+			Path: filepath.Join("private", "roots", ".codex", "sessions", "active.jsonl"),
+		}},
 		Config: SnapshotConfig{
 			IdleGapSeconds:       90,
 			ClaudeRoots:          []string{filepath.Join("private", "roots", ".claude")},
@@ -594,6 +598,9 @@ func TestHandleSnapshotAPIRedactsConfigPaths(t *testing.T) {
 	}
 	if app.lastSnapshot.Config.HistoryFile == "" || len(app.lastSnapshot.Config.CodexRoots) == 0 || app.lastSnapshot.History.StorePath == "" {
 		t.Fatalf("expected cached internal snapshot to retain path metadata, got config=%+v history=%+v", app.lastSnapshot.Config, app.lastSnapshot.History)
+	}
+	if strings.Contains(rec.Body.String(), "active.jsonl") {
+		t.Fatalf("expected live token priority paths to remain private, got %q", rec.Body.String())
 	}
 }
 

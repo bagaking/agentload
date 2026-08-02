@@ -92,6 +92,7 @@ func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 		LiveSessions:       liveSessionSnapshots,
 		RuntimeProcesses:   buildRuntimeProcessSummary(liveProcessSnapshots),
 		HostAppProcesses:   buildHostAppProcessSummary(liveProcessSnapshots),
+		LiveTokenRateFiles: append([]TranscriptFile(nil), priority...),
 	}
 	snapshot.Summary = buildSnapshotSummary(snapshot.LiveProcesses, snapshot.LiveSessions, snapshot.ProjectFocus)
 	snapshot.CoordinationRisk = buildCoordinationRisk(

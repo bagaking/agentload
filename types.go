@@ -31,6 +31,7 @@ type Snapshot struct {
 	RuntimeProcesses   []ProcessRuntimeSummary     `json:"runtime_process_summary,omitempty"`
 	HostAppProcesses   []HostAppProcessSummary     `json:"host_app_process_summary,omitempty"`
 	Notes              []string                    `json:"notes,omitempty"`
+	LiveTokenRateFiles []TranscriptFile            `json:"-"`
 }
 
 type SnapshotConfig struct {

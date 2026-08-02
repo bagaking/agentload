@@ -362,6 +362,74 @@ func TestLiveTokenRateDiscoveryReusesStableDirectoriesAndFindsNewEntries(t *test
 	}
 }
 
+func TestLiveTokenRateDynamicRootUsesPriorityFilesWithoutWalkingHistory(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	root := t.TempDir()
+	sessions := filepath.Join(root, "sessions")
+	if err := os.MkdirAll(sessions, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(sessions, "active.jsonl")
+	writeCumulativeTokenFile(t, path, now, 100)
+	priority := []TranscriptFile{{Tool: "codex", Path: path}}
+	for index := 0; index < liveTokenRateMaxFiles+8; index++ {
+		oldPath := filepath.Join(sessions, fmt.Sprintf("old-%04d.jsonl", index))
+		writeCumulativeTokenFile(t, oldPath, now.Add(-time.Hour), 100)
+		if err := os.Chtimes(oldPath, now.Add(-time.Hour), now.Add(-time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		priority = append(priority, TranscriptFile{Tool: "codex", Path: oldPath})
+	}
+	for index := 0; index < liveTokenRateMaxDirectories+8; index++ {
+		if err := os.MkdirAll(filepath.Join(root, ".codexl", "history", fmt.Sprintf("lane-%04d", index)), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	readDir := liveTokenRateReadDir
+	t.Cleanup(func() { liveTokenRateReadDir = readDir })
+	readCount := 0
+	liveTokenRateReadDir = func(path string) ([]os.DirEntry, error) {
+		readCount++
+		return readDir(path)
+	}
+
+	sampler := newLiveTokenRateSampler(Config{})
+	sampler.watchCoverage = true
+	sampler.addSnapshotRoots(
+		SnapshotConfig{CodexRoots: []string{root}},
+		priority,
+	)
+	sampler.poll(now)
+	if readCount != 0 || len(sampler.directories) != 0 {
+		t.Fatalf("dynamic history was enumerated: reads=%d directories=%d", readCount, len(sampler.directories))
+	}
+	if got := len(sampler.files); got != 1 {
+		t.Fatalf("priority files tracked = %d, want 1", got)
+	}
+	if sample := sampler.sample(now); sample.State != liveTokenRateStateZero || sample.OutputTokensPerSecond == nil {
+		t.Fatalf("dynamic history made baseline unavailable: %+v", sample)
+	}
+
+	appendCumulativeTokenLine(t, path, now.Add(30*time.Second), 280)
+	sampler.poll(now.Add(30 * time.Second))
+	sample := sampler.sample(now.Add(30 * time.Second))
+	if sample.State != liveTokenRateStateLive || sample.OutputTokensPerSecond == nil || math.Abs(*sample.OutputTokensPerSecond-1) > 0.0001 {
+		t.Fatalf("priority file delta = %+v, want 1 output token/second", sample)
+	}
+}
+
+func TestLiveTokenRateConfiguredRootRemainsDiscoverableAfterSnapshotMerge(t *testing.T) {
+	root := t.TempDir()
+	sampler := newLiveTokenRateSampler(Config{CodexRoots: []string{root}})
+	sampler.addSnapshotRoots(SnapshotConfig{CodexRoots: []string{root}}, nil)
+	for _, candidate := range sampler.roots {
+		if !candidate.Discover {
+			t.Fatalf("configured root lost discovery ownership: %+v", candidate)
+		}
+	}
+}
+
 func writeCumulativeTokenFile(t *testing.T, path string, at time.Time, output int64) {
 	t.Helper()
 	line := cumulativeTokenLine(at, output)
