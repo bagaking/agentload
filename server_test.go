@@ -75,6 +75,73 @@ func TestHandleUIAssetRejectsInvalidAssetPaths(t *testing.T) {
 	}
 }
 
+func TestHandleLiveTokenRateAPIReturnsPublishedSample(t *testing.T) {
+	now := time.Now().UTC()
+	sampler := newLiveTokenRateSampler(Config{ClaudeRoots: []string{t.TempDir()}})
+	sampler.publishedMu.Lock()
+	sampler.published = liveTokenRatePublished{
+		Configured:   true,
+		Initialized:  true,
+		LatestSignal: now,
+		LatestEvent:  now,
+		Events:       []liveTokenRateEvent{{At: now, Tokens: 180, Session: "session-a"}},
+	}
+	sampler.publishedMu.Unlock()
+	app := &trayApp{liveTokenRate: sampler}
+	handler := app.handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/live-token-rate", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d with body %q", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("cache control = %q, want no-store", got)
+	}
+	var sample LiveTokenRateSample
+	if err := json.Unmarshal(rec.Body.Bytes(), &sample); err != nil {
+		t.Fatalf("decode live token rate: %v", err)
+	}
+	if sample.State != liveTokenRateStateLive || sample.OutputTokensPerSecond == nil || *sample.OutputTokensPerSecond != 1 {
+		t.Fatalf("live token rate sample = %+v", sample)
+	}
+	if sample.Basis != liveTokenRateBasis || sample.WindowSeconds != 180 || sample.ActiveSessions != 1 {
+		t.Fatalf("live token rate metadata = %+v", sample)
+	}
+
+	head := httptest.NewRequest(http.MethodHead, "/api/live-token-rate", nil)
+	headRec := httptest.NewRecorder()
+	handler.ServeHTTP(headRec, head)
+	if headRec.Code != http.StatusOK || headRec.Body.Len() != 0 {
+		t.Fatalf("HEAD response = status %d body %q", headRec.Code, headRec.Body.String())
+	}
+
+	post := httptest.NewRequest(http.MethodPost, "/api/live-token-rate", nil)
+	postRec := httptest.NewRecorder()
+	handler.ServeHTTP(postRec, post)
+	if postRec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST status = %d, want 405", postRec.Code)
+	}
+}
+
+func TestHandleLiveTokenRateAPIWithoutSamplerIsUnavailable(t *testing.T) {
+	app := &trayApp{}
+	req := httptest.NewRequest(http.MethodGet, "/api/live-token-rate", nil)
+	rec := httptest.NewRecorder()
+	app.handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+	var sample LiveTokenRateSample
+	if err := json.Unmarshal(rec.Body.Bytes(), &sample); err != nil {
+		t.Fatal(err)
+	}
+	if sample.State != liveTokenRateStateUnavailable || sample.OutputTokensPerSecond != nil {
+		t.Fatalf("missing sampler sample = %+v", sample)
+	}
+}
+
 func TestHandleRefreshAPIReturnsDedupedSlotID(t *testing.T) {
 	app := &trayApp{
 		cfg:       Config{RefreshInterval: 30 * time.Second},

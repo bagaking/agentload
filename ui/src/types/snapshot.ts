@@ -39,6 +39,22 @@ export type MetricRegistryEntry = {
   description?: string;
 };
 
+export type LiveTokenRateState = "live" | "zero" | "no_data" | "stale" | "unavailable";
+
+export type LiveTokenRateSample = {
+  output_tokens_per_second?: number | null;
+  state?: LiveTokenRateState;
+  basis?: "output_tokens" | string;
+  source?: string;
+  method?: string;
+  window_seconds?: number;
+  sample_interval_seconds?: number;
+  active_sessions?: number;
+  sampled_at?: string;
+  latest_signal_at?: string;
+  latest_event_at?: string;
+};
+
 export type RuntimeTelemetrySnapshot = {
   configured?: boolean;
   status?: string;

@@ -20,6 +20,7 @@ numbers.
  ~/.trae/cli                  metric_semantics.go              │                   └─> tray title/menu
  OS counters ──> system_resources*.go ──> /api/system-resources│
                  system_thermal*.go                        history.jsonl
+ token JSONL ──> live_token_rate.go ───────────────> /api/live-token-rate
 ```
 
 ## 1. Acquisition
@@ -91,6 +92,22 @@ token usage (both incremental and cumulative usage shapes). The scan output
 also carries `SessionSpans` and `BurstSpans` (bursts segmented by
 `Config.IdleGap`, spans padded to `Config.MinInterval` in `metrics.go`), which
 feed historic peaks and transcript trend windows.
+
+### Live output-token sampler (`live_token_rate.go`)
+
+- A separate 30-second background owner discovers recently modified Claude,
+  Codex, and Trae JSONL files, then advances bounded append cursors. API clients
+  read an immutable published event snapshot and never own collection baselines.
+- New files start from a tail baseline. File identity changes, boundary
+  fingerprint changes, truncation, counter rollback, append gaps over 512 KiB,
+  and observation gaps over 180 seconds rebaseline without replaying history.
+- Only explicit output-token fields contribute. Cumulative output counters are
+  differenced per file; repeated Claude messages are differenced per
+  session/message identity. Input, cache, and reasoning tokens stay outside this
+  metric.
+- The semantic layer clips positive events to a trailing 180-second wall-time
+  window. Sparse cumulative deltas are distributed over their observed interval;
+  the result is rolling workload throughput, not model decode speed.
 
 ### System resources sampler (`system_resources.go`, `system_resources_darwin.go`, `system_thermal*.go`)
 
@@ -263,8 +280,10 @@ One snapshot build, in order:
 | Transcript scan TTL cache | 60s (`-cache-ttl`) | `transcripts.go` |
 | Foreground transcript window | `idle_gap × 80`, clamped 2h–6h (default 2h); older files deferred | `transcripts.go` |
 | Background system resource sampler | 2s | `system_resources.go` |
+| Background output-token sampler | 30s; trailing window 180s; stale after 5m | `live_token_rate.go` |
 | UI auto-refresh cycle (POST `/api/refresh` + ETag polls) | selected refresh interval (default 5m); slot polls back off 0.5s→8s; deferred to a 60s floor while the user is reading | `ui/src/main.tsx` |
 | UI `/api/system-resources` poll | 2s while the System deck is visible | `ui/src/system/useLiveSystemResources.ts` |
+| UI `/api/live-token-rate` poll | 30s while the popover or dashboard is visible | `ui/src/live/useLiveTokenRate.ts` |
 | Per-PID disk I/O rates | delta per process-scan batch | `process_io.go` |
 | History JSONL append | once per built snapshot | `tray.go`, `history.go` |
 | History retention / compaction | 30d retention; compaction check at startup load | `history.go` |

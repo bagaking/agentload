@@ -29,6 +29,7 @@ Global behavior:
 | `/assets/` | GET/HEAD | Embedded UI bundle assets | JS/CSS/SVG | `no-store` |
 | `/api/snapshot` | GET/HEAD | Full sanitized observation snapshot | `Snapshot` | `no-cache` + ETag |
 | `/api/system-resources` | GET/HEAD | Live whole-machine resource sample | `SystemResourceSnapshot` | `no-store` |
+| `/api/live-token-rate` | GET/HEAD | Latest trailing output-token throughput sample | `LiveTokenRateSample` | `no-store` |
 | `/api/diagnostic-export` | GET/HEAD | Downloadable sanitized evidence bundle | `DiagnosticExportSnapshot` | `no-store` |
 | `/api/refresh` | POST | Request a refresh slot | ad-hoc JSON, `202` | — |
 | `/api/quit` | POST | Quit the app | ad-hoc JSON, `200` | — |
@@ -87,6 +88,16 @@ and network rates are two-sample deltas; the first sample discloses "rates
 need two samples" in `notes` instead of a fake zero. `thermal_state`
 (`nominal|fair|serious|critical`) is reported separately from `supported` via
 `thermal_state_supported`. `Cache-Control: no-store`.
+
+### `GET /api/live-token-rate`
+
+Returns the latest `LiveTokenRateSample` published by the independent 30-second
+background transcript sampler. Reading the endpoint never advances transcript
+file offsets or cumulative baselines. `output_tokens_per_second` is numeric only
+for `live` and `zero`; it is `null` for `unavailable`, `no_data`, and `stale`.
+The denominator is the fixed trailing 180-second wall-time window. This is
+aggregate output-token workload throughput, not model decode speed or
+API-active-time TPS. `Cache-Control: no-store`.
 
 ### `GET /api/diagnostic-export`
 

@@ -5,15 +5,16 @@ import { Activity, ArrowUpRight, Bot, ChevronDown, Copy, ExternalLink, Gauge, Gi
 import { copy, type Lang } from "./i18n";
 import { buildToolSessionGroups, confidenceLabel, freshnessLabel, hiddenToolSessionCount, mappingMethodLabel, normalizedRole, orderedProjects, projectEvidenceItems, roleLabel, sessionEvidenceItems, sessionIdentity, sessionsForProject, tokenUsageProvenanceLabel, toolBadgeLabel, toolDisplayName, toolIconName } from "./lib/activityModel";
 import { activeWindowLabel, buildRailItems, coordinationPostureLabel, currentMeaningLead, currentMeaningPoints, dashboardProjectMeta, deferredScanValue, mappingHealthText, metricState, primaryEvidenceNote, statusTone, transcriptScanNote, transcriptScanSummary } from "./lib/dashboardModel";
-import { clampPct, countLabel, formatAge, formatBytesPerSecond, formatCompactCPU, formatCPU, formatCopy, formatDateTime, formatMemory, formatPct, formatRefreshInterval, formatTokenCount, formatTokenUsageSummary, pctPart, safeID, shortID, tokenUsageHasValue } from "./lib/format";
-import { currentHasRecentMovement, currentKnownSessionCount, currentProcessPressureCount, currentRecentMovementCount, projectProcessPressureCount, projectProcessResources, projectRoleCounts, sessionHasRecentMovement, sessionHumanReviewCount, sessionNeedsHumanReview, sessionProcessPressure, snapshotHumanReviewSessions, summaryMappedProcessCount, summaryMappingCoveragePct, summaryUnmappedProcessCount, toolKnownSessionCount, toolRecentMovementCount } from "./lib/metricSemantics";
+import { clampPct, countLabel, formatAge, formatBytesPerSecond, formatCompactCPU, formatCPU, formatCopy, formatDateTime, formatMemory, formatPct, formatRefreshInterval, formatTokenCount, formatTokenRate, formatTokenUsageSummary, pctPart, safeID, shortID, tokenUsageHasValue } from "./lib/format";
+import { currentHasRecentMovement, currentKnownSessionCount, currentProcessPressureCount, currentRecentMovementCount, liveTokenRateValue, normalizedLiveTokenRateState, projectProcessPressureCount, projectProcessResources, projectRoleCounts, sessionHasRecentMovement, sessionHumanReviewCount, sessionNeedsHumanReview, sessionProcessPressure, snapshotHumanReviewSessions, summaryMappedProcessCount, summaryMappingCoveragePct, summaryUnmappedProcessCount, toolKnownSessionCount, toolRecentMovementCount } from "./lib/metricSemantics";
 import { LineageSummary } from "./lineage/LineageSummary";
+import { useLiveTokenRate } from "./live/useLiveTokenRate";
 import { ProcessSummaryStrip } from "./system/ProcessSummaryStrip";
 import { SystemResourceDeck } from "./system/SystemResourceDeck";
 import { useLiveSystemResources } from "./system/useLiveSystemResources";
 import type { TrendLane, TrendRange } from "./trend/types";
 import type { ActiveElementIdentity, PopoverView, ProjectMetricObject, ProjectMetricScope, RailItem, RailTab, RefreshReason, RoleCounts, Selection, Theme, ViewportState } from "./types/app";
-import type { AgeBucketSnapshot, HostApp, LiveProcess, LiveSession, ProcessDiagnostic, ProjectSnapshot, ProjectTool, Snapshot, TokenUsage } from "./types/snapshot";
+import type { AgeBucketSnapshot, HostApp, LiveProcess, LiveSession, LiveTokenRateSample, ProcessDiagnostic, ProjectSnapshot, ProjectTool, Snapshot, TokenUsage } from "./types/snapshot";
 import "./styles.css";
 import "./styles/system-view.css";
 import "./styles/popover-footer.css";
@@ -94,6 +95,7 @@ function App() {
   const readerActiveUntilRef = useRef(0);
   const popoverResizeRequestRef = useRef<(() => void) | null>(null);
   const [surfaceVersion, setSurfaceVersion] = useState(0);
+  const liveTokenRate = useLiveTokenRate(surfaceVisible(view, popoverVisibleRef.current));
 
   const t = useCallback((key: string) => copy[lang][key] || copy.en[key] || key, [lang]);
   const markReaderInteraction = useCallback(() => {
@@ -366,6 +368,7 @@ function App() {
           <PopoverSurface
             t={t}
             snapshot={snapshot}
+            liveTokenRate={liveTokenRate}
             error={error}
             selection={selection}
             setSelection={setSelection}
@@ -388,6 +391,7 @@ function App() {
         <DashboardSurface
           t={t}
           snapshot={snapshot}
+          liveTokenRate={liveTokenRate}
           error={error}
           running={running}
           refreshSnapshot={refreshSnapshot}
@@ -412,6 +416,7 @@ function App() {
 function PopoverSurface({
   t,
   snapshot,
+  liveTokenRate,
   error,
   selection,
   setSelection,
@@ -423,6 +428,7 @@ function PopoverSurface({
 }: {
   t: (key: string) => string;
   snapshot: Snapshot | null;
+  liveTokenRate: LiveTokenRateSample | undefined;
   error: string | null;
   selection: Selection;
   setSelection: (value: Selection) => void;
@@ -492,7 +498,7 @@ function PopoverSurface({
               aria-labelledby="popover-view-online"
               hidden={popoverView !== "online"}
             >
-              <PopoverAuditShell t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} setHoverDetail={setHoverDetail} />
+              <PopoverAuditShell t={t} snapshot={snapshot} liveTokenRate={liveTokenRate} selection={selection} setSelection={setSelection} setHoverDetail={setHoverDetail} />
             </section>
             <section
               className="popover-view-panel trend"
@@ -623,6 +629,7 @@ function PopoverFooter({
 function DashboardSurface({
   t,
   snapshot,
+  liveTokenRate,
   error,
   running,
   refreshSnapshot,
@@ -641,6 +648,7 @@ function DashboardSurface({
 }: {
   t: (key: string) => string;
   snapshot: Snapshot | null;
+  liveTokenRate: LiveTokenRateSample | undefined;
   error: string | null;
   running: boolean;
   refreshSnapshot: () => void;
@@ -673,7 +681,7 @@ function DashboardSurface({
       <section className="dash-front-band">
         <section className="dash-field-index">
           <DashboardBandHead kicker={t("runtimeField")} title={t("activityCounts")} meta={dashboardProjectMeta(t, snapshot)} />
-          <DashboardFieldGrid t={t} snapshot={snapshot} />
+          <DashboardFieldGrid t={t} snapshot={snapshot} liveTokenRate={liveTokenRate} />
           <CurrentMeaningStrip t={t} snapshot={snapshot} compact />
         </section>
         <DashboardEvidenceColumn t={t} snapshot={snapshot} />
@@ -863,7 +871,7 @@ function DashboardInspectorStrip({
   );
 }
 
-function DashboardFieldGrid({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot }) {
+function DashboardFieldGrid({ t, snapshot, liveTokenRate }: { t: (key: string) => string; snapshot: Snapshot; liveTokenRate: LiveTokenRateSample | undefined }) {
   const current = snapshot.current ?? {};
   const summary = snapshot.summary ?? {};
   const active = currentRecentMovementCount(current);
@@ -892,6 +900,7 @@ function DashboardFieldGrid({ t, snapshot }: { t: (key: string) => string; snaps
           <em>{`${mapped} ${t("mapped")} / ${unmatched} ${t("unmatched")}`}</em>
         </article>
       </div>
+      <LiveTokenRateReadout t={t} sample={liveTokenRate} />
       <div className="dash-process-diagnostic" aria-label={t("processPressure")}>
         <span><Server size={12} aria-hidden="true" /><TermLabel label={t("processPressure")} tip={t("tipPids")} /></span>
         <strong>{pids}</strong>
@@ -899,6 +908,27 @@ function DashboardFieldGrid({ t, snapshot }: { t: (key: string) => string; snaps
         <i aria-hidden="true"><b style={{ width: `${coverage}%` }} /></i>
       </div>
     </>
+  );
+}
+
+function LiveTokenRateReadout({ t, sample, compact = false }: { t: (key: string) => string; sample: LiveTokenRateSample | undefined; compact?: boolean }) {
+  const state = normalizedLiveTokenRateState(sample);
+  const rate = liveTokenRateValue(sample);
+  const window = formatAge(sample?.window_seconds || 180, t);
+  const sessions = Math.max(0, Math.round(sample?.active_sessions || 0));
+  let detail = t("outputThroughputNoData");
+  if (state === "live") detail = formatCopy(t("outputThroughputLiveDetail"), { window, sessions });
+  else if (state === "zero") detail = formatCopy(t("outputThroughputZeroDetail"), { window });
+  else if (state === "stale") detail = t("outputThroughputStale");
+  else if (state === "unavailable") detail = t("outputThroughputUnavailable");
+  const value = rate === null ? "—" : formatTokenRate(rate);
+  const accessible = `${t("outputThroughput")}: ${value}${rate === null ? "" : ` ${t("tokenRateUnit")}`}. ${detail}`;
+  return (
+    <div className={`live-token-rate-readout ${compact ? "compact" : ""} is-${state}`} role="group" aria-label={accessible}>
+      <span><Gauge size={12} aria-hidden="true" /><TermLabel label={t("outputThroughput")} tip={t("tipOutputThroughput")} /></span>
+      <strong>{value}{rate === null ? null : <small>{t("tokenRateUnit")}</small>}</strong>
+      <em>{detail}</em>
+    </div>
   );
 }
 
@@ -950,19 +980,21 @@ function BandHead({ kicker, title, meta }: { kicker: string; title: string; meta
 const PopoverAuditShell = React.memo(function PopoverAuditShell({
   t,
   snapshot,
+  liveTokenRate,
   selection,
   setSelection,
   setHoverDetail,
 }: {
   t: (key: string) => string;
   snapshot: Snapshot;
+  liveTokenRate: LiveTokenRateSample | undefined;
   selection: Selection;
   setSelection: (value: Selection) => void;
   setHoverDetail: HoverDetailSink;
 }) {
   return (
     <section className="popover-panel audit-shell">
-      <PopoverRuntimeInstrument t={t} snapshot={snapshot} />
+      <PopoverRuntimeInstrument t={t} snapshot={snapshot} liveTokenRate={liveTokenRate} />
       <ScanBoundary t={t} snapshot={snapshot} compact />
       <section className="popover-project-table">
         <div className="popover-project-head">
@@ -1130,7 +1162,7 @@ function hoverInspectorPlacement(kind: HoverDetailPayload["kind"], x: number, y:
   return { left, top, width };
 }
 
-function PopoverRuntimeInstrument({ t, snapshot }: { t: (key: string) => string; snapshot: Snapshot }) {
+function PopoverRuntimeInstrument({ t, snapshot, liveTokenRate }: { t: (key: string) => string; snapshot: Snapshot; liveTokenRate: LiveTokenRateSample | undefined }) {
   const current = snapshot.current ?? {};
   const summary = snapshot.summary ?? {};
   const trustedScale = Math.max(1, currentRecentMovementCount(current), currentKnownSessionCount(current));
@@ -1177,6 +1209,7 @@ function PopoverRuntimeInstrument({ t, snapshot }: { t: (key: string) => string;
           </article>
         ))}
       </div>
+      <LiveTokenRateReadout t={t} sample={liveTokenRate} compact />
       <div className="instrument-scale-rail" aria-label={t("calibration")}>
         {rows.map((row) => (
           <span className={`instrument-scale-row ${row.key}`} key={row.key}>

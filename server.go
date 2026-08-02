@@ -34,6 +34,7 @@ func (a *trayApp) handler() http.Handler {
 	mux.HandleFunc("/assets/", a.handleUIAsset)
 	mux.HandleFunc("/api/snapshot", a.handleSnapshotAPI)
 	mux.HandleFunc("/api/system-resources", a.handleSystemResourcesAPI)
+	mux.HandleFunc("/api/live-token-rate", a.handleLiveTokenRateAPI)
 	mux.HandleFunc("/api/diagnostic-export", a.handleDiagnosticExportAPI)
 	mux.HandleFunc("/api/refresh", a.handleRefreshAPI)
 	mux.HandleFunc("/api/quit", a.handleQuitAPI)
@@ -48,6 +49,20 @@ func (a *trayApp) handler() http.Handler {
 		}
 		mux.ServeHTTP(w, r)
 	})
+}
+
+func (a *trayApp) handleLiveTokenRateAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(a.liveTokenRate.sample(time.Now()))
 }
 
 func (a *trayApp) handleSystemResourcesAPI(w http.ResponseWriter, r *http.Request) {

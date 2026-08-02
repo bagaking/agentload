@@ -125,6 +125,15 @@ export function formatTokenCount(value?: number): string {
   }).format(value);
 }
 
+export function formatTokenRate(value?: number | null): string {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return "—";
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(value >= 10_000 ? 0 : 1)}K`;
+  if (value >= 100) return value.toFixed(0);
+  if (value >= 10) return value.toFixed(1);
+  return value.toFixed(value === 0 ? 0 : 2);
+}
+
 export function tokenUsageDerivedTotal(usage: TokenUsage): number {
   return (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0);
 }

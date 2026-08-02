@@ -1,9 +1,22 @@
 import type { RoleCounts } from "../types/app";
-import type { CurrentMetrics, LiveSession, Snapshot, SnapshotSummary } from "../types/snapshot";
+import type { CurrentMetrics, LiveSession, LiveTokenRateSample, LiveTokenRateState, Snapshot, SnapshotSummary } from "../types/snapshot";
 import type { TrendLane, TrendPoint } from "../trend/types";
 
 export type SessionRole = "main" | "subagent" | "unknown";
 export type ProcessResourceTotals = { cpu: number; memory: number };
+
+export function normalizedLiveTokenRateState(sample?: LiveTokenRateSample): LiveTokenRateState {
+  const state = String(sample?.state || "no_data").trim().toLowerCase();
+  if (state === "live" || state === "zero" || state === "stale" || state === "unavailable") return state;
+  return "no_data";
+}
+
+export function liveTokenRateValue(sample?: LiveTokenRateSample): number | null {
+  const state = normalizedLiveTokenRateState(sample);
+  const value = sample?.output_tokens_per_second;
+  if ((state !== "live" && state !== "zero") || typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+  return value;
+}
 
 export function normalizedRole(role?: string): SessionRole {
   const value = String(role || "").trim().toLowerCase();
