@@ -1421,7 +1421,7 @@ func directTokenUsage(obj map[string]interface{}) (TokenUsage, bool) {
 		usage.InputTokens = value
 		found = true
 	}
-	if value, ok := intFromKeys(obj, "output_tokens", "outputTokens", "completion_tokens", "completionTokens", "completionTokenCount", "completion_token_count", "candidatesTokenCount", "candidates_token_count", "response_tokens"); ok {
+	if value, ok := outputTokenCountFromMap(obj); ok {
 		usage.OutputTokens = value
 		found = true
 	}
@@ -1461,6 +1461,21 @@ func directTokenUsage(obj map[string]interface{}) (TokenUsage, bool) {
 		usage.TotalTokens = usage.DerivedTotal()
 	}
 	return usage, found
+}
+
+func outputTokenCountFromMap(obj map[string]interface{}) (int, bool) {
+	return intFromKeys(
+		obj,
+		"output_tokens",
+		"outputTokens",
+		"completion_tokens",
+		"completionTokens",
+		"completionTokenCount",
+		"completion_token_count",
+		"candidatesTokenCount",
+		"candidates_token_count",
+		"response_tokens",
+	)
 }
 
 func intFromKeys(obj map[string]interface{}, keys ...string) (int, bool) {

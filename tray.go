@@ -20,14 +20,15 @@ import (
 )
 
 type trayApp struct {
-	cfg          Config
-	observer     *Observer
-	logger       *log.Logger
-	server       *http.Server
-	listener     net.Listener
-	baseURL      string
-	popoverURL   string
-	dashboardURL string
+	cfg           Config
+	observer      *Observer
+	logger        *log.Logger
+	server        *http.Server
+	listener      net.Listener
+	baseURL       string
+	popoverURL    string
+	dashboardURL  string
+	liveTokenRate *liveTokenRateSampler
 
 	stopCh    chan struct{}
 	refreshCh chan struct{}
@@ -63,16 +64,17 @@ func newTrayApp(cfg Config, observer *Observer, logger *log.Logger, listener net
 		logger.Printf("local history load failed: %v", err)
 	}
 	a := &trayApp{
-		cfg:          cfg,
-		observer:     observer,
-		logger:       logger,
-		listener:     listener,
-		baseURL:      strings.TrimRight(url, "/"),
-		popoverURL:   strings.TrimRight(url, "/") + "/",
-		dashboardURL: strings.TrimRight(url, "/") + "/dashboard",
-		stopCh:       make(chan struct{}),
-		refreshCh:    make(chan struct{}, 1),
-		history:      history,
+		cfg:           cfg,
+		observer:      observer,
+		logger:        logger,
+		listener:      listener,
+		baseURL:       strings.TrimRight(url, "/"),
+		popoverURL:    strings.TrimRight(url, "/") + "/",
+		dashboardURL:  strings.TrimRight(url, "/") + "/dashboard",
+		liveTokenRate: newLiveTokenRateSampler(cfg),
+		stopCh:        make(chan struct{}),
+		refreshCh:     make(chan struct{}, 1),
+		history:       history,
 	}
 	a.server = &http.Server{
 		Handler: a.handler(),
@@ -82,6 +84,7 @@ func newTrayApp(cfg Config, observer *Observer, logger *log.Logger, listener net
 
 func (a *trayApp) run() error {
 	startSystemResourceSampler(systemResourceSampleInterval)
+	a.liveTokenRate.start(liveTokenRateSampleInterval)
 	go func() {
 		if err := a.server.Serve(a.listener); err != nil && err != http.ErrServerClosed {
 			a.logger.Printf("http server failed: %v", err)
@@ -132,6 +135,7 @@ func (a *trayApp) onExit() {
 	nativePopoverHide()
 	nativePopoverInstallStatusClickFallback("")
 	nativePopoverConfigureDashboard("")
+	a.liveTokenRate.stopSampler()
 	stopSystemResourceSampler()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -272,6 +276,7 @@ func (a *trayApp) refreshOnce(slotID string) {
 	defer cancel()
 	snapshot := a.observer.Snapshot(ctx)
 	snapshot.RefreshSlotID = slotID
+	a.liveTokenRate.addSnapshotRoots(snapshot.Config)
 	if snapshotScanAborted(ctx, snapshot) {
 		// Show the partial result but keep it out of history/cache so trends
 		// and heatmaps only build from complete samples; the next slot rescans.
