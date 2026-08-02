@@ -12,7 +12,7 @@ func TestDefaultMetricRegistryContainsCoreFamilies(t *testing.T) {
 	for _, entry := range registry {
 		keys[entry.Key] = entry
 	}
-	for _, key := range []string{"recent_movement", "known_sessions", "process_pressure", "system_resources", "token_usage", "diagnostic_export"} {
+	for _, key := range []string{"recent_movement", "known_sessions", "process_pressure", "system_resources", "token_usage", "output_token_throughput", "diagnostic_export"} {
 		entry, ok := keys[key]
 		if !ok {
 			t.Fatalf("missing metric registry key %q in %+v", key, registry)
@@ -23,6 +23,9 @@ func TestDefaultMetricRegistryContainsCoreFamilies(t *testing.T) {
 	}
 	if keys["token_usage"].MissingState == "zero" {
 		t.Fatalf("token usage must not treat missing usage as zero: %+v", keys["token_usage"])
+	}
+	if keys["output_token_throughput"].Window != "trailing 180 seconds of wall time" {
+		t.Fatalf("output token throughput must disclose its wall-time window: %+v", keys["output_token_throughput"])
 	}
 }
 
