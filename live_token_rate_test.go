@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -57,6 +58,63 @@ func TestLiveTokenRateSamplerStartsFromBaselineAndUsesCumulativeDelta(t *testing
 	}
 	if sample.ActiveSessions != 1 {
 		t.Fatalf("active sessions = %d, want 1", sample.ActiveSessions)
+	}
+}
+
+func TestLiveTokenRateWatchDiscoversResumedOldSessionWithoutReplay(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	root := t.TempDir()
+	sessions := filepath.Join(root, "sessions")
+	if err := os.MkdirAll(sessions, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(sessions, "old-session.jsonl")
+	writeCumulativeTokenFile(t, path, now.Add(-time.Hour), 100)
+	if err := os.Chtimes(path, now.Add(-time.Hour), now.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+
+	sampler := newLiveTokenRateSampler(Config{CodexRoots: []string{root}})
+	sampler.watchCoverage = true
+	sampler.poll(now)
+	if got := len(sampler.files); got != 0 {
+		t.Fatalf("old inactive files tracked at baseline = %d, want 0", got)
+	}
+
+	appendCumulativeTokenLine(t, path, now.Add(30*time.Second), 280)
+	sampler.recordWatchBatch(liveTokenRateWatchBatch{Paths: []string{path}, Complete: true}, now.Add(30*time.Second))
+	sampler.poll(now.Add(30 * time.Second))
+	if sample := sampler.sample(now.Add(30 * time.Second)); sample.State != liveTokenRateStateZero || sample.OutputTokensPerSecond == nil || *sample.OutputTokensPerSecond != 0 {
+		t.Fatalf("resumed session replayed pre-baseline output: %+v", sample)
+	}
+
+	appendCumulativeTokenLine(t, path, now.Add(60*time.Second), 460)
+	sampler.poll(now.Add(60 * time.Second))
+	if sample := sampler.sample(now.Add(60 * time.Second)); sample.State != liveTokenRateStateLive || sample.OutputTokensPerSecond == nil || math.Abs(*sample.OutputTokensPerSecond-1) > 0.0001 {
+		t.Fatalf("resumed session delta sample = %+v, want 1 output token/second", sample)
+	}
+}
+
+func TestLiveTokenRateWatchGapFailsClosedAndForcesRecovery(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	root := t.TempDir()
+	sessions := filepath.Join(root, "sessions")
+	if err := os.MkdirAll(sessions, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(sessions, "session.jsonl")
+	writeCumulativeTokenFile(t, path, now, 100)
+
+	sampler := newLiveTokenRateSampler(Config{CodexRoots: []string{root}})
+	sampler.watchCoverage = true
+	sampler.poll(now)
+	sampler.recordWatchBatch(liveTokenRateWatchBatch{Complete: false}, now.Add(30*time.Second))
+	sampler.poll(now.Add(30 * time.Second))
+	if sample := sampler.sample(now.Add(30 * time.Second)); sample.State != liveTokenRateStateUnavailable || sample.OutputTokensPerSecond != nil {
+		t.Fatalf("watch gap did not fail closed: %+v", sample)
+	}
+	if len(sampler.directories) == 0 {
+		t.Fatal("watch gap did not rebuild the directory index")
 	}
 }
 
@@ -227,6 +285,80 @@ func TestLiveTokenRateSamplerLifecycleIsIdempotent(t *testing.T) {
 	sampler.stopSampler()
 	if sample := sampler.sample(time.Now()); sample.State != liveTokenRateStateUnavailable {
 		t.Fatalf("unconfigured lifecycle sample = %+v", sample)
+	}
+}
+
+func TestLiveTokenRateDiscoveryPrunesTraeArtifactTrees(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	root := t.TempDir()
+	day := filepath.Join(root, "sessions", "2026", "08", "02")
+	if err := os.MkdirAll(day, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(day, "rollout-session.jsonl")
+	writeCumulativeTokenFile(t, path, now, 100)
+
+	for index := 0; index < liveTokenRateMaxDirectories+8; index++ {
+		artifactDir := filepath.Join(day, fmt.Sprintf("rollout-%04d.artifacts", index), "tool-results")
+		if err := os.MkdirAll(artifactDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	sampler := newLiveTokenRateSampler(Config{TraeRoots: []string{root}})
+	sampler.poll(now)
+	sample := sampler.sample(now)
+	if sample.State != liveTokenRateStateZero || sample.OutputTokensPerSecond == nil {
+		t.Fatalf("artifact tree made complete discovery unavailable: %+v", sample)
+	}
+	if got := len(sampler.directories); got != 4 {
+		t.Fatalf("tracked directories = %d, want only sessions/year/month/day", got)
+	}
+	if got := len(sampler.files); got != 1 {
+		t.Fatalf("tracked files = %d, want the transcript only", got)
+	}
+}
+
+func TestLiveTokenRateDiscoveryReusesStableDirectoriesAndFindsNewEntries(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	root := t.TempDir()
+	sessions := filepath.Join(root, "sessions")
+	if err := os.MkdirAll(sessions, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeCumulativeTokenFile(t, filepath.Join(sessions, "first.jsonl"), now, 100)
+
+	readDir := liveTokenRateReadDir
+	t.Cleanup(func() { liveTokenRateReadDir = readDir })
+	readCount := 0
+	liveTokenRateReadDir = func(path string) ([]os.DirEntry, error) {
+		readCount++
+		return readDir(path)
+	}
+
+	sampler := newLiveTokenRateSampler(Config{CodexRoots: []string{root}})
+	sampler.watchCoverage = true
+	sampler.poll(now)
+	if readCount == 0 {
+		t.Fatal("initial discovery did not read configured directories")
+	}
+
+	readCount = 0
+	sampler.poll(now.Add(2 * time.Minute))
+	if readCount != 0 {
+		t.Fatalf("stable directory cache performed %d redundant reads", readCount)
+	}
+
+	writeCumulativeTokenFile(t, filepath.Join(sessions, "second.jsonl"), now.Add(150*time.Second), 200)
+	if err := os.Chtimes(sessions, now.Add(150*time.Second), now.Add(150*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	sampler.poll(now.Add(150 * time.Second))
+	if got := len(sampler.files); got != 2 {
+		t.Fatalf("tracked files after directory topology change = %d, want 2", got)
+	}
+	if readCount != 1 {
+		t.Fatalf("topology change read %d directories, want one changed directory", readCount)
 	}
 }
 

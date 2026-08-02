@@ -98,6 +98,15 @@ feed historic peaks and transcript trend windows.
 - A separate 30-second background owner discovers recently modified Claude,
   Codex, and Trae JSONL files, then advances bounded append cursors. API clients
   read an immutable published event snapshot and never own collection baselines.
+- Discovery caches directory topology by directory mtime and re-reads entries
+  only when names are added or removed. Vendor-owned non-transcript branches
+  such as Trae `*.artifacts` trees are pruned before recursion, so historical
+  session artifacts do not consume the directory budget or periodic scan time.
+  On macOS, recursive FSEvents file notifications surface newly created and
+  resumed old JSONL files without recurring full-tree walks; tracked appends are
+  then read from their private cursors. Dropped events fail closed and force one
+  pruned index rebuild. Platforms without watcher coverage retain the bounded
+  periodic rescan fallback.
 - New files start from a tail baseline. File identity changes, boundary
   fingerprint changes, truncation, counter rollback, append gaps over 512 KiB,
   and observation gaps over 180 seconds rebaseline without replaying history.
