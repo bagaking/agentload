@@ -85,6 +85,7 @@ func TestHandleLiveTokenRateAPIReturnsPublishedSample(t *testing.T) {
 		LatestSignal: now,
 		LatestEvent:  now,
 		Events:       []liveTokenRateEvent{{At: now, Tokens: 180, Session: "session-a"}},
+		Projects:     map[string]string{"session-a": "project-a"},
 	}
 	sampler.publishedMu.Unlock()
 	app := &trayApp{liveTokenRate: sampler}
@@ -108,6 +109,9 @@ func TestHandleLiveTokenRateAPIReturnsPublishedSample(t *testing.T) {
 	}
 	if sample.Basis != liveTokenRateBasis || sample.WindowSeconds != 180 || sample.ActiveSessions != 1 {
 		t.Fatalf("live token rate metadata = %+v", sample)
+	}
+	if len(sample.Projects) != 1 || sample.Projects[0].Project != "project-a" || sample.Projects[0].OutputTokensPerSecond != 1 || sample.Projects[0].ActiveSessions != 1 {
+		t.Fatalf("project live token rate = %+v", sample.Projects)
 	}
 
 	head := httptest.NewRequest(http.MethodHead, "/api/live-token-rate", nil)
@@ -563,6 +567,9 @@ func TestHandleSnapshotAPIRedactsConfigPaths(t *testing.T) {
 			Tool: "codex",
 			Path: filepath.Join("private", "roots", ".codex", "sessions", "active.jsonl"),
 		}},
+		LiveTokenProjects: map[string]string{
+			"codex\x00" + filepath.Join("private", "roots", ".codex", "sessions", "active.jsonl"): "private-project",
+		},
 		Config: SnapshotConfig{
 			IdleGapSeconds:       90,
 			ClaudeRoots:          []string{filepath.Join("private", "roots", ".claude")},
@@ -601,6 +608,9 @@ func TestHandleSnapshotAPIRedactsConfigPaths(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), "active.jsonl") {
 		t.Fatalf("expected live token priority paths to remain private, got %q", rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "private-project") {
+		t.Fatalf("expected private live token project mapping to stay out of snapshot JSON, got %q", rec.Body.String())
 	}
 }
 

@@ -13,9 +13,10 @@ const (
 	liveTokenRateStateStale       = "stale"
 	liveTokenRateStateUnavailable = "unavailable"
 
-	liveTokenRateBasis  = "output_tokens"
-	liveTokenRateSource = "local_transcript_usage"
-	liveTokenRateMethod = "trailing_wall_time"
+	liveTokenRateBasis             = "output_tokens"
+	liveTokenRateSource            = "local_transcript_usage"
+	liveTokenRateMethod            = "trailing_wall_time"
+	liveTokenRateUnassignedProject = "unassigned"
 )
 
 type liveTokenRateEvent struct {
@@ -38,6 +39,11 @@ type liveTokenRateFacts struct {
 	SampleInterval time.Duration
 	StaleAfter     time.Duration
 	SampledAt      time.Time
+}
+
+type liveTokenRateProjectFacts struct {
+	TokensInWindow int64
+	Sessions       map[string]struct{}
 }
 
 func newLiveTokenRateIntervalEvent(start, end time.Time, tokens int64, session string) liveTokenRateEvent {
@@ -111,9 +117,15 @@ func liveTokenRateEventTokensInWindow(event liveTokenRateEvent, now time.Time, w
 }
 
 func liveTokenRateWindowFacts(events []liveTokenRateEvent, now time.Time, window, futureSkew time.Duration) (int64, int) {
+	tokens, activeSessions, _ := liveTokenRateWindowBreakdown(events, nil, now, window, futureSkew)
+	return tokens, activeSessions
+}
+
+func liveTokenRateWindowBreakdown(events []liveTokenRateEvent, sessionProjects map[string]string, now time.Time, window, futureSkew time.Duration) (int64, int, map[string]liveTokenRateProjectFacts) {
 	var tokens int64
 	sessions := map[string]struct{}{}
 	hasAnonymous := false
+	projects := map[string]liveTokenRateProjectFacts{}
 	for _, event := range events {
 		contribution := liveTokenRateEventTokensInWindow(event, now, window, futureSkew)
 		if contribution <= 0 {
@@ -125,11 +137,22 @@ func liveTokenRateWindowFacts(events []liveTokenRateEvent, now time.Time, window
 		} else {
 			hasAnonymous = true
 		}
+		project := strings.TrimSpace(sessionProjects[event.Session])
+		if project == "" {
+			project = liveTokenRateUnassignedProject
+		}
+		facts := projects[project]
+		facts.TokensInWindow = liveTokenRateSaturatingAdd(facts.TokensInWindow, contribution)
+		if facts.Sessions == nil {
+			facts.Sessions = map[string]struct{}{}
+		}
+		facts.Sessions[event.Session] = struct{}{}
+		projects[project] = facts
 	}
 	if hasAnonymous {
-		return tokens, len(sessions) + 1
+		return tokens, len(sessions) + 1, projects
 	}
-	return tokens, len(sessions)
+	return tokens, len(sessions), projects
 }
 
 func liveTokenRateSampleFromFacts(facts liveTokenRateFacts) LiveTokenRateSample {

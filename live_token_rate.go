@@ -82,6 +82,7 @@ type liveTokenRatePublished struct {
 	LatestSignal time.Time
 	LatestEvent  time.Time
 	Events       []liveTokenRateEvent
+	Projects     map[string]string
 }
 
 // liveTokenRateSampler keeps collection baselines private to one background
@@ -90,18 +91,19 @@ type liveTokenRatePublished struct {
 type liveTokenRateSampler struct {
 	pollMu sync.Mutex
 
-	roots         []liveTokenRateRoot
-	files         map[string]liveTokenRateTrackedFile
-	directories   map[string]liveTokenRateTrackedDirectory
-	events        []liveTokenRateEvent
-	lastPoll      time.Time
-	lastDiscover  time.Time
-	initialized   bool
-	latestSignal  time.Time
-	latestEvent   time.Time
-	limitedUntil  time.Time
-	watchPending  map[string]string
-	watchCoverage bool
+	roots           []liveTokenRateRoot
+	files           map[string]liveTokenRateTrackedFile
+	directories     map[string]liveTokenRateTrackedDirectory
+	events          []liveTokenRateEvent
+	lastPoll        time.Time
+	lastDiscover    time.Time
+	initialized     bool
+	latestSignal    time.Time
+	latestEvent     time.Time
+	limitedUntil    time.Time
+	watchPending    map[string]string
+	watchCoverage   bool
+	sessionProjects map[string]string
 
 	publishedMu sync.RWMutex
 	published   liveTokenRatePublished
@@ -115,10 +117,11 @@ type liveTokenRateSampler struct {
 
 func newLiveTokenRateSampler(cfg Config) *liveTokenRateSampler {
 	sampler := &liveTokenRateSampler{
-		roots:        liveTokenRateRootsFromConfig(cfg, true),
-		files:        map[string]liveTokenRateTrackedFile{},
-		directories:  map[string]liveTokenRateTrackedDirectory{},
-		watchPending: map[string]string{},
+		roots:           liveTokenRateRootsFromConfig(cfg, true),
+		files:           map[string]liveTokenRateTrackedFile{},
+		directories:     map[string]liveTokenRateTrackedDirectory{},
+		watchPending:    map[string]string{},
+		sessionProjects: map[string]string{},
 	}
 	sampler.publish(time.Now())
 	return sampler
@@ -190,13 +193,43 @@ func canonicalLiveTokenRatePath(path string) string {
 	return filepath.Clean(path)
 }
 
-func (sampler *liveTokenRateSampler) addSnapshotRoots(cfg SnapshotConfig, priority []TranscriptFile) {
+func liveTokenRateSessionKey(tool, path string) string {
+	tool = strings.TrimSpace(strings.ToLower(tool))
+	path = canonicalLiveTokenRatePath(path)
+	if tool == "" || path == "" || path == "." {
+		return ""
+	}
+	return tool + "\x00" + path
+}
+
+func liveTokenRateProjectsFromSessions(sessions []LiveSessionSnapshot) map[string]string {
+	projects := make(map[string]string, len(sessions))
+	for _, session := range sessions {
+		key := liveTokenRateSessionKey(session.Tool, session.Path)
+		if key == "" {
+			continue
+		}
+		project := strings.TrimSpace(session.Project)
+		if project == "" {
+			project = liveTokenRateUnassignedProject
+		}
+		if existing, ok := projects[key]; ok && existing != project {
+			projects[key] = liveTokenRateUnassignedProject
+			continue
+		}
+		projects[key] = project
+	}
+	return projects
+}
+
+func (sampler *liveTokenRateSampler) addSnapshotRoots(cfg SnapshotConfig, priority []TranscriptFile, projects map[string]string) {
 	if sampler == nil {
 		return
 	}
 	additional := liveTokenRateRootsFromSnapshotConfig(cfg)
 	sampler.pollMu.Lock()
 	sampler.roots = canonicalLiveTokenRateRoots(append(sampler.roots, additional...))
+	sampler.sessionProjects = cloneLiveTokenRateProjects(projects)
 	now := time.Now()
 	for _, file := range priority {
 		sampler.trackPriorityFileLocked(file, now)
@@ -214,6 +247,38 @@ func (sampler *liveTokenRateSampler) addSnapshotRoots(cfg SnapshotConfig, priori
 		sampler.watchCoverage = coverage
 		sampler.pollMu.Unlock()
 	}
+}
+
+func cloneLiveTokenRateProjects(projects map[string]string) map[string]string {
+	cloned := make(map[string]string, len(projects))
+	for session, project := range projects {
+		session = strings.TrimSpace(session)
+		project = strings.TrimSpace(project)
+		if session == "" {
+			continue
+		}
+		if project == "" {
+			project = liveTokenRateUnassignedProject
+		}
+		cloned[session] = project
+	}
+	return cloned
+}
+
+func liveTokenRateProjectsForEvents(events []liveTokenRateEvent, projects map[string]string) map[string]string {
+	relevant := make(map[string]string)
+	for _, event := range events {
+		session := strings.TrimSpace(event.Session)
+		if session == "" {
+			continue
+		}
+		project := strings.TrimSpace(projects[session])
+		if project == "" {
+			project = liveTokenRateUnassignedProject
+		}
+		relevant[session] = project
+	}
+	return relevant
 }
 
 func (sampler *liveTokenRateSampler) trackPriorityFileLocked(file TranscriptFile, now time.Time) {
@@ -678,7 +743,7 @@ func liveTokenRateReadAppend(path string, tracked liveTokenRateTrackedFile, info
 	observations := liveTokenRateParseLines(data[:parseEnd], now)
 	events := make([]liveTokenRateEvent, 0, len(observations))
 	signals := make([]time.Time, 0, len(observations))
-	session := tracked.Tool + "\x00" + path
+	session := liveTokenRateSessionKey(tracked.Tool, path)
 	for _, observation := range observations {
 		observation.At = normalizeLiveTokenRateSignalTime(observation.At, now)
 		signals = append(signals, observation.At)
@@ -1080,6 +1145,7 @@ func (sampler *liveTokenRateSampler) publishLocked(now time.Time) {
 		LatestSignal: sampler.latestSignal,
 		LatestEvent:  sampler.latestEvent,
 		Events:       append([]liveTokenRateEvent(nil), sampler.events...),
+		Projects:     liveTokenRateProjectsForEvents(sampler.events, sampler.sessionProjects),
 	}
 	sampler.publishedMu.Lock()
 	sampler.published = published
@@ -1098,10 +1164,9 @@ func (sampler *liveTokenRateSampler) sample(now time.Time) LiveTokenRateSample {
 	}
 	sampler.publishedMu.RLock()
 	published := sampler.published
-	events := append([]liveTokenRateEvent(nil), published.Events...)
 	sampler.publishedMu.RUnlock()
-	tokens, activeSessions := liveTokenRateWindowFacts(events, now, liveTokenRateWindow, liveTokenRateFutureSkew)
-	return liveTokenRateSampleFromFacts(liveTokenRateFacts{
+	tokens, activeSessions, projectFacts := liveTokenRateWindowBreakdown(published.Events, published.Projects, now, liveTokenRateWindow, liveTokenRateFutureSkew)
+	sample := liveTokenRateSampleFromFacts(liveTokenRateFacts{
 		Configured:     published.Configured,
 		Initialized:    published.Initialized,
 		Limited:        published.LimitedUntil.After(now),
@@ -1114,4 +1179,29 @@ func (sampler *liveTokenRateSampler) sample(now time.Time) LiveTokenRateSample {
 		StaleAfter:     liveTokenRateStaleAfter,
 		SampledAt:      now,
 	})
+	if sample.OutputTokensPerSecond != nil {
+		sample.Projects = liveTokenRateProjectSamples(projectFacts, liveTokenRateWindow)
+	}
+	return sample
+}
+
+func liveTokenRateProjectSamples(projects map[string]liveTokenRateProjectFacts, window time.Duration) []LiveTokenRateProjectSample {
+	out := make([]LiveTokenRateProjectSample, 0, len(projects))
+	for project, facts := range projects {
+		if facts.TokensInWindow <= 0 {
+			continue
+		}
+		out = append(out, LiveTokenRateProjectSample{
+			Project:               project,
+			OutputTokensPerSecond: float64(facts.TokensInWindow) / window.Seconds(),
+			ActiveSessions:        len(facts.Sessions),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].OutputTokensPerSecond != out[j].OutputTokensPerSecond {
+			return out[i].OutputTokensPerSecond > out[j].OutputTokensPerSecond
+		}
+		return out[i].Project < out[j].Project
+	})
+	return out
 }

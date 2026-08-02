@@ -6,7 +6,7 @@ import { copy, type Lang } from "./i18n";
 import { buildToolSessionGroups, confidenceLabel, freshnessLabel, hiddenToolSessionCount, mappingMethodLabel, normalizedRole, orderedProjects, projectEvidenceItems, roleLabel, sessionEvidenceItems, sessionIdentity, sessionsForProject, tokenUsageProvenanceLabel, toolBadgeLabel, toolDisplayName, toolIconName } from "./lib/activityModel";
 import { activeWindowLabel, buildRailItems, coordinationPostureLabel, currentMeaningLead, currentMeaningPoints, dashboardProjectMeta, deferredScanValue, mappingHealthText, metricState, primaryEvidenceNote, statusTone, transcriptScanNote, transcriptScanSummary } from "./lib/dashboardModel";
 import { clampPct, countLabel, formatAge, formatBytesPerSecond, formatCompactCPU, formatCPU, formatCopy, formatDateTime, formatMemory, formatPct, formatRefreshInterval, formatTokenCount, formatTokenRate, formatTokenUsageSummary, pctPart, safeID, shortID, tokenUsageHasValue } from "./lib/format";
-import { currentHasRecentMovement, currentKnownSessionCount, currentProcessPressureCount, currentRecentMovementCount, liveTokenRateValue, normalizedLiveTokenRateState, projectProcessPressureCount, projectProcessResources, projectRoleCounts, sessionHasRecentMovement, sessionHumanReviewCount, sessionNeedsHumanReview, sessionProcessPressure, snapshotHumanReviewSessions, summaryMappedProcessCount, summaryMappingCoveragePct, summaryUnmappedProcessCount, toolKnownSessionCount, toolRecentMovementCount } from "./lib/metricSemantics";
+import { currentHasRecentMovement, currentKnownSessionCount, currentProcessPressureCount, currentRecentMovementCount, liveTokenRateValue, normalizedLiveTokenRateState, projectLiveTokenRateValue, projectProcessPressureCount, projectProcessResources, projectRoleCounts, sessionHasRecentMovement, sessionHumanReviewCount, sessionNeedsHumanReview, sessionProcessPressure, snapshotHumanReviewSessions, summaryMappedProcessCount, summaryMappingCoveragePct, summaryUnmappedProcessCount, toolKnownSessionCount, toolRecentMovementCount } from "./lib/metricSemantics";
 import { LineageSummary } from "./lineage/LineageSummary";
 import { useLiveTokenRate } from "./live/useLiveTokenRate";
 import { ProcessSummaryStrip } from "./system/ProcessSummaryStrip";
@@ -691,7 +691,7 @@ function DashboardSurface({
         <DashboardBandHead kicker={t("liveLedger")} title={t("projectSessionTree")} meta={`${snapshot.live_sessions?.length ?? 0} ${t("sessions")}`} />
         <div className="dash-atlas-grid">
           <div className="dash-atlas-panel">
-            <ProjectAtlas t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} limit={14} defaultExpandedCount={1} showHead={false} />
+            <ProjectAtlas t={t} snapshot={snapshot} liveTokenRate={liveTokenRate} selection={selection} setSelection={setSelection} limit={14} defaultExpandedCount={1} showHead={false} />
           </div>
           <DashboardSideRails t={t} snapshot={snapshot} />
         </div>
@@ -1004,7 +1004,7 @@ const PopoverAuditShell = React.memo(function PopoverAuditShell({
           </div>
           <span>{dashboardProjectMeta(t, snapshot)}</span>
         </div>
-        <ProjectAtlas t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} compact defaultExpandedCount={0} showHead={false} setHoverDetail={setHoverDetail} />
+        <ProjectAtlas t={t} snapshot={snapshot} liveTokenRate={liveTokenRate} selection={selection} setSelection={setSelection} compact defaultExpandedCount={0} showHead={false} setHoverDetail={setHoverDetail} />
       </section>
     </section>
   );
@@ -1340,6 +1340,7 @@ function EvidenceHealth({ t, snapshot }: { t: (key: string) => string; snapshot:
 const ProjectAtlas = React.memo(function ProjectAtlas({
   t,
   snapshot,
+  liveTokenRate,
   selection,
   setSelection,
   compact = false,
@@ -1350,6 +1351,7 @@ const ProjectAtlas = React.memo(function ProjectAtlas({
 }: {
   t: (key: string) => string;
   snapshot: Snapshot;
+  liveTokenRate?: LiveTokenRateSample;
   selection: Selection;
   setSelection: (value: Selection) => void;
   compact?: boolean;
@@ -1384,6 +1386,7 @@ const ProjectAtlas = React.memo(function ProjectAtlas({
               key={projectId}
               t={t}
               snapshot={snapshot}
+              liveTokenRate={liveTokenRate}
               project={project}
               selection={selection}
               setSelection={setSelection}
@@ -2116,6 +2119,7 @@ function ScanBoundary({ t, snapshot, compact }: { t: (key: string) => string; sn
 const ProjectTreeRow = React.memo(function ProjectTreeRow({
   t,
   snapshot,
+  liveTokenRate,
   project,
   selection,
   setSelection,
@@ -2128,6 +2132,7 @@ const ProjectTreeRow = React.memo(function ProjectTreeRow({
 }: {
   t: (key: string) => string;
   snapshot: Snapshot;
+  liveTokenRate?: LiveTokenRateSample;
   project: ProjectSnapshot;
   selection: Selection;
   setSelection: (value: Selection) => void;
@@ -2145,13 +2150,16 @@ const ProjectTreeRow = React.memo(function ProjectTreeRow({
   const resourceText = processResourceText(t, projectResources.cpu, projectResources.memory);
   const projectId = safeID(project.project);
   const title = project.project || t("unassigned");
+  const tokenRate = projectLiveTokenRateValue(liveTokenRate, project.project);
+  const tokenRateText = tokenRate === null ? "—" : formatTokenRate(tokenRate);
+  const tokenRateTitle = `${t("outputThroughput")}: ${tokenRateText}${tokenRate === null ? "" : ` ${t("tokenRateUnit")}`}`;
   const evidenceItems = projectEvidenceItems(t, project, compact);
   const projectAge = formatAge(project.last_event_age_seconds, t);
   const projectMeta = projectAge;
   const toolSummary = (project.tools ?? []).map((tool) => `${toolDisplayName(tool.tool)} ${toolRecentMovementCount(tool)}/${toolKnownSessionCount(tool)}`).join(" · ") || t("unavailable");
   const reviewCount = sessionHumanReviewCount(sessions);
   const reviewTitle = formatCopy(t("attentionProjectTooltip"), { count: reviewCount });
-  const projectHoverDetail = `${counts.activeTotal} ${t("active")} / ${counts.total} ${t("sessions")} · ${processPressure} ${t("processes")} · ${resourceText}${reviewCount ? ` · ${reviewCount} ${t("attentionAgentsShort")}` : ""}`;
+  const projectHoverDetail = `${counts.activeTotal} ${t("active")} / ${counts.total} ${t("sessions")} · ${processPressure} ${t("processes")} · ${tokenRateTitle} · ${resourceText}${reviewCount ? ` · ${reviewCount} ${t("attentionAgentsShort")}` : ""}`;
   const projectHoverMeta = `${t("lastEvent")} ${projectAge} · ${t("tools")}: ${toolSummary}`;
   const projectHoverPayload: HoverDetailPayload = { kind: "project", id: projectId, title, detail: projectHoverDetail, meta: projectHoverMeta };
   const selected = selection.type === "project" && selection.id === projectId;
@@ -2191,7 +2199,7 @@ const ProjectTreeRow = React.memo(function ProjectTreeRow({
           {reviewCount ? <i className="project-review-chip" title={reviewTitle} aria-label={reviewTitle}><b aria-hidden="true" />{reviewCount}</i> : null}
           <small>{projectMeta}</small>
         </button>
-        {compact ? <ProjectCompactMetrics t={t} counts={counts} processCount={processPressure} cpu={projectResources.cpu} memory={projectResources.memory} /> : <ProjectMetricMatrix t={t} counts={counts} processCount={processPressure} resourceText={resourceText} />}
+        {compact ? <ProjectCompactMetrics t={t} counts={counts} processCount={processPressure} cpu={projectResources.cpu} memory={projectResources.memory} tokenRate={tokenRate} /> : <ProjectMetricMatrix t={t} counts={counts} processCount={processPressure} resourceText={resourceText} tokenRate={tokenRate} />}
         <ToolStrip t={t} tools={project.tools ?? []} />
       </div>
       {expanded ? (
@@ -2212,7 +2220,7 @@ const ProjectTreeRow = React.memo(function ProjectTreeRow({
   );
 });
 
-function ProjectCompactMetrics({ t, counts, processCount, cpu, memory }: { t: (key: string) => string; counts: RoleCounts; processCount: number; cpu: number; memory: number }) {
+function ProjectCompactMetrics({ t, counts, processCount, cpu, memory, tokenRate }: { t: (key: string) => string; counts: RoleCounts; processCount: number; cpu: number; memory: number; tokenRate: number | null }) {
   const activeMainTitle = projectMetricCellTitle(t, "active", "main", counts.activeMain);
   const activeSubagentTitle = projectMetricCellTitle(t, "active", "subagent", counts.activeSub);
   const activeTotalTitle = projectMetricCellTitle(t, "active", "total", counts.activeTotal);
@@ -2223,6 +2231,9 @@ function ProjectCompactMetrics({ t, counts, processCount, cpu, memory }: { t: (k
   const allTitle = `${allTotalTitle} · ${allMainTitle} · ${allSubagentTitle}`;
   const processTitle = projectMetricProcessTitle(t, processCount);
   const resourceTitle = `${t("processCPU")}: ${formatCPU(cpu)} · ${t("processMemory")}: ${formatMemory(memory, t)}`;
+  const tokenRateText = tokenRate === null ? "—" : formatTokenRate(tokenRate);
+  const tokenRateTitle = `${t("outputThroughput")}: ${tokenRateText}${tokenRate === null ? "" : ` ${t("tokenRateUnit")}`}`;
+  const signalTitle = `${tokenRateTitle} · ${resourceTitle}`;
   return (
     <div className="project-compact-metrics" aria-label={t("metricSessions")}>
       <span className="project-compact-cluster active" aria-label={activeTitle}>
@@ -2239,7 +2250,8 @@ function ProjectCompactMetrics({ t, counts, processCount, cpu, memory }: { t: (k
         <i>{t("processShort")}</i>
         <strong>{processCount}</strong>
       </span>
-      <span className="project-compact-resources" aria-label={resourceTitle}>
+      <span className="project-compact-signals" aria-label={signalTitle} title={signalTitle}>
+        <em className={`throughput${tokenRate === null ? " unavailable" : ""}`}><b>{t("outputRateShort")}</b><strong>{tokenRateText}</strong></em>
         <em><b>{t("cpu")}</b><strong>{formatCompactCPU(cpu)}</strong></em>
         <em><b>{t("memoryShort")}</b><strong>{formatCompactMemory(memory)}</strong></em>
       </span>
@@ -2247,13 +2259,15 @@ function ProjectCompactMetrics({ t, counts, processCount, cpu, memory }: { t: (k
   );
 }
 
-function ProjectMetricMatrix({ t, counts, processCount, resourceText }: { t: (key: string) => string; counts: RoleCounts; processCount: number; resourceText: string }) {
+function ProjectMetricMatrix({ t, counts, processCount, resourceText, tokenRate }: { t: (key: string) => string; counts: RoleCounts; processCount: number; resourceText: string; tokenRate: number | null }) {
   const activeTitle = projectMetricGroupTitle(t, "active", counts);
   const allTitle = projectMetricGroupTitle(t, "all", counts);
   const mainTitle = projectMetricObjectTitle(t, "main");
   const subagentTitle = projectMetricObjectTitle(t, "subagent");
   const totalTitle = projectMetricObjectTitle(t, "total");
   const processTitle = projectMetricProcessTitle(t, processCount);
+  const tokenRateText = tokenRate === null ? "—" : formatTokenRate(tokenRate);
+  const tokenRateTitle = `${t("outputThroughput")}: ${tokenRateText}${tokenRate === null ? "" : ` ${t("tokenRateUnit")}`}`;
   return (
     <div className="project-matrix" aria-label={t("metricSessions")}>
       <span />
@@ -2272,6 +2286,11 @@ function ProjectMetricMatrix({ t, counts, processCount, resourceText }: { t: (ke
         <Server size={12} />
         <strong>{processCount}</strong>
         <em>{resourceText}</em>
+      </span>
+      <span className={`project-throughput${tokenRate === null ? " unavailable" : ""}`} aria-label={tokenRateTitle} title={tokenRateTitle}>
+        <Gauge size={12} />
+        <strong>{tokenRateText}</strong>
+        <em>{t("tokenRateUnit")}</em>
       </span>
     </div>
   );

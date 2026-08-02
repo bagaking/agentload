@@ -904,6 +904,30 @@ kbd {
   font-size: 11px;
 }
 
+.project-throughput {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--ok);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.project-throughput strong {
+  color: currentColor;
+}
+
+.project-throughput.unavailable {
+  color: var(--fg-faint);
+}
+
+.project-throughput em {
+  color: var(--fg-faint);
+  font-size: 8px;
+  font-style: normal;
+}
+
 .project-proc strong,
 .project-proc em,
 .project-compact-proc em {
@@ -10409,7 +10433,7 @@ body[data-view="popover"] .popover-project-table .project-compact-metrics {
 
 body[data-view="popover"] .popover-project-table .project-compact-cluster,
 body[data-view="popover"] .popover-project-table .project-compact-proc,
-body[data-view="popover"] .popover-project-table .project-compact-resources {
+body[data-view="popover"] .popover-project-table .project-compact-signals {
   position: relative;
   display: grid;
   align-content: center;
@@ -10424,7 +10448,7 @@ body[data-view="popover"] .popover-project-table .project-compact-resources {
 
 body[data-view="popover"] .popover-project-table .project-compact-cluster::before,
 body[data-view="popover"] .popover-project-table .project-compact-proc::before,
-body[data-view="popover"] .popover-project-table .project-compact-resources::before {
+body[data-view="popover"] .popover-project-table .project-compact-signals::before {
   content: "";
   position: absolute;
   left: 0;
@@ -10505,13 +10529,13 @@ body[data-view="popover"] .popover-project-table .project-compact-proc strong {
   text-align: center;
 }
 
-body[data-view="popover"] .popover-project-table .project-compact-resources {
-  grid-template-rows: 1fr 1fr;
-  gap: 1px;
+body[data-view="popover"] .popover-project-table .project-compact-signals {
+  grid-template-rows: repeat(3, 1fr);
+  gap: 0;
   color: color-mix(in srgb, var(--run) 74%, var(--console-text-faint));
 }
 
-body[data-view="popover"] .popover-project-table .project-compact-resources em {
+body[data-view="popover"] .popover-project-table .project-compact-signals em {
   display: grid;
   grid-template-columns: 3.4ch minmax(0, 1fr);
   align-items: center;
@@ -10525,7 +10549,7 @@ body[data-view="popover"] .popover-project-table .project-compact-resources em {
   line-height: 1;
 }
 
-body[data-view="popover"] .popover-project-table .project-compact-resources b {
+body[data-view="popover"] .popover-project-table .project-compact-signals b {
   overflow: hidden;
   color: color-mix(in srgb, var(--console-text-faint) 86%, transparent);
   font-size: 7px;
@@ -10534,7 +10558,7 @@ body[data-view="popover"] .popover-project-table .project-compact-resources b {
   text-transform: uppercase;
 }
 
-body[data-view="popover"] .popover-project-table .project-compact-resources strong {
+body[data-view="popover"] .popover-project-table .project-compact-signals strong {
   min-width: 0;
   overflow: hidden;
   color: currentColor;
@@ -10544,6 +10568,14 @@ body[data-view="popover"] .popover-project-table .project-compact-resources stro
   text-align: right;
   text-overflow: clip;
   white-space: nowrap;
+}
+
+body[data-view="popover"] .popover-project-table .project-compact-signals .throughput strong {
+  color: var(--ok);
+}
+
+body[data-view="popover"] .popover-project-table .project-compact-signals .throughput.unavailable strong {
+  color: var(--console-text-faint);
 }
 
 :root[data-theme="light"] body[data-view="popover"] .popover-project-table .project-tree-row::after {
@@ -10583,7 +10615,7 @@ body[data-view="popover"] .popover-project-table .project-compact-resources stro
 
   body[data-view="popover"] .popover-project-table .project-compact-cluster,
   body[data-view="popover"] .popover-project-table .project-compact-proc,
-  body[data-view="popover"] .popover-project-table .project-compact-resources {
+  body[data-view="popover"] .popover-project-table .project-compact-signals {
     padding-inline: 3px;
   }
 
@@ -10593,7 +10625,7 @@ body[data-view="popover"] .popover-project-table .project-compact-resources stro
 
   body[data-view="popover"] .popover-project-table .project-compact-cluster b,
   body[data-view="popover"] .popover-project-table .project-compact-proc i,
-  body[data-view="popover"] .popover-project-table .project-compact-resources b {
+  body[data-view="popover"] .popover-project-table .project-compact-signals b {
     font-size: 6.6px;
   }
 
@@ -10603,7 +10635,7 @@ body[data-view="popover"] .popover-project-table .project-compact-resources stro
   }
 
   body[data-view="popover"] .popover-project-table .project-compact-cluster em,
-  body[data-view="popover"] .popover-project-table .project-compact-resources em {
+  body[data-view="popover"] .popover-project-table .project-compact-signals em {
     font-size: 6.8px;
   }
 }

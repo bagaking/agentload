@@ -399,6 +399,7 @@ func TestLiveTokenRateDynamicRootUsesPriorityFilesWithoutWalkingHistory(t *testi
 	sampler.addSnapshotRoots(
 		SnapshotConfig{CodexRoots: []string{root}},
 		priority,
+		map[string]string{liveTokenRateSessionKey("codex", path): "project-a"},
 	)
 	sampler.poll(now)
 	if readCount != 0 || len(sampler.directories) != 0 {
@@ -417,12 +418,52 @@ func TestLiveTokenRateDynamicRootUsesPriorityFilesWithoutWalkingHistory(t *testi
 	if sample.State != liveTokenRateStateLive || sample.OutputTokensPerSecond == nil || math.Abs(*sample.OutputTokensPerSecond-1) > 0.0001 {
 		t.Fatalf("priority file delta = %+v, want 1 output token/second", sample)
 	}
+	if len(sample.Projects) != 1 || sample.Projects[0].Project != "project-a" || math.Abs(sample.Projects[0].OutputTokensPerSecond-1) > 0.0001 || sample.Projects[0].ActiveSessions != 1 {
+		t.Fatalf("project throughput = %+v, want project-a at 1 output token/second", sample.Projects)
+	}
+}
+
+func TestLiveTokenRateProjectsFromSessionsFailsConflictsToUnassigned(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	projects := liveTokenRateProjectsFromSessions([]LiveSessionSnapshot{
+		{Tool: "codex", Path: path, Project: "project-a"},
+		{Tool: "codex", Path: path, Project: "project-b"},
+	})
+	if got := projects[liveTokenRateSessionKey("codex", path)]; got != liveTokenRateUnassignedProject {
+		t.Fatalf("conflicting project attribution = %q, want %q", got, liveTokenRateUnassignedProject)
+	}
+}
+
+func TestLiveTokenRatePublishedProjectsOnlyRetainEventSessions(t *testing.T) {
+	now := time.Now().UTC()
+	sampler := newLiveTokenRateSampler(Config{CodexRoots: []string{t.TempDir()}})
+	sampler.pollMu.Lock()
+	sampler.events = []liveTokenRateEvent{{At: now, Tokens: 180, Session: "session-a"}}
+	sampler.initialized = true
+	sampler.latestSignal = now
+	sampler.latestEvent = now
+	sampler.sessionProjects = map[string]string{"session-a": "project-a"}
+	for index := 0; index < 10_000; index++ {
+		sampler.sessionProjects[fmt.Sprintf("inactive-%05d", index)] = "inactive"
+	}
+	sampler.publishLocked(now)
+	sampler.pollMu.Unlock()
+
+	sampler.publishedMu.RLock()
+	projects := sampler.published.Projects
+	sampler.publishedMu.RUnlock()
+	if len(projects) != 1 || projects["session-a"] != "project-a" {
+		t.Fatalf("published projects = %+v, want only the active-window event session", projects)
+	}
+	if sample := sampler.sample(now); len(sample.Projects) != 1 || sample.Projects[0].Project != "project-a" {
+		t.Fatalf("sample project partition = %+v, want project-a only", sample.Projects)
+	}
 }
 
 func TestLiveTokenRateConfiguredRootRemainsDiscoverableAfterSnapshotMerge(t *testing.T) {
 	root := t.TempDir()
 	sampler := newLiveTokenRateSampler(Config{CodexRoots: []string{root}})
-	sampler.addSnapshotRoots(SnapshotConfig{CodexRoots: []string{root}}, nil)
+	sampler.addSnapshotRoots(SnapshotConfig{CodexRoots: []string{root}}, nil, nil)
 	for _, candidate := range sampler.roots {
 		if !candidate.Discover {
 			t.Fatalf("configured root lost discovery ownership: %+v", candidate)

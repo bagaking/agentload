@@ -32,6 +32,7 @@ type Snapshot struct {
 	HostAppProcesses   []HostAppProcessSummary     `json:"host_app_process_summary,omitempty"`
 	Notes              []string                    `json:"notes,omitempty"`
 	LiveTokenRateFiles []TranscriptFile            `json:"-"`
+	LiveTokenProjects  map[string]string           `json:"-"`
 }
 
 type SnapshotConfig struct {
@@ -95,17 +96,24 @@ type MetricRegistryEntry struct {
 }
 
 type LiveTokenRateSample struct {
-	OutputTokensPerSecond *float64 `json:"output_tokens_per_second"`
-	State                 string   `json:"state"`
-	Basis                 string   `json:"basis"`
-	Source                string   `json:"source"`
-	Method                string   `json:"method"`
-	WindowSeconds         int      `json:"window_seconds"`
-	SampleIntervalSeconds int      `json:"sample_interval_seconds"`
-	ActiveSessions        int      `json:"active_sessions"`
-	SampledAt             string   `json:"sampled_at"`
-	LatestSignalAt        string   `json:"latest_signal_at,omitempty"`
-	LatestEventAt         string   `json:"latest_event_at,omitempty"`
+	OutputTokensPerSecond *float64                     `json:"output_tokens_per_second"`
+	State                 string                       `json:"state"`
+	Basis                 string                       `json:"basis"`
+	Source                string                       `json:"source"`
+	Method                string                       `json:"method"`
+	WindowSeconds         int                          `json:"window_seconds"`
+	SampleIntervalSeconds int                          `json:"sample_interval_seconds"`
+	ActiveSessions        int                          `json:"active_sessions"`
+	SampledAt             string                       `json:"sampled_at"`
+	LatestSignalAt        string                       `json:"latest_signal_at,omitempty"`
+	LatestEventAt         string                       `json:"latest_event_at,omitempty"`
+	Projects              []LiveTokenRateProjectSample `json:"projects"`
+}
+
+type LiveTokenRateProjectSample struct {
+	Project               string  `json:"project"`
+	OutputTokensPerSecond float64 `json:"output_tokens_per_second"`
+	ActiveSessions        int     `json:"active_sessions"`
 }
 
 type RuntimeTelemetrySnapshot struct {

@@ -95,6 +95,11 @@ Returns the latest `LiveTokenRateSample` published by the independent 30-second
 background transcript sampler. Reading the endpoint never advances transcript
 file offsets or cumulative baselines. `output_tokens_per_second` is numeric only
 for `live` and `zero`; it is `null` for `unavailable`, `no_data`, and `stale`.
+For numeric samples, `projects` contains positive per-project contributions from
+the same event window (`project`, `output_tokens_per_second`, and
+`active_sessions`); an empty array means measured zero. Missing or conflicting
+attribution is reported as project `unassigned`, so the project partition sums
+to the aggregate.
 The denominator is the fixed trailing 180-second wall-time window. This is
 aggregate output-token workload throughput, not model decode speed or
 API-active-time TPS. `Cache-Control: no-store`.

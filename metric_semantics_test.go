@@ -65,3 +65,25 @@ func TestLiveTokenRateSampleUsesOutputTokensOverWallTime(t *testing.T) {
 		t.Fatalf("live sample metadata = %+v", sample)
 	}
 }
+
+func TestLiveTokenRateWindowBreakdownPreservesAggregateAndUnassignedTruth(t *testing.T) {
+	now := time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
+	events := []liveTokenRateEvent{
+		{At: now, Tokens: 180, Session: "session-a"},
+		{At: now, Tokens: 360, Session: "session-b"},
+		{At: now, Tokens: 90, Session: "session-c"},
+	}
+	tokens, sessions, projects := liveTokenRateWindowBreakdown(events, map[string]string{
+		"session-a": "project-a",
+		"session-b": "project-a",
+	}, now, 180*time.Second, 5*time.Second)
+	if tokens != 630 || sessions != 3 {
+		t.Fatalf("aggregate breakdown = %d tokens across %d sessions, want 630/3", tokens, sessions)
+	}
+	if got := projects["project-a"]; got.TokensInWindow != 540 || len(got.Sessions) != 2 {
+		t.Fatalf("project-a breakdown = %+v, want 540 tokens across 2 sessions", got)
+	}
+	if got := projects[liveTokenRateUnassignedProject]; got.TokensInWindow != 90 || len(got.Sessions) != 1 {
+		t.Fatalf("unassigned breakdown = %+v, want 90 tokens across 1 session", got)
+	}
+}

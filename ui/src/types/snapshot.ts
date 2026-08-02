@@ -53,6 +53,13 @@ export type LiveTokenRateSample = {
   sampled_at?: string;
   latest_signal_at?: string;
   latest_event_at?: string;
+  projects?: LiveTokenRateProjectSample[] | null;
+};
+
+export type LiveTokenRateProjectSample = {
+  project?: string;
+  output_tokens_per_second?: number;
+  active_sessions?: number;
 };
 
 export type RuntimeTelemetrySnapshot = {

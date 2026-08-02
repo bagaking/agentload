@@ -21,7 +21,7 @@ semantic layer says so.
 | Role matrix | `main_agent_sessions`, `subagent_sessions`, `unknown_role_sessions` and active role splits | Session role inference from thread source, parent thread, lane paths, and independent-run evidence | Process role guesses without mapped session evidence |
 | Tool coverage | project/tool `session_count`, `active_burst_count`, `process_count` | Per-tool aggregation of known sessions, recent movement, and process pressure | Treating process pressure as recent movement |
 | Token usage | `token_usage`, `token_usage_source`, `token_usage_confidence` | Parsed local transcript usage fields when present, including cumulative token-count events when the local trace exposes them | Inferring usage from process duration, CPU, memory, or elapsed time |
-| Output token throughput | `/api/live-token-rate` `output_tokens_per_second`, `state`, `window_seconds` | Positive output-token events and safe cumulative-output counter deltas from local transcripts, projected onto a trailing 180-second wall-time window | Input/cache/reasoning tokens, process activity, model decode speed, API-active-time throughput, or replayed deltas across collection gaps |
+| Output token throughput | `/api/live-token-rate` `output_tokens_per_second`, `projects`, `state`, `window_seconds` | Positive output-token events and safe cumulative-output counter deltas from local transcripts, projected onto a trailing 180-second wall-time window and attributed through the observer's project mapping | Input/cache/reasoning tokens, process activity, model decode speed, API-active-time throughput, or replayed deltas across collection gaps |
 | Runtime telemetry | `runtime_telemetry` | Optional local adapter state for future OpenTelemetry or JSONL events | Replacing local process/session evidence or treating unconfigured telemetry as failure |
 | Diagnostic export | `diagnostics.export` and `/api/diagnostic-export` | Sanitized local snapshot with omitted private fields documented | Raw prompts, absolute paths, full command arguments, environment variables, transcript paths |
 
@@ -66,6 +66,9 @@ semantic layer says so.
   history. Counter resets, file replacement or truncation, oversized append
   gaps, and collection gaps longer than the rate window also rebaseline without
   producing a current event.
+- Project output-throughput rows are partitions of the same sampled events used
+  by the aggregate. Conflicting or absent project attribution stays under
+  `unassigned`; project rates plus `unassigned` must sum to the aggregate rate.
 - `unavailable`, `no_data`, and `stale` output-throughput samples carry no
   numeric rate. A numeric zero is valid only when fresh output-token evidence
   exists and no positive output falls inside the trailing window.

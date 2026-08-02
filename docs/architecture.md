@@ -106,6 +106,12 @@ feed historic peaks and transcript trend windows.
   transcript paths for baselines and are watcher-only while native coverage is
   available; adding a custom root therefore does not recursively index its
   historical session or lane tree.
+  The observer also publishes a private session-path-to-project map to the
+  sampler. API project rates partition the already sampled events through that
+  map; they do not trigger another transcript read or maintain separate token
+  counters. Published snapshots retain attribution only for sessions referenced
+  by the active event buffer, so API sampling cost does not grow with historical
+  session count.
   On macOS, recursive FSEvents file notifications surface newly created and
   resumed old JSONL files without recurring full-tree walks; tracked appends are
   then read from their private cursors. Dropped events fail closed and force one

@@ -18,6 +18,15 @@ export function liveTokenRateValue(sample?: LiveTokenRateSample): number | null 
   return value;
 }
 
+export function projectLiveTokenRateValue(sample: LiveTokenRateSample | undefined, project?: string): number | null {
+  if (liveTokenRateValue(sample) === null || !Array.isArray(sample?.projects)) return null;
+  const key = String(project || "unassigned").trim() || "unassigned";
+  const item = sample.projects.find((candidate) => String(candidate.project || "unassigned").trim() === key);
+  if (!item) return 0;
+  const value = item.output_tokens_per_second;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
 export function normalizedRole(role?: string): SessionRole {
   const value = String(role || "").trim().toLowerCase();
   if (value === "main" || value === "main_agent" || value === "user") return "main";
