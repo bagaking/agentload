@@ -115,7 +115,7 @@ func TestSnapshotNotesDescribeDeferredHistoricalParsing(t *testing.T) {
 
 func TestObserverSnapshotKeepsDetectedToolPIDMetricsWithoutSessions(t *testing.T) {
 	originalDiscover := discoverLiveProcessesFunc
-	discoverLiveProcessesFunc = func(context.Context) ([]LiveProcess, []string) {
+	discoverLiveProcessesFunc = func(context.Context, *codingAgentRegistry) ([]LiveProcess, []string) {
 		return []LiveProcess{
 			{PID: 11, Tool: "opencode", Command: "opencode run"},
 			{PID: 12, Tool: "gemini", Command: "gemini --prompt hello"},

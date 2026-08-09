@@ -20,7 +20,7 @@ var sessionHintPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)CODEX_THREAD_ID=([0-9a-f-]{8,})`),
 }
 
-func discoverLiveProcesses(ctx context.Context) ([]LiveProcess, []string) {
+func discoverLiveProcesses(ctx context.Context, adapters *codingAgentRegistry) ([]LiveProcess, []string) {
 	out, err := exec.CommandContext(ctx, "ps", "-axo", "uid=,pid=,ppid=,pcpu=,rss=,etime=,command=").Output()
 	if err != nil {
 		return nil, []string{"ps failed: " + strings.TrimSpace(err.Error())}
@@ -34,7 +34,7 @@ func discoverLiveProcesses(ctx context.Context) ([]LiveProcess, []string) {
 		if process.UID != os.Getuid() {
 			continue
 		}
-		tool := detectedTool(process.Command)
+		tool, displayName := adapters.detectProcess(process.Command)
 		if tool == "" {
 			continue
 		}
@@ -44,6 +44,7 @@ func discoverLiveProcesses(ctx context.Context) ([]LiveProcess, []string) {
 			PID:                  process.PID,
 			PPID:                 process.PPID,
 			Tool:                 tool,
+			DisplayName:          displayName,
 			Command:              strings.TrimSpace(process.Command),
 			HostApp:              hostApp,
 			CPUPercent:           process.CPUPercent,
@@ -62,7 +63,7 @@ func discoverLiveProcesses(ctx context.Context) ([]LiveProcess, []string) {
 		}
 		return processes[i].Tool < processes[j].Tool
 	})
-	fileMap, lsofNotes := sessionFilesForPIDs(ctx, pids)
+	fileMap, lsofNotes := sessionFilesForPIDs(ctx, pids, adapters)
 	for i := range processes {
 		processes[i].SessionFiles = fileMap[processes[i].PID]
 		processes[i].SessionHints = extractSessionHints(processes[i].Command)
@@ -203,147 +204,7 @@ func appBundlePathFromCommand(command string) string {
 	return ""
 }
 
-func detectedTool(command string) string {
-	lower := strings.ToLower(strings.TrimSpace(command))
-	if lower == "" {
-		return ""
-	}
-	if strings.Contains(lower, "sparkle") || strings.Contains(lower, "updater.app") {
-		return ""
-	}
-	fields := strings.Fields(lower)
-	executable := ""
-	if len(fields) > 0 {
-		executable = fields[0]
-	}
-	executableBase := normalizedExecutableBase(executable)
-	switch {
-	case strings.Contains(executableBase, "claude"):
-		return "claude"
-	case isTraeExecutable(executableBase):
-		return "trae"
-	case strings.Contains(executableBase, "codexl"),
-		strings.Contains(executableBase, "codex"),
-		strings.Contains(lower, "/applications/codex.app"),
-		strings.Contains(lower, "codex computer use.app"),
-		strings.Contains(lower, "com.openai.codex"):
-		return "codex"
-	case isOpenCodeExecutable(executableBase):
-		return "opencode"
-	case isGeminiExecutable(executableBase):
-		return "gemini"
-	case len(fields) > 1:
-		return detectedToolFromInterpreter(fields)
-	default:
-		return ""
-	}
-}
-
-func normalizedExecutableBase(value string) string {
-	key := strings.Trim(strings.ToLower(value), `"'`)
-	key = strings.TrimSuffix(filepath.Base(key), ".app")
-	key = strings.TrimSuffix(key, ".exe")
-	key = strings.ReplaceAll(key, "_", "-")
-	return key
-}
-
-func isTraeExecutable(executableBase string) bool {
-	key := normalizedExecutableBase(executableBase)
-	switch key {
-	case "trae", "traex", "trae-cli", "traecli":
-		return true
-	default:
-		return strings.HasPrefix(key, "trae ")
-	}
-}
-
-func isOpenCodeExecutable(executableBase string) bool {
-	switch normalizedExecutableBase(executableBase) {
-	case "opencode", "opencode-ai":
-		return true
-	default:
-		return false
-	}
-}
-
-func isGeminiExecutable(executableBase string) bool {
-	switch normalizedExecutableBase(executableBase) {
-	case "gemini", "gemini-cli":
-		return true
-	default:
-		return false
-	}
-}
-
-func detectedToolFromInterpreter(fields []string) string {
-	if len(fields) < 2 {
-		return ""
-	}
-	switch normalizedExecutableBase(fields[0]) {
-	case "node", "bun", "deno":
-	default:
-		return ""
-	}
-	script := interpreterScriptToken(fields[1:])
-	if script == "" {
-		return ""
-	}
-	if isOpenCodeExecutable(script) {
-		return "opencode"
-	}
-	if isGeminiExecutable(script) {
-		return "gemini"
-	}
-	return detectedToolFromKnownPackagePath(script)
-}
-
-func interpreterScriptToken(args []string) string {
-	optionsWithValue := map[string]struct{}{
-		"-r":                    {},
-		"--require":             {},
-		"--import":              {},
-		"--loader":              {},
-		"--experimental-loader": {},
-		"--env-file":            {},
-	}
-	for i := 0; i < len(args); i++ {
-		arg := strings.Trim(args[i], `"'`)
-		if arg == "" {
-			continue
-		}
-		if arg == "--" {
-			continue
-		}
-		if strings.HasPrefix(arg, "-") {
-			option := arg
-			if index := strings.Index(option, "="); index >= 0 {
-				option = option[:index]
-			}
-			if _, ok := optionsWithValue[option]; ok && !strings.Contains(arg, "=") {
-				i++
-			}
-			continue
-		}
-		return arg
-	}
-	return ""
-}
-
-func detectedToolFromKnownPackagePath(path string) string {
-	normalized := "/" + strings.Trim(strings.ReplaceAll(strings.Trim(path, `"'`), "\\", "/"), "/")
-	switch {
-	case strings.Contains(normalized, "/node_modules/@google/gemini-cli/"),
-		strings.Contains(normalized, "/@google/gemini-cli/"):
-		return "gemini"
-	case strings.Contains(normalized, "/node_modules/opencode-ai/"),
-		strings.Contains(normalized, "/opencode-ai/"):
-		return "opencode"
-	default:
-		return ""
-	}
-}
-
-func sessionFilesForPIDs(ctx context.Context, pids []int) (map[int][]TranscriptFile, []string) {
+func sessionFilesForPIDs(ctx context.Context, pids []int, adapters *codingAgentRegistry) (map[int][]TranscriptFile, []string) {
 	out := map[int][]TranscriptFile{}
 	if len(pids) == 0 {
 		return out, nil
@@ -384,7 +245,7 @@ func sessionFilesForPIDs(ctx context.Context, pids []int) (map[int][]TranscriptF
 			if currentPID == 0 {
 				continue
 			}
-			file, ok := transcriptFileFromPath(strings.TrimSpace(raw[1:]))
+			file, ok := adapters.transcriptFileForPath(strings.TrimSpace(raw[1:]))
 			if !ok {
 				continue
 			}
@@ -408,27 +269,6 @@ func sessionFilesForPIDs(ctx context.Context, pids []int) (map[int][]TranscriptF
 		})
 	}
 	return out, notes
-}
-
-func transcriptFileFromPath(path string) (TranscriptFile, bool) {
-	path = filepath.Clean(strings.TrimSpace(path))
-	if path == "" {
-		return TranscriptFile{}, false
-	}
-	switch {
-	case strings.Contains(path, string(filepath.Separator)+".claude"+string(filepath.Separator)+"projects"+string(filepath.Separator)) && strings.HasSuffix(path, ".jsonl"):
-		return TranscriptFile{Tool: "claude", Path: path}, true
-	case strings.Contains(path, string(filepath.Separator)+".codex"+string(filepath.Separator)+"sessions"+string(filepath.Separator)) && strings.HasSuffix(path, ".jsonl"):
-		return TranscriptFile{Tool: "codex", Path: path}, true
-	case strings.Contains(path, string(filepath.Separator)+".codex"+string(filepath.Separator)+"archived_sessions"+string(filepath.Separator)) && strings.HasSuffix(path, ".jsonl"):
-		return TranscriptFile{Tool: "codex", Path: path}, true
-	case strings.Contains(path, string(filepath.Separator)+".codex"+string(filepath.Separator)+".codexl"+string(filepath.Separator)) && strings.HasSuffix(path, string(filepath.Separator)+"events.jsonl"):
-		return TranscriptFile{Tool: "codex", Path: path}, true
-	case strings.Contains(path, string(filepath.Separator)+".trae"+string(filepath.Separator)+"cli"+string(filepath.Separator)+"sessions"+string(filepath.Separator)) && strings.HasSuffix(path, ".jsonl"):
-		return TranscriptFile{Tool: "trae", Path: path}, true
-	default:
-		return TranscriptFile{}, false
-	}
 }
 
 func extractSessionHints(command string) []string {

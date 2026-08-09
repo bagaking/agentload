@@ -997,7 +997,7 @@ func TestSanitizeCommandForClientKeepsIdentityOnly(t *testing.T) {
 
 func TestHandleSnapshotAPIRedactsFreshObserverConfigPaths(t *testing.T) {
 	originalDiscover := discoverLiveProcessesFunc
-	discoverLiveProcessesFunc = func(context.Context) ([]LiveProcess, []string) {
+	discoverLiveProcessesFunc = func(context.Context, *codingAgentRegistry) ([]LiveProcess, []string) {
 		return nil, nil
 	}
 	t.Cleanup(func() {
@@ -1302,7 +1302,7 @@ func TestObservedHostAppFromRequestUsesInternalFreshSnapshot(t *testing.T) {
 		t.Fatalf("mkdir bundle: %v", err)
 	}
 	originalDiscover := discoverLiveProcessesFunc
-	discoverLiveProcessesFunc = func(context.Context) ([]LiveProcess, []string) {
+	discoverLiveProcessesFunc = func(context.Context, *codingAgentRegistry) ([]LiveProcess, []string) {
 		return []LiveProcess{
 			{
 				PID:     42,

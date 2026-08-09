@@ -685,6 +685,7 @@ type LiveProcess struct {
 	PID                  int
 	PPID                 int
 	Tool                 string
+	DisplayName          string
 	Command              string
 	CPUPercent           float64
 	MemoryBytes          int64

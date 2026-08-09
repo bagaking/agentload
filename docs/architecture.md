@@ -26,21 +26,23 @@ numbers.
 
 ## 1. Acquisition
 
-### Process scan (`process.go`, `process_io.go`, `process_io_darwin.go`)
+### Process scan (`agent_registry.go`, `agent_process.go`, `process.go`, `process_io.go`, `process_io_darwin.go`)
 
 - `discoverLiveProcesses` runs `ps -axo uid=,pid=,ppid=,pcpu=,rss=,etime=,command=`
-  under the snapshot context, keeps rows owned by the current UID, and detects
-  the tool per command line (`claude`, `codex`, `trae`, `opencode`, `gemini`).
-  Updater/Sparkle processes are excluded; `node`/`bun`/`deno` interpreters are
-  resolved through their script token so npm-installed CLIs are still detected.
+  under the snapshot context and keeps rows owned by the current UID. The
+  injected coding-agent registry owns executable aliases, interpreter script
+  evidence, and process display identity for Claude, Codex/CodexL, Trae/TraeX,
+  Gemini, and OpenCode. Updater/Sparkle processes are excluded before adapter
+  matching; `node`/`bun`/`deno` commands expose only their executable script
+  token, so incidental argument text cannot identify an agent.
 - `inferHostApp` walks the PPID chain (bounded, cycle-safe) looking for an
   ancestor whose command points into an existing `.app` bundle; that becomes
   the process's `HostApp` (name, PID, bundle path).
-- `sessionFilesForPIDs` runs one `lsof -nP -Fn -p <pid,...>` batch and keeps
-  only open files that look like transcript stores (`.claude/projects/*.jsonl`,
-  `.codex/sessions|archived_sessions/*.jsonl`, `.codex/.codexl/**/events.jsonl`,
-  `.trae/cli/sessions/*.jsonl`). A partial `lsof` result is disclosed as a note
-  instead of being discarded.
+- `sessionFilesForPIDs` runs one `lsof -nP -Fn -p <pid,...>` batch and asks the
+  registry to classify each open path. Claude, Codex/CodexL, and Trae accept
+  only their verified transcript layouts and reject known non-evidence paths;
+  Gemini and OpenCode remain process-only. A partial `lsof` result is disclosed
+  as a note instead of being discarded.
 - `extractSessionHints` pulls session/thread ids out of the command line
   (`--session-id`, `CODEX_THREAD_ID=`, etc.) as weaker mapping evidence.
 - `sampleProcessIO` (per PID) reads cumulative disk read/write byte counters

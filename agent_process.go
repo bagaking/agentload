@@ -1,0 +1,311 @@
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+	"time"
+)
+
+type processCommand struct {
+	Raw            string
+	Lower          string
+	Fields         []string
+	ExecutableBase string
+	Script         string
+	Excluded       bool
+}
+
+func newProcessCommand(command string) processCommand {
+	raw := strings.TrimSpace(command)
+	lower := strings.ToLower(raw)
+	view := processCommand{
+		Raw:      raw,
+		Lower:    lower,
+		Fields:   strings.Fields(lower),
+		Excluded: strings.Contains(lower, "sparkle") || strings.Contains(lower, "updater.app"),
+	}
+	if len(view.Fields) == 0 {
+		return view
+	}
+	view.ExecutableBase = normalizedExecutableBase(view.Fields[0])
+	switch view.ExecutableBase {
+	case "node", "bun", "deno":
+		view.Script = interpreterScriptToken(view.Fields[1:])
+	}
+	return view
+}
+
+type builtinProcessIdentity struct {
+	agentID            string
+	match              func(processCommand) bool
+	display            func(processCommand) string
+	transcriptPath     func(string) bool
+	rootFromTranscript func(string) string
+	commandRootPattern *regexp.Regexp
+}
+
+func (p builtinProcessIdentity) MatchesCommand(command processCommand) bool {
+	return p.match != nil && p.match(command)
+}
+
+func (p builtinProcessIdentity) DisplayIdentity(command processCommand) string {
+	if p.display != nil {
+		if identity := strings.TrimSpace(p.display(command)); identity != "" {
+			return identity
+		}
+	}
+	return p.agentID
+}
+
+func (p builtinProcessIdentity) TranscriptFileForPath(path string) (TranscriptFile, bool) {
+	path = filepath.Clean(strings.TrimSpace(path))
+	if path == "" || p.transcriptPath == nil || !p.transcriptPath(path) {
+		return TranscriptFile{}, false
+	}
+	return TranscriptFile{Tool: p.agentID, Path: path}, true
+}
+
+func (p builtinProcessIdentity) RootFromTranscriptPath(path string) string {
+	if p.rootFromTranscript == nil {
+		return ""
+	}
+	return p.rootFromTranscript(path)
+}
+
+func (p builtinProcessIdentity) RootsFromCommand(command processCommand) []string {
+	if p.commandRootPattern == nil {
+		return nil
+	}
+	return existingCommandRoots(command.Raw, p.commandRootPattern)
+}
+
+func newClaudeProcessIdentity() agentProcessIdentity {
+	return builtinProcessIdentity{
+		agentID: "claude",
+		match: func(command processCommand) bool {
+			return strings.Contains(command.ExecutableBase, "claude")
+		},
+		display: func(processCommand) string { return "claude" },
+		transcriptPath: func(path string) bool {
+			relative, ok := relativeAfterMarker(path, []string{".claude", "projects"})
+			if !ok || !strings.HasSuffix(strings.ToLower(relative), ".jsonl") {
+				return false
+			}
+			for _, part := range strings.Split(relative, string(filepath.Separator)) {
+				switch strings.ToLower(part) {
+				case "memory", "tool-results":
+					return false
+				}
+			}
+			return true
+		},
+		rootFromTranscript: func(path string) string { return configRootFromPath(path, ".claude") },
+		commandRootPattern: commandRootPattern(".claude"),
+	}
+}
+
+func newCodexProcessIdentity() agentProcessIdentity {
+	return builtinProcessIdentity{
+		agentID: "codex",
+		match: func(command processCommand) bool {
+			return strings.Contains(command.ExecutableBase, "codexl") ||
+				strings.Contains(command.ExecutableBase, "codex") ||
+				strings.Contains(command.Lower, "/applications/codex.app") ||
+				strings.Contains(command.Lower, "codex computer use.app") ||
+				strings.Contains(command.Lower, "com.openai.codex")
+		},
+		display: func(command processCommand) string {
+			for _, field := range command.Fields {
+				base := strings.ToLower(cleanCommandBase(field))
+				if strings.Contains(base, "codexl") {
+					return "codexL"
+				}
+				if base == "codex" || strings.HasPrefix(base, "codex-") {
+					return "codex"
+				}
+			}
+			return "codex"
+		},
+		transcriptPath: func(path string) bool {
+			if relative, ok := relativeAfterMarker(path, []string{".codex", "sessions"}); ok {
+				return isDatedTranscriptRelativePath(relative)
+			}
+			if relative, ok := relativeAfterMarker(path, []string{".codex", "archived_sessions"}); ok {
+				return !strings.Contains(relative, string(filepath.Separator)) && strings.HasSuffix(strings.ToLower(relative), ".jsonl")
+			}
+			if relative, ok := relativeAfterMarker(path, []string{".codex", ".codexl"}); ok {
+				return strings.Contains(relative, string(filepath.Separator)) && filepath.Base(relative) == "events.jsonl"
+			}
+			return false
+		},
+		rootFromTranscript: func(path string) string { return configRootFromPath(path, ".codex") },
+		commandRootPattern: commandRootPattern(".codex"),
+	}
+}
+
+func newTraeProcessIdentity() agentProcessIdentity {
+	return builtinProcessIdentity{
+		agentID: "trae",
+		match: func(command processCommand) bool {
+			return isTraeExecutable(command.ExecutableBase)
+		},
+		display: func(command processCommand) string {
+			if len(command.Fields) == 0 {
+				return "trae"
+			}
+			return cleanCommandBase(command.Fields[0])
+		},
+		transcriptPath: func(path string) bool {
+			relative, ok := relativeAfterMarker(path, []string{".trae", "cli", "sessions"})
+			return ok && isDatedTranscriptRelativePath(relative)
+		},
+		rootFromTranscript: traeRootFromPath,
+		commandRootPattern: commandRootPattern(filepath.Join(".trae", "cli")),
+	}
+}
+
+func newGeminiProcessIdentity() agentProcessIdentity {
+	return builtinProcessIdentity{
+		agentID: "gemini",
+		match: func(command processCommand) bool {
+			return isGeminiExecutable(command.ExecutableBase) ||
+				isGeminiExecutable(command.Script) ||
+				knownPackagePathAgent(command.Script) == "gemini"
+		},
+		display: func(processCommand) string { return "gemini" },
+	}
+}
+
+func newOpenCodeProcessIdentity() agentProcessIdentity {
+	return builtinProcessIdentity{
+		agentID: "opencode",
+		match: func(command processCommand) bool {
+			return isOpenCodeExecutable(command.ExecutableBase) ||
+				isOpenCodeExecutable(command.Script) ||
+				knownPackagePathAgent(command.Script) == "opencode"
+		},
+		display: func(processCommand) string { return "opencode" },
+	}
+}
+
+func normalizedExecutableBase(value string) string {
+	key := strings.Trim(strings.ToLower(value), `"'`)
+	key = strings.TrimSuffix(filepath.Base(key), ".app")
+	key = strings.TrimSuffix(key, ".exe")
+	key = strings.ReplaceAll(key, "_", "-")
+	return key
+}
+
+func isTraeExecutable(executableBase string) bool {
+	switch normalizedExecutableBase(executableBase) {
+	case "trae", "traex", "trae-cli", "traecli":
+		return true
+	default:
+		return false
+	}
+}
+
+func isOpenCodeExecutable(executableBase string) bool {
+	switch normalizedExecutableBase(executableBase) {
+	case "opencode", "opencode-ai":
+		return true
+	default:
+		return false
+	}
+}
+
+func isGeminiExecutable(executableBase string) bool {
+	switch normalizedExecutableBase(executableBase) {
+	case "gemini", "gemini-cli":
+		return true
+	default:
+		return false
+	}
+}
+
+func interpreterScriptToken(args []string) string {
+	optionsWithValue := map[string]struct{}{
+		"-r": {}, "--require": {}, "--import": {}, "--loader": {},
+		"--experimental-loader": {}, "--env-file": {},
+	}
+	for index := 0; index < len(args); index++ {
+		arg := strings.Trim(args[index], `"'`)
+		if arg == "" || arg == "--" {
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			option := arg
+			if equals := strings.Index(option, "="); equals >= 0 {
+				option = option[:equals]
+			}
+			if _, ok := optionsWithValue[option]; ok && !strings.Contains(arg, "=") {
+				index++
+			}
+			continue
+		}
+		return arg
+	}
+	return ""
+}
+
+func knownPackagePathAgent(path string) string {
+	normalized := "/" + strings.Trim(strings.ReplaceAll(strings.Trim(path, `"'`), "\\", "/"), "/")
+	switch {
+	case strings.Contains(normalized, "/node_modules/@google/gemini-cli/"),
+		strings.Contains(normalized, "/@google/gemini-cli/"):
+		return "gemini"
+	case strings.Contains(normalized, "/node_modules/opencode-ai/"),
+		strings.Contains(normalized, "/opencode-ai/"):
+		return "opencode"
+	default:
+		return ""
+	}
+}
+
+func relativeAfterMarker(path string, markerParts []string) (string, bool) {
+	path = filepath.Clean(strings.TrimSpace(path))
+	marker := string(filepath.Separator) + filepath.Join(markerParts...) + string(filepath.Separator)
+	index := strings.Index(path, marker)
+	if index < 0 {
+		return "", false
+	}
+	relative := strings.TrimPrefix(path[index+len(marker):], string(filepath.Separator))
+	return relative, relative != ""
+}
+
+func isDatedTranscriptRelativePath(relative string) bool {
+	parts := strings.Split(filepath.Clean(relative), string(filepath.Separator))
+	if len(parts) != 4 || !strings.HasSuffix(strings.ToLower(parts[3]), ".jsonl") {
+		return false
+	}
+	_, ok := datePartitionEnd(parts[:3], time.UTC)
+	return ok
+}
+
+func commandRootPattern(suffix string) *regexp.Regexp {
+	return regexp.MustCompile(`(/[^ "'\n]+/` + regexp.QuoteMeta(filepath.ToSlash(suffix)) + `)\b`)
+}
+
+func existingCommandRoots(command string, pattern *regexp.Regexp) []string {
+	seen := map[string]struct{}{}
+	roots := []string{}
+	for _, match := range pattern.FindAllStringSubmatch(filepath.ToSlash(command), -1) {
+		if len(match) < 2 {
+			continue
+		}
+		root := filepath.Clean(match[1])
+		if info, err := os.Stat(root); err != nil || !info.IsDir() {
+			continue
+		}
+		if _, exists := seen[root]; exists {
+			continue
+		}
+		seen[root] = struct{}{}
+		roots = append(roots, root)
+	}
+	sort.Strings(roots)
+	return roots
+}

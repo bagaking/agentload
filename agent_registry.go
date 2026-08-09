@@ -10,9 +10,11 @@ import (
 )
 
 type agentProcessIdentity interface {
-	MatchesCommand(command string) bool
+	MatchesCommand(command processCommand) bool
+	DisplayIdentity(command processCommand) string
 	TranscriptFileForPath(path string) (TranscriptFile, bool)
-	RootsFromCommand(command string) []string
+	RootFromTranscriptPath(path string) string
+	RootsFromCommand(command processCommand) []string
 }
 
 type agentTranscriptParser interface {
@@ -70,6 +72,7 @@ func defaultCodingAgentRegistry(cfg Config) *codingAgentRegistry {
 			ID:    "claude",
 			Roots: cfg.ClaudeRoots,
 			Capabilities: agentCapabilities{
+				Process:   newClaudeProcessIdentity(),
 				Discovery: claudeTranscriptDiscovery{},
 			},
 		},
@@ -77,6 +80,7 @@ func defaultCodingAgentRegistry(cfg Config) *codingAgentRegistry {
 			ID:    "codex",
 			Roots: cfg.CodexRoots,
 			Capabilities: agentCapabilities{
+				Process:   newCodexProcessIdentity(),
 				Discovery: codexTranscriptDiscovery{},
 			},
 		},
@@ -84,7 +88,20 @@ func defaultCodingAgentRegistry(cfg Config) *codingAgentRegistry {
 			ID:    "trae",
 			Roots: cfg.TraeRoots,
 			Capabilities: agentCapabilities{
+				Process:   newTraeProcessIdentity(),
 				Discovery: traeTranscriptDiscovery{},
+			},
+		},
+		codingAgentAdapter{
+			ID: "gemini",
+			Capabilities: agentCapabilities{
+				Process: newGeminiProcessIdentity(),
+			},
+		},
+		codingAgentAdapter{
+			ID: "opencode",
+			Capabilities: agentCapabilities{
+				Process: newOpenCodeProcessIdentity(),
 			},
 		},
 	)
@@ -97,6 +114,7 @@ func (r *codingAgentRegistry) mergeRoots(extra map[string][]string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for id, roots := range extra {
+		id = strings.TrimSpace(strings.ToLower(id))
 		index, ok := r.byID[id]
 		if !ok {
 			continue
@@ -126,6 +144,70 @@ func (r *codingAgentRegistry) hasDiscovery(id string) bool {
 	defer r.mu.RUnlock()
 	index, ok := r.byID[strings.TrimSpace(strings.ToLower(id))]
 	return ok && r.adapters[index].Capabilities.Discovery != nil
+}
+
+func (r *codingAgentRegistry) detectProcess(command string) (string, string) {
+	if r == nil {
+		return "", ""
+	}
+	view := newProcessCommand(command)
+	if view.Raw == "" || view.Excluded {
+		return "", ""
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, adapter := range r.adapters {
+		process := adapter.Capabilities.Process
+		if process == nil || !process.MatchesCommand(view) {
+			continue
+		}
+		return adapter.ID, process.DisplayIdentity(view)
+	}
+	return "", ""
+}
+
+func (r *codingAgentRegistry) transcriptFileForPath(path string) (TranscriptFile, bool) {
+	if r == nil {
+		return TranscriptFile{}, false
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, adapter := range r.adapters {
+		process := adapter.Capabilities.Process
+		if process == nil {
+			continue
+		}
+		if file, ok := process.TranscriptFileForPath(path); ok {
+			return file, true
+		}
+	}
+	return TranscriptFile{}, false
+}
+
+func (r *codingAgentRegistry) rootsFromCommand(agentID, command string) []string {
+	if r == nil {
+		return nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	index, ok := r.byID[strings.TrimSpace(strings.ToLower(agentID))]
+	if !ok || r.adapters[index].Capabilities.Process == nil {
+		return nil
+	}
+	return r.adapters[index].Capabilities.Process.RootsFromCommand(newProcessCommand(command))
+}
+
+func (r *codingAgentRegistry) rootFromTranscriptFile(file TranscriptFile) string {
+	if r == nil {
+		return ""
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	index, ok := r.byID[strings.TrimSpace(strings.ToLower(file.Tool))]
+	if !ok || r.adapters[index].Capabilities.Process == nil {
+		return ""
+	}
+	return r.adapters[index].Capabilities.Process.RootFromTranscriptPath(file.Path)
 }
 
 func (r *codingAgentRegistry) discoverTranscripts(ctx context.Context, cutoff time.Time) transcriptDiscoveryResult {

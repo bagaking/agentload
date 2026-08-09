@@ -14,9 +14,9 @@ import (
 
 func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 	scanStart := time.Now()
-	processes, processNotes := discoverLiveProcessesFunc(ctx)
+	processes, processNotes := discoverLiveProcessesFunc(ctx, o.adapters)
 	now := time.Now()
-	extraRoots, priority := rootsFromLiveProcesses(processes)
+	extraRoots, priority := rootsFromLiveProcesses(processes, o.adapters)
 	o.adapters.mergeRoots(extraRoots)
 	roots := o.adapters.roots()
 	data, cached := o.transcriptData(ctx, priority, scanStart)
@@ -139,35 +139,25 @@ func (o *Observer) snapshotConfig(roots map[string][]string) SnapshotConfig {
 	return snapshotConfig
 }
 
-func rootsFromLiveProcesses(processes []LiveProcess) (map[string][]string, []TranscriptFile) {
-	rootSets := map[string]map[string]struct{}{
-		"claude": {},
-		"codex":  {},
-		"trae":   {},
-	}
+func rootsFromLiveProcesses(processes []LiveProcess, adapters *codingAgentRegistry) (map[string][]string, []TranscriptFile) {
+	rootSets := map[string]map[string]struct{}{}
 	prioritySet := map[string]TranscriptFile{}
 	addRoot := func(tool, root string) {
 		root = strings.TrimSpace(root)
-		if root == "" {
+		if root == "" || !adapters.hasDiscovery(tool) {
 			return
 		}
-		if roots, ok := rootSets[tool]; ok {
-			roots[root] = struct{}{}
+		if rootSets[tool] == nil {
+			rootSets[tool] = map[string]struct{}{}
 		}
+		rootSets[tool][root] = struct{}{}
 	}
 	for _, process := range processes {
 		for _, file := range process.SessionFiles {
 			prioritySet[file.Tool+"\x00"+file.Path] = file
-			switch file.Tool {
-			case "claude":
-				addRoot("claude", configRootFromPath(file.Path, ".claude"))
-			case "codex":
-				addRoot("codex", configRootFromPath(file.Path, ".codex"))
-			case "trae":
-				addRoot("trae", traeRootFromPath(file.Path))
-			}
+			addRoot(file.Tool, adapters.rootFromTranscriptFile(file))
 		}
-		for _, root := range configRootsFromCommand(process.Tool, process.Command) {
+		for _, root := range adapters.rootsFromCommand(process.Tool, process.Command) {
 			addRoot(process.Tool, root)
 		}
 	}
@@ -471,53 +461,6 @@ func traeRootFromPath(path string) string {
 		return filepath.Clean(root)
 	}
 	return ""
-}
-
-func configRootsFromCommand(tool, command string) []string {
-	patterns := []*regexp.Regexp{
-		regexp.MustCompile(`(/[^ "'\n]+/\.codex)\b`),
-		regexp.MustCompile(`(/[^ "'\n]+/\.claude)\b`),
-		regexp.MustCompile(`(/[^ "'\n]+/\.trae/cli)\b`),
-		regexp.MustCompile(`--home[= ]([^ "'\n]+/\.codex)\b`),
-		regexp.MustCompile(`--home[= ]([^ "'\n]+/\.trae/cli)\b`),
-	}
-	seen := map[string]struct{}{}
-	out := []string{}
-	for _, pattern := range patterns {
-		for _, match := range pattern.FindAllStringSubmatch(command, -1) {
-			if len(match) < 2 {
-				continue
-			}
-			root := strings.TrimSpace(match[1])
-			if root == "" {
-				continue
-			}
-			if info, err := os.Stat(root); err != nil || !info.IsDir() {
-				continue
-			}
-			switch tool {
-			case "claude":
-				if !strings.HasSuffix(root, ".claude") {
-					continue
-				}
-			case "codex":
-				if !strings.HasSuffix(root, ".codex") {
-					continue
-				}
-			case "trae":
-				if !strings.HasSuffix(root, filepath.Join(".trae", "cli")) {
-					continue
-				}
-			}
-			if _, ok := seen[root]; ok {
-				continue
-			}
-			seen[root] = struct{}{}
-			out = append(out, root)
-		}
-	}
-	sort.Strings(out)
-	return out
 }
 
 func buildLiveSessionsAt(processes []LiveProcess, data *TranscriptData, idleGap time.Duration, now time.Time) ([]LiveSession, []string) {
@@ -898,12 +841,12 @@ func processEvidenceSummary(process LiveProcessSnapshot) string {
 }
 
 func processDisplayName(process LiveProcess) string {
+	if identity := strings.TrimSpace(process.DisplayName); identity != "" {
+		return identity
+	}
 	fields := strings.Fields(strings.TrimSpace(process.Command))
 	if len(fields) == 0 {
 		return process.Tool
-	}
-	if known := knownProcessIdentity(fields); known != "" {
-		return known
 	}
 	first := cleanCommandBase(fields[0])
 	if first == "" {
@@ -921,27 +864,6 @@ func processDisplayName(process LiveProcess) string {
 		}
 	}
 	return first
-}
-
-func knownProcessIdentity(fields []string) string {
-	for _, field := range fields {
-		base := strings.ToLower(cleanCommandBase(field))
-		switch {
-		case strings.Contains(base, "node_repl"):
-			return "node_repl"
-		case strings.Contains(base, "codexl"):
-			return "codexL"
-		case base == "codex" || strings.HasPrefix(base, "codex-"):
-			return "codex"
-		case base == "claude" || strings.HasPrefix(base, "claude-"):
-			return "claude"
-		case base == "trae" || base == "traex" || base == "trae_cli":
-			return base
-		case base == "opencode" || base == "gemini":
-			return base
-		}
-	}
-	return ""
 }
 
 func cleanCommandBase(value string) string {

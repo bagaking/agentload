@@ -87,6 +87,7 @@ func TestParseProcessTableLineIncludesResourceUsage(t *testing.T) {
 }
 
 func TestDetectedTool(t *testing.T) {
+	registry := defaultCodingAgentRegistry(Config{})
 	cases := []struct {
 		command string
 		want    string
@@ -113,9 +114,41 @@ func TestDetectedTool(t *testing.T) {
 		{command: ``, want: ""},
 	}
 	for _, tc := range cases {
-		if got := detectedTool(tc.command); got != tc.want {
+		got, _ := registry.detectProcess(tc.command)
+		if got != tc.want {
 			t.Fatalf("detectedTool(%q) = %q, want %q", tc.command, got, tc.want)
 		}
+	}
+}
+
+func TestRegistryReturnsAdapterOwnedProcessDisplayIdentity(t *testing.T) {
+	registry := defaultCodingAgentRegistry(Config{})
+	cases := []struct {
+		command string
+		tool    string
+		display string
+	}{
+		{command: `/usr/local/bin/codexL as-agent watch`, tool: "codex", display: "codexL"},
+		{command: `/usr/local/bin/trae_cli resume abc`, tool: "trae", display: "trae_cli"},
+		{command: `/usr/local/bin/node /opt/homebrew/lib/node_modules/opencode-ai/bin/opencode.js`, tool: "opencode", display: "opencode"},
+	}
+	for _, tc := range cases {
+		tool, display := registry.detectProcess(tc.command)
+		if tool != tc.tool || display != tc.display {
+			t.Fatalf("detectProcess(%q) = (%q, %q), want (%q, %q)", tc.command, tool, display, tc.tool, tc.display)
+		}
+	}
+}
+
+func TestProcessOnlyAdaptersDoNotExposeTranscriptEvidence(t *testing.T) {
+	registry := defaultCodingAgentRegistry(Config{})
+	for _, agentID := range []string{"gemini", "opencode"} {
+		if registry.hasDiscovery(agentID) {
+			t.Fatalf("process-only adapter %s unexpectedly exposes discovery", agentID)
+		}
+	}
+	if file, ok := registry.transcriptFileForPath(filepath.Join("fixtures", ".gemini", "sessions", "session.jsonl")); ok {
+		t.Fatalf("process-only adapter fabricated transcript evidence: %#v", file)
 	}
 }
 
@@ -183,20 +216,22 @@ func TestInferHostAppIgnoresArgumentOnlyBundlePaths(t *testing.T) {
 }
 
 func TestTranscriptFileFromPath(t *testing.T) {
+	registry := defaultCodingAgentRegistry(Config{})
 	cases := []struct {
 		path     string
 		wantTool string
 		wantOK   bool
 	}{
-		{path: filepath.Join("fixtures", "alice", ".codex", "sessions", "abc.jsonl"), wantTool: "codex", wantOK: true},
+		{path: filepath.Join("fixtures", "alice", ".codex", "sessions", "2026", "06", "28", "abc.jsonl"), wantTool: "codex", wantOK: true},
 		{path: filepath.Join("fixtures", "alice", ".codex", "archived_sessions", "abc.jsonl"), wantTool: "codex", wantOK: true},
 		{path: filepath.Join("fixtures", "alice", ".codex", ".codexl", "asagent", "lane-1", "events.jsonl"), wantTool: "codex", wantOK: true},
 		{path: filepath.Join("fixtures", "alice", ".claude", "projects", "project-a", "trace.jsonl"), wantTool: "claude", wantOK: true},
 		{path: filepath.Join("fixtures", "alice", ".trae", "cli", "sessions", "2026", "06", "28", "trace.jsonl"), wantTool: "trae", wantOK: true},
-		{path: filepath.Join("fixtures", "alice", ".codex", "sessions", "abc.txt"), wantTool: "", wantOK: false},
+		{path: filepath.Join("fixtures", "alice", ".codex", "sessions", "abc.jsonl"), wantTool: "", wantOK: false},
+		{path: filepath.Join("fixtures", "alice", ".trae", "cli", "sessions", "2026", "06", "28", "trace.artifacts", "usage.jsonl"), wantTool: "", wantOK: false},
 	}
 	for _, tc := range cases {
-		got, ok := transcriptFileFromPath(tc.path)
+		got, ok := registry.transcriptFileForPath(tc.path)
 		if ok != tc.wantOK {
 			t.Fatalf("transcriptFileFromPath(%q) ok = %v, want %v", tc.path, ok, tc.wantOK)
 		}
@@ -288,7 +323,7 @@ func TestRootsFromLiveProcessesCollectsFileAndCommandRoots(t *testing.T) {
 		},
 	}
 
-	roots, priority := rootsFromLiveProcesses(processes)
+	roots, priority := rootsFromLiveProcesses(processes, defaultCodingAgentRegistry(Config{}))
 	if !slices.Equal(roots["claude"], []string{claudeRoot}) {
 		t.Fatalf("unexpected claude roots: %#v", roots["claude"])
 	}
