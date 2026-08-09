@@ -85,7 +85,7 @@ func newTrayApp(cfg Config, observer *Observer, logger *log.Logger, listener net
 
 func (a *trayApp) run() error {
 	startSystemResourceSampler(systemResourceSampleInterval)
-	a.liveTokenRate.start(liveTokenRateSampleInterval)
+	a.observer.evidenceIndex.start()
 	go func() {
 		if err := a.server.Serve(a.listener); err != nil && err != http.ErrServerClosed {
 			a.logger.Printf("http server failed: %v", err)
@@ -137,6 +137,7 @@ func (a *trayApp) onExit() {
 	nativePopoverInstallStatusClickFallback("")
 	nativePopoverConfigureDashboard("")
 	a.liveTokenRate.stopSampler()
+	a.observer.evidenceIndex.stopIndex()
 	stopSystemResourceSampler()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -278,6 +279,7 @@ func (a *trayApp) refreshOnce(slotID string) {
 	snapshot := a.observer.Snapshot(ctx)
 	snapshot.RefreshSlotID = slotID
 	a.liveTokenRate.updateSnapshotProjects(snapshot.LiveTokenProjects)
+	a.liveTokenRate.start(liveTokenRateSampleInterval)
 	if snapshotScanAborted(ctx, snapshot) {
 		// Show the partial result but keep it out of history/cache so trends
 		// and heatmaps only build from complete samples; the next slot rescans.

@@ -110,8 +110,10 @@ tests.
   structure.
 - The live sampler requests the maximum six-hour foreground index coverage on
   startup, then locally selects files modified in its 15-minute live window.
-  This avoids a sampler-first 15-minute walk followed by an Observer 2-6-hour
-  walk while keeping live parsing bounded to recent files.
+  The watcher starts before the first snapshot, while live polling starts only
+  after process-derived roots have joined the initial reconciliation. This
+  avoids competing startup walks while keeping live parsing bounded to recent
+  files.
 - The append benchmark defines one operation as 32,768 realistic updates split
   across Claude, Codex, and Trae files. Running it with a 1,000-operation
   benchtime proves 32,768,000 updates through file IO, typed decoding, dedupe,
@@ -124,6 +126,9 @@ tests.
 - Process-only adapters require exact positive and negative command fixtures;
   discovery adapters additionally require positive, rejected-path, and pruning
   fixtures before their capability can be enabled.
+- Filename-derived session hints are source rules owned by the matching process
+  adapter. Session aggregation consumes the hint without switching on agent
+  names.
 - Foreground transcript discovery no longer enters Trae `*.artifacts` and does
   not visit date partitions older than the active cutoff.
 - Process-only agents remain visible as process pressure without fabricated

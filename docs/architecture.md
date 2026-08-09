@@ -79,6 +79,12 @@ numbers.
   directories, and the index keeps file metadata rather than open transcript
   descriptors. Configured path spelling remains intact in snapshots while
   symlink aliases and nested watch roots collapse to one physical watch owner.
+  Adapter discovery errors also remain incomplete and retry on the next read;
+  an error cannot become a permanently cached partial index.
+  The tray starts the watcher before the first snapshot, but starts live polling
+  only after that snapshot has merged process-derived roots and reconciled the
+  index. Startup therefore has watcher coverage without racing two differently
+  scoped discovery walks.
 - **TTL cache**: results are cached for `Config.TranscriptCacheTTL` (default
   60s) under a key derived from roots + priority files + idle gap + min
   interval + lookback. Any cached hit is deep-cloned before return.
@@ -202,7 +208,7 @@ One snapshot build, in order:
 
 1. **Process discovery** (above), then `rootsFromLiveProcesses` derives extra
    config roots and priority transcript files from open file handles and
-   command lines; `mergeKnownRoots` accumulates them across runs so sessions
+   command lines; registry `mergeRoots` accumulates them across runs so sessions
    from non-default homes stay visible.
 2. **Transcript data** via the cached scan described above.
 3. **PID-to-session mapping** (`buildLiveSessionsAt`,
@@ -210,6 +216,9 @@ One snapshot build, in order:
    process:
    1. *Parsed transcript session id* from an open transcript file (strongest;
       `mapping_method: transcript_path`, confidence high).
+   Source-specific filename hints are attached by the process adapter when it
+   classifies the transcript path; the aggregation layer contains no tool-name
+   dispatch. Evidence precedence is:
    2. *Filename-derived fallback id*, but only when it matches an already
       parsed session key of the same process (prevents manufacturing sibling
       sessions).

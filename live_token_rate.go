@@ -193,7 +193,6 @@ func (sampler *liveTokenRateSampler) start(interval time.Duration) {
 		sampler.lifecycleMu.Unlock()
 		return
 	}
-	sampler.evidenceIndex.start()
 	sampler.running = true
 	sampler.stop = make(chan struct{})
 	sampler.done = make(chan struct{})
@@ -234,7 +233,6 @@ func (sampler *liveTokenRateSampler) stopSampler() {
 	close(stop)
 	sampler.lifecycleMu.Unlock()
 	<-done
-	sampler.evidenceIndex.stopIndex()
 }
 
 func (sampler *liveTokenRateSampler) poll(now time.Time) {
