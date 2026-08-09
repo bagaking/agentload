@@ -76,3 +76,30 @@ func TestStartSystemResourceSamplerIsIdempotent(t *testing.T) {
 	// A second stop must not panic on the already-stopped sampler.
 	stopSystemResourceSampler()
 }
+
+func TestSystemResourceSamplerRejectsPreviousGeneration(t *testing.T) {
+	stopSystemResourceSampler()
+	startSystemResourceSampler(time.Hour)
+	s := &backgroundSystemResourceSampler
+	s.Lock()
+	previousGeneration := s.generation
+	s.Unlock()
+
+	stopSystemResourceSampler()
+	startSystemResourceSampler(time.Hour)
+	t.Cleanup(stopSystemResourceSampler)
+	s.Lock()
+	currentGeneration := s.generation
+	s.Unlock()
+	if currentGeneration == previousGeneration {
+		t.Fatal("expected sampler restart to advance generation")
+	}
+
+	storeBackgroundSystemResourceSample(previousGeneration, SystemResourceSnapshot{SampledAt: "stale-generation"})
+	s.Lock()
+	got := s.latest.SampledAt
+	s.Unlock()
+	if got == "stale-generation" {
+		t.Fatal("previous sampler generation overwrote the current sample")
+	}
+}

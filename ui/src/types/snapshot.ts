@@ -11,6 +11,7 @@ export type Snapshot = {
   historic_peaks?: { today?: PeakWindow; seven_day?: PeakWindow };
   trends?: TrendSet;
   realtime_trends?: TrendSet;
+  throughput_trends?: TrendSet;
   project_heatmaps?: ProjectHeatmapSet;
   history?: { retained_sample_count?: number; loaded_sample_count?: number; last_write_error?: string };
   metric_registry?: MetricRegistryEntry[];

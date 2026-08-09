@@ -22,6 +22,21 @@ trend charts, hover panels, and detail inspectors. The contracts live in
 [docs/agent-load-metric-semantics.md](docs/agent-load-metric-semantics.md) and
 [docs/agent-load-ui-design-system.md](docs/agent-load-ui-design-system.md).
 
+## Engineering Principles
+
+- 不保留向后兼容。过时的直接删，别加兼容层、别写 migration、别留
+  fallback。
+- 选能满足当前需求的最简单实现。不要预防性抽象，不要多此一举的配置层。
+- 系统分层长。先跑通一个最小的端到端版本，再往上加东西。绝不为了未完成的
+  复杂度拆掉能跑的东西。
+- 组件保持模块化，关注点分离。
+- 优先用成熟的、有人维护的库。没有明确理由别自己重写。
+- 先翻项目里已有的依赖能做什么，再考虑加新包或自己写。别上来就假设库里没有。
+- 架构决策往长了做。不接受“先这样以后再换”的临时方案。
+- 先看成熟产品怎么解决同一个问题，用已验证的模式，别从零发明。
+- 和用户讨论过的内容，要及时更新到需求文档，并尽量用贴近用户原始说法的
+  表述方式。
+
 The managed block below applies only when the bagakit tooling is installed.
 <!-- BAGAKIT:LIVING-KNOWLEDGE:START -->
 This is a managed block for `bagakit-living-knowledge`. Do not hand-edit the

@@ -43,10 +43,11 @@ const systemResourceSampleInterval = 2 * time.Second
 // started implicitly; trayApp startup starts it explicitly.
 var backgroundSystemResourceSampler = struct {
 	sync.Mutex
-	running bool
-	have    bool
-	latest  SystemResourceSnapshot
-	stop    chan struct{}
+	running    bool
+	have       bool
+	generation uint64
+	latest     SystemResourceSnapshot
+	stop       chan struct{}
 }{}
 
 func startSystemResourceSampler(interval time.Duration) {
@@ -60,17 +61,19 @@ func startSystemResourceSampler(interval time.Duration) {
 		return
 	}
 	s.running = true
+	s.generation++
 	s.stop = make(chan struct{})
 	stop := s.stop
+	generation := s.generation
 	s.Unlock()
 	go func() {
-		storeBackgroundSystemResourceSample(sampleSystemResourcesNow())
+		storeBackgroundSystemResourceSample(generation, sampleSystemResourcesNow())
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
-				storeBackgroundSystemResourceSample(sampleSystemResourcesNow())
+				storeBackgroundSystemResourceSample(generation, sampleSystemResourcesNow())
 			case <-stop:
 				return
 			}
@@ -92,11 +95,11 @@ func stopSystemResourceSampler() {
 	s.stop = nil
 }
 
-func storeBackgroundSystemResourceSample(snapshot SystemResourceSnapshot) {
+func storeBackgroundSystemResourceSample(generation uint64, snapshot SystemResourceSnapshot) {
 	s := &backgroundSystemResourceSampler
 	s.Lock()
 	defer s.Unlock()
-	if !s.running {
+	if !s.running || s.generation != generation {
 		return
 	}
 	s.latest = snapshot

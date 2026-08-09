@@ -2,7 +2,6 @@ import type { LiveSession } from "./snapshot";
 
 export type Theme = "dark" | "light";
 export type RailTab = "projects" | "sessions" | "processes";
-export type LogTab = "summary" | "evidence" | "trend";
 export type PopoverView = "online" | "trend" | "system" | "diagnostics";
 
 export type Selection =
@@ -62,12 +61,3 @@ export type RoleCounts = {
 
 export type ProjectMetricScope = "active" | "all";
 export type ProjectMetricObject = "main" | "subagent" | "total";
-
-export type SelectedView = {
-  title: string;
-  kind: "scan" | "query" | "verify";
-  status: "queued" | "running" | "done" | "failed" | "canceled" | "empty";
-  command: string;
-  summary: Record<string, string | number>;
-  details: string[];
-};

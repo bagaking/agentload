@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Gauge, Info, Layers } from "lucide-react";
 import {
   AreaSeries,
-  CandlestickSeries,
   ColorType,
   CrosshairMode,
   LineStyle,
@@ -12,8 +11,8 @@ import {
   type MouseEventParams,
   type Time,
 } from "lightweight-charts";
-import { clampNumber, formatAge as formatRelativeAge, formatCopy, formatPct, type Translate } from "../lib/format";
-import { trendContextSessionValue, trendMappedProcessCount, trendMappingCoverageValue, trendPrimaryValue, trendUnmappedProcessCount } from "../lib/metricSemantics";
+import { clampNumber, formatAge as formatRelativeAge, formatCopy, formatPct, formatTokenRate, type Translate } from "../lib/format";
+import { trendContextSessionValue, trendMappedProcessCount, trendMappingCoverageValue, trendOutputThroughputActiveSessions, trendOutputThroughputProjects, trendOutputThroughputState, trendOutputThroughputValue, trendOutputThroughputWindowSeconds, trendPrimaryValue, trendUnmappedProcessCount } from "../lib/metricSemantics";
 import {
   TREND_RANGES,
   type ProjectHeatmapItem,
@@ -26,10 +25,12 @@ import {
   type TrendWindow,
 } from "./types";
 import { toolDisplayName, toolIconName } from "../lib/activityModel";
+import { ThroughputRiver } from "./ThroughputRiver";
 
 export type TrendSnapshot = {
   trends?: TrendSet;
   realtime_trends?: TrendSet;
+  throughput_trends?: TrendSet;
   project_heatmaps?: ProjectHeatmapSet;
   project_focus?: ProjectHeatmapActivity[];
 };
@@ -45,8 +46,8 @@ type TrendLaneSummary = {
   title: string;
   trendWindow?: TrendWindow;
   points: TrendPoint[];
-  data: TrendKLineDatum[];
-  selected?: TrendKLineDatum;
+  data: TrendSignalDatum[];
+  selected?: TrendSignalDatum;
 };
 
 type ProjectHeatmapTile = ProjectHeatmapItem & {
@@ -70,26 +71,23 @@ type ProjectHeatmapHover = {
   top: number;
 };
 
-type TrendKLineDatum = {
+type TrendSignalDatum = {
   at: string;
   time: Time;
   value: number;
   point: TrendPoint;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
+  previous: number;
 };
 
-type TrendKLineOverlay = {
+type TrendSignalOverlay = {
   left: number;
   top: number;
 };
 
-type TrendKLineHover = TrendKLineOverlay & {
+type TrendSignalHover = TrendSignalOverlay & {
   align: "left" | "right";
   vertical: "above" | "below";
-  datum: TrendKLineDatum;
+  datum: TrendSignalDatum;
 };
 
 export function TrendSuite({
@@ -113,6 +111,7 @@ export function TrendSuite({
   const effectiveRange = activeRanges.includes(range) ? range : activeRanges[0] ?? range;
   const history = trendWindowForRange(snapshot.trends, effectiveRange);
   const runtime = trendWindowForRange(snapshot.realtime_trends, effectiveRange);
+  const throughput = trendWindowForRange(snapshot.throughput_trends, effectiveRange);
   const projectHeatmap = projectHeatmapWindowForRange(snapshot.project_heatmaps, effectiveRange);
   const projectActivity = useMemo(() => projectHeatmapActivityByProject(snapshot.project_focus), [snapshot.project_focus]);
   const [focusedLane, setFocusedLane] = useState<TrendLane>("history");
@@ -121,14 +120,15 @@ export function TrendSuite({
   const laneSummaries: TrendLaneSummary[] = useMemo(() => [
     trendLaneSummary("history", t("historyLane"), history, trendSelection.history),
     trendLaneSummary("runtime", t("runtimeLane"), runtime, trendSelection.runtime),
-  ].filter((summary) => Boolean(summary.trendWindow || summary.points.length)), [t, history, runtime, trendSelection.history, trendSelection.runtime]);
+    trendLaneSummary("throughput", t("throughputLane"), throughput, trendSelection.throughput),
+  ].filter((summary) => Boolean(summary.trendWindow || summary.points.length)), [t, history, runtime, throughput, trendSelection.history, trendSelection.runtime, trendSelection.throughput]);
   const activeSummary = laneSummaries.find((summary) => summary.lane === focusedLane && summary.selected) ?? laneSummaries.find((summary) => summary.selected);
   return (
     <section className={`trend-suite ${compact ? "compact" : "dashboard"}`}>
       <div className="trend-suite-head">
         <div className="trend-suite-copy">
           <h2>{t("trendSuite")}</h2>
-          <span>{effectiveRange} · {formatTrendWindow(t, history ?? runtime)}</span>
+          <span>{effectiveRange} · {formatTrendWindow(t, history ?? runtime ?? throughput)}</span>
         </div>
         <div className="trend-range-switch" role="group" aria-label={t("trend")}>
           {TREND_RANGES.map((item) => (
@@ -345,7 +345,7 @@ function TrendLaneView({
   setFocusedLane: (lane: TrendLane) => void;
   setTrendSelection: React.Dispatch<React.SetStateAction<Record<TrendLane, string | undefined>>>;
 }) {
-  const { lane, title, trendWindow, points, selected } = summary;
+  const { lane, title, trendWindow, points, data, selected } = summary;
   const selectedReadoutParts = selected ? trendSelectedReadoutParts(t, lane, selected) : [];
   const selectPoint = useCallback((at?: string) => {
     setFocusedLane(lane);
@@ -356,7 +356,7 @@ function TrendLaneView({
       <div className="trend-lane-head">
         <div className="trend-lane-title">
           <span className="trend-kicker">{title}</span>
-          <small>{trendWindow?.range || t("unavailable")} · {points.length} {t("samples")}</small>
+          <small>{trendWindow?.range || t("unavailable")} · {data.length} {t("samples")}{lane === "throughput" && selected ? ` · ${formatTrendThroughputWindow(t, selected.point)}` : ""}</small>
         </div>
         {compact && lane === "runtime" && isFocused ? <TrendRuntimeDrilldown t={t} summary={summary} /> : null}
         <button
@@ -378,10 +378,12 @@ function TrendLaneView({
           </strong>
         </button>
       </div>
-      {points.length ? (compact && lane === "runtime" ? (
+      {summary.data.length ? (lane === "throughput" ? (
+        <ThroughputRiver t={t} title={title} points={points} selectedAt={selected?.at} onSelect={selectPoint} />
+      ) : compact && lane === "runtime" ? (
         <TrendRuntimeCurve t={t} summary={summary} selectedAt={selected?.at} onSelect={selectPoint} />
       ) : (
-        <TrendKLineChart
+        <TrendSignalChart
           t={t}
           lane={lane}
           title={title}
@@ -401,11 +403,11 @@ function TrendRuntimeCurve({ t, summary, selectedAt, onSelect }: { t: Translate;
   const width = 320;
   const height = 88;
   const pad = 10;
-  const maxValue = Math.max(1, ...data.map((item) => item.close));
+  const maxValue = Math.max(1, ...data.map((item) => item.value));
   const selected = selectedAt ? data.find((item) => item.at === selectedAt) ?? data[data.length - 1] : data[data.length - 1];
-  const pointAt = (index: number, item: TrendKLineDatum) => {
+  const pointAt = (index: number, item: TrendSignalDatum) => {
     const x = data.length <= 1 ? width / 2 : pad + (index / (data.length - 1)) * (width - pad * 2);
-    const y = height - pad - (item.close / maxValue) * (height - pad * 2);
+    const y = height - pad - (item.value / maxValue) * (height - pad * 2);
     return { x, y };
   };
   const line = data.map((item, index) => {
@@ -449,7 +451,7 @@ function TrendRuntimeDrilldown({ t, summary }: { t: Translate; summary?: TrendLa
   const datum = summary?.selected;
   if (!summary || summary.lane !== "runtime" || !datum) return null;
   const point = datum.point;
-  const total = Math.max(0, datum.close);
+  const total = Math.max(0, datum.value);
   const { mode, parts } = runtimeDrilldownParts(t, point, total);
   return (
     <aside className="trend-runtime-drilldown" aria-label={t("processPressure")}>
@@ -555,7 +557,7 @@ function TrendDrilldownMark({ part }: { part: TrendDrilldownPart }) {
   return <i aria-hidden="true">{part.label.slice(0, 1).toUpperCase()}</i>;
 }
 
-function TrendKLineChart({
+function TrendSignalChart({
   t,
   lane,
   title,
@@ -572,16 +574,15 @@ function TrendKLineChart({
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const areaRef = useRef<ISeriesApi<"Area"> | null>(null);
-  const data = useMemo(() => trendKLineData(points, lane), [points, lane]);
+  const data = useMemo(() => trendSignalData(points, lane), [points, lane]);
   // The chart instance outlives snapshot polls, so click/crosshair handlers and
   // the data pushes read the latest values through refs instead of effect deps.
   const dataRef = useRef(data);
   const onSelectRef = useRef(onSelect);
   const selected = selectedAt ? data.find((item) => item.at === selectedAt) ?? data[data.length - 1] : data[data.length - 1];
-  const [overlay, setOverlay] = useState<TrendKLineOverlay | null>(null);
-  const [hover, setHover] = useState<TrendKLineHover | null>(null);
+  const [overlay, setOverlay] = useState<TrendSignalOverlay | null>(null);
+  const [hover, setHover] = useState<TrendSignalHover | null>(null);
   const [sizeKey, setSizeKey] = useState(0);
   const theme = useResolvedTheme();
 
@@ -594,7 +595,6 @@ function TrendKLineChart({
     if (!host) return;
     const styles = getComputedStyle(document.documentElement);
     const bg = cssVar(styles, "--bg");
-    const fg = cssVar(styles, "--fg");
     const faint = cssVar(styles, "--fg-faint");
     const line = cssVar(styles, "--console-line-soft");
     const ok = cssVar(styles, "--ok");
@@ -634,34 +634,26 @@ function TrendKLineChart({
         horzLine: { color: accent, labelVisible: false, style: LineStyle.Dashed, width: 1 },
       },
       localization: {
-        timeFormatter: (time: Time) => formatKLineTime(time),
+        timeFormatter: (time: Time) => formatSignalTime(time),
       },
       handleScroll: false,
       handleScale: false,
     });
+    const primaryColor = lane === "history" ? ok : lane === "runtime" ? run : accent;
     const area = chart.addSeries(AreaSeries, {
-      lineVisible: false,
-      topColor: lane === "history" ? colorMix(ok, 0.18) : colorMix(run, 0.18),
+      lineVisible: true,
+      lineColor: colorMix(primaryColor, 0.92),
+      lineWidth: 2,
+      topColor: colorMix(primaryColor, 0.28),
       bottomColor: colorMix(bg, 0.0),
       priceLineVisible: false,
       lastValueVisible: false,
-      crosshairMarkerVisible: false,
-    });
-    const candles = chart.addSeries(CandlestickSeries, {
-      upColor: lane === "history" ? colorMix(ok, 0.88) : colorMix(run, 0.88),
-      downColor: lane === "history" ? colorMix(accent, 0.58) : colorMix(accentHi, 0.58),
-      borderUpColor: lane === "history" ? colorMix(ok, 0.72) : colorMix(run, 0.72),
-      borderDownColor: lane === "history" ? colorMix(accent, 0.48) : colorMix(accentHi, 0.48),
-      wickUpColor: lane === "history" ? colorMix(ok, 0.68) : colorMix(run, 0.68),
-      wickDownColor: lane === "history" ? colorMix(accent, 0.48) : colorMix(accentHi, 0.48),
-      borderVisible: true,
-      wickVisible: true,
-      priceLineVisible: false,
-      lastValueVisible: false,
+      crosshairMarkerVisible: true,
+      crosshairMarkerRadius: 3,
     });
     const handleClick = (param: { time?: Time }) => {
       if (!param.time || !dataRef.current.length) return;
-      const clicked = nearestKLineDatum(dataRef.current, param.time);
+      const clicked = nearestSignalDatum(dataRef.current, param.time);
       onSelectRef.current(clicked?.at);
     };
     const handleCrosshairMove = (param: MouseEventParams<Time>) => {
@@ -670,7 +662,7 @@ function TrendKLineChart({
         setHover(null);
         return;
       }
-      const hovered = nearestKLineDatum(dataRef.current, param.time);
+      const hovered = nearestSignalDatum(dataRef.current, param.time);
       if (!hovered) {
         setHover(null);
         return;
@@ -688,10 +680,9 @@ function TrendKLineChart({
     chart.subscribeClick(handleClick);
     chart.subscribeCrosshairMove(handleCrosshairMove);
     chartRef.current = chart;
-    candleRef.current = candles;
     areaRef.current = area;
     if (dataRef.current.length) {
-      applyTrendKLineData(chart, candles, area, dataRef.current);
+      applyTrendSignalData(chart, area, dataRef.current);
     }
     // Re-sync the selection overlay with the freshly created chart.
     setSizeKey((value) => value + 1);
@@ -710,7 +701,6 @@ function TrendKLineChart({
       chart.unsubscribeCrosshairMove(handleCrosshairMove);
       chart.remove();
       chartRef.current = null;
-      candleRef.current = null;
       areaRef.current = null;
     };
   }, [lane, theme]);
@@ -718,23 +708,22 @@ function TrendKLineChart({
   useEffect(() => {
     dataRef.current = data;
     const chart = chartRef.current;
-    const candleSeries = candleRef.current;
     const areaSeries = areaRef.current;
-    if (!chart || !candleSeries || !areaSeries) return;
-    applyTrendKLineData(chart, candleSeries, areaSeries, data);
+    if (!chart || !areaSeries) return;
+    applyTrendSignalData(chart, areaSeries, data);
     setHover(null);
   }, [data]);
 
   useEffect(() => {
     const chart = chartRef.current;
-    const candleSeries = candleRef.current;
-    if (!chart || !candleSeries || !selected) {
+    const areaSeries = areaRef.current;
+    if (!chart || !areaSeries || !selected) {
       setOverlay(null);
       return;
     }
     const update = () => {
       const left = chart.timeScale().timeToCoordinate(selected.time);
-      const top = candleSeries.priceToCoordinate(selected.close);
+      const top = areaSeries.priceToCoordinate(selected.value);
       setOverlay(left === null || top === null ? null : { left, top });
     };
     update();
@@ -743,25 +732,25 @@ function TrendKLineChart({
   }, [selected, sizeKey]);
 
   const hoverMetrics = hover ? trendSelectedReadoutParts(t, lane, hover.datum) : [];
-  const hoverDelta = hover ? hover.datum.close - hover.datum.open : 0;
+  const hoverDelta = hover ? hover.datum.value - hover.datum.previous : 0;
 
   return (
-    <div className={`trend-chart trend-kline-chart lane-${lane}`} onMouseLeave={() => setHover(null)}>
-      <div className="trend-kline-host" ref={hostRef} role="img" aria-label={`${title} ${t("trend")}`} />
+    <div className={`trend-chart trend-signal-chart lane-${lane}`} onMouseLeave={() => setHover(null)}>
+      <div className="trend-signal-host" ref={hostRef} role="img" aria-label={`${title} ${t("trend")}`} />
       {overlay ? (
-        <div className="trend-kline-selection" style={{ "--kx": `${overlay.left}px`, "--ky": `${overlay.top}px` } as React.CSSProperties} aria-hidden="true">
-          <span className="trend-kline-selection-dot" />
+        <div className="trend-signal-selection" style={{ "--kx": `${overlay.left}px`, "--ky": `${overlay.top}px` } as React.CSSProperties} aria-hidden="true">
+          <span className="trend-signal-selection-dot" />
         </div>
       ) : null}
       {hover ? (
         <div
-          className={`trend-kline-tooltip align-${hover.align} is-${hover.vertical}`}
+          className={`trend-signal-tooltip align-${hover.align} is-${hover.vertical}`}
           style={{ "--tip-x": `${hover.left}px`, "--tip-y": `${hover.top}px` } as React.CSSProperties}
           aria-hidden="true"
         >
-          <span className="trend-kline-tooltip-kicker">{t("trendExactBucket")}</span>
-          <strong className="trend-kline-tooltip-time">{formatChartAxisLabel(hover.datum.at)}</strong>
-          <div className="trend-kline-tooltip-grid">
+          <span className="trend-signal-tooltip-kicker">{t("trendExactBucket")}</span>
+          <strong className="trend-signal-tooltip-time">{formatChartAxisLabel(hover.datum.at)}</strong>
+          <div className="trend-signal-tooltip-grid">
             {hoverMetrics.map((metric) => (
               <span key={metric.label}>
                 <b>{metric.label}</b>
@@ -770,7 +759,7 @@ function TrendKLineChart({
             ))}
             <span>
               <b>Δ</b>
-              <em>{hoverDelta > 0 ? `+${hoverDelta}` : String(hoverDelta)}</em>
+              <em>{trendDeltaValue(lane, hoverDelta)}</em>
             </span>
           </div>
         </div>
@@ -870,7 +859,7 @@ function TrendSelectionInspector({ t, summary, compact }: { t: Translate; summar
 }
 
 function activeTrendRanges(snapshot: TrendSnapshot): TrendRange[] {
-  return TREND_RANGES.filter((range) => Boolean(trendWindowForRange(snapshot.trends, range) || trendWindowForRange(snapshot.realtime_trends, range)));
+  return TREND_RANGES.filter((range) => Boolean(trendWindowForRange(snapshot.trends, range) || trendWindowForRange(snapshot.realtime_trends, range) || trendWindowForRange(snapshot.throughput_trends, range)));
 }
 
 function trendWindowForRange(set: TrendSet | undefined, range: TrendRange): TrendWindow | undefined {
@@ -882,9 +871,10 @@ function projectHeatmapWindowForRange(set: ProjectHeatmapSet | undefined, range:
 }
 
 function trendLaneSummary(lane: TrendLane, title: string, trendWindow: TrendWindow | undefined, selectedAt?: string): TrendLaneSummary {
-  const sampleKey = lane === "history" ? "transcript_sampled" : "runtime_sampled";
-  const points = sampledPoints(trendWindow, sampleKey);
-  const data = trendKLineData(points, lane);
+  const sampleKey = lane === "history" ? "transcript_sampled" : lane === "runtime" ? "runtime_sampled" : "throughput_sampled";
+  const sampled = sampledPoints(trendWindow, sampleKey);
+  const points = lane === "throughput" ? sampled.filter((point) => trendOutputThroughputProjects(point) !== null) : sampled;
+  const data = trendSignalData(points, lane);
   return {
     lane,
     title,
@@ -895,15 +885,17 @@ function trendLaneSummary(lane: TrendLane, title: string, trendWindow: TrendWind
   };
 }
 
-function selectedTrendDatum(data: TrendKLineDatum[], selectedAt?: string): TrendKLineDatum | undefined {
+function selectedTrendDatum(data: TrendSignalDatum[], selectedAt?: string): TrendSignalDatum | undefined {
   return data.find((datum) => datum.at === selectedAt) ?? [...data].reverse().find((datum) => datum.value > 0) ?? data[data.length - 1];
 }
 
-function sampledPoints(window: TrendWindow | undefined, sampledKey: "transcript_sampled" | "runtime_sampled"): TrendPoint[] {
-  return [...(window?.points ?? [])].filter((point) => point[sampledKey] || point.at).sort((a, b) => String(a.at).localeCompare(String(b.at)));
+function sampledPoints(window: TrendWindow | undefined, sampledKey: "transcript_sampled" | "runtime_sampled" | "throughput_sampled"): TrendPoint[] {
+  return [...(window?.points ?? [])]
+    .filter((point) => sampledKey === "throughput_sampled" ? point.throughput_sampled : point[sampledKey] || point.at)
+    .sort((a, b) => String(a.at).localeCompare(String(b.at)));
 }
 
-function trendKLineData(points: TrendPoint[], lane: TrendLane): TrendKLineDatum[] {
+function trendSignalData(points: TrendPoint[], lane: TrendLane): TrendSignalDatum[] {
   const byTime = new Map<number, { at: string; value: number; point: TrendPoint }>();
   points.forEach((point) => {
     const at = point.at;
@@ -917,24 +909,18 @@ function trendKLineData(points: TrendPoint[], lane: TrendLane): TrendKLineDatum[
     .map(([seconds, item]) => ({ ...item, time: seconds as Time }));
   return sorted.map((item, index) => {
     const previous = sorted[Math.max(0, index - 1)];
-    const open = previous?.value ?? item.value;
-    const close = item.value;
     return {
       at: item.at,
       time: item.time,
-      value: close,
+      value: item.value,
       point: item.point,
-      open,
-      close,
-      high: Math.max(open, close),
-      low: Math.min(open, close),
+      previous: previous?.value ?? item.value,
     };
   });
 }
 
-function applyTrendKLineData(chart: IChartApi, candleSeries: ISeriesApi<"Candlestick">, areaSeries: ISeriesApi<"Area">, data: TrendKLineDatum[]) {
-  candleSeries.setData(data.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
-  areaSeries.setData(data.map(({ time, close }) => ({ time, value: close })));
+function applyTrendSignalData(chart: IChartApi, areaSeries: ISeriesApi<"Area">, data: TrendSignalDatum[]) {
+  areaSeries.setData(data.map(({ time, value }) => ({ time, value })));
   chart.timeScale().applyOptions({ barSpacing: trendBarSpacing(data.length) });
   chart.timeScale().fitContent();
 }
@@ -957,7 +943,7 @@ function useResolvedTheme(): string {
   return theme;
 }
 
-function nearestKLineDatum(data: TrendKLineDatum[], time: Time): TrendKLineDatum | undefined {
+function nearestSignalDatum(data: TrendSignalDatum[], time: Time): TrendSignalDatum | undefined {
   const target = typeof time === "number" ? time : Date.parse(String(time)) / 1000;
   if (!Number.isFinite(target)) return data[data.length - 1];
   return data.reduce((best, item) => {
@@ -967,7 +953,7 @@ function nearestKLineDatum(data: TrendKLineDatum[], time: Time): TrendKLineDatum
   }, data[0]);
 }
 
-function formatKLineTime(time: Time): string {
+function formatSignalTime(time: Time): string {
   const seconds = typeof time === "number" ? time : Date.parse(String(time)) / 1000;
   if (!Number.isFinite(seconds)) return String(time);
   return formatChartAxisLabel(new Date(seconds * 1000).toISOString());
@@ -1021,12 +1007,20 @@ function projectHeatmapTiles(items: ProjectHeatmapItem[]): ProjectHeatmapTile[] 
   return layout(entries, 0, 0, 100, 100);
 }
 
-function trendDetailMetrics(t: Translate, lane: TrendLane, datum: TrendKLineDatum): Array<{ label: string; value: string }> {
+function trendDetailMetrics(t: Translate, lane: TrendLane, datum: TrendSignalDatum): Array<{ label: string; value: string }> {
   const point = datum.point;
   if (lane === "history") {
     return [
       { label: t("metricFresh"), value: trendMetricValue(t, datum.value) },
       { label: t("metricSessions"), value: trendMetricValue(t, trendContextSessionValue(point) ?? undefined) },
+    ];
+  }
+  if (lane === "throughput") {
+    return [
+      { label: t("outputThroughput"), value: formatTrendTokenRate(t, trendOutputThroughputValue(point)) },
+      { label: t("trendThroughputState"), value: formatThroughputState(t, point) },
+      { label: t("trendThroughputWindow"), value: formatTrendThroughputWindow(t, point) },
+      { label: t("trendReadoutContributors"), value: trendMetricValue(t, trendOutputThroughputActiveSessions(point) ?? undefined) },
     ];
   }
   return [
@@ -1041,20 +1035,29 @@ function trendMetricValue(t: Translate, value?: number): string {
   return typeof value === "number" && Number.isFinite(value) ? String(value) : t("unavailable");
 }
 
-function trendSelectedReadout(t: Translate, lane: TrendLane, datum: TrendKLineDatum): string {
+function trendSelectedReadout(t: Translate, lane: TrendLane, datum: TrendSignalDatum): string {
   const point = datum.point;
   if (lane === "history") {
     return `${trendMetricValue(t, datum.value)} / ${trendMetricValue(t, trendContextSessionValue(point) ?? undefined)}`;
   }
+  if (lane === "throughput") {
+    return `${formatTrendTokenRate(t, trendOutputThroughputValue(point))} / ${trendMetricValue(t, trendOutputThroughputActiveSessions(point) ?? undefined)} ${t("trendReadoutContributors")}`;
+  }
   return `${trendMetricValue(t, datum.value)} / ${trendMappingCoverageValue(point) !== null ? formatPct(trendMappingCoverageValue(point) ?? undefined) : t("unavailable")}`;
 }
 
-function trendSelectedReadoutParts(t: Translate, lane: TrendLane, datum: TrendKLineDatum): Array<{ label: string; value: string; role: "primary" | "context" }> {
+function trendSelectedReadoutParts(t: Translate, lane: TrendLane, datum: TrendSignalDatum): Array<{ label: string; value: string; role: "primary" | "context" }> {
   const point = datum.point;
   if (lane === "history") {
     return [
       { label: t("trendReadoutFresh"), value: trendMetricValue(t, datum.value), role: "primary" },
       { label: t("trendReadoutSessions"), value: trendMetricValue(t, trendContextSessionValue(point) ?? undefined), role: "context" },
+    ];
+  }
+  if (lane === "throughput") {
+    return [
+      { label: t("tokenRateUnit"), value: formatTokenRate(trendOutputThroughputValue(point)), role: "primary" },
+      { label: t("trendReadoutContributors"), value: trendMetricValue(t, trendOutputThroughputActiveSessions(point) ?? undefined), role: "context" },
     ];
   }
   return [
@@ -1077,14 +1080,41 @@ function trendContextMetrics(t: Translate, window?: TrendWindow): Array<{ label:
   ];
 }
 
-function trendExplanationSections(t: Translate, lane: TrendLane, datum: TrendKLineDatum): Array<{ label: string; text: string }> {
+function trendExplanationSections(t: Translate, lane: TrendLane, datum: TrendSignalDatum): Array<{ label: string; text: string }> {
   const clicked = `${t("sampledBucket")} ${datum.at ? formatDateTime(datum.at) : t("unavailable")} · ${trendSelectedReadout(t, lane, datum)}`;
+  const meaning = lane === "history" ? t("trendHistoryMeaning") : lane === "runtime" ? t("trendRuntimeMeaning") : t("trendThroughputMeaning");
+  const trust = lane === "history" ? t("trendHistoryTrust") : lane === "runtime" ? t("trendRuntimeTrust") : t("trendThroughputTrust");
+  const use = lane === "history" ? t("trendHistoryUse") : lane === "runtime" ? t("trendRuntimeUse") : t("trendThroughputUse");
   return [
     { label: t("trendWhatClicked"), text: clicked },
-    { label: t("trendWhatMeans"), text: lane === "history" ? t("trendHistoryMeaning") : t("trendRuntimeMeaning") },
-    { label: t("whyTrust"), text: lane === "history" ? t("trendHistoryTrust") : t("trendRuntimeTrust") },
-    { label: t("trendHowUse"), text: lane === "history" ? t("trendHistoryUse") : t("trendRuntimeUse") },
+    { label: t("trendWhatMeans"), text: meaning },
+    { label: t("whyTrust"), text: trust },
+    { label: t("trendHowUse"), text: use },
   ];
+}
+
+function formatTrendTokenRate(t: Translate, value: number | null): string {
+  return value === null ? t("unavailable") : `${formatTokenRate(value)} ${t("tokenRateUnit")}`;
+}
+
+function formatThroughputState(t: Translate, point: TrendPoint): string {
+  const state = trendOutputThroughputState(point);
+  if (state === "live") return t("trendThroughputStateLive");
+  if (state === "zero") return t("trendThroughputStateZero");
+  if (state === "stale") return t("trendThroughputStateStale");
+  if (state === "unavailable") return t("trendThroughputStateUnavailable");
+  return t("trendThroughputStateNoData");
+}
+
+function formatTrendThroughputWindow(t: Translate, point: TrendPoint): string {
+  const seconds = trendOutputThroughputWindowSeconds(point);
+  return seconds === null ? t("unavailable") : formatRelativeAge(seconds, t);
+}
+
+function trendDeltaValue(lane: TrendLane, value: number): string {
+  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
+  const magnitude = lane === "throughput" ? formatTokenRate(Math.abs(value)) : String(Math.abs(value));
+  return `${sign}${magnitude}`;
 }
 
 function formatTrendWindow(t: Translate, window: TrendWindow | ProjectHeatmapWindow | undefined): string {

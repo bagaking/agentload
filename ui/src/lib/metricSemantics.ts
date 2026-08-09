@@ -1,6 +1,6 @@
 import type { RoleCounts } from "../types/app";
 import type { CurrentMetrics, LiveSession, LiveTokenRateSample, LiveTokenRateState, Snapshot, SnapshotSummary } from "../types/snapshot";
-import type { TrendLane, TrendPoint } from "../trend/types";
+import type { TrendLane, TrendPoint, TrendThroughputProjectSample } from "../trend/types";
 
 export type SessionRole = "main" | "subagent" | "unknown";
 export type ProcessResourceTotals = { cpu: number; memory: number };
@@ -172,8 +172,48 @@ export function projectProcessResources(snapshot: Snapshot, sessions: LiveSessio
 }
 
 export function trendPrimaryValue(lane: TrendLane, point: TrendPoint): number | null {
-  const value = lane === "history" ? point.active_burst_concurrency : point.pid_concurrency;
+  const value = lane === "history"
+    ? point.active_burst_concurrency
+    : lane === "runtime"
+      ? point.pid_concurrency
+      : trendOutputThroughputValue(point);
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+export function trendOutputThroughputValue(point: TrendPoint): number | null {
+  const state = trendOutputThroughputState(point);
+  const value = point.output_tokens_per_second;
+  if ((state !== "live" && state !== "zero") || typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+  return value;
+}
+
+export function trendOutputThroughputState(point: TrendPoint): LiveTokenRateState | null {
+  if (!point.throughput_sampled) return null;
+  const state = String(point.output_token_throughput_state || "no_data").trim().toLowerCase();
+  if (state === "live" || state === "zero" || state === "stale" || state === "unavailable") return state;
+  return "no_data";
+}
+
+export function trendOutputThroughputActiveSessions(point: TrendPoint): number | null {
+  const value = point.output_token_active_sessions;
+  return trendOutputThroughputValue(point) !== null && typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
+}
+
+export function trendOutputThroughputWindowSeconds(point: TrendPoint): number | null {
+  const value = point.output_token_throughput_window_seconds;
+  return point.throughput_sampled && typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value) : null;
+}
+
+export function trendOutputThroughputProjects(point: TrendPoint): TrendThroughputProjectSample[] | null {
+  if (trendOutputThroughputValue(point) === null || !Array.isArray(point.output_token_projects)) return null;
+  return point.output_token_projects
+    .map((project) => ({
+      project: String(project.project || "").trim(),
+      output_tokens_per_second: project.output_tokens_per_second,
+      active_sessions: project.active_sessions,
+    }))
+    .filter((project) => project.project && typeof project.output_tokens_per_second === "number" && Number.isFinite(project.output_tokens_per_second) && project.output_tokens_per_second > 0)
+    .sort((a, b) => (b.output_tokens_per_second ?? 0) - (a.output_tokens_per_second ?? 0) || String(a.project).localeCompare(String(b.project)));
 }
 
 export function trendContextSessionValue(point: TrendPoint): number | null {

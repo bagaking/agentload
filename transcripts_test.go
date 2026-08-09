@@ -473,6 +473,46 @@ func TestTranscriptDataDoesNotCacheCancelledScan(t *testing.T) {
 	}
 }
 
+func TestTranscriptDataHealthyWaiterRetriesIncompleteFlight(t *testing.T) {
+	observer := newObserver(Config{
+		IdleGap:            90 * time.Second,
+		MinInterval:        15 * time.Second,
+		Lookback:           24 * time.Hour,
+		TranscriptCacheTTL: time.Minute,
+	})
+	key := transcriptCacheKey(nil, nil, nil, nil, observer.cfg.IdleGap, observer.cfg.MinInterval, observer.cfg.Lookback)
+	flight := &transcriptScanFlight{
+		done: make(chan struct{}),
+		data: &TranscriptData{
+			Traces: map[string]*SessionTrace{},
+			Errors: []string{"partial owner result"},
+		},
+	}
+	observer.inflight[key] = flight
+
+	result := make(chan *TranscriptData, 1)
+	go func() {
+		data, _ := observer.transcriptData(context.Background(), nil, nil, nil, nil, time.Now())
+		result <- data
+	}()
+	time.Sleep(20 * time.Millisecond)
+	observer.mu.Lock()
+	delete(observer.inflight, key)
+	close(flight.done)
+	observer.mu.Unlock()
+
+	select {
+	case data := <-result:
+		for _, message := range data.Errors {
+			if strings.Contains(message, "partial owner result") {
+				t.Fatalf("healthy waiter consumed incomplete flight: %+v", data.Errors)
+			}
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("healthy waiter did not retry incomplete flight")
+	}
+}
+
 func TestCollectTranscriptCandidatesSurfacesWalkErrors(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("permission errors are not observable as root")

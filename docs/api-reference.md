@@ -69,15 +69,29 @@ cold first poll can block noticeably.
 
 - **Headers (request)**: `If-None-Match` — compared against the snapshot ETag;
   comma-separated lists and `*` are honored (`etagListMatches`).
+  `Accept-Encoding: gzip` selects the compressed representation.
 - **Headers (response)**: `ETag` (the quoted `refresh_slot_id`),
-  `X-Refresh-Slot-ID` (unquoted), `Cache-Control: no-cache`.
+  `X-Refresh-Slot-ID` (unquoted), `Cache-Control: no-cache`, and
+  `Vary: Accept-Encoding`; gzip responses include `Content-Encoding: gzip`.
 - **Conditional flow**: the refresh slot decides the ETag, so a matching
   `If-None-Match` short-circuits to `304` *before* the sanitize pass runs.
   Full responses are served from a per-slot cache of the sanitized, encoded
-  JSON (`clientSnapshotJSON`), so at most one sanitize pass runs per refresh
-  slot regardless of client count.
+  JSON (`clientSnapshotJSON`). Its gzip representation is cached alongside it,
+  so at most one sanitize and one compression pass run per refresh slot.
 - **Empty state**: if the app has no observer and no cached snapshot the body
   is an empty `Snapshot` JSON (`{}`-equivalent with zero values).
+- **Throughput trends**: numeric `throughput_trends.windows[].points[]`
+  throughput samples expose `output_tokens_per_second`,
+  `output_token_throughput_state`,
+  `output_token_throughput_window_seconds`,
+  `output_token_active_sessions`, `output_token_projects`, and
+  `throughput_sampled`. Each project item uses the same events and 180-second
+  denominator as the aggregate, and the items sum to that aggregate. `stale`,
+  `no_data`, and `unavailable` points omit the numeric rate and project list.
+  Samples without a stored project partition are not reconstructed. Each range
+  filters the stored time series independently from process bucketing. Sparse
+  ranges retain all samples; dense ranges retain up to 240 time-distributed
+  exact samples.
 - **Sanitization** (`sanitizeSnapshotForClient`): see "Sanitize layer" below.
 
 ### `GET /api/system-resources`

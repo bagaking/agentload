@@ -1,7 +1,7 @@
 export const TREND_RANGES = ["1D", "3D", "7D", "15D", "30D"] as const;
 
 export type TrendRange = (typeof TREND_RANGES)[number];
-export type TrendLane = "history" | "runtime";
+export type TrendLane = "history" | "runtime" | "throughput";
 
 export type TrendSet = { windows?: TrendWindow[] };
 
@@ -28,6 +28,18 @@ export type TrendPoint = {
   host_app_process_summary?: TrendHostAppProcessSummary[];
   transcript_sampled?: boolean;
   runtime_sampled?: boolean;
+  output_tokens_per_second?: number;
+  output_token_throughput_state?: "live" | "zero" | "no_data" | "stale" | "unavailable" | string;
+  output_token_throughput_window_seconds?: number;
+  output_token_active_sessions?: number;
+  output_token_projects?: TrendThroughputProjectSample[];
+  throughput_sampled?: boolean;
+};
+
+export type TrendThroughputProjectSample = {
+  project?: string;
+  output_tokens_per_second?: number;
+  active_sessions?: number;
 };
 
 export type TrendProcessRuntimeSummary = {

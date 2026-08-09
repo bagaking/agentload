@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"agentload/internal/historyfile"
 )
 
 const historyRetentionWindow = 30 * 24 * time.Hour
@@ -18,13 +20,22 @@ const historyRetentionWindow = 30 * 24 * time.Hour
 const historyCompactionExcessLineLimit = 500
 
 type HistorySample struct {
-	At               string                   `json:"at"`
-	Current          CurrentMetrics           `json:"current"`
-	Summary          SnapshotSummary          `json:"summary"`
-	CoordinationRisk HistoryCoordinationRisk  `json:"coordination_risk"`
-	Projects         []HistoryProjectSnapshot `json:"projects,omitempty"`
-	RuntimeProcesses []ProcessRuntimeSummary  `json:"runtime_process_summary,omitempty"`
-	HostAppProcesses []HostAppProcessSummary  `json:"host_app_process_summary,omitempty"`
+	At                    string                        `json:"at"`
+	Current               CurrentMetrics                `json:"current"`
+	Summary               SnapshotSummary               `json:"summary"`
+	CoordinationRisk      HistoryCoordinationRisk       `json:"coordination_risk"`
+	Projects              []HistoryProjectSnapshot      `json:"projects,omitempty"`
+	RuntimeProcesses      []ProcessRuntimeSummary       `json:"runtime_process_summary,omitempty"`
+	HostAppProcesses      []HostAppProcessSummary       `json:"host_app_process_summary,omitempty"`
+	OutputTokenThroughput *HistoryOutputTokenThroughput `json:"output_token_throughput,omitempty"`
+}
+
+type HistoryOutputTokenThroughput struct {
+	OutputTokensPerSecond *float64                     `json:"output_tokens_per_second"`
+	State                 string                       `json:"state"`
+	WindowSeconds         int                          `json:"window_seconds"`
+	ActiveSessions        int                          `json:"active_sessions"`
+	Projects              []LiveTokenRateProjectSample `json:"projects"`
 }
 
 type HistoryProjectSnapshot struct {
@@ -75,6 +86,11 @@ func loadLocalHistoryState(path string, now time.Time) (localHistoryState, error
 	if strings.TrimSpace(state.path) == "" {
 		return state, nil
 	}
+	lock, err := historyfile.Acquire(state.path)
+	if err != nil {
+		return state, err
+	}
+	defer lock.Release()
 
 	file, err := os.Open(state.path)
 	if err != nil {
@@ -156,6 +172,9 @@ func rewriteHistorySampleFile(path string, samples []HistorySample) error {
 	if err := tmp.Chmod(0o644); err != nil {
 		return cleanup(err)
 	}
+	if err := tmp.Sync(); err != nil {
+		return cleanup(err)
+	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(tmpPath)
 		return err
@@ -227,6 +246,19 @@ func (s localHistoryState) trendPoints() []TrendPoint {
 			RuntimeProcesses:      append([]ProcessRuntimeSummary(nil), sample.RuntimeProcesses...),
 			HostAppProcesses:      append([]HostAppProcessSummary(nil), sample.HostAppProcesses...),
 		})
+		if throughput := sample.OutputTokenThroughput; throughput != nil {
+			point := &out[len(out)-1]
+			point.ThroughputSampled = true
+			point.OutputTokenThroughputState = throughput.State
+			point.OutputTokenThroughputWindowSeconds = throughput.WindowSeconds
+			if throughput.OutputTokensPerSecond != nil {
+				point.OutputTokensPerSecond = *throughput.OutputTokensPerSecond
+				point.HasOutputTokensPerSecond = true
+				point.OutputTokenActiveSessions = throughput.ActiveSessions
+				point.HasOutputTokenActiveSessions = true
+				point.OutputTokenProjects = cloneLiveTokenRateProjectSamples(throughput.Projects)
+			}
+		}
 	}
 	return out
 }
@@ -290,6 +322,11 @@ func appendHistorySampleFile(path string, sample HistorySample) error {
 			return err
 		}
 	}
+	lock, err := historyfile.Acquire(path)
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return err
@@ -298,7 +335,7 @@ func appendHistorySampleFile(path string, sample HistorySample) error {
 	if _, err := file.Write(append(raw, '\n')); err != nil {
 		return err
 	}
-	return nil
+	return file.Sync()
 }
 
 func appendRetainedHistorySample(samples []HistorySample, sample HistorySample, cutoff time.Time) ([]HistorySample, int) {

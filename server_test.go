@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +17,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"agentload/internal/httpencoding"
 )
 
 func TestHandleUIAssetServesViteAssets(t *testing.T) {
@@ -483,6 +488,76 @@ func TestHandleSnapshotAPIInvalidatesClientCacheOnSlotChange(t *testing.T) {
 	}
 }
 
+func TestHandleSnapshotAPIServesCachedGzipRepresentation(t *testing.T) {
+	app := &trayApp{}
+	app.rememberSnapshot(Snapshot{
+		GeneratedAt:   "2026-06-28T12:00:00Z",
+		RefreshSlotID: "30s:2026-06-28T12:00:00Z",
+		Notes:         []string{strings.Repeat("compressible snapshot evidence ", 200)},
+	})
+	handler := app.handler()
+
+	identityRec := httptest.NewRecorder()
+	handler.ServeHTTP(identityRec, httptest.NewRequest(http.MethodGet, "/api/snapshot", nil))
+	gzipReq := httptest.NewRequest(http.MethodGet, "/api/snapshot", nil)
+	gzipReq.Header.Set("Accept-Encoding", "gzip")
+	gzipRec := httptest.NewRecorder()
+	handler.ServeHTTP(gzipRec, gzipReq)
+
+	if got := gzipRec.Header().Get("Content-Encoding"); got != "gzip" {
+		t.Fatalf("content encoding = %q, want gzip", got)
+	}
+	if got := gzipRec.Header().Get("Vary"); !strings.Contains(got, "Accept-Encoding") {
+		t.Fatalf("vary = %q, want Accept-Encoding", got)
+	}
+	if gzipRec.Body.Len() >= identityRec.Body.Len() {
+		t.Fatalf("gzip payload %d bytes should be smaller than identity payload %d", gzipRec.Body.Len(), identityRec.Body.Len())
+	}
+	gzipPayload := append([]byte(nil), gzipRec.Body.Bytes()...)
+	reader, err := gzip.NewReader(bytes.NewReader(gzipPayload))
+	if err != nil {
+		t.Fatalf("open gzip response: %v", err)
+	}
+	decoded, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("read gzip response: %v", err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatalf("close gzip response: %v", err)
+	}
+	if string(decoded) != identityRec.Body.String() {
+		t.Fatal("gzip representation decoded to different snapshot JSON")
+	}
+
+	secondReq := httptest.NewRequest(http.MethodGet, "/api/snapshot", nil)
+	secondReq.Header.Set("Accept-Encoding", "gzip")
+	secondRec := httptest.NewRecorder()
+	handler.ServeHTTP(secondRec, secondReq)
+	if secondRec.Body.String() != string(gzipPayload) {
+		t.Fatal("same refresh slot did not reuse stable gzip payload")
+	}
+
+	headReq := httptest.NewRequest(http.MethodHead, "/api/snapshot", nil)
+	headReq.Header.Set("Accept-Encoding", "gzip")
+	headRec := httptest.NewRecorder()
+	handler.ServeHTTP(headRec, headReq)
+	if headRec.Body.Len() != 0 || headRec.Header().Get("Content-Encoding") != "gzip" {
+		t.Fatalf("gzip HEAD response = encoding %q body %d", headRec.Header().Get("Content-Encoding"), headRec.Body.Len())
+	}
+}
+
+func TestAcceptsGzipEncodingHonorsDisabledQuality(t *testing.T) {
+	if httpencoding.AcceptsGzip("gzip;q=0") {
+		t.Fatal("gzip;q=0 must disable gzip encoding")
+	}
+	if httpencoding.AcceptsGzip("gzip;q=0.0") {
+		t.Fatal("gzip;q=0.0 must disable gzip encoding")
+	}
+	if !httpencoding.AcceptsGzip("br, gzip; q=1") {
+		t.Fatal("gzip with positive quality should be accepted")
+	}
+}
+
 func TestStateChangingPostsRejectCrossOriginRequests(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -674,6 +749,20 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 				{Kind: "evidence_note", Severity: "observed", Evidence: "checked " + sessionPath},
 			},
 		},
+		ThroughputTrends: TrendSet{Windows: []TrendWindow{{
+			Range: "1D",
+			Points: []TrendPoint{{
+				At:                       "2026-06-28T12:00:00Z",
+				OutputTokensPerSecond:    2,
+				HasOutputTokensPerSecond: true,
+				OutputTokenProjects: []LiveTokenRateProjectSample{{
+					Project:               projectPath,
+					OutputTokensPerSecond: 2,
+					ActiveSessions:        1,
+				}},
+				ThroughputSampled: true,
+			}},
+		}}},
 		Notes: []string{"checked " + sessionPath, "opened " + sessionFileURI},
 	}
 	app.haveSnapshot = true
@@ -712,7 +801,8 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 		got.ProjectFocus[0].Project != "agentload" ||
 		got.CandidateWorkitems[0].Project != "agentload" ||
 		got.CandidateWorkitems[0].Key != "project=agentload|tool=codex|freshness=active" ||
-		got.CoordinationRisk.TopProject != "agentload" {
+		got.CoordinationRisk.TopProject != "agentload" ||
+		got.ThroughputTrends.Windows[0].Points[0].OutputTokenProjects[0].Project != "agentload" {
 		t.Fatalf("expected client project labels to be path-safe, got sessions=%+v projects=%+v candidates=%+v risk=%+v", got.LiveSessions, got.ProjectFocus, got.CandidateWorkitems, got.CoordinationRisk)
 	}
 	if len(got.LiveSessions[0].HostApps) != 1 || got.LiveSessions[0].HostApps[0].BundlePath != "" {
@@ -729,7 +819,8 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 		app.lastSnapshot.ProjectFocus[0].Project != projectPath ||
 		app.lastSnapshot.CandidateWorkitems[0].Project != projectPath ||
 		app.lastSnapshot.CandidateWorkitems[0].Key != "project="+projectPath+"|tool=codex|freshness=active" ||
-		app.lastSnapshot.CoordinationRisk.TopProject != projectPath {
+		app.lastSnapshot.CoordinationRisk.TopProject != projectPath ||
+		app.lastSnapshot.ThroughputTrends.Windows[0].Points[0].OutputTokenProjects[0].Project != projectPath {
 		t.Fatalf("expected internal project labels to retain local paths, got sessions=%+v projects=%+v candidates=%+v risk=%+v", app.lastSnapshot.LiveSessions, app.lastSnapshot.ProjectFocus, app.lastSnapshot.CandidateWorkitems, app.lastSnapshot.CoordinationRisk)
 	}
 	if !strings.Contains(app.lastSnapshot.ProjectFocus[0].ConfidenceReasons[0], sessionPath) ||

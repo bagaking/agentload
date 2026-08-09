@@ -3002,7 +3002,7 @@ body[data-view="popover"] .warning-banner {
 
 .trend-duo {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, .82fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1px;
   overflow: visible;
   background: var(--console-line-soft);
@@ -3173,70 +3173,6 @@ body[data-view="popover"] .warning-banner {
   width: 100%;
   height: 100%;
   cursor: pointer;
-}
-
-.trend-kline-chart {
-  position: relative;
-}
-
-.trend-kline-host {
-  position: absolute;
-  inset: 0;
-}
-
-.trend-kline-host table,
-.trend-kline-host canvas {
-  cursor: crosshair;
-}
-
-.trend-kline-selection {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.trend-kline-selection::before,
-.trend-kline-selection::after {
-  content: "";
-  position: absolute;
-  pointer-events: none;
-}
-
-.trend-kline-selection::before {
-  left: var(--kx);
-  top: 12px;
-  bottom: 20px;
-  width: 1px;
-  background: repeating-linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--fg) 56%, transparent) 0 3px,
-    transparent 3px 6px
-  );
-}
-
-.trend-kline-selection::after {
-  left: 8px;
-  right: 8px;
-  top: var(--ky);
-  height: 1px;
-  background: repeating-linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--accent-hi) 42%, transparent) 0 3px,
-    transparent 3px 6px
-  );
-}
-
-.trend-kline-selection-dot {
-  position: absolute;
-  left: var(--kx);
-  top: var(--ky);
-  width: 8px;
-  height: 8px;
-  border: 1.4px solid color-mix(in srgb, var(--fg) 92%, transparent);
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--bg) 80%, transparent);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-hi) 10%, transparent);
-  transform: translate(-50%, -50%);
 }
 
 .trend-chart .grid {
@@ -6068,6 +6004,10 @@ body[data-view="popover"] .trend-suite.compact .trend-detail-toggle span {
   fill: var(--run);
 }
 
+.trend-lane.throughput .series-area.primary {
+  fill: var(--accent);
+}
+
 .trend-lane.runtime .series-area.secondary {
   fill: var(--fg);
   opacity: .075;
@@ -6083,6 +6023,10 @@ body[data-view="popover"] .trend-suite.compact .trend-detail-toggle span {
 
 .trend-lane.runtime .series.primary {
   stroke: var(--run);
+}
+
+.trend-lane.throughput .series.primary {
+  stroke: var(--accent);
 }
 
 .trend-lane.runtime .series.secondary {
@@ -6106,6 +6050,10 @@ body[data-view="popover"] .trend-suite.compact .trend-detail-toggle span {
 
 .trend-lane.runtime .trend-point.primary {
   fill: var(--run);
+}
+
+.trend-lane.throughput .trend-point.primary {
+  fill: var(--accent);
 }
 
 .trend-lane.runtime .trend-point.secondary {
@@ -10839,7 +10787,7 @@ body[data-view="popover"] .trend-suite.compact {
 }
 
 body[data-view="popover"] .trend-suite.compact .trend-duo {
-  grid-template-rows: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(3, minmax(0, 1fr));
   min-height: 0;
 }
 
@@ -11331,7 +11279,7 @@ body[data-view="popover"] .trend-suite.compact .trend-inspector-metric strong {
   font-weight: 870;
 }
 
-/* Trend candlestick pass: bigger planes, truthful bucket movement, clear crosshair selection. */
+/* Trend signal pass: larger planes, exact samples, and clear crosshair selection. */
 body[data-view="popover"] .popover-view-shell,
 body[data-view="popover"] .popover-view-panel.trend {
   height: auto;
@@ -11368,48 +11316,6 @@ body[data-view="popover"] .trend-suite.compact .trend-lane {
 body[data-view="popover"] .trend-suite.compact .trend-chart {
   height: 138px;
   min-height: 138px;
-}
-
-.trend-candles {
-  pointer-events: none;
-}
-
-.trend-candle line {
-  stroke: color-mix(in srgb, var(--fg-muted) 42%, transparent);
-  stroke-linecap: round;
-  stroke-width: .9;
-}
-
-.trend-candle rect {
-  fill: color-mix(in srgb, var(--accent-hi) 34%, transparent);
-  stroke: color-mix(in srgb, var(--fg) 16%, transparent);
-  stroke-width: .7;
-}
-
-.trend-lane.history .trend-candle.is-rising rect {
-  fill: color-mix(in srgb, var(--ok) 45%, transparent);
-}
-
-.trend-lane.history .trend-candle.is-falling rect {
-  fill: color-mix(in srgb, var(--accent) 30%, transparent);
-}
-
-.trend-lane.runtime .trend-candle.is-rising rect {
-  fill: color-mix(in srgb, var(--run) 44%, transparent);
-}
-
-.trend-lane.runtime .trend-candle.is-falling rect {
-  fill: color-mix(in srgb, var(--accent-hi) 26%, transparent);
-}
-
-.trend-candle.is-selected line {
-  stroke: color-mix(in srgb, var(--fg) 72%, transparent);
-  stroke-width: 1.25;
-}
-
-.trend-candle.is-selected rect {
-  fill: color-mix(in srgb, var(--fg) 58%, transparent);
-  stroke: color-mix(in srgb, var(--fg) 92%, transparent);
 }
 
 .trend-crosshair {
@@ -11642,7 +11548,7 @@ body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.label-mini 
 
 /* Professional chart skin: the canvas stays the truth layer; DOM chrome adds
    only low-noise reading aids and metric hover detail. */
-.trend-kline-chart {
+.trend-signal-chart {
   position: relative;
   isolation: isolate;
   overflow: visible;
@@ -11657,8 +11563,8 @@ body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.label-mini 
     inset 0 1px 0 color-mix(in srgb, var(--fg) 10%, transparent);
 }
 
-.trend-kline-chart::before,
-.trend-kline-chart::after {
+.trend-signal-chart::before,
+.trend-signal-chart::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -11666,7 +11572,7 @@ body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.label-mini 
   pointer-events: none;
 }
 
-.trend-kline-chart::before {
+.trend-signal-chart::before {
   background:
     linear-gradient(90deg, transparent 0 9%, color-mix(in srgb, var(--fg) 5%, transparent) 9% calc(9% + 1px), transparent calc(9% + 1px) 100%),
     linear-gradient(90deg, transparent 0 50%, color-mix(in srgb, var(--fg) 4%, transparent) 50% calc(50% + 1px), transparent calc(50% + 1px) 100%),
@@ -11674,29 +11580,41 @@ body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.label-mini 
   opacity: .9;
 }
 
-.trend-kline-chart::after {
+.trend-signal-chart::after {
   inset: auto 10px 10px 10px;
   height: 1px;
   background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--fg) 13%, transparent), transparent);
   opacity: .82;
 }
 
-.trend-kline-host {
+.trend-signal-host {
+  position: absolute;
+  inset: 0;
   z-index: 1;
   overflow: hidden;
   border-radius: inherit;
 }
 
-.trend-kline-host table,
-.trend-kline-host canvas {
+.trend-signal-host table,
+.trend-signal-host canvas {
   cursor: crosshair;
 }
 
-.trend-kline-selection {
+.trend-signal-selection {
+  position: absolute;
+  inset: 0;
   z-index: 2;
+  pointer-events: none;
 }
 
-.trend-kline-selection::before {
+.trend-signal-selection::before,
+.trend-signal-selection::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+.trend-signal-selection::before {
   left: var(--kx);
   top: 10px;
   bottom: 18px;
@@ -11704,7 +11622,7 @@ body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.label-mini 
   background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--fg) 42%, transparent) 14%, color-mix(in srgb, var(--fg) 42%, transparent) 86%, transparent);
 }
 
-.trend-kline-selection::after {
+.trend-signal-selection::after {
   left: 9px;
   right: 9px;
   top: var(--ky);
@@ -11712,17 +11630,22 @@ body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.label-mini 
   background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent-hi) 34%, transparent) 16%, color-mix(in srgb, var(--accent-hi) 34%, transparent) 84%, transparent);
 }
 
-.trend-kline-selection-dot {
+.trend-signal-selection-dot {
+  position: absolute;
+  left: var(--kx);
+  top: var(--ky);
   width: 7px;
   height: 7px;
   border: 1px solid color-mix(in srgb, var(--fg) 88%, transparent);
+  border-radius: 50%;
   background: color-mix(in srgb, var(--bg) 76%, transparent);
   box-shadow:
     0 0 0 2px color-mix(in srgb, var(--bg) 72%, transparent),
     0 0 0 5px color-mix(in srgb, var(--accent-hi) 10%, transparent);
+  transform: translate(-50%, -50%);
 }
 
-.trend-kline-tooltip {
+.trend-signal-tooltip {
   position: absolute;
   z-index: 80;
   left: var(--tip-x);
@@ -11743,7 +11666,7 @@ body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.label-mini 
   pointer-events: none;
 }
 
-.trend-kline-tooltip::before {
+.trend-signal-tooltip::before {
   content: "";
   position: absolute;
   left: 7px;
@@ -11755,12 +11678,12 @@ body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.label-mini 
   opacity: .62;
 }
 
-.trend-kline-tooltip.align-left.is-above { transform: translate(8px, calc(-100% - 8px)); }
-.trend-kline-tooltip.align-left.is-below { transform: translate(8px, 8px); }
-.trend-kline-tooltip.align-right.is-above { transform: translate(calc(-100% - 8px), calc(-100% - 8px)); }
-.trend-kline-tooltip.align-right.is-below { transform: translate(calc(-100% - 8px), 8px); }
+.trend-signal-tooltip.align-left.is-above { transform: translate(8px, calc(-100% - 8px)); }
+.trend-signal-tooltip.align-left.is-below { transform: translate(8px, 8px); }
+.trend-signal-tooltip.align-right.is-above { transform: translate(calc(-100% - 8px), calc(-100% - 8px)); }
+.trend-signal-tooltip.align-right.is-below { transform: translate(calc(-100% - 8px), 8px); }
 
-.trend-kline-tooltip-kicker {
+.trend-signal-tooltip-kicker {
   display: block;
   margin-left: 8px;
   color: color-mix(in srgb, var(--fg-faint) 88%, transparent);
@@ -11769,7 +11692,7 @@ body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.label-mini 
   line-height: 1;
 }
 
-.trend-kline-tooltip-time {
+.trend-signal-tooltip-time {
   display: block;
   margin-top: 3px;
   margin-left: 8px;
@@ -11780,7 +11703,7 @@ body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.label-mini 
   line-height: 1;
 }
 
-.trend-kline-tooltip-grid {
+.trend-signal-tooltip-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 5px;
@@ -11788,13 +11711,13 @@ body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.label-mini 
   margin-left: 8px;
 }
 
-.trend-kline-tooltip-grid span {
+.trend-signal-tooltip-grid span {
   display: grid;
   gap: 2px;
   min-width: 0;
 }
 
-.trend-kline-tooltip-grid b {
+.trend-signal-tooltip-grid b {
   overflow: hidden;
   color: color-mix(in srgb, var(--fg-faint) 86%, transparent);
   font-size: 7.3px;
@@ -11804,7 +11727,7 @@ body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.label-mini 
   white-space: nowrap;
 }
 
-.trend-kline-tooltip-grid em {
+.trend-signal-tooltip-grid em {
   color: var(--fg);
   font-family: var(--font-mono);
   font-size: 12.2px;
@@ -11814,12 +11737,7 @@ body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.label-mini 
   font-variant-numeric: tabular-nums;
 }
 
-body[data-view="popover"] .trend-suite.compact .trend-chart.trend-kline-chart {
-  height: 148px;
-  min-height: 148px;
-}
-
-:root[data-theme="light"] .trend-kline-chart {
+:root[data-theme="light"] .trend-signal-chart {
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--fg) 3%, transparent), transparent 38%),
     linear-gradient(90deg, color-mix(in srgb, var(--accent) 5%, transparent), transparent 44%, color-mix(in srgb, var(--run) 4%, transparent)),
@@ -11827,13 +11745,207 @@ body[data-view="popover"] .trend-suite.compact .trend-chart.trend-kline-chart {
     color-mix(in srgb, var(--console-material-2) 74%, white);
 }
 
-:root[data-theme="light"] .trend-kline-tooltip {
+:root[data-theme="light"] .trend-signal-tooltip {
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--fg) 4%, transparent), transparent 42%),
     color-mix(in srgb, var(--console-material) 92%, white);
   box-shadow:
     0 14px 30px color-mix(in srgb, var(--fg) 10%, transparent),
     inset 0 1px 0 color-mix(in srgb, white 76%, transparent);
+}
+
+.throughput-river-chart {
+  position: relative;
+  isolation: isolate;
+  overflow: visible;
+  border-radius: 8px;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 31px, color-mix(in srgb, var(--fg) 5%, transparent) 31px 32px),
+    color-mix(in srgb, var(--console-material-2) 58%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--fg) 7%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--fg) 9%, transparent);
+  outline: none;
+}
+
+.throughput-river-chart:focus-visible {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent-hi) 56%, transparent),
+    0 0 0 2px color-mix(in srgb, var(--accent-hi) 16%, transparent);
+}
+
+.throughput-river-chart > svg {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+}
+
+.throughput-river-grid {
+  stroke: color-mix(in srgb, var(--fg) 10%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 3 5;
+  vector-effect: non-scaling-stroke;
+}
+
+.throughput-river-layer {
+  opacity: .78;
+  stroke: color-mix(in srgb, var(--bg) 26%, transparent);
+  stroke-width: .7;
+  vector-effect: non-scaling-stroke;
+  transition: opacity 120ms ease;
+}
+
+.throughput-river-chart:hover .throughput-river-layer {
+  opacity: .88;
+}
+
+.throughput-river-selection line {
+  stroke: color-mix(in srgb, var(--fg) 62%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+  vector-effect: non-scaling-stroke;
+}
+
+.throughput-river-selection circle {
+  fill: var(--bg);
+  stroke: color-mix(in srgb, var(--fg) 88%, transparent);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.throughput-river-legend,
+.throughput-river-projects {
+  position: absolute;
+  z-index: 3;
+  left: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.throughput-river-legend {
+  top: 7px;
+  gap: 8px;
+  color: color-mix(in srgb, var(--fg-faint) 88%, transparent);
+  font-size: 7.6px;
+  font-weight: 760;
+}
+
+.throughput-river-legend span,
+.throughput-river-projects span {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.throughput-river-legend i,
+.throughput-river-projects i {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  margin-right: 4px;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--bg) 38%, transparent);
+}
+
+.throughput-river-projects {
+  bottom: 5px;
+  gap: 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.throughput-river-projects::-webkit-scrollbar {
+  display: none;
+}
+
+.throughput-river-projects span {
+  flex: 0 0 auto;
+  gap: 3px;
+  font-size: 7.5px;
+}
+
+.throughput-river-projects b {
+  max-width: 82px;
+  overflow: hidden;
+  color: color-mix(in srgb, var(--fg) 78%, transparent);
+  font-weight: 730;
+  text-overflow: ellipsis;
+}
+
+.throughput-river-projects em {
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-style: normal;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+
+.throughput-river-tooltip {
+  position: absolute;
+  z-index: 8;
+  left: clamp(7px, calc(var(--river-x) + 7px), calc(100% - 155px));
+  top: var(--river-y);
+  display: grid;
+  gap: 5px;
+  width: 148px;
+  padding: 7px 8px;
+  border: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--console-material) 94%, transparent);
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--bg) 42%, transparent);
+  backdrop-filter: blur(18px) saturate(1.15);
+  pointer-events: none;
+}
+
+.throughput-river-tooltip.is-above {
+  transform: translateY(calc(-100% - 7px));
+}
+
+.throughput-river-tooltip.is-below {
+  transform: translateY(7px);
+}
+
+.throughput-river-tooltip strong {
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.throughput-river-tooltip span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.throughput-river-tooltip b {
+  color: var(--fg-faint);
+  font-size: 7.5px;
+  font-weight: 720;
+}
+
+.throughput-river-tooltip em {
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 840;
+}
+
+:root[data-theme="light"] .throughput-river-chart {
+  background:
+    repeating-linear-gradient(0deg, transparent 0 31px, color-mix(in srgb, var(--fg) 6%, transparent) 31px 32px),
+    color-mix(in srgb, var(--console-material-2) 78%, white);
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-chart.throughput-river-chart {
+  height: 156px;
+  min-height: 156px;
 }
 
 /* Selected trend audit strip: clarify metric relationships without turning
@@ -12473,16 +12585,11 @@ body[data-view="popover"] .trend-suite.compact .trend-duo {
   grid-template-columns: minmax(0, 1fr);
 }
 
-body[data-view="popover"] .trend-suite.compact .trend-lane.runtime,
-body[data-view="popover"] .trend-suite.compact .trend-inspector.runtime {
-  display: none;
-}
-
 body[data-view="popover"] .trend-suite.compact .trend-lane.history {
   padding-bottom: 8px;
 }
 
-body[data-view="popover"] .trend-suite.compact .trend-chart.trend-kline-chart {
+body[data-view="popover"] .trend-suite.compact .trend-chart.trend-signal-chart {
   height: 156px;
   min-height: 156px;
 }
@@ -12691,11 +12798,6 @@ body[data-view="popover"] .system-shell .popover-process-subline {
 
 body[data-view="popover"] .system-shell .popover-process-card {
   border-bottom-color: color-mix(in srgb, var(--console-line-soft) 86%, transparent);
-}
-
-body[data-view="popover"] .trend-suite.compact .trend-lane.runtime,
-body[data-view="popover"] .trend-suite.compact .trend-inspector.runtime {
-  display: grid;
 }
 
 body[data-view="popover"] .trend-suite.compact .trend-lane.runtime {

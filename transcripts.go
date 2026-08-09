@@ -70,35 +70,45 @@ type transcriptAppendParseFunc func(TranscriptFile, *SessionTrace, int64) (*Sess
 var parseTranscriptFileAppendFunc transcriptAppendParseFunc = parseTranscriptFileAppend
 
 type transcriptScanFlight struct {
-	done chan struct{}
-	data *TranscriptData
+	done     chan struct{}
+	data     *TranscriptData
+	complete bool
 }
 
 func (o *Observer) transcriptData(ctx context.Context, claudeRoots, codexRoots, traeRoots []string, priority []TranscriptFile, now time.Time) (*TranscriptData, bool) {
 	key := transcriptCacheKey(claudeRoots, codexRoots, traeRoots, priority, o.cfg.IdleGap, o.cfg.MinInterval, o.cfg.Lookback)
-	o.mu.Lock()
-	if o.cache.Data != nil && o.cache.Key == key && now.Before(o.cache.ExpiresAt) {
-		data := cloneTranscriptData(o.cache.Data)
-		o.mu.Unlock()
-		return data, true
-	}
-	if flight := o.inflight[key]; flight != nil {
-		done := flight.done
-		cachedData := cloneTranscriptData(o.cache.Data)
-		o.mu.Unlock()
-		select {
-		case <-done:
-			return cloneTranscriptData(flight.data), false
-		case <-ctx.Done():
-			// The in-flight scan keeps running for other waiters; the
-			// cancelled caller returns early with whatever cached data exists.
-			cached := cachedData != nil
-			if cachedData == nil {
-				cachedData = &TranscriptData{Traces: map[string]*SessionTrace{}}
-			}
-			cachedData.Errors = append(cachedData.Errors, fmt.Sprintf("transcript scan wait cancelled: %v", ctx.Err()))
-			return cachedData, cached
+	for {
+		o.mu.Lock()
+		if o.cache.Data != nil && o.cache.Key == key && now.Before(o.cache.ExpiresAt) {
+			data := cloneTranscriptData(o.cache.Data)
+			o.mu.Unlock()
+			return data, true
 		}
+		if flight := o.inflight[key]; flight != nil {
+			done := flight.done
+			cachedData := cloneTranscriptData(o.cache.Data)
+			o.mu.Unlock()
+			select {
+			case <-done:
+				if flight.complete {
+					return cloneTranscriptData(flight.data), false
+				}
+				if ctx.Err() == nil {
+					continue
+				}
+				return cloneTranscriptData(flight.data), false
+			case <-ctx.Done():
+				// The in-flight scan keeps running for other waiters; the
+				// cancelled caller returns early with whatever cached data exists.
+				cached := cachedData != nil
+				if cachedData == nil {
+					cachedData = &TranscriptData{Traces: map[string]*SessionTrace{}}
+				}
+				cachedData.Errors = append(cachedData.Errors, fmt.Sprintf("transcript scan wait cancelled: %v", ctx.Err()))
+				return cachedData, cached
+			}
+		}
+		break
 	}
 	flight := &transcriptScanFlight{done: make(chan struct{})}
 	o.inflight[key] = flight
@@ -117,9 +127,10 @@ func (o *Observer) transcriptData(ctx context.Context, claudeRoots, codexRoots, 
 
 	o.mu.Lock()
 	flight.data = cloneTranscriptData(data)
+	flight.complete = ctx.Err() == nil
 	// A cancelled scan produced partial data; keep it out of the cache so the
 	// next snapshot retries a full scan.
-	if ctx.Err() == nil {
+	if flight.complete {
 		o.cache = transcriptCacheState{
 			Key:       key,
 			ExpiresAt: savedAt.Add(o.cfg.TranscriptCacheTTL),

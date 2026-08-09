@@ -424,6 +424,8 @@ type runtimeTrendSample struct {
 	Point TrendPoint
 }
 
+const throughputTrendMaxPoints = 240
+
 func normalizeRuntimeSamples(samples []TrendPoint) []runtimeTrendSample {
 	out := make([]runtimeTrendSample, 0, len(samples))
 	for _, sample := range samples {
@@ -460,6 +462,14 @@ func bucketRuntimeSamples(samples []runtimeTrendSample, from, to time.Time, step
 		point := sample.Point
 		point.At = sample.At.Format(time.RFC3339)
 		point.RuntimeSampled = true
+		point.OutputTokensPerSecond = 0
+		point.HasOutputTokensPerSecond = false
+		point.OutputTokenThroughputState = ""
+		point.OutputTokenThroughputWindowSeconds = 0
+		point.OutputTokenActiveSessions = 0
+		point.HasOutputTokenActiveSessions = false
+		point.OutputTokenProjects = nil
+		point.ThroughputSampled = false
 		if len(out) > 0 && bucket == lastBucket {
 			out[len(out)-1] = point
 			continue
@@ -468,6 +478,130 @@ func bucketRuntimeSamples(samples []runtimeTrendSample, from, to time.Time, step
 		lastBucket = bucket
 	}
 	return out
+}
+
+func buildThroughputTrendWindows(samples []TrendPoint, now time.Time) TrendSet {
+	if now.IsZero() {
+		return TrendSet{}
+	}
+	normalized := normalizeThroughputSamples(samples)
+	sourceFrom := time.Time{}
+	if len(normalized) > 0 {
+		sourceFrom = normalized[0].At
+	}
+	trends := TrendSet{Windows: make([]TrendWindow, 0, len(defaultTrendSpecs))}
+	for _, spec := range defaultTrendSpecs {
+		from := now.Add(-spec.span)
+		points, granularity := timeDistributedThroughputSamples(normalized, from, now, throughputTrendMaxPoints)
+		window := TrendWindow{
+			Range:              spec.label,
+			From:               from.Format(time.RFC3339),
+			To:                 now.Format(time.RFC3339),
+			GranularitySeconds: int(granularity / time.Second),
+			HistoryComplete:    !sourceFrom.IsZero() && !sourceFrom.After(from),
+			Points:             points,
+		}
+		if !sourceFrom.IsZero() {
+			window.SourceFrom = sourceFrom.Format(time.RFC3339)
+			window.SourceLookbackHours = int(now.Sub(sourceFrom) / time.Hour)
+		}
+		trends.Windows = append(trends.Windows, window)
+	}
+	return trends
+}
+
+func normalizeThroughputSamples(samples []TrendPoint) []runtimeTrendSample {
+	out := make([]runtimeTrendSample, 0, len(samples))
+	for _, sample := range samples {
+		if !sample.ThroughputSampled {
+			continue
+		}
+		at, err := time.Parse(time.RFC3339, sample.At)
+		if err != nil {
+			continue
+		}
+		out = append(out, runtimeTrendSample{
+			At: at,
+			Point: TrendPoint{
+				At:                                 at.Format(time.RFC3339),
+				OutputTokensPerSecond:              sample.OutputTokensPerSecond,
+				HasOutputTokensPerSecond:           sample.HasOutputTokensPerSecond,
+				OutputTokenThroughputState:         sample.OutputTokenThroughputState,
+				OutputTokenThroughputWindowSeconds: sample.OutputTokenThroughputWindowSeconds,
+				OutputTokenActiveSessions:          sample.OutputTokenActiveSessions,
+				HasOutputTokenActiveSessions:       sample.HasOutputTokenActiveSessions,
+				OutputTokenProjects:                cloneLiveTokenRateProjectSamples(sample.OutputTokenProjects),
+				ThroughputSampled:                  true,
+			},
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].At.Before(out[j].At)
+	})
+	return out
+}
+
+func timeDistributedThroughputSamples(samples []runtimeTrendSample, from, to time.Time, maxPoints int) ([]TrendPoint, time.Duration) {
+	filtered := make([]runtimeTrendSample, 0, len(samples))
+	for _, sample := range samples {
+		if !sample.At.Before(from) && !sample.At.After(to) {
+			filtered = append(filtered, sample)
+		}
+	}
+	if len(filtered) == 0 {
+		return nil, 0
+	}
+	if maxPoints < 2 || len(filtered) <= maxPoints {
+		return throughputTrendPoints(filtered), medianTrendSampleInterval(filtered)
+	}
+	span := filtered[len(filtered)-1].At.Sub(filtered[0].At)
+	divisor := time.Duration(maxPoints - 1)
+	step := (span + divisor - 1) / divisor
+	if step <= 0 {
+		return throughputTrendPoints(filtered[:1]), 0
+	}
+	out := []runtimeTrendSample{filtered[0]}
+	lastBucket := 0
+	for _, sample := range filtered[1:] {
+		bucket := int(sample.At.Sub(filtered[0].At) / step)
+		if bucket == 0 {
+			continue
+		}
+		if len(out) > 0 && bucket == lastBucket {
+			out[len(out)-1] = sample
+			continue
+		}
+		out = append(out, sample)
+		lastBucket = bucket
+	}
+	return throughputTrendPoints(out), step
+}
+
+func throughputTrendPoints(samples []runtimeTrendSample) []TrendPoint {
+	points := make([]TrendPoint, 0, len(samples))
+	for _, sample := range samples {
+		point := sample.Point
+		point.At = sample.At.Format(time.RFC3339)
+		points = append(points, point)
+	}
+	return points
+}
+
+func medianTrendSampleInterval(samples []runtimeTrendSample) time.Duration {
+	if len(samples) < 2 {
+		return 0
+	}
+	intervals := make([]time.Duration, 0, len(samples)-1)
+	for index := 1; index < len(samples); index++ {
+		if interval := samples[index].At.Sub(samples[index-1].At); interval > 0 {
+			intervals = append(intervals, interval)
+		}
+	}
+	if len(intervals) == 0 {
+		return 0
+	}
+	sort.Slice(intervals, func(i, j int) bool { return intervals[i] < intervals[j] })
+	return intervals[len(intervals)/2]
 }
 
 func sortIntervals(intervals []Interval) {

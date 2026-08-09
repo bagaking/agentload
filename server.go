@@ -22,6 +22,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"agentload/internal/httpencoding"
 )
 
 //go:embed ui/dist/* ui/dist/assets/* ui/tool-icons/*
@@ -132,6 +134,7 @@ func (a *trayApp) handleSnapshotAPI(w http.ResponseWriter, r *http.Request) {
 	snapshot, ok := a.snapshotForInternalUse(r.Context())
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Vary", "Accept-Encoding")
 	if !ok {
 		if r.Method == http.MethodHead {
 			w.WriteHeader(http.StatusOK)
@@ -139,6 +142,10 @@ func (a *trayApp) handleSnapshotAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = json.NewEncoder(w).Encode(Snapshot{})
 		return
+	}
+	wantsGzip := httpencoding.AcceptsGzip(r.Header.Get("Accept-Encoding"))
+	if wantsGzip {
+		w.Header().Set("Content-Encoding", "gzip")
 	}
 	var snapshotETag string
 	if snapshot.RefreshSlotID != "" {
@@ -154,7 +161,11 @@ func (a *trayApp) handleSnapshotAPI(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	_, _ = w.Write(a.clientSnapshotJSON(snapshot))
+	payload := a.clientSnapshotJSON(snapshot)
+	if wantsGzip {
+		payload = a.clientSnapshotGZIP(snapshot)
+	}
+	_, _ = w.Write(payload)
 }
 
 // clientSnapshotJSON caches the sanitized, encoded snapshot per refresh slot so
@@ -179,6 +190,30 @@ func (a *trayApp) clientSnapshotJSON(snapshot Snapshot) []byte {
 		a.clientCacheMu.Lock()
 		a.clientCacheSlot = slotID
 		a.clientCacheJSON = payload
+		a.clientCacheGZIP = nil
+		a.clientCacheMu.Unlock()
+	}
+	return payload
+}
+
+func (a *trayApp) clientSnapshotGZIP(snapshot Snapshot) []byte {
+	slotID := snapshot.RefreshSlotID
+	if slotID != "" {
+		a.clientCacheMu.Lock()
+		if a.clientCacheSlot == slotID && a.clientCacheGZIP != nil {
+			payload := a.clientCacheGZIP
+			a.clientCacheMu.Unlock()
+			return payload
+		}
+		a.clientCacheMu.Unlock()
+	}
+
+	payload := httpencoding.Gzip(a.clientSnapshotJSON(snapshot))
+	if slotID != "" {
+		a.clientCacheMu.Lock()
+		if a.clientCacheSlot == slotID {
+			a.clientCacheGZIP = payload
+		}
 		a.clientCacheMu.Unlock()
 	}
 	return payload
@@ -446,6 +481,7 @@ func sanitizeSnapshotForClient(snapshot Snapshot) Snapshot {
 	snapshot.CoordinationRisk = sanitizeCoordinationRiskForClient(snapshot.CoordinationRisk)
 	snapshot.ProjectFocus = sanitizeProjectFocusForClient(snapshot.ProjectFocus)
 	snapshot.ProjectHeatmaps = sanitizeProjectHeatmapsForClient(snapshot.ProjectHeatmaps)
+	snapshot.ThroughputTrends = sanitizeThroughputTrendsForClient(snapshot.ThroughputTrends)
 	snapshot.CandidateWorkitems = sanitizeCandidateWorkitemsForClient(snapshot.CandidateWorkitems)
 	snapshot.LiveProcesses = sanitizeLiveProcessesForClient(snapshot.LiveProcesses)
 	snapshot.LiveSessions = sanitizeLiveSessionsForClient(snapshot.LiveSessions)
@@ -455,6 +491,25 @@ func sanitizeSnapshotForClient(snapshot Snapshot) Snapshot {
 	snapshot.Diagnostics = sanitizeDiagnosticsForClient(snapshot.Diagnostics)
 	snapshot.Notes = sanitizeTextListForClient(snapshot.Notes)
 	return snapshot
+}
+
+func sanitizeThroughputTrendsForClient(trends TrendSet) TrendSet {
+	if len(trends.Windows) == 0 {
+		return trends
+	}
+	windows := append([]TrendWindow(nil), trends.Windows...)
+	for i := range windows {
+		windows[i].Points = append([]TrendPoint(nil), windows[i].Points...)
+		for j := range windows[i].Points {
+			projects := cloneLiveTokenRateProjectSamples(windows[i].Points[j].OutputTokenProjects)
+			for k := range projects {
+				projects[k].Project = sanitizeProjectNameForClient(projects[k].Project)
+			}
+			windows[i].Points[j].OutputTokenProjects = projects
+		}
+	}
+	trends.Windows = windows
+	return trends
 }
 
 func sanitizeRuntimeTelemetryForClient(telemetry RuntimeTelemetrySnapshot) RuntimeTelemetrySnapshot {

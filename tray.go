@@ -48,6 +48,7 @@ type trayApp struct {
 	clientCacheMu   sync.Mutex
 	clientCacheSlot string
 	clientCacheJSON []byte
+	clientCacheGZIP []byte
 
 	mCurrent       *systray.MenuItem
 	mFocus         *systray.MenuItem
@@ -318,6 +319,7 @@ func (a *trayApp) rememberSnapshot(snapshot Snapshot) Snapshot {
 	sample := historySampleFromSnapshot(snapshot)
 	var sampleTime time.Time
 	sample.At, sampleTime = normalizeHistorySampleTimestamp(sample.At, time.Now())
+	a.attachLiveTokenThroughput(&sample, sampleTime)
 	// The JSONL append runs before taking lastMu so /api/snapshot readers never
 	// wait on disk I/O; historyFileMu alone keeps append ordering.
 	appendErr := a.appendHistorySample(sample)
@@ -338,20 +340,35 @@ func (a *trayApp) appendHistorySample(sample HistorySample) error {
 	return appendHistorySampleFile(a.history.path, sample)
 }
 
-func (a *trayApp) mergeRuntimeTrendsLocked(snapshot Snapshot) Snapshot {
-	sample := historySampleFromSnapshot(snapshot)
-	var sampleTime time.Time
-	sample.At, sampleTime = normalizeHistorySampleTimestamp(sample.At, time.Now())
-	appendErr := a.appendHistorySample(sample)
-	if appendErr != nil && a.logger != nil {
-		a.logger.Printf("local history append failed: %v", appendErr)
+func (a *trayApp) attachLiveTokenThroughput(sample *HistorySample, at time.Time) {
+	if sample == nil {
+		return
 	}
-	return a.mergeRecordedSampleLocked(snapshot, sample, sampleTime, appendErr)
+	live := a.liveTokenRate.sample(at)
+	sample.OutputTokenThroughput = &HistoryOutputTokenThroughput{
+		State:          live.State,
+		WindowSeconds:  live.WindowSeconds,
+		ActiveSessions: live.ActiveSessions,
+		Projects:       cloneLiveTokenRateProjectSamples(live.Projects),
+	}
+	if live.OutputTokensPerSecond != nil {
+		rate := *live.OutputTokensPerSecond
+		sample.OutputTokenThroughput.OutputTokensPerSecond = &rate
+	}
+}
+
+func cloneLiveTokenRateProjectSamples(projects []LiveTokenRateProjectSample) []LiveTokenRateProjectSample {
+	if projects == nil {
+		return nil
+	}
+	return append([]LiveTokenRateProjectSample{}, projects...)
 }
 
 func (a *trayApp) mergeRecordedSampleLocked(snapshot Snapshot, sample HistorySample, sampleTime time.Time, appendErr error) Snapshot {
 	a.history.recordSampleInMemory(sample, sampleTime, appendErr)
-	snapshot.RealtimeTrends = buildRealtimeTrendWindows(a.history.trendPoints(), sampleTime)
+	trendPoints := a.history.trendPoints()
+	snapshot.RealtimeTrends = buildRealtimeTrendWindows(trendPoints, sampleTime)
+	snapshot.ThroughputTrends = buildThroughputTrendWindows(trendPoints, sampleTime)
 	snapshot.ProjectHeatmaps = buildProjectHeatmapWindows(a.history.samples, sampleTime)
 	snapshot.History = a.history.snapshotMetadata()
 	if snapshot.History.LastWriteError != "" {

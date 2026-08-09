@@ -26,7 +26,8 @@ semantic layer before visual polish is accepted.
   footer timestamp/cadence area so the title cluster stays action-focused.
 - popover surface with online/trend/system/diagnostics navigation. Online owns
   current meaning, scan boundary, and compact project/session atlas. Trend owns
-  historical/runtime chart analysis. System owns whole-machine resource samples
+  historical, runtime, and output-throughput chart analysis. System owns
+  whole-machine resource samples
   and process diagnostics. Diagnostics owns anomaly/prediction-safe signals,
   metric collection capability, evidence gaps, semantic contract readouts, and
   safe diagnostic export.
@@ -161,11 +162,11 @@ semantic layer before visual polish is accepted.
   plane under the tab switch must not jump between tabs. Align this rhythm to
   the tightest usable inset and available-width fill; do not make tabs match by
   adding a new bulky wrapper padding around every view.
-- Compact popover trend view should prioritize session movement and project
-  distribution. Do not place raw process/runtime trend readouts or a process
-  selected-window inspector under the project heatmap; those diagnostics belong
-  in the system view. The project heatmap must have enough area to read project
-  proportions without feeling like a compressed footer.
+- Compact popover trend view keeps session movement, process pressure, output
+  throughput, and project distribution as separate readable lanes. Process
+  composition remains a process-lane drilldown, throughput remains a
+  project-separated TPS river, and neither may be folded into the project
+  heatmap. The heatmap must keep enough area to read project proportions.
 - Compact system view should use metric-appropriate components instead of one
   repeated card form: CPU may use a gauge with load/uptime, memory and disk use
   capacity rails, network foregrounds inbound/outbound throughput with local
@@ -198,9 +199,8 @@ semantic layer before visual polish is accepted.
   rate. Tool or host icons should identify the process before the text.
   The second line should be fixed metric rails, not a prose sentence, so disk
   read/write values cannot wrap into visually unrelated fragments.
-- Compact trend may keep a process trend lane, but it should use a simpler
-  curve or similar low-noise chart rather than a candlestick when the point is
-  runtime pressure rather than session movement.
+- Compact trend may keep a process trend lane, but it should use a simple
+  low-noise curve because runtime pressure is a sequence of point samples.
 - Unmatched or unmapped processes still count for diagnostics, coverage, trend
   risk, and process ledgers, but they must not be counted as active agents or
   confirmed workload until they are mapped back to local session evidence.
@@ -363,8 +363,8 @@ semantic layer before visual polish is accepted.
 - Trend selection readout cells follow the same translucent instrument rule as
   compact metric cells. They should sit above the chart as light material
   overlays rather than opaque cards that compete with plotted values.
-- Compact trend views should show both lanes and the selected readout within the
-  first reading pass. Do not repeat bulky selected-bucket cards under every
+- Compact trend views should show all available lanes and the selected readout
+  within the first reading pass. Do not repeat bulky selected-bucket cards under every
   lane; use one shared inspector strip and keep per-lane readouts inline with
   the lane header.
 - Compact trend typography should match the denser current/status popover page:
@@ -439,15 +439,20 @@ semantic layer before visual polish is accepted.
 - When click precision is hard to audit, use a crosshair anchored at the exact
   selected bucket x/y position. The crosshair may replace the soft band in
   dense views, but it must not imply interpolated values between buckets.
-- Candlestick-like trend marks are allowed when they clarify bucket-to-bucket
-  movement. Their body and wick must derive from adjacent real sampled buckets;
-  do not invent open/high/low/close data that the local evidence does not
-  contain.
 - Professional chart interaction should come from a maintained chart component
-  when the trend surface needs candlesticks, crosshair behavior, hover tracking,
-  or canvas stability. Keep Agent Load's code responsible for local evidence
-  adaptation, selected-bucket truth, and visual skinning, not for rebuilding a
-  full chart engine inline.
+  when the trend surface needs crosshair behavior, hover tracking, or canvas
+  stability. Count and pressure lanes use the existing maintained area-series
+  component; do not manufacture OHLC semantics from point samples.
+- Output throughput uses a zero-baseline stacked area river with one layer per
+  persisted project, including `unassigned`. Horizontal positions follow the
+  stored sample timestamps, and every range changes the observed time span only;
+  it never changes the fixed 180-second TPS denominator. Do not center the stack
+  like a decorative streamgraph, infer past project shares from the current
+  snapshot, or synthesize a layer for history without project partitions.
+- The existing chart dependency has no stacked-area series. Keep the small
+  throughput SVG local to the trend module and limited to stacking persisted
+  project values, time-based hit testing, and selection; do not add a second
+  chart framework or turn it into a generic chart abstraction.
 - Trend chart hover must expose local observation meaning, not implementation
   or library provenance. Browser `title` text and tooltip-like affordances on
   the plot plane should show selected bucket time, primary metric, context

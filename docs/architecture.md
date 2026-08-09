@@ -20,7 +20,8 @@ numbers.
  ~/.trae/cli                  metric_semantics.go              │                   └─> tray title/menu
  OS counters ──> system_resources*.go ──> /api/system-resources│
                  system_thermal*.go                        history.jsonl
- token JSONL ──> live_token_rate.go ───────────────> /api/live-token-rate
+ token JSONL ──> live_token_rate.go ──┬────────────> /api/live-token-rate
+                                      └─> snapshot-time history sample
 ```
 
 ## 1. Acquisition
@@ -58,8 +59,9 @@ numbers.
   `inflight` map. A waiter whose context is cancelled returns whatever cached
   data exists and appends a `transcript scan wait cancelled` error; the scan
   itself keeps running for other waiters. A scan that finishes under a
-  cancelled context is *not* written to the TTL cache, so the next snapshot
-  retries a full scan.
+  cancelled context is marked incomplete and is *not* written to the TTL
+  cache; healthy waiters elect a new owner and retry instead of consuming its
+  partial result.
 - **Foreground/deferred split**: the walk only collects files modified after
   the foreground cutoff (`idleGap * 80`, clamped to 2h–6h). Non-priority files
   older than that, or whose JSONL tail timestamp predates the cutoff, are
@@ -127,6 +129,10 @@ feed historic peaks and transcript trend windows.
 - The semantic layer clips positive events to a trailing 180-second wall-time
   window. Sparse cumulative deltas are distributed over their observed interval;
   the result is rolling workload throughput, not model decode speed.
+- Complete snapshot refreshes copy the sampler's current aggregate value, state,
+  rolling window, and contributing-session count into the persisted history
+  sample. This gives the Trend surface durable throughput points without making
+  snapshot readers advance sampler cursors or baselines.
 
 ### System resources sampler (`system_resources.go`, `system_resources_darwin.go`, `system_thermal*.go`)
 
@@ -143,7 +149,9 @@ feed historic peaks and transcript trend windows.
   on exit) owns the delta baseline at a fixed 2s cadence, so rates do not
   depend on whichever client polled last. `sampleSystemResources` serves the
   latest background sample and only samples synchronously when the background
-  sampler is not running (e.g. in tests). The first sample discloses
+  sampler is not running (e.g. in tests). Each stop/start advances a generation,
+  so a late result from an older goroutine cannot overwrite the current run.
+  The first sample discloses
   "rates need two samples" in `notes` instead of reporting a fake zero.
 
 ## 2. Aggregation — `Observer.Snapshot` (`observer.go`)
@@ -215,23 +223,30 @@ One snapshot build, in order:
 
 - After each refresh, `trayApp.rememberSnapshot` converts the snapshot into a
   `HistorySample` (current metrics, summary, coordination-risk subset, project
-  rows, runtime/host-app summaries) and appends one JSONL line to
+  rows, runtime/host-app summaries, and the current aggregate plus per-project
+  output-throughput datum) and appends one JSONL line to
   `Config.HistoryFile` (default
   `~/Library/Application Support/AgentLoad/history.jsonl`). The append runs
-  under `historyFileMu` *before* taking the snapshot lock, so `/api/snapshot`
-  readers never wait on disk I/O. Append failures surface as
+  under the process-local `historyFileMu` and the cross-process
+  `internal/historyfile` lock *before* taking the snapshot lock, so
+  `/api/snapshot` readers never wait on disk I/O. Append failures surface as
   `history.last_write_error` plus a snapshot note.
 - Retention is 30 days (`historyRetentionWindow`), enforced in memory on every
   append and on load. Corrupt lines are counted, not fatal.
 - **Compaction** happens at load (`loadLocalHistoryState`): when the file holds
   materially more lines than the retained window (excess > 500 lines or > 25%
   of retained), `rewriteHistorySampleFile` rewrites it atomically via a temp
-  file + rename.
-- Retained samples feed `buildRealtimeTrendWindows` (runtime lanes: PID
-  concurrency, mapping coverage, runtime/host-app summaries) and
-  `buildProjectHeatmapWindows`; both are merged into the snapshot together
-  with `history` metadata. Transcript lanes in `trends` come directly from
-  span data, so the two trend sources stay independent.
+  file + sync + rename. Load/compaction and append hold the same stable lock
+  file, so a second app instance cannot append into the file being replaced.
+- Retained samples feed `buildRealtimeTrendWindows` for process lanes,
+  `buildThroughputTrendWindows` for timestamped 180-second output-rate samples,
+  and `buildProjectHeatmapWindows`. All three are merged into the snapshot with
+  `history` metadata. Throughput ranges preserve sparse samples and cap dense
+  ranges at 240 time-distributed exact observations instead of inheriting the
+  wider process buckets. Each stored throughput point retains the sampler's
+  project partition; missing partitions are not migrated or reconstructed.
+  Transcript lanes in `trends` come directly from span data, so the three trend
+  sources stay independent.
 
 ## 4. Delivery (`server.go`, `tray.go`)
 
@@ -250,8 +265,10 @@ One snapshot build, in order:
   paths and `file://` URLs to their base names; and redacts command lines to
   executable + flags (`--flag=<value>`) + known identity words + `...`.
   `clientSnapshotJSON` caches the sanitized, encoded snapshot per refresh
-  slot, so repeated polls within one slot skip the sanitize pass entirely
-  (`snapshotSanitizePasses` is the test hook for that). See
+  slot, and `internal/httpencoding` provides a separately cached gzip
+  representation negotiated through `Accept-Encoding`. Repeated polls within
+  one slot therefore skip both sanitization and compression
+  (`snapshotSanitizePasses` is the test hook for the former). See
   `api-reference.md` for per-endpoint details.
 - All state-changing endpoints are POST-only and reject cross-origin browser
   calls (`sameOriginRequest`); requests without an Origin/Referer header
@@ -262,7 +279,9 @@ One snapshot build, in order:
 ## 5. Consumers
 
 - **Web UI** (`ui/src/main.tsx`): a single embedded React bundle serves both
-  `/` (popover view) and `/dashboard`; the view is chosen by pathname. Each
+  `/` (popover view) and `/dashboard`; the view is chosen by pathname. Snapshot
+  transport, refresh scheduling, ETag state, visibility gating, and viewport
+  restoration are owned by `ui/src/snapshot/useSnapshotController.ts`. Each
   auto-refresh cycle POSTs `/api/refresh` (passing the selected
   `interval_ms`), then polls `/api/snapshot` with `If-None-Match` until the
   returned slot appears, backing off 0.5s→8s (~15.5s budget). The cycle
@@ -300,10 +319,10 @@ One snapshot build, in order:
 | Foreground transcript window | `idle_gap × 80`, clamped 2h–6h (default 2h); older files deferred | `transcripts.go` |
 | Background system resource sampler | 2s | `system_resources.go` |
 | Background output-token sampler | 30s; trailing window 180s; stale after 5m | `live_token_rate.go` |
-| UI auto-refresh cycle (POST `/api/refresh` + ETag polls) | selected refresh interval (default 5m); slot polls back off 0.5s→8s; deferred to a 60s floor while the user is reading | `ui/src/main.tsx` |
+| UI auto-refresh cycle (POST `/api/refresh` + ETag polls) | selected refresh interval (default 5m); slot polls back off 0.5s→8s; deferred to a 60s floor while the user is reading | `ui/src/snapshot/useSnapshotController.ts` |
 | UI `/api/system-resources` poll | 2s while the System deck is visible | `ui/src/system/useLiveSystemResources.ts` |
 | UI `/api/live-token-rate` poll | 30s while the popover or dashboard is visible | `ui/src/live/useLiveTokenRate.ts` |
 | Per-PID disk I/O rates | delta per process-scan batch | `process_io.go` |
-| History JSONL append | once per built snapshot | `tray.go`, `history.go` |
+| History JSONL append, including throughput trend datum | once per built snapshot | `tray.go`, `history.go` |
 | History retention / compaction | 30d retention; compaction check at startup load | `history.go` |
 | Tray title/menu/tooltip update | after each background refresh | `tray.go` |
