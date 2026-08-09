@@ -87,7 +87,8 @@ semantic layer says so.
   bucket. Sparse ranges preserve every stored throughput sample. Dense ranges
   retain at most 240 exact source samples distributed across observed time; the
   backend must not sum or average overlapping rolling-window rates into invented
-  bucket throughput.
+  bucket throughput. The UI uses the selected range bounds as the horizontal
+  domain, so time without stored samples remains visibly empty.
 - UI labels may abbreviate for density, but tooltips and accessible labels must
   preserve the semantic name.
 - Trend charts, selected-point readouts, hover tooltips, and inspectors must use

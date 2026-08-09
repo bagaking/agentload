@@ -445,10 +445,12 @@ semantic layer before visual polish is accepted.
   component; do not manufacture OHLC semantics from point samples.
 - Output throughput uses a zero-baseline stacked area river with one layer per
   persisted project, including `unassigned`. Horizontal positions follow the
-  stored sample timestamps, and every range changes the observed time span only;
-  it never changes the fixed 180-second TPS denominator. Do not center the stack
-  like a decorative streamgraph, infer past project shares from the current
-  snapshot, or synthesize a layer for history without project partitions.
+  stored sample timestamps inside the selected API window, including blank
+  space where history has not been recorded. Every range changes the horizontal
+  time domain only; it never changes the fixed 180-second TPS denominator. Do
+  not center the stack like a decorative streamgraph, infer past project shares
+  from the current snapshot, or synthesize a layer for history without project
+  partitions.
 - The existing chart dependency has no stacked-area series. Keep the small
   throughput SVG local to the trend module and limited to stacking persisted
   project values, time-based hit testing, and selection; do not add a second
@@ -504,10 +506,10 @@ semantic layer before visual polish is accepted.
 - Trend chart pointer selection must use the SVG viewBox coordinate transform,
   not raw element width ratios, so clicked positions match plotted points even
   when the SVG letterboxes or scales responsively.
-- Compact trend charts should use the available popover width for the visible
-  sampled series. Do not let incomplete source windows reserve large blank
-  horizontal ranges that make the plotted trend look artificially narrow; keep
-  full-window context in labels and detail metrics instead.
+- The throughput river must keep the selected API window as its horizontal
+  domain even when source history is incomplete. Blank horizontal space is the
+  truthful representation of unrecorded time and makes range changes visible;
+  do not stretch a short throughput history to fill every selected range.
 - Trend window labels must use the API window bounds when available and include
   date-qualified endpoints for cross-day ranges. A 1D trend must not render as
   the same clock time on both sides when the chart axis spans different dates.

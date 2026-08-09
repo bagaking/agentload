@@ -379,7 +379,16 @@ function TrendLaneView({
         </button>
       </div>
       {summary.data.length ? (lane === "throughput" ? (
-        <ThroughputRiver t={t} title={title} points={points} selectedAt={selected?.at} onSelect={selectPoint} />
+        <ThroughputRiver
+          key={trendWindow?.range}
+          t={t}
+          title={title}
+          points={points}
+          from={trendWindow?.from}
+          to={trendWindow?.to}
+          selectedAt={selected?.at}
+          onSelect={selectPoint}
+        />
       ) : compact && lane === "runtime" ? (
         <TrendRuntimeCurve t={t} summary={summary} selectedAt={selected?.at} onSelect={selectPoint} />
       ) : (

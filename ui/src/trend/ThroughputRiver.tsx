@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import { formatTokenRate, type Translate } from "../lib/format";
 import { trendOutputThroughputActiveSessions, trendOutputThroughputProjects, trendOutputThroughputValue } from "../lib/metricSemantics";
 import type { TrendPoint } from "./types";
@@ -23,56 +23,88 @@ type RiverDatum = {
 type RiverLayer = {
   key: string;
   color: string;
-  lower: number[];
-  upper: number[];
+  path: string;
 };
 
 export function ThroughputRiver({
   t,
   title,
   points,
+  from,
+  to,
   selectedAt,
   onSelect,
 }: {
   t: Translate;
   title: string;
   points: TrendPoint[];
+  from?: string;
+  to?: string;
   selectedAt?: string;
   onSelect: (at?: string) => void;
 }) {
-  const model = useMemo(() => buildRiverModel(points), [points]);
+  const model = useMemo(() => buildRiverModel(points, from, to), [points, from, to]);
   const fallbackIndex = model.data.length - 1;
   const matchedIndex = model.data.findIndex((datum) => datum.at === selectedAt);
   const selectedIndex = matchedIndex >= 0 ? matchedIndex : fallbackIndex;
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
-  const activeIndex = hoverIndex ?? (selectedIndex >= 0 ? selectedIndex : fallbackIndex);
+  const hoverIndexRef = useRef<number | null>(null);
+  const pendingHoverIndexRef = useRef<number | null>(null);
+  const hoverFrameRef = useRef<number | null>(null);
+  const requestedActiveIndex = hoverIndex ?? (selectedIndex >= 0 ? selectedIndex : fallbackIndex);
+  const activeIndex = fallbackIndex < 0 ? -1 : Math.max(0, Math.min(fallbackIndex, requestedActiveIndex));
   const active = model.data[activeIndex] ?? model.data[fallbackIndex];
   const activeX = pointX(active?.timestamp ?? model.minAt, model.minAt, model.maxAt);
   const activeY = valueY(active?.total ?? 0, model.maxTotal);
   const activeProjects = active ? riverProjectRows(active, model.colors, t) : [];
   const visibleLegend = model.layers.slice(0, 5);
 
-  const updateHover = (event: PointerEvent<SVGSVGElement>) => {
+  const pointerIndex = (event: { currentTarget: SVGSVGElement; clientX: number }) => {
     const rect = event.currentTarget.getBoundingClientRect();
-    if (!rect.width || !model.data.length) return;
+    if (!rect.width || !model.data.length) return -1;
     const viewX = ((event.clientX - rect.left) / rect.width) * WIDTH;
     const ratio = (viewX - PAD.left) / (WIDTH - PAD.left - PAD.right);
     const targetAt = model.minAt + Math.max(0, Math.min(1, ratio)) * (model.maxAt - model.minAt);
-    setHoverIndex(nearestDatumIndex(model.data, targetAt));
+    return nearestDatumIndex(model.data, targetAt);
+  };
+  const commitHover = (index: number | null) => {
+    if (hoverIndexRef.current === index) return;
+    hoverIndexRef.current = index;
+    setHoverIndex(index);
+  };
+  const updateHover = (event: PointerEvent<SVGSVGElement>) => {
+    pendingHoverIndexRef.current = pointerIndex(event);
+    if (hoverFrameRef.current !== null) return;
+    hoverFrameRef.current = window.requestAnimationFrame(() => {
+      hoverFrameRef.current = null;
+      const next = pendingHoverIndexRef.current;
+      commitHover(next !== null && next >= 0 ? next : null);
+    });
+  };
+  const clearHover = () => {
+    if (hoverFrameRef.current !== null) window.cancelAnimationFrame(hoverFrameRef.current);
+    hoverFrameRef.current = null;
+    pendingHoverIndexRef.current = null;
+    commitHover(null);
   };
   const handleKey = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!model.data.length) return;
-    const current = hoverIndex ?? (selectedIndex >= 0 ? selectedIndex : fallbackIndex);
+    const requestedCurrent = hoverIndex ?? (selectedIndex >= 0 ? selectedIndex : fallbackIndex);
+    const current = Math.max(0, Math.min(fallbackIndex, requestedCurrent));
     if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
       event.preventDefault();
       const direction = event.key === "ArrowLeft" ? -1 : 1;
-      setHoverIndex(Math.max(0, Math.min(model.data.length - 1, current + direction)));
+      commitHover(Math.max(0, Math.min(model.data.length - 1, current + direction)));
     }
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       onSelect(model.data[current]?.at);
     }
   };
+
+  useEffect(() => () => {
+    if (hoverFrameRef.current !== null) window.cancelAnimationFrame(hoverFrameRef.current);
+  }, []);
 
   return (
     <div
@@ -81,7 +113,7 @@ export function ThroughputRiver({
       aria-label={`${title} · ${t("throughputProjectSplit")}`}
       tabIndex={0}
       onKeyDown={handleKey}
-      onPointerLeave={() => setHoverIndex(null)}
+      onPointerLeave={clearHover}
     >
       <div className="throughput-river-legend" aria-hidden="true">
         {visibleLegend.map((layer) => (
@@ -89,12 +121,20 @@ export function ThroughputRiver({
         ))}
         {model.layers.length > visibleLegend.length ? <span>+{model.layers.length - visibleLegend.length}</span> : null}
       </div>
-      <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} preserveAspectRatio="none" onPointerMove={updateHover} onClick={() => onSelect(active?.at)}>
+      <svg
+        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+        preserveAspectRatio="none"
+        onPointerMove={updateHover}
+        onClick={(event) => {
+          const index = pointerIndex(event);
+          onSelect(index >= 0 ? model.data[index]?.at : undefined);
+        }}
+      >
         {[0.25, 0.5, 0.75].map((ratio) => (
           <line key={ratio} className="throughput-river-grid" x1={PAD.left} x2={WIDTH - PAD.right} y1={valueY(model.maxTotal * ratio, model.maxTotal)} y2={valueY(model.maxTotal * ratio, model.maxTotal)} />
         ))}
         {model.layers.map((layer) => (
-          <path key={layer.key} className="throughput-river-layer" d={layerPath(layer, model.data, model.minAt, model.maxAt, model.maxTotal)} fill={layer.color} />
+          <path key={layer.key} className="throughput-river-layer" d={layer.path} fill={layer.color} />
         ))}
         {active ? (
           <g className="throughput-river-selection" aria-hidden="true">
@@ -127,7 +167,7 @@ export function ThroughputRiver({
   );
 }
 
-function buildRiverModel(points: TrendPoint[]): { data: RiverDatum[]; layers: RiverLayer[]; colors: Map<string, string>; maxTotal: number; minAt: number; maxAt: number } {
+function buildRiverModel(points: TrendPoint[], from?: string, to?: string): { data: RiverDatum[]; layers: RiverLayer[]; colors: Map<string, string>; maxTotal: number; minAt: number; maxAt: number } {
   const data = points.flatMap((point): RiverDatum[] => {
     const at = String(point.at || "");
     const timestamp = Date.parse(at);
@@ -145,6 +185,14 @@ function buildRiverModel(points: TrendPoint[]): { data: RiverDatum[]; layers: Ri
   data.forEach((datum) => datum.projects.forEach((value, key) => totals.set(key, (totals.get(key) ?? 0) + value)));
   const keys = Array.from(totals.keys()).sort((a, b) => (totals.get(b) ?? 0) - (totals.get(a) ?? 0) || a.localeCompare(b));
   const colors = projectColors(keys);
+  const sampledMinAt = data[0]?.timestamp ?? 0;
+  const sampledMaxAt = data[data.length - 1]?.timestamp ?? sampledMinAt;
+  const requestedMinAt = Date.parse(String(from || ""));
+  const requestedMaxAt = Date.parse(String(to || ""));
+  const hasRequestedDomain = Number.isFinite(requestedMinAt) && Number.isFinite(requestedMaxAt) && requestedMaxAt > requestedMinAt;
+  const minAt = hasRequestedDomain ? requestedMinAt : sampledMinAt;
+  const maxAt = hasRequestedDomain ? requestedMaxAt : sampledMaxAt;
+  const maxTotal = Math.max(1, ...data.map((datum) => datum.total));
   const running = data.map(() => 0);
   const layers = keys.map((key): RiverLayer => {
     const lower = [...running];
@@ -152,11 +200,13 @@ function buildRiverModel(points: TrendPoint[]): { data: RiverDatum[]; layers: Ri
       running[index] += datum.projects.get(key) ?? 0;
       return running[index];
     });
-    return { key, color: colors.get(key) ?? PROJECT_COLORS[0], lower, upper };
+    return {
+      key,
+      color: colors.get(key) ?? PROJECT_COLORS[0],
+      path: layerPath(lower, upper, data, minAt, maxAt, maxTotal),
+    };
   });
-  const minAt = data[0]?.timestamp ?? 0;
-  const maxAt = data[data.length - 1]?.timestamp ?? minAt;
-  return { data, layers, colors, maxTotal: Math.max(1, ...data.map((datum) => datum.total)), minAt, maxAt };
+  return { data, layers, colors, maxTotal, minAt, maxAt };
 }
 
 function projectColors(keys: string[]): Map<string, string> {
@@ -187,16 +237,27 @@ function riverProjectLabel(key: string, t: Translate): string {
   return key;
 }
 
-function layerPath(layer: RiverLayer, data: RiverDatum[], minAt: number, maxAt: number, maxTotal: number): string {
+function layerPath(lower: number[], upper: number[], data: RiverDatum[], minAt: number, maxAt: number, maxTotal: number): string {
   if (!data.length) return "";
   if (data.length === 1) {
     const x = pointX(data[0].timestamp, minAt, maxAt);
-    return `M${(x - 2).toFixed(2)},${valueY(layer.lower[0], maxTotal).toFixed(2)} L${(x - 2).toFixed(2)},${valueY(layer.upper[0], maxTotal).toFixed(2)} L${(x + 2).toFixed(2)},${valueY(layer.upper[0], maxTotal).toFixed(2)} L${(x + 2).toFixed(2)},${valueY(layer.lower[0], maxTotal).toFixed(2)} Z`;
+    return `M${(x - 2).toFixed(2)},${valueY(lower[0], maxTotal).toFixed(2)} L${(x - 2).toFixed(2)},${valueY(upper[0], maxTotal).toFixed(2)} L${(x + 2).toFixed(2)},${valueY(upper[0], maxTotal).toFixed(2)} L${(x + 2).toFixed(2)},${valueY(lower[0], maxTotal).toFixed(2)} Z`;
   }
-  const upper = layer.upper.map((value, index) => `${index ? "L" : "M"}${pointX(data[index].timestamp, minAt, maxAt).toFixed(2)},${valueY(value, maxTotal).toFixed(2)}`).join(" ");
-  const lower = layer.lower.map((value, index) => ({ value, index })).reverse()
-    .map(({ value, index }) => `L${pointX(data[index].timestamp, minAt, maxAt).toFixed(2)},${valueY(value, maxTotal).toFixed(2)}`).join(" ");
-  return `${upper} ${lower} Z`;
+  const upperPoints = upper.map((value, index) => ({ x: pointX(data[index].timestamp, minAt, maxAt), y: valueY(value, maxTotal) }));
+  const lowerPoints = lower.map((value, index) => ({ x: pointX(data[index].timestamp, minAt, maxAt), y: valueY(value, maxTotal) })).reverse();
+  return `${smoothLine(upperPoints, "M")} ${smoothLine(lowerPoints, "L")} Z`;
+}
+
+function smoothLine(points: Array<{ x: number; y: number }>, start: "M" | "L"): string {
+  if (!points.length) return "";
+  let path = `${start}${points[0].x.toFixed(2)},${points[0].y.toFixed(2)}`;
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = points[index - 1];
+    const current = points[index];
+    const midX = (previous.x + current.x) / 2;
+    path += ` C${midX.toFixed(2)},${previous.y.toFixed(2)} ${midX.toFixed(2)},${current.y.toFixed(2)} ${current.x.toFixed(2)},${current.y.toFixed(2)}`;
+  }
+  return path;
 }
 
 function pointX(timestamp: number, minAt: number, maxAt: number): number {

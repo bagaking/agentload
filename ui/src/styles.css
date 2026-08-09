@@ -11789,8 +11789,9 @@ body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.label-mini 
 
 .throughput-river-layer {
   opacity: .78;
-  stroke: color-mix(in srgb, var(--bg) 26%, transparent);
-  stroke-width: .7;
+  stroke: color-mix(in srgb, var(--bg) 14%, transparent);
+  stroke-width: .45;
+  stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
   transition: opacity 120ms ease;
 }
@@ -11898,7 +11899,6 @@ body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.label-mini 
   border-radius: 7px;
   background: color-mix(in srgb, var(--console-material) 94%, transparent);
   box-shadow: 0 12px 28px color-mix(in srgb, var(--bg) 42%, transparent);
-  backdrop-filter: blur(18px) saturate(1.15);
   pointer-events: none;
 }
 
