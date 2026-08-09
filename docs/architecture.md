@@ -48,10 +48,19 @@ numbers.
   rates from the previous scan batch. `rotateProcessIOBatchLocked` uses the
   shared batch timestamp to evict counters of PIDs that exited between scans.
 
-### Transcript scan (`transcripts.go`)
+### Transcript scan (`agent_registry.go`, `agent_discovery.go`, `transcripts.go`)
 
 `Observer.transcriptData` is the single entry point and stacks four layers:
 
+- **Adapter registry**: `newObserver` injects one code-owned registry. Registered
+  adapters own their roots and optional discovery capability; an agent without
+  that capability cannot enter transcript collection. Claude discovery keeps
+  verified project and workflow JSONL while pruning `memory` and `tool-results`.
+  Codex and Trae discovery accepts the verified `YYYY/MM/DD` session layout and
+  prunes expired date partitions before file visitation; Trae also prunes
+  `*.artifacts`. Unknown dated layouts surface an evidence gap instead of
+  falling back to a full recursive scan. Priority transcript files mapped from
+  visible processes are stat'ed directly and do not depend on a tree walk.
 - **TTL cache**: results are cached for `Config.TranscriptCacheTTL` (default
   60s) under a key derived from roots + priority files + idle gap + min
   interval + lookback. Any cached hit is deep-cloned before return.
@@ -62,8 +71,8 @@ numbers.
   cancelled context is marked incomplete and is *not* written to the TTL
   cache; healthy waiters elect a new owner and retry instead of consuming its
   partial result.
-- **Foreground/deferred split**: the walk only collects files modified after
-  the foreground cutoff (`idleGap * 80`, clamped to 2h–6h). Non-priority files
+- **Foreground/deferred split**: adapter discovery only collects files modified
+  after the foreground cutoff (`idleGap * 80`, clamped to 2h–6h). Non-priority files
   older than that, or whose JSONL tail timestamp predates the cutoff, are
   counted as `deferred_files` and skipped. Files kept in the foreground window
   are tail-parsed (head prefix + metadata-looking middle lines + tail bytes)
@@ -85,8 +94,9 @@ numbers.
 Parsing runs in a worker pool of `min(NumCPU, 4)` goroutines. Context
 cancellation marks undispatched or context-failed jobs and appends a
 `transcript scan aborted early (N files not parsed)` error; such files keep no
-cache entry so they are retried. `walkTranscriptTree` surfaces walk failures
-per subtree (a permission error stays distinguishable from "no sessions").
+cache entry so they are retried. The shared `WalkDir` traversal surfaces walk
+failures per subtree (a permission error stays distinguishable from "no
+sessions") while each adapter remains responsible for its descent rules.
 
 Per-tool line parsers extract event timestamps, session ids, project/cwd
 evidence, role metadata (`thread_source`, `parent_thread_id`, lane paths), and

@@ -37,6 +37,7 @@ This guidebook is the reading map for the shared knowledge root.
 - `docs/app-store-positioning.md` — App Store Positioning
 - `docs/apple-distribution-readiness.md` — Apple Distribution Readiness
 - `docs/architecture.md` — Agent Load Architecture
+- `docs/coding-agent-evidence-adapters.md` — Coding Agent Evidence Adapters
 - `docs/neutral-observation-principles.md` — Neutral Observation Principles
 - `docs/norms-maintaining-reusable-items.md` — Maintaining Reusable Items
 - `docs/notes-reusable-items-knowledge.md` — Reusable Items - Knowledge

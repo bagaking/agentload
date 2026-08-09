@@ -16,9 +16,10 @@ func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 	scanStart := time.Now()
 	processes, processNotes := discoverLiveProcessesFunc(ctx)
 	now := time.Now()
-	extraClaudeRoots, extraCodexRoots, extraTraeRoots, priority := rootsFromLiveProcesses(processes)
-	claudeRoots, codexRoots, traeRoots := o.mergeKnownRoots(extraClaudeRoots, extraCodexRoots, extraTraeRoots)
-	data, cached := o.transcriptData(ctx, claudeRoots, codexRoots, traeRoots, priority, scanStart)
+	extraRoots, priority := rootsFromLiveProcesses(processes)
+	o.adapters.mergeRoots(extraRoots)
+	roots := o.adapters.roots()
+	data, cached := o.transcriptData(ctx, priority, scanStart)
 	liveSessions, sessionNotes := buildLiveSessionsAt(processes, data, o.cfg.IdleGap, now)
 
 	currentByTool := map[string]ToolMetrics{
@@ -66,7 +67,7 @@ func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 	candidateWorkitems := buildCandidateWorkitems(liveSessionSnapshots, sessionProcessIDsByKey(liveSessions))
 	snapshot := Snapshot{
 		GeneratedAt:      now.Format(time.RFC3339Nano),
-		Config:           o.snapshotConfig(claudeRoots, codexRoots, traeRoots),
+		Config:           o.snapshotConfig(roots),
 		Current:          current,
 		CurrentByTool:    currentByTool,
 		HistoricPeaks:    historicPeaks,
@@ -130,31 +131,28 @@ func buildSnapshotNotes(snapshot Snapshot, processNotes, sessionNotes []string) 
 	return uniqueSortedStrings(notes)
 }
 
-func (o *Observer) snapshotConfig(claudeRoots, codexRoots, traeRoots []string) SnapshotConfig {
+func (o *Observer) snapshotConfig(roots map[string][]string) SnapshotConfig {
 	snapshotConfig := o.cfg.snapshotConfig()
-	snapshotConfig.ClaudeRoots = append([]string(nil), claudeRoots...)
-	snapshotConfig.CodexRoots = append([]string(nil), codexRoots...)
-	snapshotConfig.TraeRoots = append([]string(nil), traeRoots...)
+	snapshotConfig.ClaudeRoots = append([]string(nil), roots["claude"]...)
+	snapshotConfig.CodexRoots = append([]string(nil), roots["codex"]...)
+	snapshotConfig.TraeRoots = append([]string(nil), roots["trae"]...)
 	return snapshotConfig
 }
 
-func rootsFromLiveProcesses(processes []LiveProcess) (claudeRoots, codexRoots, traeRoots []string, priority []TranscriptFile) {
-	claudeSet := map[string]struct{}{}
-	codexSet := map[string]struct{}{}
-	traeSet := map[string]struct{}{}
+func rootsFromLiveProcesses(processes []LiveProcess) (map[string][]string, []TranscriptFile) {
+	rootSets := map[string]map[string]struct{}{
+		"claude": {},
+		"codex":  {},
+		"trae":   {},
+	}
 	prioritySet := map[string]TranscriptFile{}
 	addRoot := func(tool, root string) {
 		root = strings.TrimSpace(root)
 		if root == "" {
 			return
 		}
-		switch tool {
-		case "claude":
-			claudeSet[root] = struct{}{}
-		case "codex":
-			codexSet[root] = struct{}{}
-		case "trae":
-			traeSet[root] = struct{}{}
+		if roots, ok := rootSets[tool]; ok {
+			roots[root] = struct{}{}
 		}
 	}
 	for _, process := range processes {
@@ -173,28 +171,24 @@ func rootsFromLiveProcesses(processes []LiveProcess) (claudeRoots, codexRoots, t
 			addRoot(process.Tool, root)
 		}
 	}
-	for root := range claudeSet {
-		claudeRoots = append(claudeRoots, root)
+	roots := map[string][]string{}
+	for tool, set := range rootSets {
+		for root := range set {
+			roots[tool] = append(roots[tool], root)
+		}
+		sort.Strings(roots[tool])
 	}
-	for root := range codexSet {
-		codexRoots = append(codexRoots, root)
-	}
-	for root := range traeSet {
-		traeRoots = append(traeRoots, root)
-	}
+	priority := make([]TranscriptFile, 0, len(prioritySet))
 	for _, file := range prioritySet {
 		priority = append(priority, file)
 	}
-	sort.Strings(claudeRoots)
-	sort.Strings(codexRoots)
-	sort.Strings(traeRoots)
 	sort.Slice(priority, func(i, j int) bool {
 		if priority[i].Tool == priority[j].Tool {
 			return priority[i].Path < priority[j].Path
 		}
 		return priority[i].Tool < priority[j].Tool
 	})
-	return claudeRoots, codexRoots, traeRoots, priority
+	return roots, priority
 }
 
 type normalizedProcessSession struct {
@@ -2736,13 +2730,4 @@ func uniqueSortedStrings(items []string) []string {
 
 func itoa(n int) string {
 	return strconv.Itoa(n)
-}
-
-func (o *Observer) mergeKnownRoots(extraClaudeRoots, extraCodexRoots, extraTraeRoots []string) ([]string, []string, []string) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	o.knownClaudeRoots = mergeStringSets(o.knownClaudeRoots, extraClaudeRoots)
-	o.knownCodexRoots = mergeStringSets(o.knownCodexRoots, extraCodexRoots)
-	o.knownTraeRoots = mergeStringSets(o.knownTraeRoots, extraTraeRoots)
-	return append([]string(nil), o.knownClaudeRoots...), append([]string(nil), o.knownCodexRoots...), append([]string(nil), o.knownTraeRoots...)
 }

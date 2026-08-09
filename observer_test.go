@@ -59,7 +59,11 @@ func TestObserverSnapshotConfigUsesRefreshIntervalAndDiscoveredRoots(t *testing.
 	claudeRoots := []string{filepath.Join("fixtures", "live", ".claude")}
 	codexRoots := []string{filepath.Join("fixtures", "live", ".codex")}
 	traeRoots := []string{filepath.Join("fixtures", "live", ".trae", "cli")}
-	got := observer.snapshotConfig(claudeRoots, codexRoots, traeRoots)
+	got := observer.snapshotConfig(map[string][]string{
+		"claude": claudeRoots,
+		"codex":  codexRoots,
+		"trae":   traeRoots,
+	})
 
 	if got.ProcessRefreshTarget != 12 {
 		t.Fatalf("expected process refresh target 12, got %d", got.ProcessRefreshTarget)
@@ -178,7 +182,7 @@ func TestTranscriptScanSkipsUnchangedFileContent(t *testing.T) {
 		parseTranscriptFileTailFunc = originalTail
 	})
 
-	first := observer.scanTranscripts(nil, nil, nil, []TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
+	first := observer.scanTranscripts([]TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
 	if reads.Load() != 1 {
 		t.Fatalf("expected first scan to parse once, got %d", reads.Load())
 	}
@@ -202,7 +206,7 @@ func TestTranscriptScanSkipsUnchangedFileContent(t *testing.T) {
 		t.Fatalf("restore transcript mtime: %v", err)
 	}
 
-	second := observer.scanTranscripts(nil, nil, nil, []TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
+	second := observer.scanTranscripts([]TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
 	if reads.Load() != 1 {
 		t.Fatalf("expected unchanged mtime/size scan to reuse cached parse without rereading content, got %d parses", reads.Load())
 	}
@@ -249,7 +253,7 @@ func TestTranscriptScanUsesAppendParserForAppendOnlyGrowth(t *testing.T) {
 		parseTranscriptFileAppendFunc = originalAppend
 	})
 
-	first := observer.scanTranscripts(nil, nil, nil, []TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
+	first := observer.scanTranscripts([]TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
 	if fullReads.Load() != 1 || appendReads.Load() != 0 {
 		t.Fatalf("expected first scan to use one full parse and no append parse, got full=%d append=%d", fullReads.Load(), appendReads.Load())
 	}
@@ -270,7 +274,7 @@ func TestTranscriptScanUsesAppendParserForAppendOnlyGrowth(t *testing.T) {
 		t.Fatalf("close transcript: %v", err)
 	}
 
-	second := observer.scanTranscripts(nil, nil, nil, []TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
+	second := observer.scanTranscripts([]TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
 	if fullReads.Load() != 1 || appendReads.Load() != 1 {
 		t.Fatalf("expected second scan to append parse only, got full=%d append=%d", fullReads.Load(), appendReads.Load())
 	}
@@ -324,7 +328,7 @@ func TestTranscriptScanFallsBackWhenCachedFileEndedWithoutNewline(t *testing.T) 
 		parseTranscriptFileAppendFunc = originalAppend
 	})
 
-	observer.scanTranscripts(nil, nil, nil, []TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
+	observer.scanTranscripts([]TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
 	if fullReads.Load() != 1 || appendReads.Load() != 0 {
 		t.Fatalf("expected first scan to use full parse only, got full=%d append=%d", fullReads.Load(), appendReads.Load())
 	}
@@ -332,7 +336,7 @@ func TestTranscriptScanFallsBackWhenCachedFileEndedWithoutNewline(t *testing.T) 
 	if err := os.WriteFile(path, []byte(firstLine+"\n"+`{"timestamp":"2026-06-28T12:05:00Z"}`+"\n"), 0o644); err != nil {
 		t.Fatalf("rewrite grown transcript: %v", err)
 	}
-	observer.scanTranscripts(nil, nil, nil, []TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
+	observer.scanTranscripts([]TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
 	if fullReads.Load() != 2 || appendReads.Load() != 0 {
 		t.Fatalf("expected second scan to fall back to full parse, got full=%d append=%d", fullReads.Load(), appendReads.Load())
 	}
@@ -372,11 +376,11 @@ func TestTranscriptScanKeepsCodexLLaneFilesOnFullParse(t *testing.T) {
 		parseTranscriptFileAppendFunc = originalAppend
 	})
 
-	observer.scanTranscripts(nil, nil, nil, []TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
+	observer.scanTranscripts([]TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
 	if err := os.WriteFile(path, []byte(`{"thread_id":"lane-1"}`+"\n"+`{"event":"still-running"}`+"\n"), 0o644); err != nil {
 		t.Fatalf("grow lane events: %v", err)
 	}
-	observer.scanTranscripts(nil, nil, nil, []TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
+	observer.scanTranscripts([]TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
 	if fullReads.Load() != 2 || appendReads.Load() != 0 {
 		t.Fatalf("expected codexL lane events to stay on full parse, got full=%d append=%d", fullReads.Load(), appendReads.Load())
 	}
@@ -384,9 +388,11 @@ func TestTranscriptScanKeepsCodexLLaneFilesOnFullParse(t *testing.T) {
 
 func TestForegroundTranscriptScanDefersOlderNonPriorityFiles(t *testing.T) {
 	tmp := t.TempDir()
-	recentPath := filepath.Join(tmp, ".codex", "sessions", "recent.jsonl")
-	oldPath := filepath.Join(tmp, ".codex", "sessions", "old.jsonl")
-	priorityPath := filepath.Join(tmp, ".codex", "sessions", "priority.jsonl")
+	codexRoot := filepath.Join(tmp, ".codex")
+	sessionsDir := filepath.Join(codexRoot, "sessions", "2026", "06", "28")
+	recentPath := filepath.Join(sessionsDir, "recent.jsonl")
+	oldPath := filepath.Join(sessionsDir, "old.jsonl")
+	priorityPath := filepath.Join(sessionsDir, "priority.jsonl")
 	for _, path := range []string{recentPath, oldPath, priorityPath} {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatalf("mkdir transcript dir: %v", err)
@@ -417,6 +423,7 @@ func TestForegroundTranscriptScanDefersOlderNonPriorityFiles(t *testing.T) {
 		IdleGap:     90 * time.Second,
 		MinInterval: 15 * time.Second,
 		Lookback:    24 * time.Hour,
+		CodexRoots:  []string{codexRoot},
 	})
 	var reads atomic.Int32
 	var tailReads atomic.Int32
@@ -435,7 +442,7 @@ func TestForegroundTranscriptScanDefersOlderNonPriorityFiles(t *testing.T) {
 		parseTranscriptFileTailFunc = originalTail
 	})
 
-	data := observer.scanTranscriptsWithOptions(context.Background(), nil, []string{filepath.Join(tmp, ".codex")}, nil, []TranscriptFile{{Tool: "codex", Path: priorityPath}}, transcriptScanOptions{
+	data := observer.scanTranscriptsWithOptions(context.Background(), []TranscriptFile{{Tool: "codex", Path: priorityPath}}, transcriptScanOptions{
 		HistoryCutoff:      time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC),
 		ForegroundCutoff:   time.Date(2026, 6, 28, 11, 0, 0, 0, time.UTC),
 		HistoryLookback:    24 * time.Hour,
@@ -466,9 +473,11 @@ func TestForegroundTranscriptScanDefersOlderNonPriorityFiles(t *testing.T) {
 
 func TestForegroundTranscriptScanCanDeferHistoryWalk(t *testing.T) {
 	tmp := t.TempDir()
-	recentPath := filepath.Join(tmp, ".codex", "sessions", "recent.jsonl")
-	oldPath := filepath.Join(tmp, ".codex", "sessions", "old.jsonl")
-	priorityPath := filepath.Join(tmp, ".codex", "sessions", "priority.jsonl")
+	codexRoot := filepath.Join(tmp, ".codex")
+	sessionsDir := filepath.Join(codexRoot, "sessions", "2026", "06", "28")
+	recentPath := filepath.Join(sessionsDir, "recent.jsonl")
+	oldPath := filepath.Join(sessionsDir, "old.jsonl")
+	priorityPath := filepath.Join(sessionsDir, "priority.jsonl")
 	for _, path := range []string{recentPath, oldPath, priorityPath} {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatalf("mkdir transcript dir: %v", err)
@@ -498,8 +507,9 @@ func TestForegroundTranscriptScanCanDeferHistoryWalk(t *testing.T) {
 		IdleGap:     90 * time.Second,
 		MinInterval: 15 * time.Second,
 		Lookback:    24 * time.Hour,
+		CodexRoots:  []string{codexRoot},
 	})
-	data := observer.scanTranscriptsWithOptions(context.Background(), nil, []string{filepath.Join(tmp, ".codex")}, nil, []TranscriptFile{{Tool: "codex", Path: priorityPath}}, transcriptScanOptions{
+	data := observer.scanTranscriptsWithOptions(context.Background(), []TranscriptFile{{Tool: "codex", Path: priorityPath}}, transcriptScanOptions{
 		HistoryCutoff:      time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC),
 		ForegroundCutoff:   time.Date(2026, 6, 28, 11, 0, 0, 0, time.UTC),
 		HistoryLookback:    24 * time.Hour,
@@ -522,7 +532,8 @@ func TestForegroundTranscriptScanCanDeferHistoryWalk(t *testing.T) {
 
 func TestForegroundTranscriptScanDefersFreshMTimeWhenTailIsOlder(t *testing.T) {
 	tmp := t.TempDir()
-	path := filepath.Join(tmp, ".codex", "sessions", "old-tail.jsonl")
+	codexRoot := filepath.Join(tmp, ".codex")
+	path := filepath.Join(codexRoot, "sessions", "2026", "06", "28", "old-tail.jsonl")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("mkdir transcript dir: %v", err)
 	}
@@ -539,6 +550,7 @@ func TestForegroundTranscriptScanDefersFreshMTimeWhenTailIsOlder(t *testing.T) {
 		IdleGap:     90 * time.Second,
 		MinInterval: 15 * time.Second,
 		Lookback:    24 * time.Hour,
+		CodexRoots:  []string{codexRoot},
 	})
 	var reads atomic.Int32
 	original := parseTranscriptFileFunc
@@ -548,7 +560,7 @@ func TestForegroundTranscriptScanDefersFreshMTimeWhenTailIsOlder(t *testing.T) {
 	}
 	t.Cleanup(func() { parseTranscriptFileFunc = original })
 
-	data := observer.scanTranscriptsWithOptions(context.Background(), nil, []string{filepath.Join(tmp, ".codex")}, nil, nil, transcriptScanOptions{
+	data := observer.scanTranscriptsWithOptions(context.Background(), nil, transcriptScanOptions{
 		HistoryCutoff:      time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC),
 		ForegroundCutoff:   time.Date(2026, 6, 28, 11, 0, 0, 0, time.UTC),
 		HistoryLookback:    24 * time.Hour,

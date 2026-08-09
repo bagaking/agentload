@@ -405,14 +405,14 @@ func TestTranscriptDataCancelledWaiterReturnsPromptly(t *testing.T) {
 		Lookback:           24 * time.Hour,
 		TranscriptCacheTTL: time.Minute,
 	})
-	key := transcriptCacheKey(nil, nil, nil, nil, observer.cfg.IdleGap, observer.cfg.MinInterval, observer.cfg.Lookback)
+	key := transcriptCacheKey(observer.adapters.roots(), nil, observer.cfg.IdleGap, observer.cfg.MinInterval, observer.cfg.Lookback)
 	// Simulate a scan wedged on a hung volume: the flight never completes.
 	observer.inflight[key] = &transcriptScanFlight{done: make(chan struct{})}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	start := time.Now()
-	data, cached := observer.transcriptData(ctx, nil, nil, nil, nil, time.Now())
+	data, cached := observer.transcriptData(ctx, nil, time.Now())
 	if elapsed := time.Since(start); elapsed > 2*time.Second {
 		t.Fatalf("cancelled waiter should return promptly, took %s", elapsed)
 	}
@@ -435,7 +435,8 @@ func TestTranscriptDataCancelledWaiterReturnsPromptly(t *testing.T) {
 
 func TestTranscriptDataDoesNotCacheCancelledScan(t *testing.T) {
 	tmp := t.TempDir()
-	sessionsDir := filepath.Join(tmp, ".codex", "sessions")
+	codexRoot := filepath.Join(tmp, ".codex")
+	sessionsDir := filepath.Join(codexRoot, "sessions", "2026", "06", "28")
 	if err := os.MkdirAll(sessionsDir, 0o755); err != nil {
 		t.Fatalf("mkdir sessions: %v", err)
 	}
@@ -448,11 +449,12 @@ func TestTranscriptDataDoesNotCacheCancelledScan(t *testing.T) {
 		MinInterval:        15 * time.Second,
 		Lookback:           24 * time.Hour,
 		TranscriptCacheTTL: time.Minute,
+		CodexRoots:         []string{codexRoot},
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	data, cached := observer.transcriptData(ctx, nil, []string{filepath.Join(tmp, ".codex")}, nil, nil, time.Now())
+	data, cached := observer.transcriptData(ctx, nil, time.Now())
 	if cached {
 		t.Fatalf("cancelled scan should not report cached data")
 	}
@@ -480,7 +482,7 @@ func TestTranscriptDataHealthyWaiterRetriesIncompleteFlight(t *testing.T) {
 		Lookback:           24 * time.Hour,
 		TranscriptCacheTTL: time.Minute,
 	})
-	key := transcriptCacheKey(nil, nil, nil, nil, observer.cfg.IdleGap, observer.cfg.MinInterval, observer.cfg.Lookback)
+	key := transcriptCacheKey(observer.adapters.roots(), nil, observer.cfg.IdleGap, observer.cfg.MinInterval, observer.cfg.Lookback)
 	flight := &transcriptScanFlight{
 		done: make(chan struct{}),
 		data: &TranscriptData{
@@ -492,7 +494,7 @@ func TestTranscriptDataHealthyWaiterRetriesIncompleteFlight(t *testing.T) {
 
 	result := make(chan *TranscriptData, 1)
 	go func() {
-		data, _ := observer.transcriptData(context.Background(), nil, nil, nil, nil, time.Now())
+		data, _ := observer.transcriptData(context.Background(), nil, time.Now())
 		result <- data
 	}()
 	time.Sleep(20 * time.Millisecond)
@@ -531,7 +533,8 @@ func TestCollectTranscriptCandidatesSurfacesWalkErrors(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(lockedDir, 0o755) })
 
-	_, walkErrors := collectTranscriptCandidates(context.Background(), []string{filepath.Join(tmp, ".claude")}, nil, nil, nil, time.Time{}, time.Time{})
+	registry := defaultCodingAgentRegistry(Config{ClaudeRoots: []string{filepath.Join(tmp, ".claude")}})
+	_, walkErrors := collectTranscriptCandidates(context.Background(), registry, nil, time.Time{}, time.Time{})
 	found := false
 	for _, message := range walkErrors {
 		if strings.Contains(message, lockedDir) {
@@ -562,8 +565,9 @@ func TestScanTranscriptsSurfacesWalkErrorsInData(t *testing.T) {
 		IdleGap:     90 * time.Second,
 		MinInterval: 15 * time.Second,
 		Lookback:    24 * time.Hour,
+		ClaudeRoots: []string{filepath.Join(tmp, ".claude")},
 	})
-	data := observer.scanTranscripts([]string{filepath.Join(tmp, ".claude")}, nil, nil, nil, time.Time{}, 90*time.Second, 15*time.Second)
+	data := observer.scanTranscripts(nil, time.Time{}, 90*time.Second, 15*time.Second)
 	found := false
 	for _, message := range data.Errors {
 		if strings.Contains(message, lockedDir) {

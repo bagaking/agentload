@@ -288,15 +288,15 @@ func TestRootsFromLiveProcessesCollectsFileAndCommandRoots(t *testing.T) {
 		},
 	}
 
-	claudeRoots, codexRoots, traeRoots, priority := rootsFromLiveProcesses(processes)
-	if !slices.Equal(claudeRoots, []string{claudeRoot}) {
-		t.Fatalf("unexpected claude roots: %#v", claudeRoots)
+	roots, priority := rootsFromLiveProcesses(processes)
+	if !slices.Equal(roots["claude"], []string{claudeRoot}) {
+		t.Fatalf("unexpected claude roots: %#v", roots["claude"])
 	}
-	if !slices.Equal(codexRoots, []string{projectCodexRoot, homeCodexRoot}) {
-		t.Fatalf("unexpected codex roots: %#v", codexRoots)
+	if !slices.Equal(roots["codex"], []string{projectCodexRoot, homeCodexRoot}) {
+		t.Fatalf("unexpected codex roots: %#v", roots["codex"])
 	}
-	if !slices.Equal(traeRoots, []string{traeRoot}) {
-		t.Fatalf("unexpected trae roots: %#v", traeRoots)
+	if !slices.Equal(roots["trae"], []string{traeRoot}) {
+		t.Fatalf("unexpected trae roots: %#v", roots["trae"])
 	}
 	wantPriority := []TranscriptFile{
 		{Tool: "claude", Path: claudeSession},
