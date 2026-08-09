@@ -211,7 +211,7 @@ func (index *transcriptEvidenceIndex) snapshot(ctx context.Context, cutoff time.
 		index.coverageCutoff = cutoff
 		index.initialized = true
 		index.complete = complete
-		index.reconcileRequired = !rootStable || !gapStable || ctx.Err() != nil
+		index.reconcileRequired = !rootStable || !gapStable || ctx.Err() != nil || len(discovered.Errors) > 0
 		index.errors = append([]string(nil), discovered.Errors...)
 		if !rootStable {
 			index.errors = append(index.errors, "transcript evidence roots changed during reconciliation")

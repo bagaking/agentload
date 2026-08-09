@@ -70,6 +70,37 @@ func TestTranscriptEvidenceIndexWatchGapTriggersOneReconciliation(t *testing.T) 
 	}
 }
 
+func TestTranscriptEvidenceIndexRetriesDiscoveryErrors(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	root := filepath.Join(t.TempDir(), ".codex")
+	path := filepath.Join(root, "sessions", now.Format("2006"), now.Format("01"), now.Format("02"), "session.jsonl")
+	writeDiscoveryFixture(t, path, now)
+	registry := defaultCodingAgentRegistry(Config{CodexRoots: []string{root}})
+	registry.mu.Lock()
+	adapterIndex := registry.byID["codex"]
+	flaky := &flakyTranscriptDiscovery{delegate: registry.adapters[adapterIndex].Capabilities.Discovery}
+	registry.adapters[adapterIndex].Capabilities.Discovery = flaky
+	registry.mu.Unlock()
+	index := newTranscriptEvidenceIndex(registry)
+	cutoff := now.Add(-time.Hour)
+
+	first := index.snapshot(context.Background(), cutoff, nil)
+	if first.Complete || !first.Stats.Reconciled || len(first.Errors) == 0 {
+		t.Fatalf("discovery error did not fail closed: %+v", first)
+	}
+	second := index.snapshot(context.Background(), cutoff, nil)
+	if second.Complete || !second.Stats.Reconciled || len(second.Files) != 1 || len(second.Errors) == 0 {
+		t.Fatalf("discovery error did not retry: %+v", second)
+	}
+	third := index.snapshot(context.Background(), cutoff, nil)
+	if !third.Complete || third.Stats.Reconciled {
+		t.Fatalf("healthy recovery did not become warm: %+v", third)
+	}
+	if calls := flaky.callCount(); calls != 2 {
+		t.Fatalf("discovery attempts = %d, want failed attempt plus recovery", calls)
+	}
+}
+
 func TestTranscriptEvidenceIndexConcurrentReadersShareOneReconciliation(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	root := filepath.Join(t.TempDir(), ".codex")
@@ -261,6 +292,33 @@ type countingTranscriptDiscovery struct {
 	block    *discoveryBlock
 	mu       sync.Mutex
 	calls    int
+}
+
+type flakyTranscriptDiscovery struct {
+	delegate transcriptDiscoveryCapability
+	mu       sync.Mutex
+	calls    int
+}
+
+func (discovery *flakyTranscriptDiscovery) Discover(ctx context.Context, agentID string, roots []string, cutoff time.Time) transcriptDiscoveryResult {
+	discovery.mu.Lock()
+	discovery.calls++
+	call := discovery.calls
+	discovery.mu.Unlock()
+	if call == 1 {
+		return transcriptDiscoveryResult{Errors: []string{"temporary discovery failure"}}
+	}
+	return discovery.delegate.Discover(ctx, agentID, roots, cutoff)
+}
+
+func (discovery *flakyTranscriptDiscovery) Classify(agentID string, roots []string, path string) (TranscriptFile, bool) {
+	return discovery.delegate.Classify(agentID, roots, path)
+}
+
+func (discovery *flakyTranscriptDiscovery) callCount() int {
+	discovery.mu.Lock()
+	defer discovery.mu.Unlock()
+	return discovery.calls
 }
 
 func (discovery *countingTranscriptDiscovery) Discover(ctx context.Context, agentID string, roots []string, cutoff time.Time) transcriptDiscoveryResult {
