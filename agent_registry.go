@@ -112,6 +112,15 @@ func defaultCodingAgentRegistry(cfg Config) *codingAgentRegistry {
 				Process: newOpenCodeProcessIdentity(),
 			},
 		},
+		codingAgentAdapter{ID: "cursor"},
+		codingAgentAdapter{
+			ID: "hermes",
+			Capabilities: agentCapabilities{
+				Process: newHermesProcessIdentity(),
+			},
+		},
+		codingAgentAdapter{ID: "openclaw"},
+		codingAgentAdapter{ID: "pi"},
 	)
 }
 

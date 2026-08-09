@@ -32,17 +32,20 @@ numbers.
   under the snapshot context and keeps rows owned by the current UID. The
   injected coding-agent registry owns executable aliases, interpreter script
   evidence, and process display identity for Claude, Codex/CodexL, Trae/TraeX,
-  Gemini, and OpenCode. Updater/Sparkle processes are excluded before adapter
-  matching; `node`/`bun`/`deno` commands expose only their executable script
-  token, so incidental argument text cannot identify an agent.
+  Gemini, OpenCode, and Hermes. Updater/Sparkle processes are excluded before
+  adapter matching; JavaScript interpreters expose only their executable script
+  token, and Python exposes only an explicit `-m` module before any script, so
+  incidental argument text cannot identify an agent. Cursor remains generic
+  host-app evidence rather than an agent identity; OpenClaw and Pi remain
+  identity-only registry entries until executable evidence is verified.
 - `inferHostApp` walks the PPID chain (bounded, cycle-safe) looking for an
   ancestor whose command points into an existing `.app` bundle; that becomes
   the process's `HostApp` (name, PID, bundle path).
 - `sessionFilesForPIDs` runs one `lsof -nP -Fn -p <pid,...>` batch and asks the
   registry to classify each open path. Claude, Codex/CodexL, and Trae accept
   only their verified transcript layouts and reject known non-evidence paths;
-  Gemini and OpenCode remain process-only. A partial `lsof` result is disclosed
-  as a note instead of being discarded.
+  Gemini, OpenCode, and Hermes remain process-only. A partial `lsof` result is
+  disclosed as a note instead of being discarded.
 - `extractSessionHints` pulls session/thread ids out of the command line
   (`--session-id`, `CODEX_THREAD_ID=`, etc.) as weaker mapping evidence.
 - `sampleProcessIO` (per PID) reads cumulative disk read/write byte counters

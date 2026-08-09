@@ -15,6 +15,7 @@ type processCommand struct {
 	Fields         []string
 	ExecutableBase string
 	Script         string
+	Module         string
 	Excluded       bool
 }
 
@@ -31,9 +32,11 @@ func newProcessCommand(command string) processCommand {
 		return view
 	}
 	view.ExecutableBase = normalizedExecutableBase(view.Fields[0])
-	switch view.ExecutableBase {
-	case "node", "bun", "deno":
+	switch {
+	case view.ExecutableBase == "node" || view.ExecutableBase == "bun" || view.ExecutableBase == "deno":
 		view.Script = interpreterScriptToken(view.Fields[1:])
+	case isPythonExecutable(view.ExecutableBase):
+		view.Module = pythonModuleToken(view.Fields[1:])
 	}
 	return view
 }
@@ -191,6 +194,16 @@ func newOpenCodeProcessIdentity() agentProcessIdentity {
 	}
 }
 
+func newHermesProcessIdentity() agentProcessIdentity {
+	return builtinProcessIdentity{
+		agentID: "hermes",
+		match: func(command processCommand) bool {
+			return isHermesExecutable(command.ExecutableBase) || command.Module == "hermes_cli.main"
+		},
+		display: func(processCommand) string { return "hermes" },
+	}
+}
+
 func normalizedExecutableBase(value string) string {
 	key := strings.Trim(strings.ToLower(value), `"'`)
 	key = strings.TrimSuffix(filepath.Base(key), ".app")
@@ -224,6 +237,44 @@ func isGeminiExecutable(executableBase string) bool {
 	default:
 		return false
 	}
+}
+
+func isHermesExecutable(executableBase string) bool {
+	switch normalizedExecutableBase(executableBase) {
+	case "hermes", "hermes-agent", "hermes-acp":
+		return true
+	default:
+		return false
+	}
+}
+
+func isPythonExecutable(executableBase string) bool {
+	executableBase = normalizedExecutableBase(executableBase)
+	return executableBase == "python" || executableBase == "python3" || strings.HasPrefix(executableBase, "python3.")
+}
+
+func pythonModuleToken(args []string) string {
+	optionsWithValue := map[string]struct{}{"-w": {}, "-x": {}}
+	for index := 0; index < len(args); index++ {
+		arg := strings.Trim(args[index], `"'`)
+		if arg == "" {
+			continue
+		}
+		if arg == "-m" {
+			if index+1 < len(args) {
+				return strings.ToLower(strings.Trim(args[index+1], `"'`))
+			}
+			return ""
+		}
+		if _, ok := optionsWithValue[arg]; ok {
+			index++
+			continue
+		}
+		if arg == "-c" || !strings.HasPrefix(arg, "-") {
+			return ""
+		}
+	}
+	return ""
 }
 
 func interpreterScriptToken(args []string) string {

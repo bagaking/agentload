@@ -35,16 +35,36 @@ structure while controlling system entropy.
 | Claude | verified | verified | verified | full existing parity |
 | Codex / CodexL | verified | verified | verified | full existing parity |
 | Trae / TraeX | verified | verified | verified | full existing parity |
-| Gemini | verified | not yet verified | not yet verified | process-only |
-| OpenCode | verified | not yet verified | not yet verified | process-only |
-| Cursor | host/process evidence only | not yet verified | not yet verified | host/process-only |
-| Hermes | not yet verified | not yet verified | not yet verified | registry identity only after evidence inspection |
-| OpenClaw | not yet verified | not yet verified | not yet verified | registry identity only after evidence inspection |
-| Pi | not yet verified | not yet verified | not yet verified | registry identity only after evidence inspection |
+| Gemini | verified | unsupported | unsupported | process-only |
+| OpenCode | verified | unsupported | unsupported | process-only |
+| Cursor | generic host-app evidence only | unsupported | unsupported | identity-only adapter; do not classify the app host as an agent |
+| Hermes | verified | unsupported | unsupported | process-only |
+| OpenClaw | unsupported | unsupported | unsupported | identity-only adapter |
+| Pi | unsupported | unsupported | unsupported | identity-only adapter |
 
 Registering an agent name is not evidence support. New capabilities require
 real fixtures or an installed-source contract and focused parser/discovery
 tests.
+
+## Verified Limited Adapters
+
+- Hermes process identity is backed by the installed upstream
+  [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent)
+  entry-point and service contract: `hermes`, `hermes-agent`, `hermes-acp`,
+  and `python -m hermes_cli.main`. Exact executable or Python module tokens
+  match; incidental command arguments and the generic `run_agent` module do not.
+- Hermes transcript support remains off. The verified source persists several
+  semantic families across SQLite, JSON session logs, and gateway JSONL. No
+  single file family currently has an in-repo golden fixture and complete
+  session/project/token mapping, so scanning those stores would overstate
+  evidence coverage.
+- Cursor is preserved as generic `.app` ancestry on an already verified coding
+  agent process. The Cursor host process itself does not create an agent session
+  or throughput source.
+- No installed executable or source contract was available for OpenClaw or Pi.
+  Their registry entries therefore carry no process, discovery, transcript, or
+  usage capability. In particular, the generic executable name `pi` must not be
+  matched without stronger provenance.
 
 ## Discovery Contract
 
@@ -101,6 +121,9 @@ tests.
 
 - Existing Claude, Codex, CodexL, and Trae process/session/project/role/token
   behavior remains semantically identical under focused parity tests.
+- Process-only adapters require exact positive and negative command fixtures;
+  discovery adapters additionally require positive, rejected-path, and pruning
+  fixtures before their capability can be enabled.
 - Foreground transcript discovery no longer enters Trae `*.artifacts` and does
   not visit date partitions older than the active cutoff.
 - Process-only agents remain visible as process pressure without fabricated

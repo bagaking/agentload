@@ -107,6 +107,17 @@ func TestDetectedTool(t *testing.T) {
 		{command: `/usr/local/bin/node /opt/homebrew/lib/node_modules/@google/gemini-cli/dist/index.js --prompt hello`, want: "gemini"},
 		{command: `/usr/local/bin/node /opt/homebrew/lib/node_modules/opencode-ai/bin/opencode.js run`, want: "opencode"},
 		{command: `/usr/local/bin/node local-runner.js --model gemini --agent opencode`, want: ""},
+		{command: `/usr/local/bin/hermes chat`, want: "hermes"},
+		{command: `/usr/local/bin/hermes-agent --model test`, want: "hermes"},
+		{command: `/usr/local/bin/hermes-acp`, want: "hermes"},
+		{command: `/opt/hermes/venv/bin/python -m hermes_cli.main gateway run --replace`, want: "hermes"},
+		{command: `/opt/hermes/venv/bin/python3.11 -u -m run_agent --model test`, want: ""},
+		{command: `/usr/local/bin/hermes-proxy`, want: ""},
+		{command: `/usr/bin/python3 local-runner.py --agent hermes`, want: ""},
+		{command: `/usr/bin/python3 -m hermes_cli.helper`, want: ""},
+		{command: `/Applications/Cursor.app/Contents/MacOS/Cursor`, want: ""},
+		{command: `/usr/local/bin/openclaw`, want: ""},
+		{command: `/usr/local/bin/pi`, want: ""},
 		{command: `/Applications/Codex.app/Contents/MacOS/Codex`, want: "codex"},
 		{command: `Codex Computer Use.app/Contents/MacOS/Codex Computer Use`, want: "codex"},
 		{command: `/Applications/Claude.app/Contents/MacOS/Claude`, want: "claude"},
@@ -131,6 +142,7 @@ func TestRegistryReturnsAdapterOwnedProcessDisplayIdentity(t *testing.T) {
 		{command: `/usr/local/bin/codexL as-agent watch`, tool: "codex", display: "codexL"},
 		{command: `/usr/local/bin/trae_cli resume abc`, tool: "trae", display: "trae_cli"},
 		{command: `/usr/local/bin/node /opt/homebrew/lib/node_modules/opencode-ai/bin/opencode.js`, tool: "opencode", display: "opencode"},
+		{command: `/opt/hermes/venv/bin/python -m hermes_cli.main gateway run --replace`, tool: "hermes", display: "hermes"},
 	}
 	for _, tc := range cases {
 		tool, display := registry.detectProcess(tc.command)
@@ -140,18 +152,50 @@ func TestRegistryReturnsAdapterOwnedProcessDisplayIdentity(t *testing.T) {
 	}
 }
 
-func TestProcessOnlyAdaptersDoNotExposeTranscriptEvidence(t *testing.T) {
+func TestLimitedAdaptersExposeOnlyVerifiedCapabilities(t *testing.T) {
 	registry := defaultCodingAgentRegistry(Config{})
-	for _, agentID := range []string{"gemini", "opencode"} {
+	for _, agentID := range []string{"gemini", "opencode", "hermes"} {
+		index, registered := registry.byID[agentID]
+		if !registered || registry.adapters[index].Capabilities.Process == nil {
+			t.Fatalf("process-verified adapter %s is not registered with process identity", agentID)
+		}
 		if registry.hasDiscovery(agentID) {
-			t.Fatalf("process-only adapter %s unexpectedly exposes discovery", agentID)
+			t.Fatalf("limited adapter %s unexpectedly exposes discovery", agentID)
 		}
 		if registry.hasTranscript(agentID) {
-			t.Fatalf("process-only adapter %s unexpectedly exposes transcript parsing", agentID)
+			t.Fatalf("limited adapter %s unexpectedly exposes transcript parsing", agentID)
+		}
+	}
+	for _, agentID := range []string{"cursor", "openclaw", "pi"} {
+		index, registered := registry.byID[agentID]
+		if !registered {
+			t.Fatalf("identity-only adapter %s is not registered", agentID)
+		}
+		if capabilities := registry.adapters[index].Capabilities; capabilities.Process != nil || capabilities.Discovery != nil || capabilities.Transcript != nil || capabilities.Usage != nil {
+			t.Fatalf("identity-only adapter %s fabricated capabilities: %+v", agentID, capabilities)
 		}
 	}
 	if file, ok := registry.transcriptFileForPath(filepath.Join("fixtures", ".gemini", "sessions", "session.jsonl")); ok {
 		t.Fatalf("process-only adapter fabricated transcript evidence: %#v", file)
+	}
+}
+
+func TestCursorAppRemainsHostEvidenceWithoutAgentIdentity(t *testing.T) {
+	root := t.TempDir()
+	bundlePath := filepath.Join(root, "Cursor.app")
+	if err := os.MkdirAll(filepath.Join(bundlePath, "Contents", "MacOS"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	processes := map[int]processRow{
+		100: {UID: 501, PID: 100, PPID: 1, Command: filepath.Join(bundlePath, "Contents", "MacOS", "Cursor")},
+		200: {UID: 501, PID: 200, PPID: 100, Command: `/usr/local/bin/codex`},
+	}
+	app := inferHostApp(processes[200], processes)
+	if app == nil || app.Name != "Cursor" || app.BundlePath != bundlePath {
+		t.Fatalf("Cursor host evidence = %#v", app)
+	}
+	if tool, _ := defaultCodingAgentRegistry(Config{}).detectProcess(processes[100].Command); tool != "" {
+		t.Fatalf("Cursor host process fabricated agent identity %q", tool)
 	}
 }
 
