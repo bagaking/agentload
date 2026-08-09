@@ -64,6 +64,29 @@ tests.
   set. Snapshot collection consumes that index instead of repeatedly walking
   complete agent histories.
 
+## Output Usage Contract
+
+- The composition root injects the same registry into snapshot observation and
+  live throughput sampling. A configured root does not imply usage support; the
+  owning adapter must expose an output-usage decoder.
+- Claude decodes verified message usage and keys growing-message deltas by
+  session plus message id or UUID. Codex/CodexL and Trae/TraeX decode their
+  verified cumulative and incremental output fields. Missing timestamps use the
+  poll observation time; missing output fields produce no usage observation.
+- Live decoding uses finite typed JSON envelopes. It does not lowercase whole
+  records, decode generic maps, recurse through arbitrary keys, or call the full
+  transcript token parser.
+- Claude message dedupe is bounded during insertion with a 2,048-entry LRU;
+  repeated updates move one existing entry and do not grow the ordering
+  structure.
+- Filesystem event intake has a separate lock and drain goroutine. Polling
+  atomically takes the bounded dirty set before file parsing, and dropped events
+  or dirty-set overflow remain explicit incomplete evidence.
+- The append benchmark defines one operation as 32,768 realistic updates split
+  across Claude, Codex, and Trae files. Running it with a 1,000-operation
+  benchtime proves 32,768,000 updates through file IO, typed decoding, dedupe,
+  and bucket aggregation.
+
 ## Acceptance Boundary
 
 - Existing Claude, Codex, CodexL, and Trae process/session/project/role/token

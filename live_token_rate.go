@@ -3,14 +3,13 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"container/list"
 	"crypto/sha256"
 	"encoding/json"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -52,7 +51,7 @@ var liveTokenRateReadDir = os.ReadDir
 type liveTokenRateMessageUsage struct {
 	Output   int64
 	LastSeen time.Time
-	Sequence uint64
+	order    *list.Element
 }
 
 type liveTokenRateTrackedFile struct {
@@ -65,8 +64,8 @@ type liveTokenRateTrackedFile struct {
 	TotalInitialized bool
 	LastTotal        int64
 	LastTotalAt      time.Time
-	MessageUsage     map[string]liveTokenRateMessageUsage
-	MessageSequence  uint64
+	MessageUsage     map[string]*liveTokenRateMessageUsage
+	MessageOrder     *list.List
 }
 
 type liveTokenRateObservation struct {
@@ -93,6 +92,7 @@ type liveTokenRatePublished struct {
 type liveTokenRateSampler struct {
 	pollMu sync.Mutex
 
+	adapters        *codingAgentRegistry
 	roots           []liveTokenRateRoot
 	files           map[string]liveTokenRateTrackedFile
 	directories     map[string]liveTokenRateTrackedDirectory
@@ -104,9 +104,13 @@ type liveTokenRateSampler struct {
 	latestEvent     time.Time
 	limitedUntil    time.Time
 	limitedReason   string
-	watchPending    map[string]string
-	watchCoverage   bool
 	sessionProjects map[string]string
+
+	watchMu         sync.Mutex
+	watchPending    map[string]struct{}
+	watchCoverage   bool
+	watchIncomplete bool
+	watchOverflow   bool
 
 	publishedMu sync.RWMutex
 	published   liveTokenRatePublished
@@ -118,12 +122,13 @@ type liveTokenRateSampler struct {
 	watcher     liveTokenRateWatcher
 }
 
-func newLiveTokenRateSampler(cfg Config) *liveTokenRateSampler {
+func newLiveTokenRateSampler(cfg Config, adapters *codingAgentRegistry) *liveTokenRateSampler {
 	sampler := &liveTokenRateSampler{
+		adapters:        adapters,
 		roots:           liveTokenRateRootsFromConfig(cfg, true),
 		files:           map[string]liveTokenRateTrackedFile{},
 		directories:     map[string]liveTokenRateTrackedDirectory{},
-		watchPending:    map[string]string{},
+		watchPending:    map[string]struct{}{},
 		sessionProjects: map[string]string{},
 	}
 	sampler.publish(time.Now())
@@ -246,9 +251,7 @@ func (sampler *liveTokenRateSampler) addSnapshotRoots(cfg SnapshotConfig, priori
 	sampler.lifecycleMu.Unlock()
 	if watcher != nil {
 		coverage := watcher.Update(watchPaths)
-		sampler.pollMu.Lock()
-		sampler.watchCoverage = coverage
-		sampler.pollMu.Unlock()
+		sampler.setWatchCoverage(coverage)
 	}
 }
 
@@ -326,21 +329,20 @@ func (sampler *liveTokenRateSampler) start(interval time.Duration) {
 	sampler.pollMu.Lock()
 	watcher := newLiveTokenRateWatcher(sampler.roots)
 	sampler.watcher = watcher
-	sampler.watchCoverage = watcher != nil && watcher.Update(liveTokenRateWatchPaths(sampler.roots))
+	coverage := watcher != nil && watcher.Update(liveTokenRateWatchPaths(sampler.roots))
 	sampler.pollMu.Unlock()
+	sampler.setWatchCoverage(coverage)
 	sampler.running = true
 	sampler.stop = make(chan struct{})
 	sampler.done = make(chan struct{})
 	stop := sampler.stop
 	done := sampler.done
-	watchEvents := (<-chan liveTokenRateWatchBatch)(nil)
-	if watcher != nil {
-		watchEvents = watcher.Events()
-	}
 	sampler.lifecycleMu.Unlock()
 
+	var workers sync.WaitGroup
+	workers.Add(1)
 	go func() {
-		defer close(done)
+		defer workers.Done()
 		sampler.poll(time.Now())
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
@@ -348,19 +350,32 @@ func (sampler *liveTokenRateSampler) start(interval time.Duration) {
 			select {
 			case now := <-ticker.C:
 				sampler.poll(now)
-			case batch, ok := <-watchEvents:
-				if !ok {
-					watchEvents = nil
-					sampler.pollMu.Lock()
-					sampler.watchCoverage = false
-					sampler.pollMu.Unlock()
-					continue
-				}
-				sampler.recordWatchBatch(batch, time.Now())
 			case <-stop:
 				return
 			}
 		}
+	}()
+	if watcher != nil {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for {
+				select {
+				case batch, ok := <-watcher.Events():
+					if !ok {
+						sampler.setWatchCoverage(false)
+						return
+					}
+					sampler.recordWatchBatch(batch)
+				case <-stop:
+					return
+				}
+			}
+		}()
+	}
+	go func() {
+		workers.Wait()
+		close(done)
 	}()
 }
 
@@ -442,7 +457,12 @@ func (sampler *liveTokenRateSampler) pollLocked(now time.Time) {
 			sampler.files[path] = sampler.rebaselineFile(path, tracked.Tool, info, now)
 			continue
 		}
-		updated, buckets, latestSignal, latestEvent := liveTokenRateReadAppend(path, tracked, info, now)
+		decoder, ok := sampler.adapters.usageDecoder(tracked.Tool)
+		if !ok {
+			sampler.files[path] = sampler.rebaselineFile(path, tracked.Tool, info, now)
+			continue
+		}
+		updated, buckets, latestSignal, latestEvent := liveTokenRateReadAppend(path, tracked, info, now, decoder)
 		sampler.files[path] = updated
 		if !latestSignal.IsZero() {
 			sampler.markSignalLocked(latestSignal, now)
@@ -462,6 +482,7 @@ func (sampler *liveTokenRateSampler) discoverLocked(now time.Time) {
 		Info os.FileInfo
 	}
 	candidates := make([]candidate, 0)
+	watchCoverage := sampler.hasCompleteWatchCoverage()
 	var discoverDirectory func(liveTokenRateRoot, string)
 	discoverDirectory = func(root liveTokenRateRoot, dir string) {
 		key := root.Tool + "\x00" + dir
@@ -471,7 +492,7 @@ func (sampler *liveTokenRateSampler) discoverLocked(now time.Time) {
 			sampler.deleteDirectoryTreeLocked(root.Tool, dir)
 			return
 		}
-		if seen && info.ModTime().Equal(tracked.ModTime) && (sampler.watchCoverage || now.Sub(tracked.LastScanned) < liveTokenRateDirectoryRescan) {
+		if seen && info.ModTime().Equal(tracked.ModTime) && (watchCoverage || now.Sub(tracked.LastScanned) < liveTokenRateDirectoryRescan) {
 			for _, child := range tracked.ChildDirs {
 				discoverDirectory(root, child)
 			}
@@ -527,7 +548,7 @@ func (sampler *liveTokenRateSampler) discoverLocked(now time.Time) {
 		}
 	}
 	for _, root := range sampler.roots {
-		if !root.Discover && sampler.watchCoverage {
+		if !root.Discover && watchCoverage {
 			continue
 		}
 		discoverDirectory(root, root.Path)
@@ -555,37 +576,47 @@ func liveTokenRateShouldDescendDirectory(root liveTokenRateRoot, path string) bo
 	return root.Tool != "trae" || !strings.HasSuffix(base, ".artifacts")
 }
 
-func (sampler *liveTokenRateSampler) recordWatchBatch(batch liveTokenRateWatchBatch, now time.Time) {
-	sampler.pollMu.Lock()
-	defer sampler.pollMu.Unlock()
+func (sampler *liveTokenRateSampler) recordWatchBatch(batch liveTokenRateWatchBatch) {
+	sampler.watchMu.Lock()
+	defer sampler.watchMu.Unlock()
 	if !batch.Complete {
-		sampler.directories = map[string]liveTokenRateTrackedDirectory{}
-		sampler.lastDiscover = time.Time{}
-		sampler.markLimitedLocked(now, liveTokenRateUnavailableWatchIncomplete)
+		sampler.watchIncomplete = true
 	}
 	if sampler.watchPending == nil {
-		sampler.watchPending = map[string]string{}
+		sampler.watchPending = map[string]struct{}{}
 	}
 	for _, rawPath := range batch.Paths {
-		path := canonicalLiveTokenRatePath(rawPath)
-		tool, ok := sampler.liveTokenRateToolForPathLocked(path)
-		if !ok || !liveTokenRateShouldTrackJSONL(path) {
+		path := strings.TrimSpace(rawPath)
+		if path == "" {
 			continue
 		}
 		if _, pending := sampler.watchPending[path]; pending {
 			continue
 		}
 		if len(sampler.watchPending) >= liveTokenRateMaxFiles*4 {
-			sampler.markLimitedLocked(now, liveTokenRateUnavailableWatchPendingCapacity)
+			sampler.watchOverflow = true
 			break
 		}
-		sampler.watchPending[path] = tool
+		sampler.watchPending[path] = struct{}{}
 	}
 }
 
 func (sampler *liveTokenRateSampler) consumeWatchPathsLocked(now time.Time) {
-	for path, tool := range sampler.watchPending {
-		delete(sampler.watchPending, path)
+	pending, incomplete, overflow := sampler.takeWatchState()
+	if incomplete {
+		sampler.directories = map[string]liveTokenRateTrackedDirectory{}
+		sampler.lastDiscover = time.Time{}
+		sampler.markLimitedLocked(now, liveTokenRateUnavailableWatchIncomplete)
+	}
+	if overflow {
+		sampler.markLimitedLocked(now, liveTokenRateUnavailableWatchPendingCapacity)
+	}
+	for rawPath := range pending {
+		path := canonicalLiveTokenRatePath(rawPath)
+		tool, ok := sampler.liveTokenRateToolForPathLocked(path)
+		if !ok || !liveTokenRateShouldTrackJSONL(path) {
+			continue
+		}
 		info, err := os.Stat(path)
 		if err != nil || info.IsDir() {
 			delete(sampler.files, path)
@@ -600,6 +631,30 @@ func (sampler *liveTokenRateSampler) consumeWatchPathsLocked(now time.Time) {
 		}
 		sampler.files[path] = sampler.rebaselineFile(path, tool, info, now)
 	}
+}
+
+func (sampler *liveTokenRateSampler) setWatchCoverage(complete bool) {
+	sampler.watchMu.Lock()
+	sampler.watchCoverage = complete
+	sampler.watchMu.Unlock()
+}
+
+func (sampler *liveTokenRateSampler) hasCompleteWatchCoverage() bool {
+	sampler.watchMu.Lock()
+	defer sampler.watchMu.Unlock()
+	return sampler.watchCoverage && !sampler.watchIncomplete && !sampler.watchOverflow
+}
+
+func (sampler *liveTokenRateSampler) takeWatchState() (map[string]struct{}, bool, bool) {
+	sampler.watchMu.Lock()
+	defer sampler.watchMu.Unlock()
+	pending := sampler.watchPending
+	incomplete := sampler.watchIncomplete
+	overflow := sampler.watchOverflow
+	sampler.watchPending = map[string]struct{}{}
+	sampler.watchIncomplete = false
+	sampler.watchOverflow = false
+	return pending, incomplete, overflow
 }
 
 func (sampler *liveTokenRateSampler) liveTokenRateToolForPathLocked(path string) (string, bool) {
@@ -643,31 +698,18 @@ func (sampler *liveTokenRateSampler) deleteDirectoryTreeLocked(tool, path string
 }
 
 func (sampler *liveTokenRateSampler) rebaselineFile(path, tool string, info os.FileInfo, now time.Time) liveTokenRateTrackedFile {
-	tracked, observations := liveTokenRateReadBaseline(path, tool, info, now)
-	for _, observation := range observations {
-		observation.At = normalizeLiveTokenRateSignalTime(observation.At, now)
-		if observation.Cumulative {
-			tracked.TotalInitialized = true
-			tracked.LastTotal = observation.OutputTokens
-			tracked.LastTotalAt = observation.At
-		}
-		if observation.MessageIdentity != "" {
-			liveTokenRateRememberMessage(&tracked, observation.MessageIdentity, observation.OutputTokens, now)
-		}
-		sampler.markSignalLocked(observation.At, now)
-	}
-	liveTokenRatePruneMessages(&tracked, now)
-	return tracked
-}
-
-func liveTokenRateReadBaseline(path, tool string, info os.FileInfo, now time.Time) (liveTokenRateTrackedFile, []liveTokenRateObservation) {
 	tracked := liveTokenRateTrackedFile{Tool: tool, LastSeen: now, Info: info}
 	if info == nil || info.Size() <= 0 {
-		return tracked, nil
+		return tracked
+	}
+	decoder, ok := sampler.adapters.usageDecoder(tool)
+	if !ok {
+		tracked.Offset = info.Size()
+		return tracked
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		return tracked, nil
+		return tracked
 	}
 	defer f.Close()
 	if openedInfo, err := f.Stat(); err == nil {
@@ -681,44 +723,67 @@ func liveTokenRateReadBaseline(path, tool string, info os.FileInfo, now time.Tim
 	}
 	if _, err := f.Seek(readOffset, io.SeekStart); err != nil {
 		tracked.Offset = size
-		return tracked, nil
+		return tracked
 	}
-	data, err := io.ReadAll(io.LimitReader(f, size-readOffset))
+	parseEnd, err := liveTokenRateLastCompleteLineOffset(f, readOffset, size)
 	if err != nil {
 		tracked.Offset = size
-		return tracked, nil
+		return tracked
 	}
-	parseStart := 0
-	if readOffset > 0 {
-		firstNewline := bytes.IndexByte(data, '\n')
-		if firstNewline < 0 {
+	if parseEnd <= readOffset {
+		if readOffset == 0 && liveTokenRateFileIsCompleteJSON(f, size) {
+			parseEnd = size
+		} else if readOffset > 0 {
 			tracked.Offset = size
-			return tracked, nil
-		}
-		parseStart = firstNewline + 1
-	}
-	parseEnd := len(data)
-	lastNewline := bytes.LastIndexByte(data[parseStart:], '\n')
-	lastLineStart := parseStart
-	if lastNewline >= 0 {
-		lastLineStart = parseStart + lastNewline + 1
-	}
-	lastLine := bytes.TrimSpace(data[lastLineStart:])
-	if len(lastLine) > 0 && !json.Valid(lastLine) {
-		parseEnd = lastLineStart
-		if lastLineStart == parseStart && lastNewline < 0 {
-			tracked.Offset = readOffset + int64(parseStart)
-			return tracked, nil
+			tracked.Fingerprint, tracked.HasFingerprint = liveTokenRateBoundaryFingerprint(path, tracked.Offset)
+			return tracked
+		} else {
+			return tracked
 		}
 	}
-	observations := liveTokenRateParseLines(data[parseStart:parseEnd], now)
-	tracked.Offset = readOffset + int64(parseEnd)
+	scanner := bufio.NewScanner(io.NewSectionReader(f, readOffset, parseEnd-readOffset))
+	scanner.Buffer(make([]byte, 0, 4*1024), liveTokenRateMaxJSONLineBytes)
+	if readOffset > 0 && !scanner.Scan() {
+		tracked.Offset = parseEnd
+		tracked.Fingerprint, tracked.HasFingerprint = liveTokenRateBoundaryFingerprint(path, tracked.Offset)
+		return tracked
+	}
+	for scanner.Scan() {
+		observation, ok := decoder.DecodeUsage(scanner.Bytes())
+		if !ok {
+			continue
+		}
+		observation.At = normalizeLiveTokenRateSignalTime(observation.At, now)
+		if observation.Cumulative {
+			tracked.TotalInitialized = true
+			tracked.LastTotal = observation.OutputTokens
+			tracked.LastTotalAt = observation.At
+		}
+		if observation.MessageIdentity != "" {
+			liveTokenRateRememberMessage(&tracked, observation.MessageIdentity, observation.OutputTokens, now)
+		}
+		sampler.markSignalLocked(observation.At, now)
+	}
+	liveTokenRatePruneMessages(&tracked, now)
+	tracked.Offset = parseEnd
 	tracked.Fingerprint, tracked.HasFingerprint = liveTokenRateBoundaryFingerprint(path, tracked.Offset)
-	return tracked, observations
+	return tracked
 }
 
-func liveTokenRateReadAppend(path string, tracked liveTokenRateTrackedFile, info os.FileInfo, now time.Time) (liveTokenRateTrackedFile, []liveTokenRateEvent, time.Time, time.Time) {
+func liveTokenRateFileIsCompleteJSON(file *os.File, size int64) bool {
+	if file == nil || size <= 0 || size > liveTokenRateBaselineReadLimit {
+		return false
+	}
+	data := make([]byte, size)
+	n, err := file.ReadAt(data, 0)
+	return err == nil && int64(n) == size && json.Valid(bytes.TrimSpace(data))
+}
+
+func liveTokenRateReadAppend(path string, tracked liveTokenRateTrackedFile, info os.FileInfo, now time.Time, decoder agentOutputUsageDecoder) (liveTokenRateTrackedFile, []liveTokenRateEvent, time.Time, time.Time) {
 	if info == nil || info.Size() <= tracked.Offset {
+		return tracked, nil, time.Time{}, time.Time{}
+	}
+	if decoder == nil {
 		return tracked, nil, time.Time{}, time.Time{}
 	}
 	f, err := os.Open(path)
@@ -735,15 +800,15 @@ func liveTokenRateReadAppend(path string, tracked liveTokenRateTrackedFile, info
 		return tracked, nil, time.Time{}, time.Time{}
 	}
 	original := tracked
-	tracked.MessageUsage = cloneLiveTokenRateMessageUsage(tracked.MessageUsage)
+	tracked.MessageUsage, tracked.MessageOrder = cloneLiveTokenRateMessages(tracked.MessageUsage, tracked.MessageOrder)
 	buckets := liveTokenRateBucketAccumulator{}
 	latestSignal := time.Time{}
 	latestEvent := time.Time{}
 	session := liveTokenRateSessionKey(tracked.Tool, path)
 	scanner := bufio.NewScanner(io.NewSectionReader(f, tracked.Offset, parseEnd-tracked.Offset))
-	scanner.Buffer(make([]byte, 0, 64*1024), liveTokenRateMaxJSONLineBytes)
+	scanner.Buffer(make([]byte, 0, 4*1024), liveTokenRateMaxJSONLineBytes)
 	for scanner.Scan() {
-		observation, ok := liveTokenRateObservationFromJSONLine(scanner.Bytes(), now)
+		observation, ok := decoder.DecodeUsage(scanner.Bytes())
 		if !ok {
 			continue
 		}
@@ -806,224 +871,42 @@ func liveTokenRateLastCompleteLineOffset(file *os.File, start, end int64) (int64
 	return start, nil
 }
 
-func cloneLiveTokenRateMessageUsage(source map[string]liveTokenRateMessageUsage) map[string]liveTokenRateMessageUsage {
-	if source == nil {
-		return nil
+func cloneLiveTokenRateMessages(source map[string]*liveTokenRateMessageUsage, order *list.List) (map[string]*liveTokenRateMessageUsage, *list.List) {
+	if len(source) == 0 {
+		return nil, nil
 	}
-	cloned := make(map[string]liveTokenRateMessageUsage, len(source))
+	cloned := make(map[string]*liveTokenRateMessageUsage, len(source))
+	clonedOrder := list.New()
+	if order != nil {
+		for element := order.Front(); element != nil; element = element.Next() {
+			identity, _ := element.Value.(string)
+			usage := source[identity]
+			if identity == "" || usage == nil {
+				continue
+			}
+			copy := *usage
+			copy.order = clonedOrder.PushBack(identity)
+			cloned[identity] = &copy
+		}
+	}
 	for identity, usage := range source {
-		cloned[identity] = usage
-	}
-	return cloned
-}
-
-func liveTokenRateParseLines(data []byte, fallback time.Time) []liveTokenRateObservation {
-	observations := []liveTokenRateObservation{}
-	scanner := bufio.NewScanner(bytes.NewReader(data))
-	scanner.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
-	for scanner.Scan() {
-		if observation, ok := liveTokenRateObservationFromJSONLine(scanner.Bytes(), fallback); ok {
-			observations = append(observations, observation)
+		if usage == nil || cloned[identity] != nil {
+			continue
 		}
+		copy := *usage
+		copy.order = clonedOrder.PushBack(identity)
+		cloned[identity] = &copy
 	}
-	return observations
-}
-
-func liveTokenRateObservationFromJSONLine(line []byte, fallback time.Time) (liveTokenRateObservation, bool) {
-	lower := bytes.ToLower(line)
-	if !bytes.Contains(lower, []byte("token")) && !bytes.Contains(lower, []byte("usage")) {
-		return liveTokenRateObservation{}, false
-	}
-	var obj map[string]interface{}
-	dec := json.NewDecoder(bytes.NewReader(line))
-	dec.UseNumber()
-	if err := dec.Decode(&obj); err != nil {
-		return liveTokenRateObservation{}, false
-	}
-	at := liveTokenRateTimestamp(obj, fallback)
-	if total, ok := liveTokenRateCumulativeOutput(obj); ok {
-		return liveTokenRateObservation{At: at, OutputTokens: total, Cumulative: true}, true
-	}
-	if !liveTokenRateHasOutputDimension(obj) {
-		return liveTokenRateObservation{}, false
-	}
-	usage := tokenUsageFromJSONValue(obj)
-	return liveTokenRateObservation{
-		At: at, OutputTokens: int64(max(0, usage.OutputTokens)), MessageIdentity: liveTokenRateMessageIdentity(obj),
-	}, true
-}
-
-func liveTokenRateCumulativeOutput(value interface{}) (int64, bool) {
-	switch item := value.(type) {
-	case map[string]interface{}:
-		if total, ok := mapFromKeys(item, "total_token_usage", "totalTokenUsage"); ok {
-			if output, found := liveTokenRateDirectOutput(total); found {
-				return output, true
-			}
-		}
-		for _, key := range []string{"total_output_tokens", "totalOutputTokens"} {
-			if raw, ok := item[key]; ok {
-				if output, valid := liveTokenRateInt64(raw); valid {
-					return max(int64(0), output), true
-				}
-			}
-		}
-		keys := make([]string, 0, len(item))
-		for key := range item {
-			if shouldInspectTokenUsageChild(key) {
-				keys = append(keys, key)
-			}
-		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			if output, ok := liveTokenRateCumulativeOutput(item[key]); ok {
-				return output, true
-			}
-		}
-	case []interface{}:
-		for _, child := range item {
-			if output, ok := liveTokenRateCumulativeOutput(child); ok {
-				return output, true
-			}
-		}
-	}
-	return 0, false
-}
-
-func liveTokenRateHasOutputDimension(value interface{}) bool {
-	switch item := value.(type) {
-	case map[string]interface{}:
-		if _, ok := liveTokenRateDirectOutput(item); ok {
-			return true
-		}
-		keys := make([]string, 0, len(item))
-		for key := range item {
-			if shouldInspectTokenUsageChild(key) {
-				keys = append(keys, key)
-			}
-		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			if liveTokenRateHasOutputDimension(item[key]) {
-				return true
-			}
-		}
-	case []interface{}:
-		for _, child := range item {
-			if liveTokenRateHasOutputDimension(child) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func liveTokenRateDirectOutput(obj map[string]interface{}) (int64, bool) {
-	if output, ok := outputTokenCountFromMap(obj); ok {
-		return int64(max(0, output)), true
-	}
-	return 0, false
-}
-
-func liveTokenRateInt64(value interface{}) (int64, bool) {
-	switch number := value.(type) {
-	case json.Number:
-		parsed, err := number.Int64()
-		return parsed, err == nil && parsed >= 0
-	case float64:
-		if math.IsNaN(number) || math.IsInf(number, 0) || number < 0 || number > math.MaxInt64 {
-			return 0, false
-		}
-		return int64(number), true
-	case int64:
-		return number, number >= 0
-	case int:
-		return int64(number), number >= 0
-	case string:
-		parsed, err := strconv.ParseInt(strings.TrimSpace(number), 10, 64)
-		return parsed, err == nil && parsed >= 0
-	default:
-		return 0, false
-	}
-}
-
-func liveTokenRateMessageIdentity(obj map[string]interface{}) string {
-	message, _ := obj["message"].(map[string]interface{})
-	messageID := ""
-	if message != nil {
-		messageID, _ = message["id"].(string)
-	}
-	messageID = strings.TrimSpace(messageID)
-	if messageID == "" {
-		messageID, _ = obj["uuid"].(string)
-		messageID = strings.TrimSpace(messageID)
-	}
-	if messageID == "" {
-		return ""
-	}
-	sessionID := ""
-	for _, key := range []string{"sessionId", "session_id"} {
-		if value, _ := obj[key].(string); strings.TrimSpace(value) != "" {
-			sessionID = strings.TrimSpace(value)
-			break
-		}
-	}
-	return sessionID + "\x00" + messageID
-}
-
-func liveTokenRateTimestamp(obj map[string]interface{}, fallback time.Time) time.Time {
-	for _, key := range []string{"timestamp", "ts", "created_at", "createdAt"} {
-		if parsed, ok := liveTokenRateParseTimestamp(obj[key]); ok {
-			return parsed
-		}
-	}
-	if fallback.IsZero() {
-		return time.Now()
-	}
-	return fallback
-}
-
-func liveTokenRateParseTimestamp(value interface{}) (time.Time, bool) {
-	switch item := value.(type) {
-	case string:
-		item = strings.TrimSpace(item)
-		for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
-			if parsed, err := time.Parse(layout, item); err == nil {
-				return parsed, true
-			}
-		}
-	case json.Number:
-		if parsed, err := item.Int64(); err == nil {
-			return liveTokenRateUnixTimestamp(parsed)
-		}
-	case float64:
-		return liveTokenRateUnixTimestamp(int64(item))
-	case int64:
-		return liveTokenRateUnixTimestamp(item)
-	}
-	return time.Time{}, false
-}
-
-func liveTokenRateUnixTimestamp(value int64) (time.Time, bool) {
-	if value <= 0 {
-		return time.Time{}, false
-	}
-	if value > 1_000_000_000_000 {
-		return time.UnixMilli(value), true
-	}
-	return time.Unix(value, 0), true
+	return cloned, clonedOrder
 }
 
 func liveTokenRateMessageDelta(tracked *liveTokenRateTrackedFile, identity string, output int64, now time.Time) int64 {
 	if tracked == nil || identity == "" {
 		return output
 	}
-	if tracked.MessageUsage == nil {
-		tracked.MessageUsage = map[string]liveTokenRateMessageUsage{}
-	}
 	previous, seen := tracked.MessageUsage[identity]
 	delta := output
-	if seen {
+	if seen && previous != nil {
 		delta = max(int64(0), output-previous.Output)
 		output = max(output, previous.Output)
 	}
@@ -1036,46 +919,58 @@ func liveTokenRateRememberMessage(tracked *liveTokenRateTrackedFile, identity st
 		return
 	}
 	if tracked.MessageUsage == nil {
-		tracked.MessageUsage = map[string]liveTokenRateMessageUsage{}
+		tracked.MessageUsage = map[string]*liveTokenRateMessageUsage{}
 	}
-	previous := tracked.MessageUsage[identity]
-	tracked.MessageSequence++
-	tracked.MessageUsage[identity] = liveTokenRateMessageUsage{
-		Output: max(previous.Output, output), LastSeen: now, Sequence: tracked.MessageSequence,
+	if tracked.MessageOrder == nil {
+		tracked.MessageOrder = list.New()
 	}
+	if previous := tracked.MessageUsage[identity]; previous != nil {
+		previous.Output = max(previous.Output, output)
+		previous.LastSeen = now
+		tracked.MessageOrder.MoveToBack(previous.order)
+		return
+	}
+	liveTokenRatePruneMessages(tracked, now)
+	for len(tracked.MessageUsage) >= liveTokenRateMaxMessages {
+		liveTokenRateForgetOldestMessage(tracked)
+	}
+	usage := &liveTokenRateMessageUsage{Output: max(int64(0), output), LastSeen: now}
+	usage.order = tracked.MessageOrder.PushBack(identity)
+	tracked.MessageUsage[identity] = usage
 }
 
 func liveTokenRatePruneMessages(tracked *liveTokenRateTrackedFile, now time.Time) {
-	if tracked == nil || len(tracked.MessageUsage) == 0 {
+	if tracked == nil || len(tracked.MessageUsage) == 0 || tracked.MessageOrder == nil {
 		return
 	}
-	type age struct {
-		Identity string
-		Usage    liveTokenRateMessageUsage
-	}
-	ages := make([]age, 0, len(tracked.MessageUsage))
-	for identity, usage := range tracked.MessageUsage {
-		if usage.LastSeen.IsZero() || now.Sub(usage.LastSeen) > liveTokenRateMessageRetention {
-			delete(tracked.MessageUsage, identity)
-			continue
+	for tracked.MessageOrder.Len() > 0 {
+		identity, _ := tracked.MessageOrder.Front().Value.(string)
+		usage := tracked.MessageUsage[identity]
+		if usage != nil && !usage.LastSeen.IsZero() && now.Sub(usage.LastSeen) <= liveTokenRateMessageRetention {
+			break
 		}
-		ages = append(ages, age{Identity: identity, Usage: usage})
+		liveTokenRateForgetOldestMessage(tracked)
 	}
-	if len(ages) <= liveTokenRateMaxMessages {
+	for len(tracked.MessageUsage) > liveTokenRateMaxMessages {
+		liveTokenRateForgetOldestMessage(tracked)
+	}
+	if len(tracked.MessageUsage) == 0 {
+		tracked.MessageUsage = nil
+		tracked.MessageOrder = nil
+	}
+}
+
+func liveTokenRateForgetOldestMessage(tracked *liveTokenRateTrackedFile) {
+	if tracked == nil || tracked.MessageOrder == nil {
 		return
 	}
-	sort.Slice(ages, func(i, j int) bool {
-		if ages[i].Usage.LastSeen.Equal(ages[j].Usage.LastSeen) {
-			if ages[i].Usage.Sequence == ages[j].Usage.Sequence {
-				return ages[i].Identity < ages[j].Identity
-			}
-			return ages[i].Usage.Sequence < ages[j].Usage.Sequence
-		}
-		return ages[i].Usage.LastSeen.Before(ages[j].Usage.LastSeen)
-	})
-	for _, item := range ages[:len(ages)-liveTokenRateMaxMessages] {
-		delete(tracked.MessageUsage, item.Identity)
+	element := tracked.MessageOrder.Front()
+	if element == nil {
+		return
 	}
+	identity, _ := element.Value.(string)
+	tracked.MessageOrder.Remove(element)
+	delete(tracked.MessageUsage, identity)
 }
 
 func liveTokenRateBoundaryFingerprint(path string, offset int64) ([sha256.Size]byte, bool) {

@@ -1,36 +1,68 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
 
-func TestLiveTokenRateObservationParsesOutputOnly(t *testing.T) {
-	now := time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
-	codex := []byte(`{"timestamp":"2026-08-02T11:59:30Z","payload":{"info":{"total_token_usage":{"input_tokens":900000,"cached_input_tokens":800000,"output_tokens":20,"reasoning_output_tokens":50000}}}}`)
-	observation, ok := liveTokenRateObservationFromJSONLine(codex, now)
-	if !ok || !observation.Cumulative || observation.OutputTokens != 20 {
-		t.Fatalf("Codex cumulative observation = %+v, ok=%t", observation, ok)
+func TestCodingAgentUsageDecodersExtractVerifiedOutputShapes(t *testing.T) {
+	registry := defaultCodingAgentRegistry(Config{})
+	tests := []struct {
+		name       string
+		agent      string
+		line       string
+		output     int64
+		cumulative bool
+		identity   string
+	}{
+		{
+			name: "codex cumulative", agent: "codex", output: 20, cumulative: true,
+			line: `{"timestamp":"2026-08-02T11:59:30Z","payload":{"info":{"total_token_usage":{"input_tokens":900000,"output_tokens":20}}}}`,
+		},
+		{
+			name: "claude growing message", agent: "claude", output: 7, identity: "session-a\x00msg-1",
+			line: `{"timestamp":"2026-08-02T12:00:00Z","sessionId":"session-a","message":{"id":"msg-1","usage":{"input_tokens":1000,"output_tokens":7}}}`,
+		},
+		{
+			name: "trae cumulative", agent: "trae", output: 31, cumulative: true,
+			line: `{"timestamp":"2026-08-02T12:00:30Z","payload":{"info":{"total_token_usage":{"input_tokens":120,"output_tokens":31}}}}`,
+		},
 	}
-	if !observation.At.Equal(time.Date(2026, 8, 2, 11, 59, 30, 0, time.UTC)) {
-		t.Fatalf("Codex timestamp = %s", observation.At)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			decoder, ok := registry.usageDecoder(test.agent)
+			if !ok {
+				t.Fatalf("%s usage decoder is unavailable", test.agent)
+			}
+			observation, ok := decoder.DecodeUsage([]byte(test.line))
+			if !ok || observation.OutputTokens != test.output || observation.Cumulative != test.cumulative || observation.MessageIdentity != test.identity {
+				t.Fatalf("decoded observation = %+v, ok=%t", observation, ok)
+			}
+			if observation.At.IsZero() {
+				t.Fatal("verified timestamp was not decoded")
+			}
+		})
 	}
 
-	claude := []byte(`{"timestamp":"2026-08-02T12:00:00Z","sessionId":"session-a","message":{"id":"msg-1","usage":{"input_tokens":1000,"output_tokens":7}}}`)
-	observation, ok = liveTokenRateObservationFromJSONLine(claude, now)
-	if !ok || observation.Cumulative || observation.OutputTokens != 7 || observation.MessageIdentity != "session-a\x00msg-1" {
-		t.Fatalf("Claude message observation = %+v, ok=%t", observation, ok)
-	}
-
+	claude, _ := registry.usageDecoder("claude")
 	inputOnly := []byte(`{"timestamp":"2026-08-02T12:00:00Z","usage":{"input_tokens":1000,"cached_input_tokens":900}}`)
-	if observation, ok = liveTokenRateObservationFromJSONLine(inputOnly, now); ok {
+	if observation, ok := claude.DecodeUsage(inputOnly); ok {
 		t.Fatalf("input-only usage became output throughput: %+v", observation)
 	}
+	if _, ok := registry.usageDecoder("gemini"); ok {
+		t.Fatal("process-only Gemini exposed output usage")
+	}
+}
+
+func newTestLiveTokenRateSampler(cfg Config) *liveTokenRateSampler {
+	return newLiveTokenRateSampler(cfg, defaultCodingAgentRegistry(cfg))
 }
 
 func TestLiveTokenRateSamplerStartsFromBaselineAndUsesCumulativeDelta(t *testing.T) {
@@ -43,7 +75,7 @@ func TestLiveTokenRateSamplerStartsFromBaselineAndUsesCumulativeDelta(t *testing
 	path := filepath.Join(sessions, "session.jsonl")
 	writeCumulativeTokenFile(t, path, now, 100)
 
-	sampler := newLiveTokenRateSampler(Config{CodexRoots: []string{root}})
+	sampler := newTestLiveTokenRateSampler(Config{CodexRoots: []string{root}})
 	sampler.poll(now)
 	initial := sampler.sample(now)
 	if initial.State != liveTokenRateStateZero || initial.OutputTokensPerSecond == nil || *initial.OutputTokensPerSecond != 0 {
@@ -74,15 +106,15 @@ func TestLiveTokenRateWatchDiscoversResumedOldSessionWithoutReplay(t *testing.T)
 		t.Fatal(err)
 	}
 
-	sampler := newLiveTokenRateSampler(Config{CodexRoots: []string{root}})
-	sampler.watchCoverage = true
+	sampler := newTestLiveTokenRateSampler(Config{CodexRoots: []string{root}})
+	sampler.setWatchCoverage(true)
 	sampler.poll(now)
 	if got := len(sampler.files); got != 0 {
 		t.Fatalf("old inactive files tracked at baseline = %d, want 0", got)
 	}
 
 	appendCumulativeTokenLine(t, path, now.Add(30*time.Second), 280)
-	sampler.recordWatchBatch(liveTokenRateWatchBatch{Paths: []string{path}, Complete: true}, now.Add(30*time.Second))
+	sampler.recordWatchBatch(liveTokenRateWatchBatch{Paths: []string{path}, Complete: true})
 	sampler.poll(now.Add(30 * time.Second))
 	if sample := sampler.sample(now.Add(30 * time.Second)); sample.State != liveTokenRateStateZero || sample.OutputTokensPerSecond == nil || *sample.OutputTokensPerSecond != 0 {
 		t.Fatalf("resumed session replayed pre-baseline output: %+v", sample)
@@ -105,10 +137,10 @@ func TestLiveTokenRateWatchGapFailsClosedAndForcesRecovery(t *testing.T) {
 	path := filepath.Join(sessions, "session.jsonl")
 	writeCumulativeTokenFile(t, path, now, 100)
 
-	sampler := newLiveTokenRateSampler(Config{CodexRoots: []string{root}})
-	sampler.watchCoverage = true
+	sampler := newTestLiveTokenRateSampler(Config{CodexRoots: []string{root}})
+	sampler.setWatchCoverage(true)
 	sampler.poll(now)
-	sampler.recordWatchBatch(liveTokenRateWatchBatch{Complete: false}, now.Add(30*time.Second))
+	sampler.recordWatchBatch(liveTokenRateWatchBatch{Complete: false})
 	sampler.poll(now.Add(30 * time.Second))
 	if sample := sampler.sample(now.Add(30 * time.Second)); sample.State != liveTokenRateStateUnavailable || sample.OutputTokensPerSecond != nil || sample.UnavailableReason != liveTokenRateUnavailableWatchIncomplete {
 		t.Fatalf("watch gap did not fail closed: %+v", sample)
@@ -133,7 +165,7 @@ func TestLiveTokenRateSamplerDedupesGrowingClaudeMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sampler := newLiveTokenRateSampler(Config{ClaudeRoots: []string{root}})
+	sampler := newTestLiveTokenRateSampler(Config{ClaudeRoots: []string{root}})
 	sampler.poll(now)
 	appendTokenText(t, path, line(now.Add(30*time.Second), 100))
 	sampler.poll(now.Add(30 * time.Second))
@@ -150,6 +182,112 @@ func TestLiveTokenRateSamplerDedupesGrowingClaudeMessage(t *testing.T) {
 	}
 }
 
+func TestLiveTokenRateMessageDedupeRemainsBoundedDuringIngest(t *testing.T) {
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	tracked := liveTokenRateTrackedFile{}
+	for index := 0; index < liveTokenRateMaxMessages*4; index++ {
+		identity := fmt.Sprintf("session-a\x00message-%05d", index)
+		if delta := liveTokenRateMessageDelta(&tracked, identity, 1, now); delta != 1 {
+			t.Fatalf("new message delta = %d, want 1", delta)
+		}
+		if len(tracked.MessageUsage) > liveTokenRateMaxMessages || tracked.MessageOrder.Len() > liveTokenRateMaxMessages {
+			t.Fatalf("dedupe exceeded bound during ingest: map=%d order=%d", len(tracked.MessageUsage), tracked.MessageOrder.Len())
+		}
+	}
+	identity := fmt.Sprintf("session-a\x00message-%05d", liveTokenRateMaxMessages*4-1)
+	for output := int64(2); output < 1000; output++ {
+		if delta := liveTokenRateMessageDelta(&tracked, identity, output, now); delta != 1 {
+			t.Fatalf("growing message delta = %d, want 1", delta)
+		}
+		if len(tracked.MessageUsage) != liveTokenRateMaxMessages || tracked.MessageOrder.Len() != liveTokenRateMaxMessages {
+			t.Fatalf("repeated update changed bounded state: map=%d order=%d", len(tracked.MessageUsage), tracked.MessageOrder.Len())
+		}
+	}
+}
+
+type blockingAgentUsageDecoder struct {
+	delegate agentOutputUsageDecoder
+	entered  chan struct{}
+	release  chan struct{}
+}
+
+func (decoder blockingAgentUsageDecoder) DecodeUsage(line []byte) (liveTokenRateObservation, bool) {
+	if bytes.Contains(line, []byte(`"block":true`)) {
+		select {
+		case decoder.entered <- struct{}{}:
+		default:
+		}
+		<-decoder.release
+	}
+	return decoder.delegate.DecodeUsage(line)
+}
+
+func TestLiveTokenRateWatchBatchesMergeWhileAppendParsingIsBlocked(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	root := t.TempDir()
+	sessions := filepath.Join(root, "sessions")
+	if err := os.MkdirAll(sessions, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(sessions, "active.jsonl")
+	writeCumulativeTokenFile(t, path, now, 100)
+
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	released := false
+	defer func() {
+		if !released {
+			close(release)
+		}
+	}()
+	registry := newCodingAgentRegistry(codingAgentAdapter{
+		ID: "codex",
+		Capabilities: agentCapabilities{Usage: blockingAgentUsageDecoder{
+			delegate: newCodexOutputUsageDecoder(), entered: entered, release: release,
+		}},
+	})
+	sampler := newLiveTokenRateSampler(Config{CodexRoots: []string{root}}, registry)
+	sampler.poll(now)
+	appendTokenText(t, path, strings.Replace(cumulativeTokenLine(now.Add(30*time.Second), 280), `"payload"`, `"block":true,"payload"`, 1))
+
+	pollDone := make(chan struct{})
+	go func() {
+		sampler.poll(now.Add(30 * time.Second))
+		close(pollDone)
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("append decoder did not block")
+	}
+
+	recordDone := make(chan struct{})
+	go func() {
+		sampler.recordWatchBatch(liveTokenRateWatchBatch{Complete: true, Paths: []string{"first.jsonl"}})
+		sampler.recordWatchBatch(liveTokenRateWatchBatch{Complete: true, Paths: []string{"second.jsonl"}})
+		close(recordDone)
+	}()
+	select {
+	case <-recordDone:
+	case <-time.After(time.Second):
+		t.Fatal("watch intake blocked behind append parsing")
+	}
+	sampler.watchMu.Lock()
+	pending := len(sampler.watchPending)
+	sampler.watchMu.Unlock()
+	if pending != 2 {
+		t.Fatalf("pending watch paths = %d, want 2 merged batches", pending)
+	}
+
+	close(release)
+	released = true
+	select {
+	case <-pollDone:
+	case <-time.After(time.Second):
+		t.Fatal("append poll did not resume")
+	}
+}
+
 func TestLiveTokenRateSamplerRebaselinesAfterObservationGap(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	root := t.TempDir()
@@ -159,7 +297,7 @@ func TestLiveTokenRateSamplerRebaselinesAfterObservationGap(t *testing.T) {
 	}
 	path := filepath.Join(sessions, "session.jsonl")
 	writeCumulativeTokenFile(t, path, now, 10)
-	sampler := newLiveTokenRateSampler(Config{CodexRoots: []string{root}})
+	sampler := newTestLiveTokenRateSampler(Config{CodexRoots: []string{root}})
 	sampler.poll(now)
 
 	appendCumulativeTokenLine(t, path, now.Add(181*time.Second), 1000)
@@ -184,7 +322,7 @@ func TestLiveTokenRateSamplerDoesNotReplayCounterWithRegressedTimestamp(t *testi
 	}
 	path := filepath.Join(sessions, "session.jsonl")
 	writeCumulativeTokenFile(t, path, now, 100)
-	sampler := newLiveTokenRateSampler(Config{CodexRoots: []string{root}})
+	sampler := newTestLiveTokenRateSampler(Config{CodexRoots: []string{root}})
 	sampler.poll(now)
 
 	appendCumulativeTokenLine(t, path, now.Add(-time.Minute), 10000)
@@ -203,7 +341,7 @@ func TestLiveTokenRateSamplerRebaselinesRewrittenFile(t *testing.T) {
 	}
 	path := filepath.Join(sessions, "session.jsonl")
 	writeCumulativeTokenFile(t, path, now, 100)
-	sampler := newLiveTokenRateSampler(Config{CodexRoots: []string{root}})
+	sampler := newTestLiveTokenRateSampler(Config{CodexRoots: []string{root}})
 	sampler.poll(now)
 
 	writeCumulativeTokenFile(t, path, now.Add(30*time.Second), 10000)
@@ -231,7 +369,7 @@ func TestLiveTokenRateSamplerRebaselinesTruncatedCounter(t *testing.T) {
 	}
 	path := filepath.Join(sessions, "session.jsonl")
 	writeCumulativeTokenFile(t, path, now, 900000)
-	sampler := newLiveTokenRateSampler(Config{CodexRoots: []string{root}})
+	sampler := newTestLiveTokenRateSampler(Config{CodexRoots: []string{root}})
 	sampler.poll(now)
 
 	writeCumulativeTokenFile(t, path, now.Add(30*time.Second), 10)
@@ -255,7 +393,7 @@ func TestLiveTokenRateSamplerStreamsOversizedAppend(t *testing.T) {
 	}
 	path := filepath.Join(sessions, "session.jsonl")
 	writeCumulativeTokenFile(t, path, now, 10)
-	sampler := newLiveTokenRateSampler(Config{CodexRoots: []string{root}})
+	sampler := newTestLiveTokenRateSampler(Config{CodexRoots: []string{root}})
 	sampler.poll(now)
 
 	fillerLine := `{"timestamp":"` + now.Add(30*time.Second).Format(time.RFC3339) + `","type":"noise"}` + "\n"
@@ -286,7 +424,7 @@ func TestLiveTokenRateSamplerWaitsForCompleteAppendedLine(t *testing.T) {
 	}
 	path := filepath.Join(sessions, "session.jsonl")
 	writeCumulativeTokenFile(t, path, now, 10)
-	sampler := newLiveTokenRateSampler(Config{CodexRoots: []string{root}})
+	sampler := newTestLiveTokenRateSampler(Config{CodexRoots: []string{root}})
 	sampler.poll(now)
 
 	line := cumulativeTokenLine(now.Add(30*time.Second), 190)
@@ -318,7 +456,7 @@ func TestLiveTokenRateBucketsBoundHighFrequencyUpdates(t *testing.T) {
 	if tokens != 100_000 || sessions != 1 {
 		t.Fatalf("bucketed high-frequency facts = %d tokens across %d sessions, want 100000/1", tokens, sessions)
 	}
-	sampler := newLiveTokenRateSampler(Config{CodexRoots: []string{t.TempDir()}})
+	sampler := newTestLiveTokenRateSampler(Config{CodexRoots: []string{t.TempDir()}})
 	sampler.buckets = events
 	sampler.initialized = true
 	sampler.latestSignal = now
@@ -360,7 +498,7 @@ func BenchmarkLiveTokenRateBucketsThirtyTwoMillionUpdates(b *testing.B) {
 }
 
 func TestLiveTokenRateSamplerLifecycleIsIdempotent(t *testing.T) {
-	sampler := newLiveTokenRateSampler(Config{})
+	sampler := newTestLiveTokenRateSampler(Config{})
 	sampler.start(time.Millisecond)
 	sampler.start(time.Millisecond)
 	sampler.stopSampler()
@@ -387,7 +525,7 @@ func TestLiveTokenRateDiscoveryPrunesTraeArtifactTrees(t *testing.T) {
 		}
 	}
 
-	sampler := newLiveTokenRateSampler(Config{TraeRoots: []string{root}})
+	sampler := newTestLiveTokenRateSampler(Config{TraeRoots: []string{root}})
 	sampler.poll(now)
 	sample := sampler.sample(now)
 	if sample.State != liveTokenRateStateZero || sample.OutputTokensPerSecond == nil {
@@ -418,8 +556,8 @@ func TestLiveTokenRateDiscoveryReusesStableDirectoriesAndFindsNewEntries(t *test
 		return readDir(path)
 	}
 
-	sampler := newLiveTokenRateSampler(Config{CodexRoots: []string{root}})
-	sampler.watchCoverage = true
+	sampler := newTestLiveTokenRateSampler(Config{CodexRoots: []string{root}})
+	sampler.setWatchCoverage(true)
 	sampler.poll(now)
 	if readCount == 0 {
 		t.Fatal("initial discovery did not read configured directories")
@@ -476,8 +614,8 @@ func TestLiveTokenRateDynamicRootUsesPriorityFilesWithoutWalkingHistory(t *testi
 		return readDir(path)
 	}
 
-	sampler := newLiveTokenRateSampler(Config{})
-	sampler.watchCoverage = true
+	sampler := newTestLiveTokenRateSampler(Config{})
+	sampler.setWatchCoverage(true)
 	sampler.addSnapshotRoots(
 		SnapshotConfig{CodexRoots: []string{root}},
 		priority,
@@ -518,7 +656,7 @@ func TestLiveTokenRateProjectsFromSessionsFailsConflictsToUnassigned(t *testing.
 
 func TestLiveTokenRatePublishedProjectsOnlyRetainEventSessions(t *testing.T) {
 	now := time.Now().UTC()
-	sampler := newLiveTokenRateSampler(Config{CodexRoots: []string{t.TempDir()}})
+	sampler := newTestLiveTokenRateSampler(Config{CodexRoots: []string{t.TempDir()}})
 	sampler.pollMu.Lock()
 	sampler.buckets = []liveTokenRateEvent{{At: now, Tokens: 180, Session: "session-a"}}
 	sampler.initialized = true
@@ -544,7 +682,7 @@ func TestLiveTokenRatePublishedProjectsOnlyRetainEventSessions(t *testing.T) {
 
 func TestLiveTokenRateConfiguredRootRemainsDiscoverableAfterSnapshotMerge(t *testing.T) {
 	root := t.TempDir()
-	sampler := newLiveTokenRateSampler(Config{CodexRoots: []string{root}})
+	sampler := newTestLiveTokenRateSampler(Config{CodexRoots: []string{root}})
 	sampler.addSnapshotRoots(SnapshotConfig{CodexRoots: []string{root}}, nil, nil)
 	for _, candidate := range sampler.roots {
 		if !candidate.Discover {

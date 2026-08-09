@@ -1,6 +1,6 @@
 # Agent Load Architecture
 
-> Status: living document, last verified 2026-07-26.
+> Status: living document, last verified 2026-08-10.
 
 This page is the contributor-facing map of the Go backend and the native shell.
 It describes how local evidence is acquired, aggregated into a snapshot,
@@ -112,11 +112,12 @@ feed historic peaks and transcript trend windows.
 
 ### Live output-token sampler (`live_token_rate.go`)
 
-- A separate 30-second background owner discovers recently modified Claude,
-  Codex, and Trae JSONL files, then advances append cursors. Appends are scanned
-  line by line through the last complete JSONL record, so collector memory does
-  not scale with bytes written between polls. API clients read an immutable
-  published time-bucket snapshot and never own collection baselines.
+- A separate 30-second background owner receives the same coding-agent registry
+  instance as the Observer, discovers recently modified Claude, Codex, and Trae
+  JSONL files, then advances append cursors. Appends and bounded tail baselines
+  stream line by line through the last complete JSONL record, so collector
+  memory does not scale with bytes written between polls. API clients read an
+  immutable published time-bucket snapshot and never own collection baselines.
 - Discovery caches directory topology by directory mtime and re-reads entries
   only when names are added or removed. Vendor-owned non-transcript branches
   such as Trae `*.artifacts` trees are pruned before recursion, so historical
@@ -132,19 +133,24 @@ feed historic peaks and transcript trend windows.
   by the active bucket buffer, so API sampling cost does not grow with historical
   session count.
   On macOS, recursive FSEvents file notifications surface newly created and
-  resumed old JSONL files without recurring full-tree walks; tracked appends are
-  then read from their private cursors. Dropped events fail closed and force one
-  pruned index rebuild. Platforms without watcher coverage retain the bounded
-  periodic rescan fallback.
+  resumed old JSONL files without recurring full-tree walks. A dedicated watcher
+  goroutine continuously merges raw dirty paths under its own lock while the
+  poll owner parses files; each poll atomically takes that bounded dirty set.
+  Dropped events and dirty-set overflow fail closed and force one pruned index
+  rebuild. Platforms without watcher coverage retain the bounded periodic
+  rescan.
 - New files start from a bounded tail baseline. File identity changes, boundary
   fingerprint changes, truncation, counter rollback, and observation gaps over
   180 seconds rebaseline without replaying history. Large valid appends do not
   rebaseline: they stream from the current cursor with memory bounded by one
   JSONL line.
-- Only explicit output-token fields contribute. Cumulative output counters are
-  differenced per file; repeated Claude messages are differenced per
-  session/message identity. Input, cache, and reasoning tokens stay outside this
-  metric.
+- Only explicit output-token fields contribute. The owning adapter decodes a
+  finite typed envelope for verified Claude message usage or Codex/Trae
+  cumulative and incremental usage; the live path has no recursive generic map
+  scan. Cumulative output counters are differenced per file. Repeated Claude
+  messages are differenced per session/message identity through an ingest-time
+  bounded LRU, so one append batch cannot grow dedupe state past 2,048 entries.
+  Input, cache, and reasoning tokens stay outside this metric.
 - Positive observations are folded immediately into one-second, per-session
   buckets. Sparse cumulative deltas are first distributed over their observed
   interval and then folded into the same buckets. The semantic layer clips those
@@ -157,10 +163,15 @@ feed historic peaks and transcript trend windows.
   rolling window, and contributing-session count into the persisted history
   sample. This gives the Trend surface durable throughput points without making
   snapshot readers advance sampler cursors or baselines.
-- The high-frequency capacity check is reproducible with
+- Bucket aggregation is reproducible with
   `go test -run '^$' -bench '^BenchmarkLiveTokenRateBucketsThirtyTwoMillionUpdates$' -benchtime=32768000x -benchmem .`.
   It exercises 1,000 times the retired 32,768-event threshold and must retain a
   single same-second/session bucket without per-update allocations.
+- End-to-end file append ingestion is reproducible with
+  `go test -run '^$' -bench '^BenchmarkLiveTokenRateMultiFileAppend$' -benchtime=1000x -benchmem .`.
+  One operation streams 32,768 realistic updates across Claude, Codex, and Trae
+  files, so 1,000 operations cover 32,768,000 decoder, dedupe, and bucket updates
+  separately from the bucket-only microbenchmark.
 
 ### System resources sampler (`system_resources.go`, `system_resources_darwin.go`, `system_thermal*.go`)
 

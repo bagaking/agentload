@@ -76,6 +76,7 @@ func defaultCodingAgentRegistry(cfg Config) *codingAgentRegistry {
 				Process:    newClaudeProcessIdentity(),
 				Discovery:  claudeTranscriptDiscovery{},
 				Transcript: newClaudeTranscriptParser(),
+				Usage:      newClaudeOutputUsageDecoder(),
 			},
 		},
 		codingAgentAdapter{
@@ -85,6 +86,7 @@ func defaultCodingAgentRegistry(cfg Config) *codingAgentRegistry {
 				Process:    newCodexProcessIdentity(),
 				Discovery:  codexTranscriptDiscovery{},
 				Transcript: newCodexTranscriptParser(),
+				Usage:      newCodexOutputUsageDecoder(),
 			},
 		},
 		codingAgentAdapter{
@@ -94,6 +96,7 @@ func defaultCodingAgentRegistry(cfg Config) *codingAgentRegistry {
 				Process:    newTraeProcessIdentity(),
 				Discovery:  traeTranscriptDiscovery{},
 				Transcript: newTraeTranscriptParser(),
+				Usage:      newTraeOutputUsageDecoder(),
 			},
 		},
 		codingAgentAdapter{
@@ -166,6 +169,19 @@ func (r *codingAgentRegistry) transcriptParser(id string) (agentTranscriptParser
 		return nil, false
 	}
 	return r.adapters[index].Capabilities.Transcript, true
+}
+
+func (r *codingAgentRegistry) usageDecoder(id string) (agentOutputUsageDecoder, bool) {
+	if r == nil {
+		return nil, false
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	index, ok := r.byID[strings.TrimSpace(strings.ToLower(id))]
+	if !ok || r.adapters[index].Capabilities.Usage == nil {
+		return nil, false
+	}
+	return r.adapters[index].Capabilities.Usage, true
 }
 
 func (r *codingAgentRegistry) detectProcess(command string) (string, string) {

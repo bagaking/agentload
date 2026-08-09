@@ -82,7 +82,7 @@ func TestHandleUIAssetRejectsInvalidAssetPaths(t *testing.T) {
 
 func TestHandleLiveTokenRateAPIReturnsPublishedSample(t *testing.T) {
 	now := time.Now().UTC()
-	sampler := newLiveTokenRateSampler(Config{ClaudeRoots: []string{t.TempDir()}})
+	sampler := newTestLiveTokenRateSampler(Config{ClaudeRoots: []string{t.TempDir()}})
 	sampler.publishedMu.Lock()
 	sampler.published = liveTokenRatePublished{
 		Configured:   true,

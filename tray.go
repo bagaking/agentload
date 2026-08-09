@@ -72,7 +72,7 @@ func newTrayApp(cfg Config, observer *Observer, logger *log.Logger, listener net
 		baseURL:       strings.TrimRight(url, "/"),
 		popoverURL:    strings.TrimRight(url, "/") + "/",
 		dashboardURL:  strings.TrimRight(url, "/") + "/dashboard",
-		liveTokenRate: newLiveTokenRateSampler(cfg),
+		liveTokenRate: newLiveTokenRateSampler(cfg, observer.adapters),
 		stopCh:        make(chan struct{}),
 		refreshCh:     make(chan struct{}, 1),
 		history:       history,

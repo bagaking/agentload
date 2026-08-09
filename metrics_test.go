@@ -705,7 +705,7 @@ func TestMergeRuntimeTrendsMarksSampledMetricPresence(t *testing.T) {
 
 func TestMergeRuntimeTrendsCarriesLiveOutputThroughput(t *testing.T) {
 	generatedAt := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	sampler := newLiveTokenRateSampler(Config{CodexRoots: []string{t.TempDir()}})
+	sampler := newTestLiveTokenRateSampler(Config{CodexRoots: []string{t.TempDir()}})
 	sampler.published = liveTokenRatePublished{
 		Configured:   true,
 		Initialized:  true,
