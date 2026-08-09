@@ -27,11 +27,20 @@ func TestLiveTokenRateSampleKeepsMissingStatesDistinctFromZero(t *testing.T) {
 	}
 
 	unavailable := liveTokenRateSampleFromFacts(base)
-	if unavailable.State != liveTokenRateStateUnavailable || unavailable.OutputTokensPerSecond != nil {
+	if unavailable.State != liveTokenRateStateUnavailable || unavailable.OutputTokensPerSecond != nil || unavailable.UnavailableReason != liveTokenRateUnavailableNotConfigured {
 		t.Fatalf("unavailable sample = %+v", unavailable)
 	}
 
 	base.Configured = true
+	base.Limited = true
+	base.UnavailableReason = liveTokenRateUnavailableFileCapacity
+	limited := liveTokenRateSampleFromFacts(base)
+	if limited.State != liveTokenRateStateUnavailable || limited.OutputTokensPerSecond != nil || limited.UnavailableReason != liveTokenRateUnavailableFileCapacity {
+		t.Fatalf("limited sample = %+v", limited)
+	}
+
+	base.Limited = false
+	base.UnavailableReason = ""
 	noData := liveTokenRateSampleFromFacts(base)
 	if noData.State != liveTokenRateStateNoData || noData.OutputTokensPerSecond != nil {
 		t.Fatalf("no-data sample = %+v", noData)

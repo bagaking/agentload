@@ -7,11 +7,16 @@ import (
 )
 
 const (
-	liveTokenRateStateLive        = "live"
-	liveTokenRateStateZero        = "zero"
-	liveTokenRateStateNoData      = "no_data"
-	liveTokenRateStateStale       = "stale"
-	liveTokenRateStateUnavailable = "unavailable"
+	liveTokenRateStateLive                       = "live"
+	liveTokenRateStateZero                       = "zero"
+	liveTokenRateStateNoData                     = "no_data"
+	liveTokenRateStateStale                      = "stale"
+	liveTokenRateStateUnavailable                = "unavailable"
+	liveTokenRateUnavailableNotConfigured        = "not_configured"
+	liveTokenRateUnavailableFileCapacity         = "file_capacity"
+	liveTokenRateUnavailableDirectoryCapacity    = "directory_capacity"
+	liveTokenRateUnavailableWatchIncomplete      = "watch_incomplete"
+	liveTokenRateUnavailableWatchPendingCapacity = "watch_pending_capacity"
 
 	liveTokenRateBasis             = "output_tokens"
 	liveTokenRateSource            = "local_transcript_usage"
@@ -28,17 +33,18 @@ type liveTokenRateEvent struct {
 }
 
 type liveTokenRateFacts struct {
-	Configured     bool
-	Initialized    bool
-	Limited        bool
-	TokensInWindow int64
-	ActiveSessions int
-	LatestSignal   time.Time
-	LatestEvent    time.Time
-	Window         time.Duration
-	SampleInterval time.Duration
-	StaleAfter     time.Duration
-	SampledAt      time.Time
+	Configured        bool
+	Initialized       bool
+	Limited           bool
+	UnavailableReason string
+	TokensInWindow    int64
+	ActiveSessions    int
+	LatestSignal      time.Time
+	LatestEvent       time.Time
+	Window            time.Duration
+	SampleInterval    time.Duration
+	StaleAfter        time.Duration
+	SampledAt         time.Time
 }
 
 type liveTokenRateProjectFacts struct {
@@ -180,8 +186,14 @@ func liveTokenRateSampleFromFacts(facts liveTokenRateFacts) LiveTokenRateSample 
 	if !facts.LatestEvent.IsZero() {
 		sample.LatestEventAt = facts.LatestEvent.Format(time.RFC3339Nano)
 	}
-	if !facts.Configured || facts.Limited {
+	if !facts.Configured {
 		sample.State = liveTokenRateStateUnavailable
+		sample.UnavailableReason = liveTokenRateUnavailableNotConfigured
+		return sample
+	}
+	if facts.Limited {
+		sample.State = liveTokenRateStateUnavailable
+		sample.UnavailableReason = facts.UnavailableReason
 		return sample
 	}
 	if !facts.Initialized {

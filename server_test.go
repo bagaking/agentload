@@ -89,7 +89,7 @@ func TestHandleLiveTokenRateAPIReturnsPublishedSample(t *testing.T) {
 		Initialized:  true,
 		LatestSignal: now,
 		LatestEvent:  now,
-		Events:       []liveTokenRateEvent{{At: now, Tokens: 180, Session: "session-a"}},
+		Buckets:      []liveTokenRateEvent{{At: now, Tokens: 180, Session: "session-a"}},
 		Projects:     map[string]string{"session-a": "project-a"},
 	}
 	sampler.publishedMu.Unlock()

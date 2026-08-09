@@ -108,6 +108,7 @@ type LiveTokenRateSample struct {
 	SampledAt             string                       `json:"sampled_at"`
 	LatestSignalAt        string                       `json:"latest_signal_at,omitempty"`
 	LatestEventAt         string                       `json:"latest_event_at,omitempty"`
+	UnavailableReason     string                       `json:"unavailable_reason,omitempty"`
 	Projects              []LiveTokenRateProjectSample `json:"projects"`
 }
 

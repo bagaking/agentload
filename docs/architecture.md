@@ -98,8 +98,10 @@ feed historic peaks and transcript trend windows.
 ### Live output-token sampler (`live_token_rate.go`)
 
 - A separate 30-second background owner discovers recently modified Claude,
-  Codex, and Trae JSONL files, then advances bounded append cursors. API clients
-  read an immutable published event snapshot and never own collection baselines.
+  Codex, and Trae JSONL files, then advances append cursors. Appends are scanned
+  line by line through the last complete JSONL record, so collector memory does
+  not scale with bytes written between polls. API clients read an immutable
+  published time-bucket snapshot and never own collection baselines.
 - Discovery caches directory topology by directory mtime and re-reads entries
   only when names are added or removed. Vendor-owned non-transcript branches
   such as Trae `*.artifacts` trees are pruned before recursion, so historical
@@ -112,27 +114,38 @@ feed historic peaks and transcript trend windows.
   sampler. API project rates partition the already sampled events through that
   map; they do not trigger another transcript read or maintain separate token
   counters. Published snapshots retain attribution only for sessions referenced
-  by the active event buffer, so API sampling cost does not grow with historical
+  by the active bucket buffer, so API sampling cost does not grow with historical
   session count.
   On macOS, recursive FSEvents file notifications surface newly created and
   resumed old JSONL files without recurring full-tree walks; tracked appends are
   then read from their private cursors. Dropped events fail closed and force one
   pruned index rebuild. Platforms without watcher coverage retain the bounded
   periodic rescan fallback.
-- New files start from a tail baseline. File identity changes, boundary
-  fingerprint changes, truncation, counter rollback, append gaps over 512 KiB,
-  and observation gaps over 180 seconds rebaseline without replaying history.
+- New files start from a bounded tail baseline. File identity changes, boundary
+  fingerprint changes, truncation, counter rollback, and observation gaps over
+  180 seconds rebaseline without replaying history. Large valid appends do not
+  rebaseline: they stream from the current cursor with memory bounded by one
+  JSONL line.
 - Only explicit output-token fields contribute. Cumulative output counters are
   differenced per file; repeated Claude messages are differenced per
   session/message identity. Input, cache, and reasoning tokens stay outside this
   metric.
-- The semantic layer clips positive events to a trailing 180-second wall-time
-  window. Sparse cumulative deltas are distributed over their observed interval;
-  the result is rolling workload throughput, not model decode speed.
+- Positive observations are folded immediately into one-second, per-session
+  buckets. Sparse cumulative deltas are first distributed over their observed
+  interval and then folded into the same buckets. The semantic layer clips those
+  buckets to a trailing 180-second wall-time window; the result is rolling
+  workload throughput, not model decode speed. Memory and API sampling work are
+  bounded by window duration and contributing sessions rather than raw usage
+  update frequency, so high output throughput cannot itself trip an event-count
+  capacity state.
 - Complete snapshot refreshes copy the sampler's current aggregate value, state,
   rolling window, and contributing-session count into the persisted history
   sample. This gives the Trend surface durable throughput points without making
   snapshot readers advance sampler cursors or baselines.
+- The high-frequency capacity check is reproducible with
+  `go test -run '^$' -bench '^BenchmarkLiveTokenRateBucketsThirtyTwoMillionUpdates$' -benchtime=32768000x -benchmem .`.
+  It exercises 1,000 times the retired 32,768-event threshold and must retain a
+  single same-second/session bucket without per-update allocations.
 
 ### System resources sampler (`system_resources.go`, `system_resources_darwin.go`, `system_thermal*.go`)
 

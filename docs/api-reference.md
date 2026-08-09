@@ -109,6 +109,10 @@ Returns the latest `LiveTokenRateSample` published by the independent 30-second
 background transcript sampler. Reading the endpoint never advances transcript
 file offsets or cumulative baselines. `output_tokens_per_second` is numeric only
 for `live` and `zero`; it is `null` for `unavailable`, `no_data`, and `stale`.
+`unavailable` responses include `unavailable_reason`: `not_configured`,
+`file_capacity`, `directory_capacity`, `watch_incomplete`, or
+`watch_pending_capacity`. High token volume and raw usage-update frequency do
+not produce an unavailable state.
 For numeric samples, `projects` contains positive per-project contributions from
 the same event window (`project`, `output_tokens_per_second`, and
 `active_sessions`); an empty array means measured zero. Missing or conflicting

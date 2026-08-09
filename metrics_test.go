@@ -711,7 +711,7 @@ func TestMergeRuntimeTrendsCarriesLiveOutputThroughput(t *testing.T) {
 		Initialized:  true,
 		LatestSignal: generatedAt,
 		LatestEvent:  generatedAt,
-		Events:       []liveTokenRateEvent{{At: generatedAt, Tokens: 360, Session: "session-a"}},
+		Buckets:      []liveTokenRateEvent{{At: generatedAt, Tokens: 360, Session: "session-a"}},
 		Projects:     map[string]string{"session-a": "alpha"},
 	}
 	app := &trayApp{liveTokenRate: sampler}

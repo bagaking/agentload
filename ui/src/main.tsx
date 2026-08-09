@@ -721,7 +721,7 @@ function LiveTokenRateReadout({ t, sample, compact = false }: { t: (key: string)
   if (state === "live") detail = formatCopy(t("outputThroughputLiveDetail"), { window, sessions });
   else if (state === "zero") detail = formatCopy(t("outputThroughputZeroDetail"), { window });
   else if (state === "stale") detail = t("outputThroughputStale");
-  else if (state === "unavailable") detail = t("outputThroughputUnavailable");
+  else if (state === "unavailable") detail = outputThroughputUnavailableDetail(t, sample?.unavailable_reason);
   const value = rate === null ? "—" : formatTokenRate(rate);
   const accessible = `${t("outputThroughput")}: ${value}${rate === null ? "" : ` ${t("tokenRateUnit")}`}. ${detail}`;
   return (
@@ -731,6 +731,15 @@ function LiveTokenRateReadout({ t, sample, compact = false }: { t: (key: string)
       <em>{detail}</em>
     </div>
   );
+}
+
+function outputThroughputUnavailableDetail(t: (key: string) => string, reason?: string): string {
+  if (reason === "not_configured") return t("outputThroughputUnavailableNotConfigured");
+  if (reason === "file_capacity") return t("outputThroughputUnavailableFileCapacity");
+  if (reason === "directory_capacity") return t("outputThroughputUnavailableDirectoryCapacity");
+  if (reason === "watch_incomplete") return t("outputThroughputUnavailableWatchIncomplete");
+  if (reason === "watch_pending_capacity") return t("outputThroughputUnavailableWatchPendingCapacity");
+  return t("outputThroughputUnavailable");
 }
 
 function ErrorBanner({ t, error, compact = false }: { t: (key: string) => string; error: string | null; compact?: boolean }) {

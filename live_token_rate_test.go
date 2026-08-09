@@ -110,7 +110,7 @@ func TestLiveTokenRateWatchGapFailsClosedAndForcesRecovery(t *testing.T) {
 	sampler.poll(now)
 	sampler.recordWatchBatch(liveTokenRateWatchBatch{Complete: false}, now.Add(30*time.Second))
 	sampler.poll(now.Add(30 * time.Second))
-	if sample := sampler.sample(now.Add(30 * time.Second)); sample.State != liveTokenRateStateUnavailable || sample.OutputTokensPerSecond != nil {
+	if sample := sampler.sample(now.Add(30 * time.Second)); sample.State != liveTokenRateStateUnavailable || sample.OutputTokensPerSecond != nil || sample.UnavailableReason != liveTokenRateUnavailableWatchIncomplete {
 		t.Fatalf("watch gap did not fail closed: %+v", sample)
 	}
 	if len(sampler.directories) == 0 {
@@ -246,7 +246,7 @@ func TestLiveTokenRateSamplerRebaselinesTruncatedCounter(t *testing.T) {
 	}
 }
 
-func TestLiveTokenRateSamplerRebaselinesOversizedAppend(t *testing.T) {
+func TestLiveTokenRateSamplerStreamsOversizedAppend(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	root := t.TempDir()
 	sessions := filepath.Join(root, "sessions")
@@ -258,22 +258,104 @@ func TestLiveTokenRateSamplerRebaselinesOversizedAppend(t *testing.T) {
 	sampler := newLiveTokenRateSampler(Config{CodexRoots: []string{root}})
 	sampler.poll(now)
 
-	fillerLine := `{"timestamp":"` + now.Add(30*time.Second).Format(time.RFC3339) + `","usage":{"output_tokens":999}}` + "\n"
-	filler := make([]byte, 0, liveTokenRateMaxAppendRead+len(fillerLine))
-	for len(filler) <= liveTokenRateMaxAppendRead {
+	fillerLine := `{"timestamp":"` + now.Add(30*time.Second).Format(time.RFC3339) + `","type":"noise"}` + "\n"
+	filler := make([]byte, 0, liveTokenRateBaselineReadLimit+len(fillerLine))
+	for len(filler) <= liveTokenRateBaselineReadLimit {
 		filler = append(filler, fillerLine...)
 	}
-	filler = append(filler, []byte(cumulativeTokenLine(now.Add(30*time.Second), 9000000))...)
+	filler = append(filler, []byte(cumulativeTokenLine(now.Add(30*time.Second), 190))...)
 	appendTokenText(t, path, string(filler))
 	sampler.poll(now.Add(30 * time.Second))
-	if sample := sampler.sample(now.Add(30 * time.Second)); sample.OutputTokensPerSecond == nil || *sample.OutputTokensPerSecond != 0 {
-		t.Fatalf("oversized append replayed skipped output: %+v", sample)
+	if sample := sampler.sample(now.Add(30 * time.Second)); sample.OutputTokensPerSecond == nil || math.Abs(*sample.OutputTokensPerSecond-1) > 0.0001 {
+		t.Fatalf("streamed append sample = %+v, want 1 output token/second", sample)
 	}
 
-	appendCumulativeTokenLine(t, path, now.Add(60*time.Second), 9000180)
+	appendCumulativeTokenLine(t, path, now.Add(60*time.Second), 370)
+	sampler.poll(now.Add(60 * time.Second))
+	if sample := sampler.sample(now.Add(60 * time.Second)); sample.OutputTokensPerSecond == nil || math.Abs(*sample.OutputTokensPerSecond-2) > 0.0001 {
+		t.Fatalf("second streamed delta sample = %+v, want 2 output tokens/second", sample)
+	}
+}
+
+func TestLiveTokenRateSamplerWaitsForCompleteAppendedLine(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	root := t.TempDir()
+	sessions := filepath.Join(root, "sessions")
+	if err := os.MkdirAll(sessions, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(sessions, "session.jsonl")
+	writeCumulativeTokenFile(t, path, now, 10)
+	sampler := newLiveTokenRateSampler(Config{CodexRoots: []string{root}})
+	sampler.poll(now)
+
+	line := cumulativeTokenLine(now.Add(30*time.Second), 190)
+	split := len(line) / 2
+	appendTokenText(t, path, line[:split])
+	sampler.poll(now.Add(30 * time.Second))
+	if sample := sampler.sample(now.Add(30 * time.Second)); sample.OutputTokensPerSecond == nil || *sample.OutputTokensPerSecond != 0 {
+		t.Fatalf("partial JSONL line produced throughput: %+v", sample)
+	}
+
+	appendTokenText(t, path, line[split:])
 	sampler.poll(now.Add(60 * time.Second))
 	if sample := sampler.sample(now.Add(60 * time.Second)); sample.OutputTokensPerSecond == nil || math.Abs(*sample.OutputTokensPerSecond-1) > 0.0001 {
-		t.Fatalf("post-gap delta sample = %+v, want 1 output token/second", sample)
+		t.Fatalf("completed JSONL line sample = %+v, want 1 output token/second", sample)
+	}
+}
+
+func TestLiveTokenRateBucketsBoundHighFrequencyUpdates(t *testing.T) {
+	now := time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC)
+	buckets := liveTokenRateBucketAccumulator{}
+	for index := 0; index < 100_000; index++ {
+		buckets.add(liveTokenRateEvent{At: now.Add(-time.Second), Tokens: 1, Session: "session-a"}, now)
+	}
+	events := buckets.events()
+	if len(events) != 1 {
+		t.Fatalf("100,000 same-second updates produced %d buckets, want 1", len(events))
+	}
+	tokens, sessions := liveTokenRateWindowFacts(events, now, liveTokenRateWindow, liveTokenRateFutureSkew)
+	if tokens != 100_000 || sessions != 1 {
+		t.Fatalf("bucketed high-frequency facts = %d tokens across %d sessions, want 100000/1", tokens, sessions)
+	}
+	sampler := newLiveTokenRateSampler(Config{CodexRoots: []string{t.TempDir()}})
+	sampler.buckets = events
+	sampler.initialized = true
+	sampler.latestSignal = now
+	sampler.latestEvent = now
+	sampler.publishLocked(now)
+	sample := sampler.sample(now)
+	if sample.State != liveTokenRateStateLive || sample.OutputTokensPerSecond == nil || sample.UnavailableReason != "" {
+		t.Fatalf("high-frequency sample became unavailable: %+v", sample)
+	}
+}
+
+func TestLiveTokenRateBucketsPreserveSparseIntervalClipping(t *testing.T) {
+	now := time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC)
+	buckets := liveTokenRateBucketAccumulator{}
+	buckets.add(newLiveTokenRateIntervalEvent(now.Add(-10*time.Minute), now, 6000, "session-a"), now)
+	events := buckets.events()
+	if tokens, _ := liveTokenRateWindowFacts(events, now, liveTokenRateWindow, liveTokenRateFutureSkew); tokens != 1800 {
+		t.Fatalf("current bucketed interval = %d tokens, want 1800", tokens)
+	}
+	if tokens, _ := liveTokenRateWindowFacts(events, now.Add(time.Minute), liveTokenRateWindow, liveTokenRateFutureSkew); tokens != 1200 {
+		t.Fatalf("bucketed interval one minute later = %d tokens, want 1200", tokens)
+	}
+	if tokens, _ := liveTokenRateWindowFacts(events, now.Add(4*time.Minute), liveTokenRateWindow, liveTokenRateFutureSkew); tokens != 0 {
+		t.Fatalf("expired bucketed interval = %d tokens, want 0", tokens)
+	}
+}
+
+func BenchmarkLiveTokenRateBucketsThirtyTwoMillionUpdates(b *testing.B) {
+	now := time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC)
+	event := liveTokenRateEvent{At: now.Add(-time.Second), Tokens: 1, Session: "session-a"}
+	buckets := liveTokenRateBucketAccumulator{}
+	b.ResetTimer()
+	for index := 0; index < b.N; index++ {
+		buckets.add(event, now)
+	}
+	if len(buckets) != 1 {
+		b.Fatalf("%d updates produced %d buckets, want 1", b.N, len(buckets))
 	}
 }
 
@@ -283,7 +365,7 @@ func TestLiveTokenRateSamplerLifecycleIsIdempotent(t *testing.T) {
 	sampler.start(time.Millisecond)
 	sampler.stopSampler()
 	sampler.stopSampler()
-	if sample := sampler.sample(time.Now()); sample.State != liveTokenRateStateUnavailable {
+	if sample := sampler.sample(time.Now()); sample.State != liveTokenRateStateUnavailable || sample.UnavailableReason != liveTokenRateUnavailableNotConfigured {
 		t.Fatalf("unconfigured lifecycle sample = %+v", sample)
 	}
 }
@@ -438,7 +520,7 @@ func TestLiveTokenRatePublishedProjectsOnlyRetainEventSessions(t *testing.T) {
 	now := time.Now().UTC()
 	sampler := newLiveTokenRateSampler(Config{CodexRoots: []string{t.TempDir()}})
 	sampler.pollMu.Lock()
-	sampler.events = []liveTokenRateEvent{{At: now, Tokens: 180, Session: "session-a"}}
+	sampler.buckets = []liveTokenRateEvent{{At: now, Tokens: 180, Session: "session-a"}}
 	sampler.initialized = true
 	sampler.latestSignal = now
 	sampler.latestEvent = now

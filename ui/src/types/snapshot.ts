@@ -54,6 +54,7 @@ export type LiveTokenRateSample = {
   sampled_at?: string;
   latest_signal_at?: string;
   latest_event_at?: string;
+  unavailable_reason?: string;
   projects?: LiveTokenRateProjectSample[] | null;
 };
 

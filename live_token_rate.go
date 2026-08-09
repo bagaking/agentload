@@ -25,11 +25,12 @@ const (
 	liveTokenRateRecentFileAge     = 15 * time.Minute
 	liveTokenRateTrackedFileMaxAge = 30 * time.Minute
 	liveTokenRateMessageRetention  = 10 * time.Minute
-	liveTokenRateMaxAppendRead     = 512 * 1024
+	liveTokenRateBaselineReadLimit = 512 * 1024
+	liveTokenRateMaxJSONLineBytes  = 16 * 1024 * 1024
+	liveTokenRateBucketWidth       = time.Second
 	liveTokenRateMaxFiles          = 96
 	liveTokenRateMaxDirectories    = 2048
 	liveTokenRateMaxMessages       = 2048
-	liveTokenRateMaxEvents         = 32768
 	liveTokenRateFutureSkew        = 5 * time.Second
 	liveTokenRateFingerprintBytes  = 128
 )
@@ -76,17 +77,18 @@ type liveTokenRateObservation struct {
 }
 
 type liveTokenRatePublished struct {
-	Configured   bool
-	Initialized  bool
-	LimitedUntil time.Time
-	LatestSignal time.Time
-	LatestEvent  time.Time
-	Events       []liveTokenRateEvent
-	Projects     map[string]string
+	Configured    bool
+	Initialized   bool
+	LimitedUntil  time.Time
+	LimitedReason string
+	LatestSignal  time.Time
+	LatestEvent   time.Time
+	Buckets       []liveTokenRateEvent
+	Projects      map[string]string
 }
 
 // liveTokenRateSampler keeps collection baselines private to one background
-// owner. API clients read the independently published event snapshot and never
+// owner. API clients read the independently published bucket snapshot and never
 // advance file offsets or cumulative counters.
 type liveTokenRateSampler struct {
 	pollMu sync.Mutex
@@ -94,13 +96,14 @@ type liveTokenRateSampler struct {
 	roots           []liveTokenRateRoot
 	files           map[string]liveTokenRateTrackedFile
 	directories     map[string]liveTokenRateTrackedDirectory
-	events          []liveTokenRateEvent
+	buckets         []liveTokenRateEvent
 	lastPoll        time.Time
 	lastDiscover    time.Time
 	initialized     bool
 	latestSignal    time.Time
 	latestEvent     time.Time
 	limitedUntil    time.Time
+	limitedReason   string
 	watchPending    map[string]string
 	watchCoverage   bool
 	sessionProjects map[string]string
@@ -265,10 +268,10 @@ func cloneLiveTokenRateProjects(projects map[string]string) map[string]string {
 	return cloned
 }
 
-func liveTokenRateProjectsForEvents(events []liveTokenRateEvent, projects map[string]string) map[string]string {
+func liveTokenRateProjectsForBuckets(buckets []liveTokenRateEvent, projects map[string]string) map[string]string {
 	relevant := make(map[string]string)
-	for _, event := range events {
-		session := strings.TrimSpace(event.Session)
+	for _, bucket := range buckets {
+		session := strings.TrimSpace(bucket.Session)
 		if session == "" {
 			continue
 		}
@@ -302,7 +305,7 @@ func (sampler *liveTokenRateSampler) trackPriorityFileLocked(file TranscriptFile
 		return
 	}
 	if len(sampler.files) >= liveTokenRateMaxFiles {
-		sampler.markLimitedLocked(now)
+		sampler.markLimitedLocked(now, liveTokenRateUnavailableFileCapacity)
 		return
 	}
 	sampler.files[path] = sampler.rebaselineFile(path, tool, info, now)
@@ -435,18 +438,18 @@ func (sampler *liveTokenRateSampler) pollLocked(now time.Time) {
 			}
 			continue
 		}
-		if observationGap || info.Size()-tracked.Offset > liveTokenRateMaxAppendRead || !liveTokenRateBoundaryMatches(path, tracked) {
+		if observationGap || !liveTokenRateBoundaryMatches(path, tracked) {
 			sampler.files[path] = sampler.rebaselineFile(path, tracked.Tool, info, now)
 			continue
 		}
-		updated, events, signals := liveTokenRateReadAppend(path, tracked, info, now)
+		updated, buckets, latestSignal, latestEvent := liveTokenRateReadAppend(path, tracked, info, now)
 		sampler.files[path] = updated
-		for _, signalAt := range signals {
-			sampler.markSignalLocked(signalAt, now)
+		if !latestSignal.IsZero() {
+			sampler.markSignalLocked(latestSignal, now)
 		}
-		for _, event := range events {
-			sampler.events = append(sampler.events, event)
-			sampler.markEventLocked(event.At, now)
+		sampler.buckets = append(sampler.buckets, buckets...)
+		if !latestEvent.IsZero() {
+			sampler.markEventLocked(latestEvent, now)
 		}
 	}
 	sampler.pruneLocked(now)
@@ -475,7 +478,7 @@ func (sampler *liveTokenRateSampler) discoverLocked(now time.Time) {
 			return
 		}
 		if !seen && len(sampler.directories) >= liveTokenRateMaxDirectories {
-			sampler.markLimitedLocked(now)
+			sampler.markLimitedLocked(now, liveTokenRateUnavailableDirectoryCapacity)
 			return
 		}
 		entries, err := liveTokenRateReadDir(dir)
@@ -537,7 +540,7 @@ func (sampler *liveTokenRateSampler) discoverLocked(now time.Time) {
 	})
 	available := liveTokenRateMaxFiles - len(sampler.files)
 	if len(candidates) > available {
-		sampler.markLimitedLocked(now)
+		sampler.markLimitedLocked(now, liveTokenRateUnavailableFileCapacity)
 	}
 	for _, candidate := range candidates {
 		if len(sampler.files) >= liveTokenRateMaxFiles {
@@ -558,7 +561,7 @@ func (sampler *liveTokenRateSampler) recordWatchBatch(batch liveTokenRateWatchBa
 	if !batch.Complete {
 		sampler.directories = map[string]liveTokenRateTrackedDirectory{}
 		sampler.lastDiscover = time.Time{}
-		sampler.markLimitedLocked(now)
+		sampler.markLimitedLocked(now, liveTokenRateUnavailableWatchIncomplete)
 	}
 	if sampler.watchPending == nil {
 		sampler.watchPending = map[string]string{}
@@ -573,7 +576,7 @@ func (sampler *liveTokenRateSampler) recordWatchBatch(batch liveTokenRateWatchBa
 			continue
 		}
 		if len(sampler.watchPending) >= liveTokenRateMaxFiles*4 {
-			sampler.markLimitedLocked(now)
+			sampler.markLimitedLocked(now, liveTokenRateUnavailableWatchPendingCapacity)
 			break
 		}
 		sampler.watchPending[path] = tool
@@ -592,7 +595,7 @@ func (sampler *liveTokenRateSampler) consumeWatchPathsLocked(now time.Time) {
 			continue
 		}
 		if len(sampler.files) >= liveTokenRateMaxFiles {
-			sampler.markLimitedLocked(now)
+			sampler.markLimitedLocked(now, liveTokenRateUnavailableFileCapacity)
 			continue
 		}
 		sampler.files[path] = sampler.rebaselineFile(path, tool, info, now)
@@ -673,8 +676,8 @@ func liveTokenRateReadBaseline(path, tool string, info os.FileInfo, now time.Tim
 	}
 	size := info.Size()
 	readOffset := int64(0)
-	if size > liveTokenRateMaxAppendRead {
-		readOffset = size - liveTokenRateMaxAppendRead
+	if size > liveTokenRateBaselineReadLimit {
+		readOffset = size - liveTokenRateBaselineReadLimit
 	}
 	if _, err := f.Seek(readOffset, io.SeekStart); err != nil {
 		tracked.Offset = size
@@ -714,46 +717,50 @@ func liveTokenRateReadBaseline(path, tool string, info os.FileInfo, now time.Tim
 	return tracked, observations
 }
 
-func liveTokenRateReadAppend(path string, tracked liveTokenRateTrackedFile, info os.FileInfo, now time.Time) (liveTokenRateTrackedFile, []liveTokenRateEvent, []time.Time) {
+func liveTokenRateReadAppend(path string, tracked liveTokenRateTrackedFile, info os.FileInfo, now time.Time) (liveTokenRateTrackedFile, []liveTokenRateEvent, time.Time, time.Time) {
 	if info == nil || info.Size() <= tracked.Offset {
-		return tracked, nil, nil
+		return tracked, nil, time.Time{}, time.Time{}
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		return tracked, nil, nil
+		return tracked, nil, time.Time{}, time.Time{}
 	}
 	defer f.Close()
 	openedInfo, err := f.Stat()
 	if err != nil || !os.SameFile(info, openedInfo) || openedInfo.Size() != info.Size() {
-		return tracked, nil, nil
+		return tracked, nil, time.Time{}, time.Time{}
 	}
-	if _, err := f.Seek(tracked.Offset, io.SeekStart); err != nil {
-		return tracked, nil, nil
+	parseEnd, err := liveTokenRateLastCompleteLineOffset(f, tracked.Offset, info.Size())
+	if err != nil || parseEnd <= tracked.Offset {
+		return tracked, nil, time.Time{}, time.Time{}
 	}
-	want := info.Size() - tracked.Offset
-	data, err := io.ReadAll(io.LimitReader(f, want))
-	if err != nil || int64(len(data)) != want {
-		return tracked, nil, nil
-	}
-	lastNewline := bytes.LastIndexByte(data, '\n')
-	if lastNewline < 0 {
-		return tracked, nil, nil
-	}
-	parseEnd := lastNewline + 1
-	observations := liveTokenRateParseLines(data[:parseEnd], now)
-	events := make([]liveTokenRateEvent, 0, len(observations))
-	signals := make([]time.Time, 0, len(observations))
+	original := tracked
+	tracked.MessageUsage = cloneLiveTokenRateMessageUsage(tracked.MessageUsage)
+	buckets := liveTokenRateBucketAccumulator{}
+	latestSignal := time.Time{}
+	latestEvent := time.Time{}
 	session := liveTokenRateSessionKey(tracked.Tool, path)
-	for _, observation := range observations {
+	scanner := bufio.NewScanner(io.NewSectionReader(f, tracked.Offset, parseEnd-tracked.Offset))
+	scanner.Buffer(make([]byte, 0, 64*1024), liveTokenRateMaxJSONLineBytes)
+	for scanner.Scan() {
+		observation, ok := liveTokenRateObservationFromJSONLine(scanner.Bytes(), now)
+		if !ok {
+			continue
+		}
 		observation.At = normalizeLiveTokenRateSignalTime(observation.At, now)
-		signals = append(signals, observation.At)
+		if latestSignal.IsZero() || observation.At.After(latestSignal) {
+			latestSignal = observation.At
+		}
 		tokens := observation.OutputTokens
 		if observation.Cumulative {
 			tokens = 0
 			if tracked.TotalInitialized && observation.OutputTokens > tracked.LastTotal && !observation.At.Before(tracked.LastTotalAt) {
-				events = append(events, newLiveTokenRateIntervalEvent(
+				buckets.add(newLiveTokenRateIntervalEvent(
 					tracked.LastTotalAt, observation.At, observation.OutputTokens-tracked.LastTotal, session,
-				))
+				), now)
+				if latestEvent.IsZero() || observation.At.After(latestEvent) {
+					latestEvent = observation.At
+				}
 			}
 			tracked.TotalInitialized = true
 			tracked.LastTotal = observation.OutputTokens
@@ -762,15 +769,52 @@ func liveTokenRateReadAppend(path string, tracked liveTokenRateTrackedFile, info
 			tokens = liveTokenRateMessageDelta(&tracked, observation.MessageIdentity, tokens, now)
 		}
 		if tokens > 0 {
-			events = append(events, liveTokenRateEvent{At: observation.At, Tokens: tokens, Session: session})
+			buckets.add(liveTokenRateEvent{At: observation.At, Tokens: tokens, Session: session}, now)
+			if latestEvent.IsZero() || observation.At.After(latestEvent) {
+				latestEvent = observation.At
+			}
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		return original, nil, time.Time{}, time.Time{}
+	}
 	liveTokenRatePruneMessages(&tracked, now)
-	tracked.Offset += int64(parseEnd)
+	tracked.Offset = parseEnd
 	tracked.LastSeen = now
 	tracked.Info = info
 	tracked.Fingerprint, tracked.HasFingerprint = liveTokenRateBoundaryFingerprint(path, tracked.Offset)
-	return tracked, events, signals
+	return tracked, buckets.events(), latestSignal, latestEvent
+}
+
+func liveTokenRateLastCompleteLineOffset(file *os.File, start, end int64) (int64, error) {
+	if file == nil || end <= start {
+		return start, nil
+	}
+	buffer := make([]byte, 64*1024)
+	for cursor := end; cursor > start; {
+		chunkStart := max(start, cursor-int64(len(buffer)))
+		chunk := buffer[:cursor-chunkStart]
+		n, err := file.ReadAt(chunk, chunkStart)
+		if err != nil && err != io.EOF {
+			return start, err
+		}
+		if index := bytes.LastIndexByte(chunk[:n], '\n'); index >= 0 {
+			return chunkStart + int64(index) + 1, nil
+		}
+		cursor = chunkStart
+	}
+	return start, nil
+}
+
+func cloneLiveTokenRateMessageUsage(source map[string]liveTokenRateMessageUsage) map[string]liveTokenRateMessageUsage {
+	if source == nil {
+		return nil
+	}
+	cloned := make(map[string]liveTokenRateMessageUsage, len(source))
+	for identity, usage := range source {
+		cloned[identity] = usage
+	}
+	return cloned
 }
 
 func liveTokenRateParseLines(data []byte, fallback time.Time) []liveTokenRateObservation {
@@ -1102,33 +1146,20 @@ func normalizeLiveTokenRateSignalTime(at, now time.Time) time.Time {
 	return at
 }
 
-func (sampler *liveTokenRateSampler) markLimitedLocked(now time.Time) {
+func (sampler *liveTokenRateSampler) markLimitedLocked(now time.Time, reason string) {
 	until := now.Add(liveTokenRateWindow)
 	if until.After(sampler.limitedUntil) {
 		sampler.limitedUntil = until
+		sampler.limitedReason = reason
 	}
 }
 
 func (sampler *liveTokenRateSampler) pruneLocked(now time.Time) {
-	cutoff := now.Add(-liveTokenRateWindow)
-	events := sampler.events[:0]
-	for _, event := range sampler.events {
-		start, end := event.observedWindow()
-		if event.Tokens > 0 && !end.Before(cutoff) && !start.After(now.Add(liveTokenRateFutureSkew)) {
-			events = append(events, event)
-		}
+	buckets := liveTokenRateBucketAccumulator{}
+	for _, event := range sampler.buckets {
+		buckets.add(event, now)
 	}
-	sampler.events = events
-	if len(sampler.events) <= liveTokenRateMaxEvents {
-		return
-	}
-	sort.Slice(sampler.events, func(i, j int) bool {
-		_, left := sampler.events[i].observedWindow()
-		_, right := sampler.events[j].observedWindow()
-		return left.Before(right)
-	})
-	sampler.events = append([]liveTokenRateEvent(nil), sampler.events[len(sampler.events)-liveTokenRateMaxEvents:]...)
-	sampler.markLimitedLocked(now)
+	sampler.buckets = buckets.events()
 }
 
 func (sampler *liveTokenRateSampler) publish(now time.Time) {
@@ -1139,13 +1170,14 @@ func (sampler *liveTokenRateSampler) publish(now time.Time) {
 
 func (sampler *liveTokenRateSampler) publishLocked(now time.Time) {
 	published := liveTokenRatePublished{
-		Configured:   len(sampler.roots) > 0,
-		Initialized:  sampler.initialized,
-		LimitedUntil: sampler.limitedUntil,
-		LatestSignal: sampler.latestSignal,
-		LatestEvent:  sampler.latestEvent,
-		Events:       append([]liveTokenRateEvent(nil), sampler.events...),
-		Projects:     liveTokenRateProjectsForEvents(sampler.events, sampler.sessionProjects),
+		Configured:    len(sampler.roots) > 0,
+		Initialized:   sampler.initialized,
+		LimitedUntil:  sampler.limitedUntil,
+		LimitedReason: sampler.limitedReason,
+		LatestSignal:  sampler.latestSignal,
+		LatestEvent:   sampler.latestEvent,
+		Buckets:       append([]liveTokenRateEvent(nil), sampler.buckets...),
+		Projects:      liveTokenRateProjectsForBuckets(sampler.buckets, sampler.sessionProjects),
 	}
 	sampler.publishedMu.Lock()
 	sampler.published = published
@@ -1165,19 +1197,20 @@ func (sampler *liveTokenRateSampler) sample(now time.Time) LiveTokenRateSample {
 	sampler.publishedMu.RLock()
 	published := sampler.published
 	sampler.publishedMu.RUnlock()
-	tokens, activeSessions, projectFacts := liveTokenRateWindowBreakdown(published.Events, published.Projects, now, liveTokenRateWindow, liveTokenRateFutureSkew)
+	tokens, activeSessions, projectFacts := liveTokenRateWindowBreakdown(published.Buckets, published.Projects, now, liveTokenRateWindow, liveTokenRateFutureSkew)
 	sample := liveTokenRateSampleFromFacts(liveTokenRateFacts{
-		Configured:     published.Configured,
-		Initialized:    published.Initialized,
-		Limited:        published.LimitedUntil.After(now),
-		TokensInWindow: tokens,
-		ActiveSessions: activeSessions,
-		LatestSignal:   published.LatestSignal,
-		LatestEvent:    published.LatestEvent,
-		Window:         liveTokenRateWindow,
-		SampleInterval: liveTokenRateSampleInterval,
-		StaleAfter:     liveTokenRateStaleAfter,
-		SampledAt:      now,
+		Configured:        published.Configured,
+		Initialized:       published.Initialized,
+		Limited:           published.LimitedUntil.After(now),
+		UnavailableReason: published.LimitedReason,
+		TokensInWindow:    tokens,
+		ActiveSessions:    activeSessions,
+		LatestSignal:      published.LatestSignal,
+		LatestEvent:       published.LatestEvent,
+		Window:            liveTokenRateWindow,
+		SampleInterval:    liveTokenRateSampleInterval,
+		StaleAfter:        liveTokenRateStaleAfter,
+		SampledAt:         now,
 	})
 	if sample.OutputTokensPerSecond != nil {
 		sample.Projects = liveTokenRateProjectSamples(projectFacts, liveTokenRateWindow)
