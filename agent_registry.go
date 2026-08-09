@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -184,6 +185,37 @@ func (r *codingAgentRegistry) usageDecoder(id string) (agentOutputUsageDecoder, 
 	return r.adapters[index].Capabilities.Usage, true
 }
 
+func (r *codingAgentRegistry) hasUsageRoots() bool {
+	if r == nil {
+		return false
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, adapter := range r.adapters {
+		if adapter.Capabilities.Usage != nil && len(adapter.Roots) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *codingAgentRegistry) transcriptFileForEvidencePath(path string) (TranscriptFile, bool) {
+	if r == nil {
+		return TranscriptFile{}, false
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, adapter := range r.adapters {
+		if adapter.Capabilities.Discovery == nil || adapter.Capabilities.Transcript == nil {
+			continue
+		}
+		if file, ok := adapter.Capabilities.Discovery.Classify(adapter.ID, adapter.Roots, path); ok {
+			return file, true
+		}
+	}
+	return TranscriptFile{}, false
+}
+
 func (r *codingAgentRegistry) detectProcess(command string) (string, string) {
 	if r == nil {
 		return "", ""
@@ -263,13 +295,31 @@ func (r *codingAgentRegistry) discoverTranscripts(ctx context.Context, cutoff ti
 		if adapter.Capabilities.Discovery == nil {
 			continue
 		}
-		discovered := adapter.Capabilities.Discovery.Discover(ctx, adapter.ID, adapter.Roots, cutoff)
+		discovered := adapter.Capabilities.Discovery.Discover(ctx, adapter.ID, uniquePhysicalEvidenceRoots(adapter.Roots), cutoff)
 		result.Files = append(result.Files, discovered.Files...)
 		result.Errors = append(result.Errors, discovered.Errors...)
 		result.VisitedEntries += discovered.VisitedEntries
 		result.PrunedDirectories += discovered.PrunedDirectories
 	}
 	return result
+}
+
+func uniquePhysicalEvidenceRoots(roots []string) []string {
+	seen := make(map[string]struct{}, len(roots))
+	unique := make([]string, 0, len(roots))
+	for _, root := range roots {
+		root = filepath.Clean(strings.TrimSpace(root))
+		physical := canonicalEvidencePath(root)
+		if root == "" || root == "." || physical == "" || physical == "." {
+			continue
+		}
+		if _, exists := seen[physical]; exists {
+			continue
+		}
+		seen[physical] = struct{}{}
+		unique = append(unique, root)
+	}
+	return unique
 }
 
 func registryRootsCacheKey(roots map[string][]string) string {

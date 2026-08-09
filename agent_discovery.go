@@ -25,6 +25,7 @@ type transcriptDiscoveryResult struct {
 
 type transcriptDiscoveryCapability interface {
 	Discover(ctx context.Context, agentID string, roots []string, cutoff time.Time) transcriptDiscoveryResult
+	Classify(agentID string, roots []string, path string) (TranscriptFile, bool)
 }
 
 type claudeTranscriptDiscovery struct{}
@@ -49,6 +50,27 @@ func (claudeTranscriptDiscovery) Discover(ctx context.Context, agentID string, r
 	return result
 }
 
+func (claudeTranscriptDiscovery) Classify(agentID string, roots []string, path string) (TranscriptFile, bool) {
+	for _, root := range roots {
+		base := filepath.Join(root, "projects")
+		relative, ok := relativeEvidencePath(base, path)
+		if !ok || !strings.HasSuffix(strings.ToLower(relative), ".jsonl") {
+			continue
+		}
+		blocked := false
+		for _, part := range strings.Split(relative, string(filepath.Separator)) {
+			switch strings.ToLower(part) {
+			case "memory", "tool-results":
+				blocked = true
+			}
+		}
+		if !blocked {
+			return TranscriptFile{Tool: agentID, Path: filepath.Clean(filepath.Join(base, relative))}, true
+		}
+	}
+	return TranscriptFile{}, false
+}
+
 type codexTranscriptDiscovery struct{}
 
 func (codexTranscriptDiscovery) Discover(ctx context.Context, agentID string, roots []string, cutoff time.Time) transcriptDiscoveryResult {
@@ -66,6 +88,26 @@ func (codexTranscriptDiscovery) Discover(ctx context.Context, agentID string, ro
 	return result
 }
 
+func (codexTranscriptDiscovery) Classify(agentID string, roots []string, path string) (TranscriptFile, bool) {
+	for _, root := range roots {
+		base := filepath.Join(root, "sessions")
+		if relative, ok := relativeEvidencePath(base, path); ok && isDatedTranscriptRelativePath(relative) {
+			return TranscriptFile{Tool: agentID, Path: filepath.Clean(filepath.Join(base, relative))}, true
+		}
+		base = filepath.Join(root, "archived_sessions")
+		if relative, ok := relativeEvidencePath(base, path); ok &&
+			!strings.Contains(relative, string(filepath.Separator)) && strings.HasSuffix(strings.ToLower(relative), ".jsonl") {
+			return TranscriptFile{Tool: agentID, Path: filepath.Clean(filepath.Join(base, relative))}, true
+		}
+		base = filepath.Join(root, ".codexl")
+		if relative, ok := relativeEvidencePath(base, path); ok &&
+			strings.Contains(relative, string(filepath.Separator)) && filepath.Base(relative) == "events.jsonl" {
+			return TranscriptFile{Tool: agentID, Path: filepath.Clean(filepath.Join(base, relative))}, true
+		}
+	}
+	return TranscriptFile{}, false
+}
+
 type traeTranscriptDiscovery struct{}
 
 func (traeTranscriptDiscovery) Discover(ctx context.Context, agentID string, roots []string, cutoff time.Time) transcriptDiscoveryResult {
@@ -77,6 +119,27 @@ func (traeTranscriptDiscovery) Discover(ctx context.Context, agentID string, roo
 			}), jsonlFilePolicy))
 	}
 	return result
+}
+
+func (traeTranscriptDiscovery) Classify(agentID string, roots []string, path string) (TranscriptFile, bool) {
+	for _, root := range roots {
+		base := filepath.Join(root, "sessions")
+		relative, ok := relativeEvidencePath(base, path)
+		if !ok || !isDatedTranscriptRelativePath(relative) {
+			continue
+		}
+		blocked := false
+		for _, part := range strings.Split(relative, string(filepath.Separator)) {
+			if strings.HasSuffix(strings.ToLower(part), ".artifacts") {
+				blocked = true
+				break
+			}
+		}
+		if !blocked {
+			return TranscriptFile{Tool: agentID, Path: filepath.Clean(filepath.Join(base, relative))}, true
+		}
+	}
+	return TranscriptFile{}, false
 }
 
 func (r *transcriptDiscoveryResult) merge(other transcriptDiscoveryResult) {
@@ -171,6 +234,19 @@ func walkEvidenceTree(ctx context.Context, root, agentID string, cutoff time.Tim
 
 func jsonlFilePolicy(path string, _ fs.DirEntry) bool {
 	return strings.HasSuffix(strings.ToLower(path), ".jsonl")
+}
+
+func relativeEvidencePath(root, path string) (string, bool) {
+	root = canonicalEvidencePath(root)
+	path = canonicalEvidencePath(path)
+	if root == "" || path == "" {
+		return "", false
+	}
+	relative, err := filepath.Rel(root, path)
+	if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return relative, true
 }
 
 func flatDirectoryPolicy(layout string) directoryPolicy {

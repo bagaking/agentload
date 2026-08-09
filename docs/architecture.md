@@ -15,8 +15,8 @@ numbers.
             ACQUISITION                      AGGREGATION                 DELIVERY
  ps/lsof ──> process.go ─┐
              process_io* │
- ~/.claude               ├──> observer.go ──> Snapshot ──> tray.go ──> server.go ──┬─> web UI (ui/src)
- ~/.codex   transcripts.go┘   diagnostics.go   (types.go)  history.go   (sanitize) ├─> WKWebView popover
+ ~/.claude   evidence_index.go ──> observer.go ──> Snapshot ──> tray.go ──> server.go ──┬─> web UI (ui/src)
+ ~/.codex   transcripts.go───────┘ diagnostics.go   (types.go)  history.go   (sanitize) ├─> WKWebView popover
  ~/.trae/cli                  metric_semantics.go              │                   └─> tray title/menu
  OS counters ──> system_resources*.go ──> /api/system-resources│
                  system_thermal*.go                        history.jsonl
@@ -52,7 +52,7 @@ numbers.
 
 ### Transcript scan (`agent_registry.go`, `agent_discovery.go`, `transcripts.go`)
 
-`Observer.transcriptData` is the single entry point and stacks four layers:
+`Observer.transcriptData` is the single entry point and stacks five layers:
 
 - **Adapter registry**: `newObserver` injects one code-owned registry. Registered
   adapters own their roots and optional discovery capability; an agent without
@@ -61,8 +61,21 @@ numbers.
   Codex and Trae discovery accepts the verified `YYYY/MM/DD` session layout and
   prunes expired date partitions before file visitation; Trae also prunes
   `*.artifacts`. Unknown dated layouts surface an evidence gap instead of
-  falling back to a full recursive scan. Priority transcript files mapped from
-  visible processes are stat'ed directly and do not depend on a tree walk.
+  falling back to a full recursive scan.
+- **Shared evidence index**: the Observer owns one `transcriptEvidenceIndex` and
+  injects that same instance into the live throughput sampler. Its first
+  foreground reconciliation asks adapters for at most six hours of evidence;
+  later snapshot and sampler reads filter that indexed set to their own cutoff
+  without another tree walk. Priority transcript files mapped from visible
+  processes are stat'ed directly and merged into the same index.
+  FSEvents classifies changed JSONL paths through the owning adapter. Only
+  mutations that arrive during an active reconciliation need a side buffer;
+  that buffer is capped at 4,096 distinct files. Overflow or dropped events
+  mark coverage incomplete and require one adapter-pruned reconciliation, while
+  the recovery sample keeps the evidence gap visible. Warm reads visit no
+  directories, and the index keeps file metadata rather than open transcript
+  descriptors. Configured path spelling remains intact in snapshots while
+  symlink aliases and nested watch roots collapse to one physical watch owner.
 - **TTL cache**: results are cached for `Config.TranscriptCacheTTL` (default
   60s) under a key derived from roots + priority files + idle gap + min
   interval + lookback. Any cached hit is deep-cloned before return.
@@ -112,33 +125,20 @@ feed historic peaks and transcript trend windows.
 
 ### Live output-token sampler (`live_token_rate.go`)
 
-- A separate 30-second background owner receives the same coding-agent registry
-  instance as the Observer, discovers recently modified Claude, Codex, and Trae
-  JSONL files, then advances append cursors. Appends and bounded tail baselines
+- A separate 30-second background owner consumes the Observer's shared evidence
+  index and advances append cursors for recently modified Claude, Codex, and
+  Trae JSONL files. Its first read requests the index's six-hour foreground
+  coverage and then locally keeps only the 15-minute live set, so sampler-first
+  startup cannot force the Observer into a second discovery walk. Appends and bounded tail baselines
   stream line by line through the last complete JSONL record, so collector
   memory does not scale with bytes written between polls. API clients read an
   immutable published time-bucket snapshot and never own collection baselines.
-- Discovery caches directory topology by directory mtime and re-reads entries
-  only when names are added or removed. Vendor-owned non-transcript branches
-  such as Trae `*.artifacts` trees are pruned before recursion, so historical
-  session artifacts do not consume the directory budget or periodic scan time.
-  Roots discovered from visible processes reuse the observer's exact priority
-  transcript paths for baselines and are watcher-only while native coverage is
-  available; adding a custom root therefore does not recursively index its
-  historical session or lane tree.
-  The observer also publishes a private session-path-to-project map to the
+- The Observer publishes a private session-path-to-project map to the
   sampler. API project rates partition the already sampled events through that
   map; they do not trigger another transcript read or maintain separate token
   counters. Published snapshots retain attribution only for sessions referenced
   by the active bucket buffer, so API sampling cost does not grow with historical
   session count.
-  On macOS, recursive FSEvents file notifications surface newly created and
-  resumed old JSONL files without recurring full-tree walks. A dedicated watcher
-  goroutine continuously merges raw dirty paths under its own lock while the
-  poll owner parses files; each poll atomically takes that bounded dirty set.
-  Dropped events and dirty-set overflow fail closed and force one pruned index
-  rebuild. Platforms without watcher coverage retain the bounded periodic
-  rescan.
 - New files start from a bounded tail baseline. File identity changes, boundary
   fingerprint changes, truncation, counter rollback, and observation gaps over
   180 seconds rebaseline without replaying history. Large valid appends do not

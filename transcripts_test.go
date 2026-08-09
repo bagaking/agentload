@@ -534,7 +534,7 @@ func TestCollectTranscriptCandidatesSurfacesWalkErrors(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(lockedDir, 0o755) })
 
 	registry := defaultCodingAgentRegistry(Config{ClaudeRoots: []string{filepath.Join(tmp, ".claude")}})
-	_, walkErrors := collectTranscriptCandidates(context.Background(), registry, nil, time.Time{}, time.Time{})
+	_, walkErrors := collectTranscriptCandidates(context.Background(), newTranscriptEvidenceIndex(registry), registry, nil, time.Time{}, time.Time{})
 	found := false
 	for _, message := range walkErrors {
 		if strings.Contains(message, lockedDir) {

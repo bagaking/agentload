@@ -24,8 +24,10 @@ func TestRegistryDiscoveryIsInjectedAndPriorityFilesAreDirect(t *testing.T) {
 			Transcript: inertTranscriptParser{},
 		},
 	})
+	evidenceIndex := newTranscriptEvidenceIndex(registry)
 	candidates, errs := collectTranscriptCandidates(
 		context.Background(),
+		evidenceIndex,
 		registry,
 		[]TranscriptFile{{Tool: "test-agent", Path: priorityPath}},
 		time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC),
@@ -186,6 +188,10 @@ func (inertTranscriptParser) CanAppend(TranscriptFile) bool {
 func (d *recordingTranscriptDiscovery) Discover(context.Context, string, []string, time.Time) transcriptDiscoveryResult {
 	d.Calls++
 	return transcriptDiscoveryResult{}
+}
+
+func (*recordingTranscriptDiscovery) Classify(string, []string, string) (TranscriptFile, bool) {
+	return TranscriptFile{}, false
 }
 
 func writeDiscoveryFixture(t *testing.T, path string, modTime time.Time) {

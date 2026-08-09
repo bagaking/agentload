@@ -72,7 +72,7 @@ func newTrayApp(cfg Config, observer *Observer, logger *log.Logger, listener net
 		baseURL:       strings.TrimRight(url, "/"),
 		popoverURL:    strings.TrimRight(url, "/") + "/",
 		dashboardURL:  strings.TrimRight(url, "/") + "/dashboard",
-		liveTokenRate: newLiveTokenRateSampler(cfg, observer.adapters),
+		liveTokenRate: newLiveTokenRateSampler(observer.adapters, observer.evidenceIndex),
 		stopCh:        make(chan struct{}),
 		refreshCh:     make(chan struct{}, 1),
 		history:       history,
@@ -277,7 +277,7 @@ func (a *trayApp) refreshOnce(slotID string) {
 	defer cancel()
 	snapshot := a.observer.Snapshot(ctx)
 	snapshot.RefreshSlotID = slotID
-	a.liveTokenRate.addSnapshotRoots(snapshot.Config, snapshot.LiveTokenRateFiles, snapshot.LiveTokenProjects)
+	a.liveTokenRate.updateSnapshotProjects(snapshot.LiveTokenProjects)
 	if snapshotScanAborted(ctx, snapshot) {
 		// Show the partial result but keep it out of history/cache so trends
 		// and heatmaps only build from complete samples; the next slot rescans.

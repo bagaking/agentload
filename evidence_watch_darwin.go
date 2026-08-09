@@ -14,28 +14,28 @@ import (
 	"github.com/fsnotify/fsevents"
 )
 
-type liveTokenRateWatchUpdate struct {
+type evidenceWatchUpdate struct {
 	paths []string
 	done  chan bool
 }
 
-type darwinLiveTokenRateWatcher struct {
-	events   chan liveTokenRateWatchBatch
-	updates  chan liveTokenRateWatchUpdate
+type darwinEvidenceWatcher struct {
+	events   chan evidenceWatchBatch
+	updates  chan evidenceWatchUpdate
 	stop     chan struct{}
 	done     chan struct{}
 	stopOnce sync.Once
 }
 
-func newLiveTokenRateWatcher(roots []liveTokenRateRoot) liveTokenRateWatcher {
-	paths, _ := resolvableLiveTokenRateWatchPaths(liveTokenRateWatchPaths(roots))
-	stream, err := startLiveTokenRateEventStream(paths)
+func newEvidenceWatcher(watchPaths []string) evidenceWatcher {
+	paths, _ := resolvableEvidenceWatchPaths(watchPaths)
+	stream, err := startEvidenceEventStream(paths)
 	if err != nil {
 		return nil
 	}
-	watcher := &darwinLiveTokenRateWatcher{
-		events:  make(chan liveTokenRateWatchBatch, 32),
-		updates: make(chan liveTokenRateWatchUpdate),
+	watcher := &darwinEvidenceWatcher{
+		events:  make(chan evidenceWatchBatch, 32),
+		updates: make(chan evidenceWatchUpdate),
 		stop:    make(chan struct{}),
 		done:    make(chan struct{}),
 	}
@@ -43,18 +43,18 @@ func newLiveTokenRateWatcher(roots []liveTokenRateRoot) liveTokenRateWatcher {
 	return watcher
 }
 
-func (watcher *darwinLiveTokenRateWatcher) Events() <-chan liveTokenRateWatchBatch {
+func (watcher *darwinEvidenceWatcher) Events() <-chan evidenceWatchBatch {
 	return watcher.events
 }
 
-func (watcher *darwinLiveTokenRateWatcher) Update(paths []string) bool {
+func (watcher *darwinEvidenceWatcher) Update(paths []string) bool {
 	if watcher == nil {
 		return false
 	}
 	done := make(chan bool, 1)
-	resolved, complete := resolvableLiveTokenRateWatchPaths(paths)
+	resolved, complete := resolvableEvidenceWatchPaths(paths)
 	select {
-	case watcher.updates <- liveTokenRateWatchUpdate{
+	case watcher.updates <- evidenceWatchUpdate{
 		paths: resolved,
 		done:  done,
 	}:
@@ -69,7 +69,7 @@ func (watcher *darwinLiveTokenRateWatcher) Update(paths []string) bool {
 	}
 }
 
-func (watcher *darwinLiveTokenRateWatcher) Stop() {
+func (watcher *darwinEvidenceWatcher) Stop() {
 	if watcher == nil {
 		return
 	}
@@ -77,14 +77,14 @@ func (watcher *darwinLiveTokenRateWatcher) Stop() {
 	<-watcher.done
 }
 
-func (watcher *darwinLiveTokenRateWatcher) run(stream *fsevents.EventStream, paths []string) {
+func (watcher *darwinEvidenceWatcher) run(stream *fsevents.EventStream, paths []string) {
 	defer close(watcher.done)
 	defer close(watcher.events)
 	defer func() { stream.Stop() }()
 	for {
 		select {
 		case events := <-stream.Events:
-			batch := projectLiveTokenRateWatchEvents(events)
+			batch := projectEvidenceWatchEvents(events)
 			if len(batch.Paths) == 0 && batch.Complete {
 				continue
 			}
@@ -98,7 +98,7 @@ func (watcher *darwinLiveTokenRateWatcher) run(stream *fsevents.EventStream, pat
 				update.done <- true
 				continue
 			}
-			next, err := startLiveTokenRateEventStream(update.paths)
+			next, err := startEvidenceEventStream(update.paths)
 			if err != nil {
 				update.done <- false
 				continue
@@ -113,7 +113,7 @@ func (watcher *darwinLiveTokenRateWatcher) run(stream *fsevents.EventStream, pat
 	}
 }
 
-func startLiveTokenRateEventStream(paths []string) (*fsevents.EventStream, error) {
+func startEvidenceEventStream(paths []string) (*fsevents.EventStream, error) {
 	if len(paths) == 0 {
 		return nil, os.ErrNotExist
 	}
@@ -128,7 +128,7 @@ func startLiveTokenRateEventStream(paths []string) (*fsevents.EventStream, error
 	return stream, nil
 }
 
-func resolvableLiveTokenRateWatchPaths(paths []string) ([]string, bool) {
+func resolvableEvidenceWatchPaths(paths []string) ([]string, bool) {
 	seen := map[string]struct{}{}
 	existing := make([]string, 0, len(paths))
 	complete := true
@@ -152,8 +152,8 @@ func resolvableLiveTokenRateWatchPaths(paths []string) ([]string, bool) {
 	return existing, complete
 }
 
-func projectLiveTokenRateWatchEvents(events []fsevents.Event) liveTokenRateWatchBatch {
-	batch := liveTokenRateWatchBatch{Complete: true}
+func projectEvidenceWatchEvents(events []fsevents.Event) evidenceWatchBatch {
+	batch := evidenceWatchBatch{Complete: true}
 	seen := map[string]struct{}{}
 	for _, event := range events {
 		if event.Flags&(fsevents.MustScanSubDirs|fsevents.KernelDropped|fsevents.UserDropped|fsevents.EventIDsWrapped|fsevents.RootChanged) != 0 {
@@ -166,7 +166,7 @@ func projectLiveTokenRateWatchEvents(events []fsevents.Event) liveTokenRateWatch
 		if !filepath.IsAbs(path) {
 			path = string(filepath.Separator) + path
 		}
-		path = canonicalLiveTokenRatePath(path)
+		path = canonicalEvidencePath(path)
 		if _, ok := seen[path]; ok {
 			continue
 		}

@@ -78,9 +78,9 @@ semantic layer says so.
   numeric rate. A numeric zero is valid only when fresh output-token evidence
   exists and no positive output falls inside the trailing window.
 - Live `unavailable` samples expose `unavailable_reason`. Supported reasons are
-  unconfigured transcript sources, recent-file capacity, directory-index
-  capacity, incomplete file-event coverage, and pending-file capacity. Token
-  volume or raw usage-event count is not an unavailable reason.
+  unconfigured transcript sources, recent-file capacity, and incomplete
+  file-event coverage. Token volume or raw usage-event count is not an
+  unavailable reason.
 - Each complete snapshot persists the then-current aggregate throughput datum,
   its per-project partition, state, and rolling-window size. The project values
   come from the same events and use the same 180-second denominator as the

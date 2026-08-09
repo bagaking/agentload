@@ -60,9 +60,18 @@ tests.
 - Directory traversal uses standard-library structured APIs and returns exact
   file metadata and surfaced errors. External `fd`, `find`, or shell pipelines
   are performance probes, not production dependencies.
-- The long-lived direction is an FSEvents-maintained evidence index and dirty
-  set. Snapshot collection consumes that index instead of repeatedly walking
-  complete agent histories.
+- The Observer owns one FSEvents-maintained evidence index and injects it into
+  snapshot collection and live throughput sampling. Adapter discovery performs
+  the bounded cold reconciliation; warm reads consume indexed candidates with
+  zero directory visits.
+- Configured root spelling remains product-visible. Physical root and file keys
+  resolve symlinks only inside index/watch ownership, so duplicate aliases do
+  not launch duplicate discovery walks and nested watch roots have one owner.
+- Filesystem events are classified by the owning adapter and update the index
+  directly. Only events racing with a reconciliation enter the 4,096-distinct-
+  file mutation buffer. Overflow and dropped events fail closed, expose an
+  evidence gap for the recovery sample, and request one adapter-pruned
+  reconciliation. Transcript files are not kept permanently open.
 
 ## Output Usage Contract
 
@@ -79,9 +88,10 @@ tests.
 - Claude message dedupe is bounded during insertion with a 2,048-entry LRU;
   repeated updates move one existing entry and do not grow the ordering
   structure.
-- Filesystem event intake has a separate lock and drain goroutine. Polling
-  atomically takes the bounded dirty set before file parsing, and dropped events
-  or dirty-set overflow remain explicit incomplete evidence.
+- The live sampler requests the maximum six-hour foreground index coverage on
+  startup, then locally selects files modified in its 15-minute live window.
+  This avoids a sampler-first 15-minute walk followed by an Observer 2-6-hour
+  walk while keeping live parsing bounded to recent files.
 - The append benchmark defines one operation as 32,768 realistic updates split
   across Claude, Codex, and Trae files. Running it with a 1,000-operation
   benchtime proves 32,768,000 updates through file IO, typed decoding, dedupe,

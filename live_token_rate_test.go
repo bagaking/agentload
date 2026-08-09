@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"math"
 	"os"
@@ -62,13 +63,18 @@ func TestCodingAgentUsageDecodersExtractVerifiedOutputShapes(t *testing.T) {
 }
 
 func newTestLiveTokenRateSampler(cfg Config) *liveTokenRateSampler {
-	return newLiveTokenRateSampler(cfg, defaultCodingAgentRegistry(cfg))
+	registry := defaultCodingAgentRegistry(cfg)
+	return newLiveTokenRateSampler(registry, newTranscriptEvidenceIndex(registry))
+}
+
+func testDatedSessions(root string, now time.Time) string {
+	return filepath.Join(root, "sessions", now.Format("2006"), now.Format("01"), now.Format("02"))
 }
 
 func TestLiveTokenRateSamplerStartsFromBaselineAndUsesCumulativeDelta(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	root := t.TempDir()
-	sessions := filepath.Join(root, "sessions")
+	sessions := testDatedSessions(root, now)
 	if err := os.MkdirAll(sessions, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +102,7 @@ func TestLiveTokenRateSamplerStartsFromBaselineAndUsesCumulativeDelta(t *testing
 func TestLiveTokenRateWatchDiscoversResumedOldSessionWithoutReplay(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	root := t.TempDir()
-	sessions := filepath.Join(root, "sessions")
+	sessions := testDatedSessions(root, now)
 	if err := os.MkdirAll(sessions, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -107,14 +113,13 @@ func TestLiveTokenRateWatchDiscoversResumedOldSessionWithoutReplay(t *testing.T)
 	}
 
 	sampler := newTestLiveTokenRateSampler(Config{CodexRoots: []string{root}})
-	sampler.setWatchCoverage(true)
 	sampler.poll(now)
 	if got := len(sampler.files); got != 0 {
 		t.Fatalf("old inactive files tracked at baseline = %d, want 0", got)
 	}
 
 	appendCumulativeTokenLine(t, path, now.Add(30*time.Second), 280)
-	sampler.recordWatchBatch(liveTokenRateWatchBatch{Paths: []string{path}, Complete: true})
+	sampler.evidenceIndex.recordWatchBatch(evidenceWatchBatch{Paths: []string{path}, Complete: true})
 	sampler.poll(now.Add(30 * time.Second))
 	if sample := sampler.sample(now.Add(30 * time.Second)); sample.State != liveTokenRateStateZero || sample.OutputTokensPerSecond == nil || *sample.OutputTokensPerSecond != 0 {
 		t.Fatalf("resumed session replayed pre-baseline output: %+v", sample)
@@ -130,7 +135,7 @@ func TestLiveTokenRateWatchDiscoversResumedOldSessionWithoutReplay(t *testing.T)
 func TestLiveTokenRateWatchGapFailsClosedAndForcesRecovery(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	root := t.TempDir()
-	sessions := filepath.Join(root, "sessions")
+	sessions := testDatedSessions(root, now)
 	if err := os.MkdirAll(sessions, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -138,15 +143,14 @@ func TestLiveTokenRateWatchGapFailsClosedAndForcesRecovery(t *testing.T) {
 	writeCumulativeTokenFile(t, path, now, 100)
 
 	sampler := newTestLiveTokenRateSampler(Config{CodexRoots: []string{root}})
-	sampler.setWatchCoverage(true)
 	sampler.poll(now)
-	sampler.recordWatchBatch(liveTokenRateWatchBatch{Complete: false})
+	sampler.evidenceIndex.recordWatchBatch(evidenceWatchBatch{Complete: false})
 	sampler.poll(now.Add(30 * time.Second))
 	if sample := sampler.sample(now.Add(30 * time.Second)); sample.State != liveTokenRateStateUnavailable || sample.OutputTokensPerSecond != nil || sample.UnavailableReason != liveTokenRateUnavailableWatchIncomplete {
 		t.Fatalf("watch gap did not fail closed: %+v", sample)
 	}
-	if len(sampler.directories) == 0 {
-		t.Fatal("watch gap did not rebuild the directory index")
+	if recovered := sampler.evidenceIndex.snapshot(context.Background(), now.Add(-liveTokenRateRecentFileAge), nil); !recovered.Complete {
+		t.Fatalf("watch gap did not restore the evidence index: %+v", recovered)
 	}
 }
 
@@ -222,10 +226,10 @@ func (decoder blockingAgentUsageDecoder) DecodeUsage(line []byte) (liveTokenRate
 	return decoder.delegate.DecodeUsage(line)
 }
 
-func TestLiveTokenRateWatchBatchesMergeWhileAppendParsingIsBlocked(t *testing.T) {
+func TestLiveTokenRateWatchUpdatesIndexWhileAppendParsingIsBlocked(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	root := t.TempDir()
-	sessions := filepath.Join(root, "sessions")
+	sessions := testDatedSessions(root, now)
 	if err := os.MkdirAll(sessions, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -240,13 +244,16 @@ func TestLiveTokenRateWatchBatchesMergeWhileAppendParsingIsBlocked(t *testing.T)
 			close(release)
 		}
 	}()
-	registry := newCodingAgentRegistry(codingAgentAdapter{
-		ID: "codex",
-		Capabilities: agentCapabilities{Usage: blockingAgentUsageDecoder{
-			delegate: newCodexOutputUsageDecoder(), entered: entered, release: release,
-		}},
-	})
-	sampler := newLiveTokenRateSampler(Config{CodexRoots: []string{root}}, registry)
+	cfg := Config{CodexRoots: []string{root}}
+	registry := defaultCodingAgentRegistry(cfg)
+	registry.mu.Lock()
+	codexIndex := registry.byID["codex"]
+	registry.adapters[codexIndex].Capabilities.Usage = blockingAgentUsageDecoder{
+		delegate: newCodexOutputUsageDecoder(), entered: entered, release: release,
+	}
+	registry.mu.Unlock()
+	evidenceIndex := newTranscriptEvidenceIndex(registry)
+	sampler := newLiveTokenRateSampler(registry, evidenceIndex)
 	sampler.poll(now)
 	appendTokenText(t, path, strings.Replace(cumulativeTokenLine(now.Add(30*time.Second), 280), `"payload"`, `"block":true,"payload"`, 1))
 
@@ -260,11 +267,15 @@ func TestLiveTokenRateWatchBatchesMergeWhileAppendParsingIsBlocked(t *testing.T)
 	case <-time.After(time.Second):
 		t.Fatal("append decoder did not block")
 	}
+	firstPath := filepath.Join(sessions, "first.jsonl")
+	secondPath := filepath.Join(sessions, "second.jsonl")
+	writeCumulativeTokenFile(t, firstPath, now.Add(30*time.Second), 1)
+	writeCumulativeTokenFile(t, secondPath, now.Add(30*time.Second), 1)
 
 	recordDone := make(chan struct{})
 	go func() {
-		sampler.recordWatchBatch(liveTokenRateWatchBatch{Complete: true, Paths: []string{"first.jsonl"}})
-		sampler.recordWatchBatch(liveTokenRateWatchBatch{Complete: true, Paths: []string{"second.jsonl"}})
+		evidenceIndex.recordWatchBatch(evidenceWatchBatch{Complete: true, Paths: []string{firstPath}})
+		evidenceIndex.recordWatchBatch(evidenceWatchBatch{Complete: true, Paths: []string{secondPath}})
 		close(recordDone)
 	}()
 	select {
@@ -272,11 +283,13 @@ func TestLiveTokenRateWatchBatchesMergeWhileAppendParsingIsBlocked(t *testing.T)
 	case <-time.After(time.Second):
 		t.Fatal("watch intake blocked behind append parsing")
 	}
-	sampler.watchMu.Lock()
-	pending := len(sampler.watchPending)
-	sampler.watchMu.Unlock()
-	if pending != 2 {
-		t.Fatalf("pending watch paths = %d, want 2 merged batches", pending)
+	evidenceIndex.mu.Lock()
+	_, firstIndexed := evidenceIndex.files[canonicalEvidencePath(firstPath)]
+	_, secondIndexed := evidenceIndex.files[canonicalEvidencePath(secondPath)]
+	pending := len(evidenceIndex.mutations)
+	evidenceIndex.mu.Unlock()
+	if !firstIndexed || !secondIndexed || pending != 0 {
+		t.Fatalf("watch updates: first=%t second=%t reconcile_mutations=%d", firstIndexed, secondIndexed, pending)
 	}
 
 	close(release)
@@ -291,7 +304,7 @@ func TestLiveTokenRateWatchBatchesMergeWhileAppendParsingIsBlocked(t *testing.T)
 func TestLiveTokenRateSamplerRebaselinesAfterObservationGap(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	root := t.TempDir()
-	sessions := filepath.Join(root, "sessions")
+	sessions := testDatedSessions(root, now)
 	if err := os.MkdirAll(sessions, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -316,7 +329,7 @@ func TestLiveTokenRateSamplerRebaselinesAfterObservationGap(t *testing.T) {
 func TestLiveTokenRateSamplerDoesNotReplayCounterWithRegressedTimestamp(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	root := t.TempDir()
-	sessions := filepath.Join(root, "sessions")
+	sessions := testDatedSessions(root, now)
 	if err := os.MkdirAll(sessions, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -335,7 +348,7 @@ func TestLiveTokenRateSamplerDoesNotReplayCounterWithRegressedTimestamp(t *testi
 func TestLiveTokenRateSamplerRebaselinesRewrittenFile(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	root := t.TempDir()
-	sessions := filepath.Join(root, "sessions")
+	sessions := testDatedSessions(root, now)
 	if err := os.MkdirAll(sessions, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -363,7 +376,7 @@ func TestLiveTokenRateSamplerRebaselinesRewrittenFile(t *testing.T) {
 func TestLiveTokenRateSamplerRebaselinesTruncatedCounter(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	root := t.TempDir()
-	sessions := filepath.Join(root, "sessions")
+	sessions := testDatedSessions(root, now)
 	if err := os.MkdirAll(sessions, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -387,7 +400,7 @@ func TestLiveTokenRateSamplerRebaselinesTruncatedCounter(t *testing.T) {
 func TestLiveTokenRateSamplerStreamsOversizedAppend(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	root := t.TempDir()
-	sessions := filepath.Join(root, "sessions")
+	sessions := testDatedSessions(root, now)
 	if err := os.MkdirAll(sessions, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -418,7 +431,7 @@ func TestLiveTokenRateSamplerStreamsOversizedAppend(t *testing.T) {
 func TestLiveTokenRateSamplerWaitsForCompleteAppendedLine(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	root := t.TempDir()
-	sessions := filepath.Join(root, "sessions")
+	sessions := testDatedSessions(root, now)
 	if err := os.MkdirAll(sessions, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -508,141 +521,6 @@ func TestLiveTokenRateSamplerLifecycleIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestLiveTokenRateDiscoveryPrunesTraeArtifactTrees(t *testing.T) {
-	now := time.Now().UTC().Truncate(time.Second)
-	root := t.TempDir()
-	day := filepath.Join(root, "sessions", "2026", "08", "02")
-	if err := os.MkdirAll(day, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(day, "rollout-session.jsonl")
-	writeCumulativeTokenFile(t, path, now, 100)
-
-	for index := 0; index < liveTokenRateMaxDirectories+8; index++ {
-		artifactDir := filepath.Join(day, fmt.Sprintf("rollout-%04d.artifacts", index), "tool-results")
-		if err := os.MkdirAll(artifactDir, 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	sampler := newTestLiveTokenRateSampler(Config{TraeRoots: []string{root}})
-	sampler.poll(now)
-	sample := sampler.sample(now)
-	if sample.State != liveTokenRateStateZero || sample.OutputTokensPerSecond == nil {
-		t.Fatalf("artifact tree made complete discovery unavailable: %+v", sample)
-	}
-	if got := len(sampler.directories); got != 4 {
-		t.Fatalf("tracked directories = %d, want only sessions/year/month/day", got)
-	}
-	if got := len(sampler.files); got != 1 {
-		t.Fatalf("tracked files = %d, want the transcript only", got)
-	}
-}
-
-func TestLiveTokenRateDiscoveryReusesStableDirectoriesAndFindsNewEntries(t *testing.T) {
-	now := time.Now().UTC().Truncate(time.Second)
-	root := t.TempDir()
-	sessions := filepath.Join(root, "sessions")
-	if err := os.MkdirAll(sessions, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	writeCumulativeTokenFile(t, filepath.Join(sessions, "first.jsonl"), now, 100)
-
-	readDir := liveTokenRateReadDir
-	t.Cleanup(func() { liveTokenRateReadDir = readDir })
-	readCount := 0
-	liveTokenRateReadDir = func(path string) ([]os.DirEntry, error) {
-		readCount++
-		return readDir(path)
-	}
-
-	sampler := newTestLiveTokenRateSampler(Config{CodexRoots: []string{root}})
-	sampler.setWatchCoverage(true)
-	sampler.poll(now)
-	if readCount == 0 {
-		t.Fatal("initial discovery did not read configured directories")
-	}
-
-	readCount = 0
-	sampler.poll(now.Add(2 * time.Minute))
-	if readCount != 0 {
-		t.Fatalf("stable directory cache performed %d redundant reads", readCount)
-	}
-
-	writeCumulativeTokenFile(t, filepath.Join(sessions, "second.jsonl"), now.Add(150*time.Second), 200)
-	if err := os.Chtimes(sessions, now.Add(150*time.Second), now.Add(150*time.Second)); err != nil {
-		t.Fatal(err)
-	}
-	sampler.poll(now.Add(150 * time.Second))
-	if got := len(sampler.files); got != 2 {
-		t.Fatalf("tracked files after directory topology change = %d, want 2", got)
-	}
-	if readCount != 1 {
-		t.Fatalf("topology change read %d directories, want one changed directory", readCount)
-	}
-}
-
-func TestLiveTokenRateDynamicRootUsesPriorityFilesWithoutWalkingHistory(t *testing.T) {
-	now := time.Now().UTC().Truncate(time.Second)
-	root := t.TempDir()
-	sessions := filepath.Join(root, "sessions")
-	if err := os.MkdirAll(sessions, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(sessions, "active.jsonl")
-	writeCumulativeTokenFile(t, path, now, 100)
-	priority := []TranscriptFile{{Tool: "codex", Path: path}}
-	for index := 0; index < liveTokenRateMaxFiles+8; index++ {
-		oldPath := filepath.Join(sessions, fmt.Sprintf("old-%04d.jsonl", index))
-		writeCumulativeTokenFile(t, oldPath, now.Add(-time.Hour), 100)
-		if err := os.Chtimes(oldPath, now.Add(-time.Hour), now.Add(-time.Hour)); err != nil {
-			t.Fatal(err)
-		}
-		priority = append(priority, TranscriptFile{Tool: "codex", Path: oldPath})
-	}
-	for index := 0; index < liveTokenRateMaxDirectories+8; index++ {
-		if err := os.MkdirAll(filepath.Join(root, ".codexl", "history", fmt.Sprintf("lane-%04d", index)), 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	readDir := liveTokenRateReadDir
-	t.Cleanup(func() { liveTokenRateReadDir = readDir })
-	readCount := 0
-	liveTokenRateReadDir = func(path string) ([]os.DirEntry, error) {
-		readCount++
-		return readDir(path)
-	}
-
-	sampler := newTestLiveTokenRateSampler(Config{})
-	sampler.setWatchCoverage(true)
-	sampler.addSnapshotRoots(
-		SnapshotConfig{CodexRoots: []string{root}},
-		priority,
-		map[string]string{liveTokenRateSessionKey("codex", path): "project-a"},
-	)
-	sampler.poll(now)
-	if readCount != 0 || len(sampler.directories) != 0 {
-		t.Fatalf("dynamic history was enumerated: reads=%d directories=%d", readCount, len(sampler.directories))
-	}
-	if got := len(sampler.files); got != 1 {
-		t.Fatalf("priority files tracked = %d, want 1", got)
-	}
-	if sample := sampler.sample(now); sample.State != liveTokenRateStateZero || sample.OutputTokensPerSecond == nil {
-		t.Fatalf("dynamic history made baseline unavailable: %+v", sample)
-	}
-
-	appendCumulativeTokenLine(t, path, now.Add(30*time.Second), 280)
-	sampler.poll(now.Add(30 * time.Second))
-	sample := sampler.sample(now.Add(30 * time.Second))
-	if sample.State != liveTokenRateStateLive || sample.OutputTokensPerSecond == nil || math.Abs(*sample.OutputTokensPerSecond-1) > 0.0001 {
-		t.Fatalf("priority file delta = %+v, want 1 output token/second", sample)
-	}
-	if len(sample.Projects) != 1 || sample.Projects[0].Project != "project-a" || math.Abs(sample.Projects[0].OutputTokensPerSecond-1) > 0.0001 || sample.Projects[0].ActiveSessions != 1 {
-		t.Fatalf("project throughput = %+v, want project-a at 1 output token/second", sample.Projects)
-	}
-}
-
 func TestLiveTokenRateProjectsFromSessionsFailsConflictsToUnassigned(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "session.jsonl")
 	projects := liveTokenRateProjectsFromSessions([]LiveSessionSnapshot{
@@ -677,17 +555,6 @@ func TestLiveTokenRatePublishedProjectsOnlyRetainEventSessions(t *testing.T) {
 	}
 	if sample := sampler.sample(now); len(sample.Projects) != 1 || sample.Projects[0].Project != "project-a" {
 		t.Fatalf("sample project partition = %+v, want project-a only", sample.Projects)
-	}
-}
-
-func TestLiveTokenRateConfiguredRootRemainsDiscoverableAfterSnapshotMerge(t *testing.T) {
-	root := t.TempDir()
-	sampler := newTestLiveTokenRateSampler(Config{CodexRoots: []string{root}})
-	sampler.addSnapshotRoots(SnapshotConfig{CodexRoots: []string{root}}, nil, nil)
-	for _, candidate := range sampler.roots {
-		if !candidate.Discover {
-			t.Fatalf("configured root lost discovery ownership: %+v", candidate)
-		}
 	}
 }
 

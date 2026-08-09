@@ -736,9 +736,7 @@ function LiveTokenRateReadout({ t, sample, compact = false }: { t: (key: string)
 function outputThroughputUnavailableDetail(t: (key: string) => string, reason?: string): string {
   if (reason === "not_configured") return t("outputThroughputUnavailableNotConfigured");
   if (reason === "file_capacity") return t("outputThroughputUnavailableFileCapacity");
-  if (reason === "directory_capacity") return t("outputThroughputUnavailableDirectoryCapacity");
   if (reason === "watch_incomplete") return t("outputThroughputUnavailableWatchIncomplete");
-  if (reason === "watch_pending_capacity") return t("outputThroughputUnavailableWatchPendingCapacity");
   return t("outputThroughputUnavailable");
 }
 

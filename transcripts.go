@@ -18,13 +18,19 @@ import (
 	"time"
 )
 
+const (
+	foregroundTranscriptMinLookback = 2 * time.Hour
+	foregroundTranscriptMaxLookback = 6 * time.Hour
+)
+
 type Observer struct {
-	cfg       Config
-	adapters  *codingAgentRegistry
-	mu        sync.Mutex
-	cache     transcriptCacheState
-	inflight  map[string]*transcriptScanFlight
-	fileCache map[string]fileTraceCache
+	cfg           Config
+	adapters      *codingAgentRegistry
+	evidenceIndex *transcriptEvidenceIndex
+	mu            sync.Mutex
+	cache         transcriptCacheState
+	inflight      map[string]*transcriptScanFlight
+	fileCache     map[string]fileTraceCache
 }
 
 func newObserver(cfg Config) *Observer {
@@ -36,10 +42,11 @@ func newObserverWithRegistry(cfg Config, adapters *codingAgentRegistry) *Observe
 		panic("coding agent registry is required")
 	}
 	return &Observer{
-		cfg:       cfg,
-		adapters:  adapters,
-		inflight:  map[string]*transcriptScanFlight{},
-		fileCache: map[string]fileTraceCache{},
+		cfg:           cfg,
+		adapters:      adapters,
+		evidenceIndex: newTranscriptEvidenceIndex(adapters),
+		inflight:      map[string]*transcriptScanFlight{},
+		fileCache:     map[string]fileTraceCache{},
 	}
 }
 
@@ -180,7 +187,7 @@ func (o *Observer) scanTranscriptsWithOptions(ctx context.Context, priority []Tr
 	if opts.DeferHistoryWalk && !opts.ForegroundCutoff.IsZero() {
 		collectionCutoff = opts.ForegroundCutoff
 	}
-	files, walkErrors := collectTranscriptCandidates(ctx, o.adapters, priority, collectionCutoff, opts.ForegroundCutoff)
+	files, walkErrors := collectTranscriptCandidates(ctx, o.evidenceIndex, o.adapters, priority, collectionCutoff, opts.ForegroundCutoff)
 	data := &TranscriptData{
 		Traces:                           make(map[string]*SessionTrace, len(files)),
 		ScannedFiles:                     len(files),
@@ -337,11 +344,11 @@ func foregroundTranscriptLookback(idleGap time.Duration) time.Duration {
 		idleGap = 90 * time.Second
 	}
 	lookback := idleGap * 80
-	if lookback < 2*time.Hour {
-		lookback = 2 * time.Hour
+	if lookback < foregroundTranscriptMinLookback {
+		lookback = foregroundTranscriptMinLookback
 	}
-	if lookback > 6*time.Hour {
-		lookback = 6 * time.Hour
+	if lookback > foregroundTranscriptMaxLookback {
+		lookback = foregroundTranscriptMaxLookback
 	}
 	return lookback
 }
@@ -509,14 +516,14 @@ func parseAppendTranscriptCandidates(ctx context.Context, adapters *codingAgentR
 	return results
 }
 
-func collectTranscriptCandidates(ctx context.Context, adapters *codingAgentRegistry, priority []TranscriptFile, historyCutoff, foregroundCutoff time.Time) ([]transcriptCandidate, []string) {
+func collectTranscriptCandidates(ctx context.Context, evidenceIndex *transcriptEvidenceIndex, adapters *codingAgentRegistry, priority []TranscriptFile, historyCutoff, foregroundCutoff time.Time) ([]transcriptCandidate, []string) {
 	scanErrors := []string{}
 	priorityKeys := map[string]struct{}{}
 	for _, file := range priority {
 		if file.Path == "" || file.Tool == "" || !adapters.hasTranscript(file.Tool) {
 			continue
 		}
-		priorityKeys[file.Tool+"\x00"+filepath.Clean(file.Path)] = struct{}{}
+		priorityKeys[file.Tool+"\x00"+canonicalEvidencePath(file.Path)] = struct{}{}
 	}
 	seen := map[string]transcriptCandidate{}
 	addFile := func(file TranscriptFile, info os.FileInfo) {
@@ -524,7 +531,7 @@ func collectTranscriptCandidates(ctx context.Context, adapters *codingAgentRegis
 			return
 		}
 		file.Path = filepath.Clean(file.Path)
-		key := file.Tool + "\x00" + file.Path
+		key := file.Tool + "\x00" + canonicalEvidencePath(file.Path)
 		_, priorityFile := priorityKeys[key]
 		deferred := false
 		tailParse := false
@@ -546,20 +553,12 @@ func collectTranscriptCandidates(ctx context.Context, adapters *codingAgentRegis
 			TailParse: tailParse,
 		}
 	}
-	for _, file := range priority {
-		if !adapters.hasTranscript(file.Tool) {
-			continue
-		}
-		info, err := os.Stat(file.Path)
-		if err != nil || info.IsDir() {
-			continue
-		}
-		addFile(file, info)
+	indexed := evidenceIndex.snapshot(ctx, historyCutoff, priority)
+	scanErrors = append(scanErrors, indexed.Errors...)
+	if !indexed.Complete {
+		scanErrors = append(scanErrors, "transcript evidence index coverage is incomplete")
 	}
-
-	discovered := adapters.discoverTranscripts(ctx, historyCutoff)
-	scanErrors = append(scanErrors, discovered.Errors...)
-	for _, file := range discovered.Files {
+	for _, file := range indexed.Files {
 		if adapters.hasTranscript(file.File.Tool) {
 			addFile(file.File, file.Info)
 		}

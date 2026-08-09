@@ -4,11 +4,11 @@ import (
 	"bufio"
 	"bytes"
 	"container/list"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"io"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -17,8 +17,6 @@ import (
 
 const (
 	liveTokenRateSampleInterval    = 30 * time.Second
-	liveTokenRateDiscoverEvery     = 30 * time.Second
-	liveTokenRateDirectoryRescan   = 2 * time.Minute
 	liveTokenRateWindow            = 180 * time.Second
 	liveTokenRateStaleAfter        = 5 * time.Minute
 	liveTokenRateRecentFileAge     = 15 * time.Minute
@@ -28,25 +26,10 @@ const (
 	liveTokenRateMaxJSONLineBytes  = 16 * 1024 * 1024
 	liveTokenRateBucketWidth       = time.Second
 	liveTokenRateMaxFiles          = 96
-	liveTokenRateMaxDirectories    = 2048
 	liveTokenRateMaxMessages       = 2048
 	liveTokenRateFutureSkew        = 5 * time.Second
 	liveTokenRateFingerprintBytes  = 128
 )
-
-type liveTokenRateRoot struct {
-	Tool     string
-	Path     string
-	Discover bool
-}
-
-type liveTokenRateTrackedDirectory struct {
-	ModTime     time.Time
-	LastScanned time.Time
-	ChildDirs   []string
-}
-
-var liveTokenRateReadDir = os.ReadDir
 
 type liveTokenRateMessageUsage struct {
 	Output   int64
@@ -93,24 +76,16 @@ type liveTokenRateSampler struct {
 	pollMu sync.Mutex
 
 	adapters        *codingAgentRegistry
-	roots           []liveTokenRateRoot
+	evidenceIndex   *transcriptEvidenceIndex
 	files           map[string]liveTokenRateTrackedFile
-	directories     map[string]liveTokenRateTrackedDirectory
 	buckets         []liveTokenRateEvent
 	lastPoll        time.Time
-	lastDiscover    time.Time
 	initialized     bool
 	latestSignal    time.Time
 	latestEvent     time.Time
 	limitedUntil    time.Time
 	limitedReason   string
 	sessionProjects map[string]string
-
-	watchMu         sync.Mutex
-	watchPending    map[string]struct{}
-	watchCoverage   bool
-	watchIncomplete bool
-	watchOverflow   bool
 
 	publishedMu sync.RWMutex
 	published   liveTokenRatePublished
@@ -119,91 +94,25 @@ type liveTokenRateSampler struct {
 	running     bool
 	stop        chan struct{}
 	done        chan struct{}
-	watcher     liveTokenRateWatcher
 }
 
-func newLiveTokenRateSampler(cfg Config, adapters *codingAgentRegistry) *liveTokenRateSampler {
+func newLiveTokenRateSampler(adapters *codingAgentRegistry, evidenceIndex *transcriptEvidenceIndex) *liveTokenRateSampler {
+	if adapters == nil || evidenceIndex == nil {
+		panic("coding agent registry and evidence index are required")
+	}
 	sampler := &liveTokenRateSampler{
 		adapters:        adapters,
-		roots:           liveTokenRateRootsFromConfig(cfg, true),
+		evidenceIndex:   evidenceIndex,
 		files:           map[string]liveTokenRateTrackedFile{},
-		directories:     map[string]liveTokenRateTrackedDirectory{},
-		watchPending:    map[string]struct{}{},
 		sessionProjects: map[string]string{},
 	}
 	sampler.publish(time.Now())
 	return sampler
 }
 
-func liveTokenRateRootsFromConfig(cfg Config, discover bool) []liveTokenRateRoot {
-	roots := make([]liveTokenRateRoot, 0, len(cfg.ClaudeRoots)+len(cfg.CodexRoots)*3+len(cfg.TraeRoots))
-	for _, root := range cfg.ClaudeRoots {
-		roots = append(roots, liveTokenRateRoot{Tool: "claude", Path: filepath.Join(root, "projects"), Discover: discover})
-	}
-	for _, root := range cfg.CodexRoots {
-		roots = append(roots,
-			liveTokenRateRoot{Tool: "codex", Path: filepath.Join(root, "sessions"), Discover: discover},
-			liveTokenRateRoot{Tool: "codex", Path: filepath.Join(root, "archived_sessions"), Discover: discover},
-			liveTokenRateRoot{Tool: "codex", Path: filepath.Join(root, ".codexl"), Discover: discover},
-		)
-	}
-	for _, root := range cfg.TraeRoots {
-		roots = append(roots, liveTokenRateRoot{Tool: "trae", Path: filepath.Join(root, "sessions"), Discover: discover})
-	}
-	return canonicalLiveTokenRateRoots(roots)
-}
-
-func liveTokenRateRootsFromSnapshotConfig(cfg SnapshotConfig) []liveTokenRateRoot {
-	return liveTokenRateRootsFromConfig(Config{
-		ClaudeRoots: cfg.ClaudeRoots,
-		CodexRoots:  cfg.CodexRoots,
-		TraeRoots:   cfg.TraeRoots,
-	}, false)
-}
-
-func canonicalLiveTokenRateRoots(roots []liveTokenRateRoot) []liveTokenRateRoot {
-	seen := map[string]int{}
-	out := make([]liveTokenRateRoot, 0, len(roots))
-	for _, root := range roots {
-		root.Tool = strings.TrimSpace(strings.ToLower(root.Tool))
-		root.Path = canonicalLiveTokenRatePath(root.Path)
-		if root.Tool == "" || root.Path == "" || root.Path == "." {
-			continue
-		}
-		key := root.Tool + "\x00" + root.Path
-		if index, ok := seen[key]; ok {
-			out[index].Discover = out[index].Discover || root.Discover
-			continue
-		}
-		seen[key] = len(out)
-		out = append(out, root)
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Tool == out[j].Tool {
-			return out[i].Path < out[j].Path
-		}
-		return out[i].Tool < out[j].Tool
-	})
-	return out
-}
-
-func canonicalLiveTokenRatePath(path string) string {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		return ""
-	}
-	if absolute, err := filepath.Abs(path); err == nil {
-		path = absolute
-	}
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
-		path = resolved
-	}
-	return filepath.Clean(path)
-}
-
 func liveTokenRateSessionKey(tool, path string) string {
 	tool = strings.TrimSpace(strings.ToLower(tool))
-	path = canonicalLiveTokenRatePath(path)
+	path = canonicalEvidencePath(path)
 	if tool == "" || path == "" || path == "." {
 		return ""
 	}
@@ -230,29 +139,14 @@ func liveTokenRateProjectsFromSessions(sessions []LiveSessionSnapshot) map[strin
 	return projects
 }
 
-func (sampler *liveTokenRateSampler) addSnapshotRoots(cfg SnapshotConfig, priority []TranscriptFile, projects map[string]string) {
+func (sampler *liveTokenRateSampler) updateSnapshotProjects(projects map[string]string) {
 	if sampler == nil {
 		return
 	}
-	additional := liveTokenRateRootsFromSnapshotConfig(cfg)
 	sampler.pollMu.Lock()
-	sampler.roots = canonicalLiveTokenRateRoots(append(sampler.roots, additional...))
 	sampler.sessionProjects = cloneLiveTokenRateProjects(projects)
-	now := time.Now()
-	for _, file := range priority {
-		sampler.trackPriorityFileLocked(file, now)
-	}
-	watchPaths := liveTokenRateWatchPaths(sampler.roots)
 	sampler.publishLocked(time.Now())
 	sampler.pollMu.Unlock()
-
-	sampler.lifecycleMu.Lock()
-	watcher := sampler.watcher
-	sampler.lifecycleMu.Unlock()
-	if watcher != nil {
-		coverage := watcher.Update(watchPaths)
-		sampler.setWatchCoverage(coverage)
-	}
 }
 
 func cloneLiveTokenRateProjects(projects map[string]string) map[string]string {
@@ -287,33 +181,6 @@ func liveTokenRateProjectsForBuckets(buckets []liveTokenRateEvent, projects map[
 	return relevant
 }
 
-func (sampler *liveTokenRateSampler) trackPriorityFileLocked(file TranscriptFile, now time.Time) {
-	path := canonicalLiveTokenRatePath(file.Path)
-	tool := strings.TrimSpace(strings.ToLower(file.Tool))
-	if path == "" || tool == "" || !liveTokenRateShouldTrackJSONL(path) {
-		return
-	}
-	rootTool, covered := sampler.liveTokenRateToolForPathLocked(path)
-	if !covered || rootTool != tool {
-		return
-	}
-	if _, tracked := sampler.files[path]; tracked {
-		return
-	}
-	info, err := os.Stat(path)
-	if err != nil || info.IsDir() {
-		return
-	}
-	if now.Sub(info.ModTime()) > liveTokenRateRecentFileAge {
-		return
-	}
-	if len(sampler.files) >= liveTokenRateMaxFiles {
-		sampler.markLimitedLocked(now, liveTokenRateUnavailableFileCapacity)
-		return
-	}
-	sampler.files[path] = sampler.rebaselineFile(path, tool, info, now)
-}
-
 func (sampler *liveTokenRateSampler) start(interval time.Duration) {
 	if sampler == nil {
 		return
@@ -326,12 +193,7 @@ func (sampler *liveTokenRateSampler) start(interval time.Duration) {
 		sampler.lifecycleMu.Unlock()
 		return
 	}
-	sampler.pollMu.Lock()
-	watcher := newLiveTokenRateWatcher(sampler.roots)
-	sampler.watcher = watcher
-	coverage := watcher != nil && watcher.Update(liveTokenRateWatchPaths(sampler.roots))
-	sampler.pollMu.Unlock()
-	sampler.setWatchCoverage(coverage)
+	sampler.evidenceIndex.start()
 	sampler.running = true
 	sampler.stop = make(chan struct{})
 	sampler.done = make(chan struct{})
@@ -339,10 +201,8 @@ func (sampler *liveTokenRateSampler) start(interval time.Duration) {
 	done := sampler.done
 	sampler.lifecycleMu.Unlock()
 
-	var workers sync.WaitGroup
-	workers.Add(1)
 	go func() {
-		defer workers.Done()
+		defer close(done)
 		sampler.poll(time.Now())
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
@@ -354,28 +214,6 @@ func (sampler *liveTokenRateSampler) start(interval time.Duration) {
 				return
 			}
 		}
-	}()
-	if watcher != nil {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
-			for {
-				select {
-				case batch, ok := <-watcher.Events():
-					if !ok {
-						sampler.setWatchCoverage(false)
-						return
-					}
-					sampler.recordWatchBatch(batch)
-				case <-stop:
-					return
-				}
-			}
-		}()
-	}
-	go func() {
-		workers.Wait()
-		close(done)
 	}()
 }
 
@@ -390,17 +228,13 @@ func (sampler *liveTokenRateSampler) stopSampler() {
 	}
 	stop := sampler.stop
 	done := sampler.done
-	watcher := sampler.watcher
 	sampler.running = false
 	sampler.stop = nil
 	sampler.done = nil
-	sampler.watcher = nil
 	close(stop)
 	sampler.lifecycleMu.Unlock()
-	if watcher != nil {
-		watcher.Stop()
-	}
 	<-done
+	sampler.evidenceIndex.stopIndex()
 }
 
 func (sampler *liveTokenRateSampler) poll(now time.Time) {
@@ -425,14 +259,7 @@ func (sampler *liveTokenRateSampler) pollLocked(now time.Time) {
 	if sampler.files == nil {
 		sampler.files = map[string]liveTokenRateTrackedFile{}
 	}
-	if sampler.directories == nil {
-		sampler.directories = map[string]liveTokenRateTrackedDirectory{}
-	}
-	sampler.consumeWatchPathsLocked(now)
-	if sampler.lastDiscover.IsZero() || now.Sub(sampler.lastDiscover) >= liveTokenRateDiscoverEvery {
-		sampler.discoverLocked(now)
-		sampler.lastDiscover = now
-	}
+	sampler.syncEvidenceFilesLocked(now)
 	for path, tracked := range sampler.files {
 		info, err := os.Stat(path)
 		if err != nil || info.IsDir() {
@@ -475,151 +302,17 @@ func (sampler *liveTokenRateSampler) pollLocked(now time.Time) {
 	sampler.pruneLocked(now)
 }
 
-func (sampler *liveTokenRateSampler) discoverLocked(now time.Time) {
-	type candidate struct {
-		Tool string
-		Path string
-		Info os.FileInfo
-	}
-	candidates := make([]candidate, 0)
-	watchCoverage := sampler.hasCompleteWatchCoverage()
-	var discoverDirectory func(liveTokenRateRoot, string)
-	discoverDirectory = func(root liveTokenRateRoot, dir string) {
-		key := root.Tool + "\x00" + dir
-		tracked, seen := sampler.directories[key]
-		info, err := os.Stat(dir)
-		if err != nil || !info.IsDir() {
-			sampler.deleteDirectoryTreeLocked(root.Tool, dir)
-			return
-		}
-		if seen && info.ModTime().Equal(tracked.ModTime) && (watchCoverage || now.Sub(tracked.LastScanned) < liveTokenRateDirectoryRescan) {
-			for _, child := range tracked.ChildDirs {
-				discoverDirectory(root, child)
-			}
-			return
-		}
-		if !seen && len(sampler.directories) >= liveTokenRateMaxDirectories {
-			sampler.markLimitedLocked(now, liveTokenRateUnavailableDirectoryCapacity)
-			return
-		}
-		entries, err := liveTokenRateReadDir(dir)
-		if err != nil {
-			return
-		}
-		childDirs := make([]string, 0)
-		for _, entry := range entries {
-			path := filepath.Join(dir, entry.Name())
-			if entry.IsDir() {
-				if liveTokenRateShouldDescendDirectory(root, path) {
-					childDirs = append(childDirs, path)
-				}
-				continue
-			}
-			if !liveTokenRateShouldTrackJSONL(path) {
-				continue
-			}
-			path = canonicalLiveTokenRatePath(path)
-			if _, exists := sampler.files[path]; exists {
-				continue
-			}
-			entryInfo, err := entry.Info()
-			if err != nil || entryInfo.Size() <= 0 || now.Sub(entryInfo.ModTime()) > liveTokenRateRecentFileAge {
-				continue
-			}
-			candidates = append(candidates, candidate{Tool: root.Tool, Path: path, Info: entryInfo})
-		}
-		sort.Strings(childDirs)
-		if seen {
-			nextChildren := make(map[string]struct{}, len(childDirs))
-			for _, child := range childDirs {
-				nextChildren[child] = struct{}{}
-			}
-			for _, oldChild := range tracked.ChildDirs {
-				if _, ok := nextChildren[oldChild]; !ok {
-					sampler.deleteDirectoryTreeLocked(root.Tool, oldChild)
-				}
-			}
-		}
-		sampler.directories[key] = liveTokenRateTrackedDirectory{
-			ModTime: info.ModTime(), LastScanned: now, ChildDirs: childDirs,
-		}
-		for _, child := range childDirs {
-			discoverDirectory(root, child)
-		}
-	}
-	for _, root := range sampler.roots {
-		if !root.Discover && watchCoverage {
-			continue
-		}
-		discoverDirectory(root, root.Path)
-	}
-	sort.Slice(candidates, func(i, j int) bool {
-		if candidates[i].Info.ModTime().Equal(candidates[j].Info.ModTime()) {
-			return candidates[i].Path < candidates[j].Path
-		}
-		return candidates[i].Info.ModTime().After(candidates[j].Info.ModTime())
-	})
-	available := liveTokenRateMaxFiles - len(sampler.files)
-	if len(candidates) > available {
-		sampler.markLimitedLocked(now, liveTokenRateUnavailableFileCapacity)
-	}
-	for _, candidate := range candidates {
-		if len(sampler.files) >= liveTokenRateMaxFiles {
-			break
-		}
-		sampler.files[candidate.Path] = sampler.rebaselineFile(candidate.Path, candidate.Tool, candidate.Info, now)
-	}
-}
-
-func liveTokenRateShouldDescendDirectory(root liveTokenRateRoot, path string) bool {
-	base := strings.ToLower(filepath.Base(path))
-	return root.Tool != "trae" || !strings.HasSuffix(base, ".artifacts")
-}
-
-func (sampler *liveTokenRateSampler) recordWatchBatch(batch liveTokenRateWatchBatch) {
-	sampler.watchMu.Lock()
-	defer sampler.watchMu.Unlock()
-	if !batch.Complete {
-		sampler.watchIncomplete = true
-	}
-	if sampler.watchPending == nil {
-		sampler.watchPending = map[string]struct{}{}
-	}
-	for _, rawPath := range batch.Paths {
-		path := strings.TrimSpace(rawPath)
-		if path == "" {
-			continue
-		}
-		if _, pending := sampler.watchPending[path]; pending {
-			continue
-		}
-		if len(sampler.watchPending) >= liveTokenRateMaxFiles*4 {
-			sampler.watchOverflow = true
-			break
-		}
-		sampler.watchPending[path] = struct{}{}
-	}
-}
-
-func (sampler *liveTokenRateSampler) consumeWatchPathsLocked(now time.Time) {
-	pending, incomplete, overflow := sampler.takeWatchState()
-	if incomplete {
-		sampler.directories = map[string]liveTokenRateTrackedDirectory{}
-		sampler.lastDiscover = time.Time{}
+func (sampler *liveTokenRateSampler) syncEvidenceFilesLocked(now time.Time) {
+	indexed := sampler.evidenceIndex.snapshot(context.Background(), now.Add(-foregroundTranscriptMaxLookback), nil)
+	if !indexed.Complete {
 		sampler.markLimitedLocked(now, liveTokenRateUnavailableWatchIncomplete)
 	}
-	if overflow {
-		sampler.markLimitedLocked(now, liveTokenRateUnavailableWatchPendingCapacity)
-	}
-	for rawPath := range pending {
-		path := canonicalLiveTokenRatePath(rawPath)
-		tool, ok := sampler.liveTokenRateToolForPathLocked(path)
-		if !ok || !liveTokenRateShouldTrackJSONL(path) {
+	for _, candidate := range indexed.Files {
+		path := candidate.File.Path
+		if candidate.Info == nil || candidate.Info.Size() <= 0 || now.Sub(candidate.Info.ModTime()) > liveTokenRateRecentFileAge {
 			continue
 		}
-		info, err := os.Stat(path)
-		if err != nil || info.IsDir() {
-			delete(sampler.files, path)
+		if _, ok := sampler.adapters.usageDecoder(candidate.File.Tool); !ok {
 			continue
 		}
 		if _, tracked := sampler.files[path]; tracked {
@@ -627,73 +320,9 @@ func (sampler *liveTokenRateSampler) consumeWatchPathsLocked(now time.Time) {
 		}
 		if len(sampler.files) >= liveTokenRateMaxFiles {
 			sampler.markLimitedLocked(now, liveTokenRateUnavailableFileCapacity)
-			continue
+			break
 		}
-		sampler.files[path] = sampler.rebaselineFile(path, tool, info, now)
-	}
-}
-
-func (sampler *liveTokenRateSampler) setWatchCoverage(complete bool) {
-	sampler.watchMu.Lock()
-	sampler.watchCoverage = complete
-	sampler.watchMu.Unlock()
-}
-
-func (sampler *liveTokenRateSampler) hasCompleteWatchCoverage() bool {
-	sampler.watchMu.Lock()
-	defer sampler.watchMu.Unlock()
-	return sampler.watchCoverage && !sampler.watchIncomplete && !sampler.watchOverflow
-}
-
-func (sampler *liveTokenRateSampler) takeWatchState() (map[string]struct{}, bool, bool) {
-	sampler.watchMu.Lock()
-	defer sampler.watchMu.Unlock()
-	pending := sampler.watchPending
-	incomplete := sampler.watchIncomplete
-	overflow := sampler.watchOverflow
-	sampler.watchPending = map[string]struct{}{}
-	sampler.watchIncomplete = false
-	sampler.watchOverflow = false
-	return pending, incomplete, overflow
-}
-
-func (sampler *liveTokenRateSampler) liveTokenRateToolForPathLocked(path string) (string, bool) {
-	bestTool := ""
-	bestRootLength := -1
-	for _, root := range sampler.roots {
-		relative, err := filepath.Rel(root.Path, path)
-		if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-			continue
-		}
-		if root.Tool == "trae" {
-			blocked := false
-			for _, part := range strings.Split(relative, string(filepath.Separator)) {
-				if strings.HasSuffix(strings.ToLower(part), ".artifacts") {
-					blocked = true
-					break
-				}
-			}
-			if blocked {
-				continue
-			}
-		}
-		if len(root.Path) > bestRootLength {
-			bestTool = root.Tool
-			bestRootLength = len(root.Path)
-		}
-	}
-	return bestTool, bestTool != ""
-}
-
-func (sampler *liveTokenRateSampler) deleteDirectoryTreeLocked(tool, path string) {
-	key := tool + "\x00" + path
-	tracked, ok := sampler.directories[key]
-	if !ok {
-		return
-	}
-	delete(sampler.directories, key)
-	for _, child := range tracked.ChildDirs {
-		sampler.deleteDirectoryTreeLocked(tool, child)
+		sampler.files[path] = sampler.rebaselineFile(path, candidate.File.Tool, candidate.Info, now)
 	}
 }
 
@@ -1002,19 +631,6 @@ func liveTokenRateBoundaryMatches(path string, tracked liveTokenRateTrackedFile)
 	return ok && current == tracked.Fingerprint
 }
 
-func liveTokenRateShouldTrackJSONL(path string) bool {
-	if !strings.HasSuffix(strings.ToLower(path), ".jsonl") {
-		return false
-	}
-	base := strings.ToLower(filepath.Base(path))
-	for _, marker := range []string{"summary", "aggregate", "snapshot", "live-rate", "live_rate"} {
-		if strings.Contains(base, marker) {
-			return false
-		}
-	}
-	return true
-}
-
 func (sampler *liveTokenRateSampler) markSignalLocked(at, now time.Time) {
 	at = normalizeLiveTokenRateSignalTime(at, now)
 	sampler.initialized = true
@@ -1065,7 +681,7 @@ func (sampler *liveTokenRateSampler) publish(now time.Time) {
 
 func (sampler *liveTokenRateSampler) publishLocked(now time.Time) {
 	published := liveTokenRatePublished{
-		Configured:    len(sampler.roots) > 0,
+		Configured:    sampler.adapters.hasUsageRoots(),
 		Initialized:   sampler.initialized,
 		LimitedUntil:  sampler.limitedUntil,
 		LimitedReason: sampler.limitedReason,

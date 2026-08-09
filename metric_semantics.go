@@ -7,16 +7,14 @@ import (
 )
 
 const (
-	liveTokenRateStateLive                       = "live"
-	liveTokenRateStateZero                       = "zero"
-	liveTokenRateStateNoData                     = "no_data"
-	liveTokenRateStateStale                      = "stale"
-	liveTokenRateStateUnavailable                = "unavailable"
-	liveTokenRateUnavailableNotConfigured        = "not_configured"
-	liveTokenRateUnavailableFileCapacity         = "file_capacity"
-	liveTokenRateUnavailableDirectoryCapacity    = "directory_capacity"
-	liveTokenRateUnavailableWatchIncomplete      = "watch_incomplete"
-	liveTokenRateUnavailableWatchPendingCapacity = "watch_pending_capacity"
+	liveTokenRateStateLive                  = "live"
+	liveTokenRateStateZero                  = "zero"
+	liveTokenRateStateNoData                = "no_data"
+	liveTokenRateStateStale                 = "stale"
+	liveTokenRateStateUnavailable           = "unavailable"
+	liveTokenRateUnavailableNotConfigured   = "not_configured"
+	liveTokenRateUnavailableFileCapacity    = "file_capacity"
+	liveTokenRateUnavailableWatchIncomplete = "watch_incomplete"
 
 	liveTokenRateBasis             = "output_tokens"
 	liveTokenRateSource            = "local_transcript_usage"

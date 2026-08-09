@@ -9,9 +9,9 @@ import (
 	"time"
 )
 
-func TestLiveTokenRateWatcherReportsNestedJSONLChanges(t *testing.T) {
+func TestEvidenceWatcherReportsNestedJSONLChanges(t *testing.T) {
 	root := t.TempDir()
-	watcher := newLiveTokenRateWatcher([]liveTokenRateRoot{{Tool: "codex", Path: root}})
+	watcher := newEvidenceWatcher([]string{root})
 	if watcher == nil {
 		t.Fatal("failed to start FSEvents watcher")
 	}
@@ -25,7 +25,7 @@ func TestLiveTokenRateWatcherReportsNestedJSONLChanges(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	want := canonicalLiveTokenRatePath(path)
+	want := canonicalEvidencePath(path)
 
 	timeout := time.After(6 * time.Second)
 	seen := []string{}

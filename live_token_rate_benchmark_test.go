@@ -70,7 +70,7 @@ func BenchmarkLiveTokenRateMultiFileAppend(b *testing.B) {
 	tools := []string{"claude", "codex", "trae"}
 	cfg := Config{ClaudeRoots: []string{claudeRoot}, CodexRoots: []string{codexRoot}, TraeRoots: []string{traeRoot}}
 	registry := defaultCodingAgentRegistry(cfg)
-	sampler := newLiveTokenRateSampler(cfg, registry)
+	sampler := newLiveTokenRateSampler(registry, newTranscriptEvidenceIndex(registry))
 	totalBytes := 0
 	for _, appendData := range appends {
 		totalBytes += len(appendData)
