@@ -3,8 +3,11 @@ package main
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
+
+var codexRolloutSessionPattern = regexp.MustCompile(`^rollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-(.+)$`)
 
 type builtinTranscriptParser struct {
 	parse     transcriptParseFunc
@@ -81,4 +84,19 @@ func newTraeTranscriptParser() agentTranscriptParser {
 
 func isCodexLaneTranscript(path string) bool {
 	return strings.Contains(filepath.Clean(path), string(filepath.Separator)+".codexl"+string(filepath.Separator))
+}
+
+func genericTranscriptSessionID(path string) string {
+	return strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+}
+
+func codexTranscriptSessionID(path string) string {
+	base := genericTranscriptSessionID(path)
+	if base == "events" {
+		return filepath.Base(filepath.Dir(path))
+	}
+	if match := codexRolloutSessionPattern.FindStringSubmatch(base); len(match) == 2 {
+		return match[1]
+	}
+	return base
 }

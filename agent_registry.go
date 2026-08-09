@@ -148,6 +148,9 @@ func (r *codingAgentRegistry) roots() map[string][]string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	for _, adapter := range r.adapters {
+		if len(adapter.Roots) == 0 {
+			continue
+		}
 		out[adapter.ID] = append([]string(nil), adapter.Roots...)
 	}
 	return out
@@ -166,6 +169,22 @@ func (r *codingAgentRegistry) hasDiscovery(id string) bool {
 func (r *codingAgentRegistry) hasTranscript(id string) bool {
 	_, ok := r.transcriptParser(id)
 	return ok
+}
+
+func (r *codingAgentRegistry) transcriptAgentIDs() []string {
+	if r == nil {
+		return nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	ids := make([]string, 0, len(r.adapters))
+	for _, adapter := range r.adapters {
+		if adapter.Capabilities.Transcript != nil {
+			ids = append(ids, adapter.ID)
+		}
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 func (r *codingAgentRegistry) transcriptParser(id string) (agentTranscriptParser, bool) {

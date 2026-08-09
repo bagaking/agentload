@@ -829,7 +829,7 @@ func parseClaudeTraceTail(file TranscriptFile) (*SessionTrace, error) {
 	trace := &SessionTrace{
 		Tool:             "claude",
 		Path:             file.Path,
-		SessionID:        strings.TrimSuffix(filepath.Base(file.Path), filepath.Ext(file.Path)),
+		SessionID:        genericTranscriptSessionID(file.Path),
 		IndependentlyRun: true,
 	}
 	setTraceProjectName(trace, extractClaudeProjectFromPath(file.Path), "transcript_path")
@@ -847,7 +847,7 @@ func parseCodexTraceTail(file TranscriptFile) (*SessionTrace, error) {
 	trace := &SessionTrace{
 		Tool:             "codex",
 		Path:             file.Path,
-		SessionID:        fallbackSessionIDForFile(file),
+		SessionID:        codexTranscriptSessionID(file.Path),
 		IndependentlyRun: true,
 	}
 	if err := forEachRecentJSONLTailLine(file.Path, func(line []byte) bool {
@@ -864,7 +864,7 @@ func parseTraeTraceTail(file TranscriptFile) (*SessionTrace, error) {
 	trace := &SessionTrace{
 		Tool:             "trae",
 		Path:             file.Path,
-		SessionID:        fallbackSessionIDForFile(file),
+		SessionID:        genericTranscriptSessionID(file.Path),
 		IndependentlyRun: true,
 	}
 	if err := forEachRecentJSONLTailLine(file.Path, func(line []byte) bool {
@@ -942,7 +942,7 @@ func parseClaudeTrace(path string) (*SessionTrace, error) {
 	trace := &SessionTrace{
 		Tool:             "claude",
 		Path:             path,
-		SessionID:        strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)),
+		SessionID:        genericTranscriptSessionID(path),
 		IndependentlyRun: true,
 	}
 	setTraceProjectName(trace, extractClaudeProjectFromPath(path), "transcript_path")
@@ -990,7 +990,7 @@ func parseCodexTrace(path string) (*SessionTrace, error) {
 	trace := &SessionTrace{
 		Tool:             "codex",
 		Path:             path,
-		SessionID:        fallbackSessionIDForFile(TranscriptFile{Tool: "codex", Path: path}),
+		SessionID:        codexTranscriptSessionID(path),
 		IndependentlyRun: true,
 	}
 	err := forEachJSONLLine(path, func(line []byte) bool {
@@ -1126,7 +1126,7 @@ func parseTraeTrace(path string) (*SessionTrace, error) {
 	trace := &SessionTrace{
 		Tool:             "trae",
 		Path:             path,
-		SessionID:        fallbackSessionIDForFile(TranscriptFile{Tool: "trae", Path: path}),
+		SessionID:        genericTranscriptSessionID(path),
 		IndependentlyRun: true,
 	}
 	err := forEachJSONLLine(path, func(line []byte) bool {

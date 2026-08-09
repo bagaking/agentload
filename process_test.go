@@ -267,13 +267,14 @@ func TestTranscriptFileFromPath(t *testing.T) {
 	cases := []struct {
 		path     string
 		wantTool string
+		wantHint string
 		wantOK   bool
 	}{
-		{path: filepath.Join("fixtures", "alice", ".codex", "sessions", "2026", "06", "28", "abc.jsonl"), wantTool: "codex", wantOK: true},
-		{path: filepath.Join("fixtures", "alice", ".codex", "archived_sessions", "abc.jsonl"), wantTool: "codex", wantOK: true},
-		{path: filepath.Join("fixtures", "alice", ".codex", ".codexl", "asagent", "lane-1", "events.jsonl"), wantTool: "codex", wantOK: true},
-		{path: filepath.Join("fixtures", "alice", ".claude", "projects", "project-a", "trace.jsonl"), wantTool: "claude", wantOK: true},
-		{path: filepath.Join("fixtures", "alice", ".trae", "cli", "sessions", "2026", "06", "28", "trace.jsonl"), wantTool: "trae", wantOK: true},
+		{path: filepath.Join("fixtures", "alice", ".codex", "sessions", "2026", "06", "28", "abc.jsonl"), wantTool: "codex", wantHint: "abc", wantOK: true},
+		{path: filepath.Join("fixtures", "alice", ".codex", "archived_sessions", "abc.jsonl"), wantTool: "codex", wantHint: "abc", wantOK: true},
+		{path: filepath.Join("fixtures", "alice", ".codex", ".codexl", "asagent", "lane-1", "events.jsonl"), wantTool: "codex", wantHint: "lane-1", wantOK: true},
+		{path: filepath.Join("fixtures", "alice", ".claude", "projects", "project-a", "trace.jsonl"), wantTool: "claude", wantHint: "trace", wantOK: true},
+		{path: filepath.Join("fixtures", "alice", ".trae", "cli", "sessions", "2026", "06", "28", "trace.jsonl"), wantTool: "trae", wantHint: "trace", wantOK: true},
 		{path: filepath.Join("fixtures", "alice", ".codex", "sessions", "abc.jsonl"), wantTool: "", wantOK: false},
 		{path: filepath.Join("fixtures", "alice", ".trae", "cli", "sessions", "2026", "06", "28", "trace.artifacts", "usage.jsonl"), wantTool: "", wantOK: false},
 	}
@@ -290,6 +291,9 @@ func TestTranscriptFileFromPath(t *testing.T) {
 		}
 		if got.Path != filepath.Clean(tc.path) {
 			t.Fatalf("transcriptFileFromPath(%q) path = %q, want %q", tc.path, got.Path, filepath.Clean(tc.path))
+		}
+		if got.SessionIDHint != tc.wantHint {
+			t.Fatalf("transcriptFileFromPath(%q) session hint = %q, want %q", tc.path, got.SessionIDHint, tc.wantHint)
 		}
 	}
 }

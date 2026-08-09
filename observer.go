@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,10 +21,9 @@ func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 	data, cached := o.transcriptData(ctx, priority, scanStart)
 	liveSessions, sessionNotes := buildLiveSessionsAt(processes, data, o.cfg.IdleGap, now)
 
-	currentByTool := map[string]ToolMetrics{
-		"claude": {},
-		"codex":  {},
-		"trae":   {},
+	currentByTool := make(map[string]ToolMetrics)
+	for _, agentID := range o.adapters.transcriptAgentIDs() {
+		currentByTool[agentID] = ToolMetrics{}
 	}
 	current := CurrentMetrics{
 		PIDConcurrency: len(processes),
@@ -286,7 +284,7 @@ func normalizeProcessSessionMappings(process LiveProcess, data *TranscriptData, 
 
 	for _, file := range process.SessionFiles {
 		trace := traces[file.Path]
-		fallback := fallbackSessionIDForFile(file)
+		fallback := strings.TrimSpace(file.SessionIDHint)
 		mapping := LiveSessionMapping{TranscriptPath: true}
 		sessionID := ""
 		key := liveSessionKeyForPath(file)
@@ -532,9 +530,6 @@ func buildLiveSessionsAt(processes []LiveProcess, data *TranscriptData, idleGap 
 				continue
 			}
 			sessionID := strings.TrimSpace(trace.SessionID)
-			if sessionID == "" {
-				sessionID = fallbackSessionIDForFile(TranscriptFile{Tool: trace.Tool, Path: trace.Path})
-			}
 			sessions[key] = &LiveSession{
 				Tool:      trace.Tool,
 				SessionID: sessionID,
@@ -2616,20 +2611,6 @@ func mergeStringSets(base, extra []string) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-func fallbackSessionIDForFile(file TranscriptFile) string {
-	base := strings.TrimSuffix(filepath.Base(file.Path), filepath.Ext(file.Path))
-	if base == "events" {
-		return filepath.Base(filepath.Dir(file.Path))
-	}
-	if file.Tool == "codex" && strings.HasPrefix(base, "rollout-") {
-		pattern := regexp.MustCompile(`^rollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-(.+)$`)
-		if match := pattern.FindStringSubmatch(base); len(match) == 2 {
-			return match[1]
-		}
-	}
-	return base
 }
 
 func uniqueSortedStrings(items []string) []string {

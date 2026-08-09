@@ -621,8 +621,9 @@ type CandidateWorkitemSnapshot struct {
 }
 
 type TranscriptFile struct {
-	Tool string
-	Path string
+	Tool          string
+	Path          string
+	SessionIDHint string
 }
 
 type SessionTrace struct {

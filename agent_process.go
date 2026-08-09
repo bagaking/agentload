@@ -47,6 +47,7 @@ type builtinProcessIdentity struct {
 	display            func(processCommand) string
 	transcriptPath     func(string) bool
 	rootFromTranscript func(string) string
+	sessionIDHint      func(string) string
 	commandRootPattern *regexp.Regexp
 }
 
@@ -68,7 +69,11 @@ func (p builtinProcessIdentity) TranscriptFileForPath(path string) (TranscriptFi
 	if path == "" || p.transcriptPath == nil || !p.transcriptPath(path) {
 		return TranscriptFile{}, false
 	}
-	return TranscriptFile{Tool: p.agentID, Path: path}, true
+	file := TranscriptFile{Tool: p.agentID, Path: path}
+	if p.sessionIDHint != nil {
+		file.SessionIDHint = p.sessionIDHint(path)
+	}
+	return file, true
 }
 
 func (p builtinProcessIdentity) RootFromTranscriptPath(path string) string {
@@ -106,6 +111,7 @@ func newClaudeProcessIdentity() agentProcessIdentity {
 			return true
 		},
 		rootFromTranscript: func(path string) string { return configRootFromPath(path, ".claude") },
+		sessionIDHint:      genericTranscriptSessionID,
 		commandRootPattern: commandRootPattern(".claude"),
 	}
 }
@@ -145,6 +151,7 @@ func newCodexProcessIdentity() agentProcessIdentity {
 			return false
 		},
 		rootFromTranscript: func(path string) string { return configRootFromPath(path, ".codex") },
+		sessionIDHint:      codexTranscriptSessionID,
 		commandRootPattern: commandRootPattern(".codex"),
 	}
 }
@@ -166,6 +173,7 @@ func newTraeProcessIdentity() agentProcessIdentity {
 			return ok && isDatedTranscriptRelativePath(relative)
 		},
 		rootFromTranscript: traeRootFromPath,
+		sessionIDHint:      genericTranscriptSessionID,
 		commandRootPattern: commandRootPattern(filepath.Join(".trae", "cli")),
 	}
 }

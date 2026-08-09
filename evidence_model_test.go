@@ -40,7 +40,7 @@ func TestBuildLiveSessionsTracksMappingEvidence(t *testing.T) {
 		{
 			PID:          103,
 			Tool:         "codex",
-			SessionFiles: []TranscriptFile{{Tool: "codex", Path: fallbackPath}},
+			SessionFiles: []TranscriptFile{{Tool: "codex", Path: fallbackPath, SessionIDHint: "fallback-session"}},
 		},
 	}
 
@@ -84,7 +84,7 @@ func TestBuildLiveSessionsMergesFallbackTranscriptAndMatchingHint(t *testing.T) 
 		{
 			PID:          101,
 			Tool:         "codex",
-			SessionFiles: []TranscriptFile{{Tool: "codex", Path: fallbackPath}},
+			SessionFiles: []TranscriptFile{{Tool: "codex", Path: fallbackPath, SessionIDHint: "fallback-session"}},
 			SessionHints: []string{"fallback-session"},
 		},
 	}
@@ -183,7 +183,7 @@ func TestBuildLiveSessionsParsedTranscriptIDSuppressesConflictingHintFromSibling
 			Tool: "codex",
 			SessionFiles: []TranscriptFile{
 				{Tool: "codex", Path: tracePath},
-				{Tool: "codex", Path: fallbackPath},
+				{Tool: "codex", Path: fallbackPath, SessionIDHint: "fallback-session"},
 			},
 			SessionHints: []string{"conflicting-session"},
 		},
@@ -223,7 +223,7 @@ func TestBuildLiveSessionsPrefersCommandHintOverFilenameFallback(t *testing.T) {
 		{
 			PID:          202,
 			Tool:         "codex",
-			SessionFiles: []TranscriptFile{{Tool: "codex", Path: fallbackPath}},
+			SessionFiles: []TranscriptFile{{Tool: "codex", Path: fallbackPath, SessionIDHint: "fallback-session"}},
 			SessionHints: []string{"hint-session"},
 		},
 	}
