@@ -167,20 +167,7 @@ func TestTranscriptScanSkipsUnchangedFileContent(t *testing.T) {
 
 	var reads atomic.Int32
 	var tailReads atomic.Int32
-	original := parseTranscriptFileFunc
-	originalTail := parseTranscriptFileTailFunc
-	parseTranscriptFileFunc = func(file TranscriptFile) (*SessionTrace, error) {
-		reads.Add(1)
-		return original(file)
-	}
-	parseTranscriptFileTailFunc = func(file TranscriptFile) (*SessionTrace, error) {
-		tailReads.Add(1)
-		return originalTail(file)
-	}
-	t.Cleanup(func() {
-		parseTranscriptFileFunc = original
-		parseTranscriptFileTailFunc = originalTail
-	})
+	installTranscriptParserProbe(t, observer, "codex", &reads, &tailReads, nil, nil)
 
 	first := observer.scanTranscripts([]TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
 	if reads.Load() != 1 {
@@ -235,23 +222,8 @@ func TestTranscriptScanUsesAppendParserForAppendOnlyGrowth(t *testing.T) {
 
 	var fullReads atomic.Int32
 	var appendReads atomic.Int32
-	originalFull := parseTranscriptFileFunc
-	originalAppend := parseTranscriptFileAppendFunc
-	parseTranscriptFileFunc = func(file TranscriptFile) (*SessionTrace, error) {
-		fullReads.Add(1)
-		return originalFull(file)
-	}
-	parseTranscriptFileAppendFunc = func(file TranscriptFile, base *SessionTrace, offset int64) (*SessionTrace, error) {
-		appendReads.Add(1)
-		if offset != int64(len(firstLine)) {
-			t.Fatalf("expected append offset %d, got %d", len(firstLine), offset)
-		}
-		return originalAppend(file, base, offset)
-	}
-	t.Cleanup(func() {
-		parseTranscriptFileFunc = originalFull
-		parseTranscriptFileAppendFunc = originalAppend
-	})
+	var appendOffset atomic.Int64
+	installTranscriptParserProbe(t, observer, "codex", &fullReads, nil, &appendReads, appendOffset.Store)
 
 	first := observer.scanTranscripts([]TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
 	if fullReads.Load() != 1 || appendReads.Load() != 0 {
@@ -277,6 +249,9 @@ func TestTranscriptScanUsesAppendParserForAppendOnlyGrowth(t *testing.T) {
 	second := observer.scanTranscripts([]TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
 	if fullReads.Load() != 1 || appendReads.Load() != 1 {
 		t.Fatalf("expected second scan to append parse only, got full=%d append=%d", fullReads.Load(), appendReads.Load())
+	}
+	if appendOffset.Load() != int64(len(firstLine)) {
+		t.Fatalf("expected append offset %d, got %d", len(firstLine), appendOffset.Load())
 	}
 	trace := second.Traces[path]
 	if trace == nil {
@@ -313,20 +288,7 @@ func TestTranscriptScanFallsBackWhenCachedFileEndedWithoutNewline(t *testing.T) 
 
 	var fullReads atomic.Int32
 	var appendReads atomic.Int32
-	originalFull := parseTranscriptFileFunc
-	originalAppend := parseTranscriptFileAppendFunc
-	parseTranscriptFileFunc = func(file TranscriptFile) (*SessionTrace, error) {
-		fullReads.Add(1)
-		return originalFull(file)
-	}
-	parseTranscriptFileAppendFunc = func(file TranscriptFile, base *SessionTrace, offset int64) (*SessionTrace, error) {
-		appendReads.Add(1)
-		return originalAppend(file, base, offset)
-	}
-	t.Cleanup(func() {
-		parseTranscriptFileFunc = originalFull
-		parseTranscriptFileAppendFunc = originalAppend
-	})
+	installTranscriptParserProbe(t, observer, "codex", &fullReads, nil, &appendReads, nil)
 
 	observer.scanTranscripts([]TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
 	if fullReads.Load() != 1 || appendReads.Load() != 0 {
@@ -361,20 +323,7 @@ func TestTranscriptScanKeepsCodexLLaneFilesOnFullParse(t *testing.T) {
 
 	var fullReads atomic.Int32
 	var appendReads atomic.Int32
-	originalFull := parseTranscriptFileFunc
-	originalAppend := parseTranscriptFileAppendFunc
-	parseTranscriptFileFunc = func(file TranscriptFile) (*SessionTrace, error) {
-		fullReads.Add(1)
-		return originalFull(file)
-	}
-	parseTranscriptFileAppendFunc = func(file TranscriptFile, base *SessionTrace, offset int64) (*SessionTrace, error) {
-		appendReads.Add(1)
-		return originalAppend(file, base, offset)
-	}
-	t.Cleanup(func() {
-		parseTranscriptFileFunc = originalFull
-		parseTranscriptFileAppendFunc = originalAppend
-	})
+	installTranscriptParserProbe(t, observer, "codex", &fullReads, nil, &appendReads, nil)
 
 	observer.scanTranscripts([]TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
 	if err := os.WriteFile(path, []byte(`{"thread_id":"lane-1"}`+"\n"+`{"event":"still-running"}`+"\n"), 0o644); err != nil {
@@ -427,20 +376,7 @@ func TestForegroundTranscriptScanDefersOlderNonPriorityFiles(t *testing.T) {
 	})
 	var reads atomic.Int32
 	var tailReads atomic.Int32
-	original := parseTranscriptFileFunc
-	originalTail := parseTranscriptFileTailFunc
-	parseTranscriptFileFunc = func(file TranscriptFile) (*SessionTrace, error) {
-		reads.Add(1)
-		return original(file)
-	}
-	parseTranscriptFileTailFunc = func(file TranscriptFile) (*SessionTrace, error) {
-		tailReads.Add(1)
-		return originalTail(file)
-	}
-	t.Cleanup(func() {
-		parseTranscriptFileFunc = original
-		parseTranscriptFileTailFunc = originalTail
-	})
+	installTranscriptParserProbe(t, observer, "codex", &reads, &tailReads, nil, nil)
 
 	data := observer.scanTranscriptsWithOptions(context.Background(), []TranscriptFile{{Tool: "codex", Path: priorityPath}}, transcriptScanOptions{
 		HistoryCutoff:      time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC),
@@ -553,12 +489,7 @@ func TestForegroundTranscriptScanDefersFreshMTimeWhenTailIsOlder(t *testing.T) {
 		CodexRoots:  []string{codexRoot},
 	})
 	var reads atomic.Int32
-	original := parseTranscriptFileFunc
-	parseTranscriptFileFunc = func(file TranscriptFile) (*SessionTrace, error) {
-		reads.Add(1)
-		return original(file)
-	}
-	t.Cleanup(func() { parseTranscriptFileFunc = original })
+	installTranscriptParserProbe(t, observer, "codex", &reads, nil, nil, nil)
 
 	data := observer.scanTranscriptsWithOptions(context.Background(), nil, transcriptScanOptions{
 		HistoryCutoff:      time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC),
@@ -574,5 +505,62 @@ func TestForegroundTranscriptScanDefersFreshMTimeWhenTailIsOlder(t *testing.T) {
 	}
 	if reads.Load() != 0 || data.ParsedFiles != 0 {
 		t.Fatalf("expected deferred candidate not to parse, reads=%d data=%+v", reads.Load(), data)
+	}
+}
+
+type transcriptParserProbe struct {
+	base        agentTranscriptParser
+	fullReads   *atomic.Int32
+	tailReads   *atomic.Int32
+	appendReads *atomic.Int32
+	checkOffset func(int64)
+}
+
+func (p transcriptParserProbe) Parse(file TranscriptFile) (*SessionTrace, error) {
+	if p.fullReads != nil {
+		p.fullReads.Add(1)
+	}
+	return p.base.Parse(file)
+}
+
+func (p transcriptParserProbe) ParseTail(file TranscriptFile) (*SessionTrace, error) {
+	if p.tailReads != nil {
+		p.tailReads.Add(1)
+	}
+	return p.base.ParseTail(file)
+}
+
+func (p transcriptParserProbe) ParseAppend(file TranscriptFile, base *SessionTrace, offset int64) (*SessionTrace, error) {
+	if p.appendReads != nil {
+		p.appendReads.Add(1)
+	}
+	if p.checkOffset != nil {
+		p.checkOffset(offset)
+	}
+	return p.base.ParseAppend(file, base, offset)
+}
+
+func (p transcriptParserProbe) CanAppend(file TranscriptFile) bool {
+	return p.base.CanAppend(file)
+}
+
+func installTranscriptParserProbe(t *testing.T, observer *Observer, agentID string, fullReads, tailReads, appendReads *atomic.Int32, checkOffset func(int64)) {
+	t.Helper()
+	observer.adapters.mu.Lock()
+	defer observer.adapters.mu.Unlock()
+	index, ok := observer.adapters.byID[agentID]
+	if !ok {
+		t.Fatalf("missing adapter %s", agentID)
+	}
+	base := observer.adapters.adapters[index].Capabilities.Transcript
+	if base == nil {
+		t.Fatalf("missing transcript parser for %s", agentID)
+	}
+	observer.adapters.adapters[index].Capabilities.Transcript = transcriptParserProbe{
+		base:        base,
+		fullReads:   fullReads,
+		tailReads:   tailReads,
+		appendReads: appendReads,
+		checkOffset: checkOffset,
 	}
 }

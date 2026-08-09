@@ -255,7 +255,7 @@ func TestParseTranscriptFileTailKeepsHeadMetadata(t *testing.T) {
 		t.Fatalf("write transcript: %v", err)
 	}
 
-	trace, err := parseTranscriptFileTail(TranscriptFile{Tool: "codex", Path: path})
+	trace, err := newCodexTranscriptParser().ParseTail(TranscriptFile{Tool: "codex", Path: path})
 	if err != nil {
 		t.Fatalf("parseTranscriptFileTail: %v", err)
 	}
@@ -287,7 +287,7 @@ func TestParseTranscriptFileTailKeepsMetadataAfterLargePreamble(t *testing.T) {
 		t.Fatalf("write transcript: %v", err)
 	}
 
-	trace, err := parseTranscriptFileTail(TranscriptFile{Tool: "codex", Path: path})
+	trace, err := newCodexTranscriptParser().ParseTail(TranscriptFile{Tool: "codex", Path: path})
 	if err != nil {
 		t.Fatalf("parseTranscriptFileTail: %v", err)
 	}
@@ -319,7 +319,7 @@ func TestParseTranscriptFileTailKeepsMetadataAfterOversizedPreambleLine(t *testi
 		t.Fatalf("write transcript: %v", err)
 	}
 
-	trace, err := parseTranscriptFileTail(TranscriptFile{Tool: "codex", Path: path})
+	trace, err := newCodexTranscriptParser().ParseTail(TranscriptFile{Tool: "codex", Path: path})
 	if err != nil {
 		t.Fatalf("parseTranscriptFileTail: %v", err)
 	}

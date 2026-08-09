@@ -21,6 +21,7 @@ type agentTranscriptParser interface {
 	Parse(file TranscriptFile) (*SessionTrace, error)
 	ParseTail(file TranscriptFile) (*SessionTrace, error)
 	ParseAppend(file TranscriptFile, base *SessionTrace, offset int64) (*SessionTrace, error)
+	CanAppend(file TranscriptFile) bool
 }
 
 type agentOutputUsageDecoder interface {
@@ -72,24 +73,27 @@ func defaultCodingAgentRegistry(cfg Config) *codingAgentRegistry {
 			ID:    "claude",
 			Roots: cfg.ClaudeRoots,
 			Capabilities: agentCapabilities{
-				Process:   newClaudeProcessIdentity(),
-				Discovery: claudeTranscriptDiscovery{},
+				Process:    newClaudeProcessIdentity(),
+				Discovery:  claudeTranscriptDiscovery{},
+				Transcript: newClaudeTranscriptParser(),
 			},
 		},
 		codingAgentAdapter{
 			ID:    "codex",
 			Roots: cfg.CodexRoots,
 			Capabilities: agentCapabilities{
-				Process:   newCodexProcessIdentity(),
-				Discovery: codexTranscriptDiscovery{},
+				Process:    newCodexProcessIdentity(),
+				Discovery:  codexTranscriptDiscovery{},
+				Transcript: newCodexTranscriptParser(),
 			},
 		},
 		codingAgentAdapter{
 			ID:    "trae",
 			Roots: cfg.TraeRoots,
 			Capabilities: agentCapabilities{
-				Process:   newTraeProcessIdentity(),
-				Discovery: traeTranscriptDiscovery{},
+				Process:    newTraeProcessIdentity(),
+				Discovery:  traeTranscriptDiscovery{},
+				Transcript: newTraeTranscriptParser(),
 			},
 		},
 		codingAgentAdapter{
@@ -144,6 +148,24 @@ func (r *codingAgentRegistry) hasDiscovery(id string) bool {
 	defer r.mu.RUnlock()
 	index, ok := r.byID[strings.TrimSpace(strings.ToLower(id))]
 	return ok && r.adapters[index].Capabilities.Discovery != nil
+}
+
+func (r *codingAgentRegistry) hasTranscript(id string) bool {
+	_, ok := r.transcriptParser(id)
+	return ok
+}
+
+func (r *codingAgentRegistry) transcriptParser(id string) (agentTranscriptParser, bool) {
+	if r == nil {
+		return nil, false
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	index, ok := r.byID[strings.TrimSpace(strings.ToLower(id))]
+	if !ok || r.adapters[index].Capabilities.Transcript == nil {
+		return nil, false
+	}
+	return r.adapters[index].Capabilities.Transcript, true
 }
 
 func (r *codingAgentRegistry) detectProcess(command string) (string, string) {

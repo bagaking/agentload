@@ -93,14 +93,17 @@ numbers.
   session stays visible while the error is disclosed in
   `transcript_stats.errors`.
 
-Parsing runs in a worker pool of `min(NumCPU, 4)` goroutines. Context
+Parsing runs in a worker pool of `min(NumCPU, 4)` goroutines. Each candidate is
+parsed through its registered full, tail, or append capability; the worker pool
+contains no tool dispatch. Codex's adapter keeps `.codexl` lane events on full
+parsing because their sidecars are part of the trace contract. Context
 cancellation marks undispatched or context-failed jobs and appends a
 `transcript scan aborted early (N files not parsed)` error; such files keep no
 cache entry so they are retried. The shared `WalkDir` traversal surfaces walk
 failures per subtree (a permission error stays distinguishable from "no
 sessions") while each adapter remains responsible for its descent rules.
 
-Per-tool line parsers extract event timestamps, session ids, project/cwd
+Adapter-owned line parsers extract event timestamps, session ids, project/cwd
 evidence, role metadata (`thread_source`, `parent_thread_id`, lane paths), and
 token usage (both incremental and cumulative usage shapes). The scan output
 also carries `SessionSpans` and `BurstSpans` (bursts segmented by

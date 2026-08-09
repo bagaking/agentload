@@ -146,6 +146,9 @@ func TestProcessOnlyAdaptersDoNotExposeTranscriptEvidence(t *testing.T) {
 		if registry.hasDiscovery(agentID) {
 			t.Fatalf("process-only adapter %s unexpectedly exposes discovery", agentID)
 		}
+		if registry.hasTranscript(agentID) {
+			t.Fatalf("process-only adapter %s unexpectedly exposes transcript parsing", agentID)
+		}
 	}
 	if file, ok := registry.transcriptFileForPath(filepath.Join("fixtures", ".gemini", "sessions", "session.jsonl")); ok {
 		t.Fatalf("process-only adapter fabricated transcript evidence: %#v", file)

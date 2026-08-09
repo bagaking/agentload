@@ -20,7 +20,8 @@ func TestRegistryDiscoveryIsInjectedAndPriorityFilesAreDirect(t *testing.T) {
 		ID:    "test-agent",
 		Roots: []string{root},
 		Capabilities: agentCapabilities{
-			Discovery: discovery,
+			Discovery:  discovery,
+			Transcript: inertTranscriptParser{},
 		},
 	})
 	candidates, errs := collectTranscriptCandidates(
@@ -162,6 +163,24 @@ func BenchmarkTraeDiscoveryPrunesArtifacts(b *testing.B) {
 
 type recordingTranscriptDiscovery struct {
 	Calls int
+}
+
+type inertTranscriptParser struct{}
+
+func (inertTranscriptParser) Parse(TranscriptFile) (*SessionTrace, error) {
+	return nil, nil
+}
+
+func (inertTranscriptParser) ParseTail(TranscriptFile) (*SessionTrace, error) {
+	return nil, nil
+}
+
+func (inertTranscriptParser) ParseAppend(TranscriptFile, *SessionTrace, int64) (*SessionTrace, error) {
+	return nil, nil
+}
+
+func (inertTranscriptParser) CanAppend(TranscriptFile) bool {
+	return false
 }
 
 func (d *recordingTranscriptDiscovery) Discover(context.Context, string, []string, time.Time) transcriptDiscoveryResult {

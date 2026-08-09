@@ -62,15 +62,7 @@ type fileTraceCache struct {
 
 type transcriptParseFunc func(TranscriptFile) (*SessionTrace, error)
 
-var parseTranscriptFileFunc transcriptParseFunc = parseTranscriptFile
-
-type transcriptTailParseFunc = transcriptParseFunc
-
-var parseTranscriptFileTailFunc transcriptTailParseFunc = parseTranscriptFileTail
-
 type transcriptAppendParseFunc func(TranscriptFile, *SessionTrace, int64) (*SessionTrace, error)
-
-var parseTranscriptFileAppendFunc transcriptAppendParseFunc = parseTranscriptFileAppend
 
 type transcriptScanFlight struct {
 	done     chan struct{}
@@ -221,7 +213,7 @@ func (o *Observer) scanTranscriptsWithOptions(ctx context.Context, priority []Tr
 			data.Traces[candidate.File.Path] = cloneSessionTrace(cached.Trace)
 			data.ParsedFiles++
 			continue
-		case canAppendParseTranscript(candidate.File, cached, candidate):
+		case canAppendParseTranscript(o.adapters, candidate.File, cached, candidate):
 			toAppend = append(toAppend, transcriptAppendCandidate{
 				Candidate: candidate,
 				Base:      cloneSessionTrace(cached.Trace),
@@ -239,8 +231,8 @@ func (o *Observer) scanTranscriptsWithOptions(ctx context.Context, priority []Tr
 	o.mu.Unlock()
 
 	updates := map[string]fileTraceCache{}
-	parseResults := parseTranscriptCandidates(ctx, toParse)
-	parseResults = append(parseResults, parseAppendTranscriptCandidates(ctx, toAppend)...)
+	parseResults := parseTranscriptCandidates(ctx, o.adapters, toParse)
+	parseResults = append(parseResults, parseAppendTranscriptCandidates(ctx, o.adapters, toAppend)...)
 	abortedParses := 0
 	for _, result := range parseResults {
 		candidate := result.Candidate
@@ -384,25 +376,18 @@ type transcriptAppendCandidate struct {
 	Offset    int64
 }
 
-func canAppendParseTranscript(file TranscriptFile, cached fileTraceCache, candidate transcriptCandidate) bool {
+func canAppendParseTranscript(adapters *codingAgentRegistry, file TranscriptFile, cached fileTraceCache, candidate transcriptCandidate) bool {
 	if candidate.Size <= cached.Size || !cached.EndsWithNewline {
 		return false
 	}
 	if cached.Err != "" || cached.Trace == nil || len(cached.Trace.EventTimes) == 0 {
 		return false
 	}
-	if file.Tool == "codex" && strings.Contains(file.Path, string(filepath.Separator)+".codexl"+string(filepath.Separator)) {
-		return false
-	}
-	switch file.Tool {
-	case "claude", "codex", "trae":
-		return true
-	default:
-		return false
-	}
+	parser, ok := adapters.transcriptParser(file.Tool)
+	return ok && parser.CanAppend(file)
 }
 
-func parseTranscriptCandidates(ctx context.Context, candidates []transcriptCandidate) []transcriptParseResult {
+func parseTranscriptCandidates(ctx context.Context, adapters *codingAgentRegistry, candidates []transcriptCandidate) []transcriptParseResult {
 	results := make([]transcriptParseResult, len(candidates))
 	if len(candidates) == 0 {
 		return results
@@ -433,11 +418,18 @@ func parseTranscriptCandidates(ctx context.Context, candidates []transcriptCandi
 					results[item.Index] = transcriptParseResult{Candidate: item.Candidate, Err: err}
 					continue
 				}
-				parseFunc := parseTranscriptFileFunc
-				if item.Candidate.TailParse {
-					parseFunc = parseTranscriptFileTailFunc
+				parser, ok := adapters.transcriptParser(item.Candidate.File.Tool)
+				if !ok {
+					results[item.Index] = transcriptParseResult{Candidate: item.Candidate, Err: fmt.Errorf("%s transcript parser is unavailable", item.Candidate.File.Tool)}
+					continue
 				}
-				trace, err := parseFunc(item.Candidate.File)
+				var trace *SessionTrace
+				var err error
+				if item.Candidate.TailParse {
+					trace, err = parser.ParseTail(item.Candidate.File)
+				} else {
+					trace, err = parser.Parse(item.Candidate.File)
+				}
 				results[item.Index] = transcriptParseResult{
 					Candidate: item.Candidate,
 					Trace:     trace,
@@ -457,7 +449,7 @@ func parseTranscriptCandidates(ctx context.Context, candidates []transcriptCandi
 	return results
 }
 
-func parseAppendTranscriptCandidates(ctx context.Context, candidates []transcriptAppendCandidate) []transcriptParseResult {
+func parseAppendTranscriptCandidates(ctx context.Context, adapters *codingAgentRegistry, candidates []transcriptAppendCandidate) []transcriptParseResult {
 	results := make([]transcriptParseResult, len(candidates))
 	if len(candidates) == 0 {
 		return results
@@ -488,7 +480,12 @@ func parseAppendTranscriptCandidates(ctx context.Context, candidates []transcrip
 					results[item.Index] = transcriptParseResult{Candidate: item.Candidate.Candidate, Err: err}
 					continue
 				}
-				trace, err := parseTranscriptFileAppendFunc(
+				parser, ok := adapters.transcriptParser(item.Candidate.Candidate.File.Tool)
+				if !ok {
+					results[item.Index] = transcriptParseResult{Candidate: item.Candidate.Candidate, Err: fmt.Errorf("%s transcript parser is unavailable", item.Candidate.Candidate.File.Tool)}
+					continue
+				}
+				trace, err := parser.ParseAppend(
 					item.Candidate.Candidate.File,
 					item.Candidate.Base,
 					item.Candidate.Offset,
@@ -516,7 +513,7 @@ func collectTranscriptCandidates(ctx context.Context, adapters *codingAgentRegis
 	scanErrors := []string{}
 	priorityKeys := map[string]struct{}{}
 	for _, file := range priority {
-		if file.Path == "" || file.Tool == "" || !adapters.hasDiscovery(file.Tool) {
+		if file.Path == "" || file.Tool == "" || !adapters.hasTranscript(file.Tool) {
 			continue
 		}
 		priorityKeys[file.Tool+"\x00"+filepath.Clean(file.Path)] = struct{}{}
@@ -550,7 +547,7 @@ func collectTranscriptCandidates(ctx context.Context, adapters *codingAgentRegis
 		}
 	}
 	for _, file := range priority {
-		if !adapters.hasDiscovery(file.Tool) {
+		if !adapters.hasTranscript(file.Tool) {
 			continue
 		}
 		info, err := os.Stat(file.Path)
@@ -563,7 +560,9 @@ func collectTranscriptCandidates(ctx context.Context, adapters *codingAgentRegis
 	discovered := adapters.discoverTranscripts(ctx, historyCutoff)
 	scanErrors = append(scanErrors, discovered.Errors...)
 	for _, file := range discovered.Files {
-		addFile(file.File, file.Info)
+		if adapters.hasTranscript(file.File.Tool) {
+			addFile(file.File, file.Info)
+		}
 	}
 
 	files := make([]transcriptCandidate, 0, len(seen))
@@ -827,129 +826,117 @@ func jsonlLineContainsKey(line []byte, key string) bool {
 		bytes.Contains(line, []byte(raw+` :`))
 }
 
-func parseTranscriptFile(file TranscriptFile) (*SessionTrace, error) {
-	switch {
-	case file.Tool == "claude":
-		return parseClaudeTrace(file.Path)
-	case file.Tool == "codex" && strings.Contains(file.Path, string(filepath.Separator)+".codexl"+string(filepath.Separator)):
-		return parseCodexLaneTrace(file.Path)
-	case file.Tool == "codex":
-		return parseCodexTrace(file.Path)
-	case file.Tool == "trae":
-		return parseTraeTrace(file.Path)
-	default:
-		return nil, fmt.Errorf("unsupported transcript type")
+func parseClaudeTraceTail(file TranscriptFile) (*SessionTrace, error) {
+	trace := &SessionTrace{
+		Tool:             "claude",
+		Path:             file.Path,
+		SessionID:        strings.TrimSuffix(filepath.Base(file.Path), filepath.Ext(file.Path)),
+		IndependentlyRun: true,
 	}
+	setTraceProjectName(trace, extractClaudeProjectFromPath(file.Path), "transcript_path")
+	if err := forEachRecentJSONLTailLine(file.Path, func(line []byte) bool {
+		processClaudeTraceLine(trace, line)
+		return true
+	}); err != nil {
+		return nil, err
+	}
+	finalizeTrace(trace)
+	return nonEmptyTrace(trace), nil
 }
 
-func parseTranscriptFileTail(file TranscriptFile) (*SessionTrace, error) {
-	if file.Tool == "codex" && strings.Contains(file.Path, string(filepath.Separator)+".codexl"+string(filepath.Separator)) {
-		return parseTranscriptFile(file)
+func parseCodexTraceTail(file TranscriptFile) (*SessionTrace, error) {
+	trace := &SessionTrace{
+		Tool:             "codex",
+		Path:             file.Path,
+		SessionID:        fallbackSessionIDForFile(file),
+		IndependentlyRun: true,
 	}
-	switch file.Tool {
-	case "claude":
-		trace := &SessionTrace{
-			Tool:             "claude",
-			Path:             file.Path,
-			SessionID:        strings.TrimSuffix(filepath.Base(file.Path), filepath.Ext(file.Path)),
-			IndependentlyRun: true,
-		}
-		setTraceProjectName(trace, extractClaudeProjectFromPath(file.Path), "transcript_path")
-		if err := forEachRecentJSONLTailLine(file.Path, func(line []byte) bool {
-			processClaudeTraceLine(trace, line)
-			return true
-		}); err != nil {
-			return nil, err
-		}
-		finalizeTrace(trace)
-		return nonEmptyTrace(trace), nil
-	case "codex":
-		trace := &SessionTrace{
-			Tool:             "codex",
-			Path:             file.Path,
-			SessionID:        fallbackSessionIDForFile(file),
-			IndependentlyRun: true,
-		}
-		if err := forEachRecentJSONLTailLine(file.Path, func(line []byte) bool {
-			processCodexTraceLine(trace, line)
-			return true
-		}); err != nil {
-			return nil, err
-		}
-		finalizeTrace(trace)
-		return nonEmptyTrace(trace), nil
-	case "trae":
-		trace := &SessionTrace{
-			Tool:             "trae",
-			Path:             file.Path,
-			SessionID:        fallbackSessionIDForFile(file),
-			IndependentlyRun: true,
-		}
-		if err := forEachRecentJSONLTailLine(file.Path, func(line []byte) bool {
-			processTraeTraceLine(trace, line)
-			return true
-		}); err != nil {
-			return nil, err
-		}
-		finalizeTrace(trace)
-		return nonEmptyTrace(trace), nil
-	default:
-		return nil, fmt.Errorf("unsupported transcript type")
+	if err := forEachRecentJSONLTailLine(file.Path, func(line []byte) bool {
+		processCodexTraceLine(trace, line)
+		return true
+	}); err != nil {
+		return nil, err
 	}
+	finalizeTrace(trace)
+	return nonEmptyTrace(trace), nil
 }
 
-func parseTranscriptFileAppend(file TranscriptFile, base *SessionTrace, offset int64) (*SessionTrace, error) {
+func parseTraeTraceTail(file TranscriptFile) (*SessionTrace, error) {
+	trace := &SessionTrace{
+		Tool:             "trae",
+		Path:             file.Path,
+		SessionID:        fallbackSessionIDForFile(file),
+		IndependentlyRun: true,
+	}
+	if err := forEachRecentJSONLTailLine(file.Path, func(line []byte) bool {
+		processTraeTraceLine(trace, line)
+		return true
+	}); err != nil {
+		return nil, err
+	}
+	finalizeTrace(trace)
+	return nonEmptyTrace(trace), nil
+}
+
+func validateTranscriptAppend(base *SessionTrace, offset int64) error {
 	if base == nil {
-		return nil, fmt.Errorf("missing cached trace for append parse")
+		return fmt.Errorf("missing cached trace for append parse")
 	}
 	if offset < 0 {
-		return nil, fmt.Errorf("invalid append offset %d", offset)
+		return fmt.Errorf("invalid append offset %d", offset)
 	}
-	switch {
-	case file.Tool == "claude":
-		trace := cloneSessionTrace(base)
-		trace.Tool = "claude"
-		trace.Path = file.Path
-		err := forEachJSONLLineFromOffset(file.Path, offset, func(line []byte) bool {
-			processClaudeTraceLine(trace, line)
-			return true
-		})
-		if err != nil {
-			return nil, err
-		}
-		finalizeTrace(trace)
-		return nonEmptyTrace(trace), nil
-	case file.Tool == "codex" && strings.Contains(file.Path, string(filepath.Separator)+".codexl"+string(filepath.Separator)):
-		return parseTranscriptFile(file)
-	case file.Tool == "codex":
-		trace := cloneSessionTrace(base)
-		trace.Tool = "codex"
-		trace.Path = file.Path
-		err := forEachJSONLLineFromOffset(file.Path, offset, func(line []byte) bool {
-			processCodexTraceLine(trace, line)
-			return true
-		})
-		if err != nil {
-			return nil, err
-		}
-		finalizeTrace(trace)
-		return nonEmptyTrace(trace), nil
-	case file.Tool == "trae":
-		trace := cloneSessionTrace(base)
-		trace.Tool = "trae"
-		trace.Path = file.Path
-		err := forEachJSONLLineFromOffset(file.Path, offset, func(line []byte) bool {
-			processTraeTraceLine(trace, line)
-			return true
-		})
-		if err != nil {
-			return nil, err
-		}
-		finalizeTrace(trace)
-		return nonEmptyTrace(trace), nil
-	default:
-		return nil, fmt.Errorf("unsupported transcript type")
+	return nil
+}
+
+func parseClaudeTraceAppend(file TranscriptFile, base *SessionTrace, offset int64) (*SessionTrace, error) {
+	if err := validateTranscriptAppend(base, offset); err != nil {
+		return nil, err
 	}
+	trace := cloneSessionTrace(base)
+	trace.Tool = "claude"
+	trace.Path = file.Path
+	if err := forEachJSONLLineFromOffset(file.Path, offset, func(line []byte) bool {
+		processClaudeTraceLine(trace, line)
+		return true
+	}); err != nil {
+		return nil, err
+	}
+	finalizeTrace(trace)
+	return nonEmptyTrace(trace), nil
+}
+
+func parseCodexTraceAppend(file TranscriptFile, base *SessionTrace, offset int64) (*SessionTrace, error) {
+	if err := validateTranscriptAppend(base, offset); err != nil {
+		return nil, err
+	}
+	trace := cloneSessionTrace(base)
+	trace.Tool = "codex"
+	trace.Path = file.Path
+	if err := forEachJSONLLineFromOffset(file.Path, offset, func(line []byte) bool {
+		processCodexTraceLine(trace, line)
+		return true
+	}); err != nil {
+		return nil, err
+	}
+	finalizeTrace(trace)
+	return nonEmptyTrace(trace), nil
+}
+
+func parseTraeTraceAppend(file TranscriptFile, base *SessionTrace, offset int64) (*SessionTrace, error) {
+	if err := validateTranscriptAppend(base, offset); err != nil {
+		return nil, err
+	}
+	trace := cloneSessionTrace(base)
+	trace.Tool = "trae"
+	trace.Path = file.Path
+	if err := forEachJSONLLineFromOffset(file.Path, offset, func(line []byte) bool {
+		processTraeTraceLine(trace, line)
+		return true
+	}); err != nil {
+		return nil, err
+	}
+	finalizeTrace(trace)
+	return nonEmptyTrace(trace), nil
 }
 
 func parseClaudeTrace(path string) (*SessionTrace, error) {
