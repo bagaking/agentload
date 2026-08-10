@@ -3181,66 +3181,6 @@ body[data-view="popover"] .warning-banner {
   stroke-width: 1;
 }
 
-.trend-chart .series {
-  fill: none;
-  stroke-width: 2.3;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.trend-chart .series.primary { stroke: var(--ok); }
-.trend-chart .series.secondary { stroke: var(--accent); opacity: .78; }
-
-.trend-selection-line {
-  stroke: color-mix(in srgb, var(--run) 72%, transparent);
-  stroke-width: 1;
-  stroke-dasharray: 3 4;
-}
-
-.trend-callout rect {
-  fill: color-mix(in srgb, var(--surface) 92%, transparent);
-  stroke: color-mix(in srgb, var(--run) 48%, transparent);
-  stroke-width: 1;
-}
-
-.trend-callout {
-  pointer-events: none;
-}
-
-.trend-callout text {
-  fill: var(--fg-faint);
-  font-family: var(--font-mono);
-  font-size: 8px;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.trend-callout text.value {
-  fill: var(--fg);
-  font-size: 10px;
-}
-
-.trend-hit {
-  cursor: pointer;
-  outline: none;
-}
-
-.trend-hit circle {
-  fill: var(--surface);
-  stroke: var(--fg-muted);
-  stroke-width: 1.7;
-}
-
-.trend-hit circle.is-selected {
-  fill: var(--run);
-  stroke: var(--fg);
-}
-
-.trend-hit:focus-visible circle {
-  stroke: var(--accent-hi);
-  stroke-width: 2.4;
-}
-
 .trend-detail {
   display: grid;
   gap: 8px;
@@ -5920,18 +5860,6 @@ body[data-view="popover"] .trend-suite.compact .trend-chart .grid {
   opacity: .72;
 }
 
-body[data-view="popover"] .trend-suite.compact .trend-callout rect {
-  rx: 4px;
-}
-
-body[data-view="popover"] .trend-suite.compact .trend-callout text {
-  font-size: 7.4px;
-}
-
-body[data-view="popover"] .trend-suite.compact .trend-callout text.value {
-  font-size: 8.5px;
-}
-
 body[data-view="popover"] .trend-suite.compact .trend-inspector-lead {
   grid-template-columns: minmax(94px, .52fr) minmax(0, 1fr) 26px;
 }
@@ -5963,146 +5891,6 @@ body[data-view="popover"] .trend-suite.compact .trend-detail-toggle {
 
 body[data-view="popover"] .trend-suite.compact .trend-detail-toggle span {
   display: none;
-}
-
-.trend-chart .time-band {
-  stroke: none;
-  opacity: .34;
-}
-
-.trend-chart .time-band.night {
-  fill: color-mix(in srgb, #5670a4 18%, transparent);
-}
-
-.trend-chart .time-band.morning {
-  fill: color-mix(in srgb, var(--ok) 10%, transparent);
-}
-
-.trend-chart .time-band.day {
-  fill: color-mix(in srgb, var(--fg) 4.5%, transparent);
-}
-
-.trend-chart .time-band.evening {
-  fill: color-mix(in srgb, var(--run) 12%, transparent);
-}
-
-.trend-chart .series-area {
-  stroke: none;
-  opacity: .16;
-}
-
-.trend-lane.history .series-area.primary {
-  fill: var(--ok);
-}
-
-.trend-lane.history .series-area.secondary {
-  fill: var(--accent);
-  opacity: .11;
-}
-
-.trend-lane.runtime .series-area.primary {
-  fill: var(--run);
-}
-
-.trend-lane.throughput .series-area.primary {
-  fill: var(--accent);
-}
-
-.trend-lane.runtime .series-area.secondary {
-  fill: var(--fg);
-  opacity: .075;
-}
-
-.trend-lane.history .series.primary {
-  stroke: var(--ok);
-}
-
-.trend-lane.history .series.secondary {
-  stroke: var(--accent);
-}
-
-.trend-lane.runtime .series.primary {
-  stroke: var(--run);
-}
-
-.trend-lane.throughput .series.primary {
-  stroke: var(--accent);
-}
-
-.trend-lane.runtime .series.secondary {
-  stroke: color-mix(in srgb, var(--fg) 58%, transparent);
-  stroke-dasharray: 4 5;
-}
-
-.trend-chart .trend-point {
-  pointer-events: none;
-  stroke: color-mix(in srgb, var(--bg) 88%, transparent);
-  stroke-width: 1.15;
-}
-
-.trend-lane.history .trend-point.primary {
-  fill: var(--ok);
-}
-
-.trend-lane.history .trend-point.secondary {
-  fill: var(--accent);
-}
-
-.trend-lane.runtime .trend-point.primary {
-  fill: var(--run);
-}
-
-.trend-lane.throughput .trend-point.primary {
-  fill: var(--accent);
-}
-
-.trend-lane.runtime .trend-point.secondary {
-  fill: color-mix(in srgb, var(--fg) 82%, transparent);
-}
-
-.trend-chart .trend-point.is-selected {
-  stroke: var(--fg);
-  stroke-width: 1.85;
-}
-
-.trend-chart .trend-point-hit {
-  fill: transparent;
-  stroke: transparent;
-  cursor: pointer;
-}
-
-.trend-hit:hover .trend-point-hit,
-.trend-hit:focus-visible .trend-point-hit,
-.trend-chart .trend-point-hit.is-selected {
-  fill: color-mix(in srgb, var(--fg) 5%, transparent);
-  stroke: color-mix(in srgb, var(--fg) 18%, transparent);
-}
-
-.chart-axis-labels text {
-  fill: var(--console-text-faint);
-  font-family: var(--font-mono);
-  font-size: 8.2px;
-  font-weight: 700;
-  letter-spacing: 0;
-  paint-order: stroke;
-  stroke: color-mix(in srgb, var(--bg) 82%, transparent);
-  stroke-linejoin: round;
-  stroke-width: 2px;
-}
-
-.chart-axis-labels .axis-segment line {
-  stroke: color-mix(in srgb, var(--console-text-faint) 42%, transparent);
-  stroke-width: .8;
-}
-
-.chart-axis-labels .axis-segment text {
-  fill: color-mix(in srgb, var(--console-text-faint) 84%, transparent);
-  font-size: 7.4px;
-  font-weight: 650;
-}
-
-.chart-axis-labels text.selected {
-  fill: var(--fg);
 }
 
 body[data-view="dashboard"] .dash-nav-band {
@@ -10679,18 +10467,6 @@ body[data-view="popover"] .trend-suite.compact .trend-readout-values b {
   font-weight: 880;
 }
 
-body[data-view="popover"] .trend-suite.compact .trend-callout text {
-  font-size: 8.4px;
-}
-
-body[data-view="popover"] .trend-suite.compact .trend-callout text.value {
-  font-size: 9.8px;
-}
-
-body[data-view="popover"] .trend-suite.compact .chart-axis-labels text {
-  font-size: 7.8px;
-}
-
 /* Trend quieting pass: keep all samples interactive, but make the plot read as one composed plane. */
 .trend-chart {
   border-top-color: color-mix(in srgb, var(--console-line-soft) 58%, transparent);
@@ -10708,50 +10484,6 @@ body[data-view="popover"] .trend-suite.compact .chart-axis-labels text {
 
 .trend-chart .grid {
   stroke: color-mix(in srgb, var(--console-line) 42%, transparent);
-}
-
-.trend-chart .time-band {
-  opacity: .18;
-}
-
-.trend-chart .series {
-  stroke-width: 2.75;
-}
-
-.trend-chart .series.secondary {
-  stroke-width: 1.65;
-  opacity: .46;
-}
-
-.trend-lane.runtime .series.secondary {
-  stroke-dasharray: none;
-  opacity: .32;
-}
-
-.trend-chart .series-area {
-  opacity: .2;
-}
-
-.trend-lane.history .series-area.secondary,
-.trend-lane.runtime .series-area.secondary {
-  opacity: .065;
-}
-
-.trend-chart .trend-point {
-  opacity: .58;
-}
-
-.trend-chart .trend-point.is-selected {
-  opacity: 1;
-  stroke: color-mix(in srgb, var(--fg) 92%, transparent);
-  stroke-width: 2;
-}
-
-.trend-hit:hover .trend-point-hit,
-.trend-hit:focus-visible .trend-point-hit,
-.trend-chart .trend-point-hit.is-selected {
-  fill: color-mix(in srgb, var(--fg) 4%, transparent);
-  stroke: color-mix(in srgb, var(--fg) 14%, transparent);
 }
 
 body[data-view="popover"] .trend-suite.compact .trend-chart {
@@ -10815,57 +10547,6 @@ body[data-view="popover"] .trend-suite.compact .trend-chart {
   stroke: color-mix(in srgb, var(--console-line) 34%, transparent);
 }
 
-.trend-chart .time-band {
-  opacity: .075;
-}
-
-.trend-chart .series {
-  stroke-width: 3.15;
-}
-
-.trend-chart .series.primary {
-  opacity: .94;
-}
-
-.trend-chart .series.secondary {
-  stroke-width: 1.1;
-  opacity: .12;
-}
-
-.trend-lane.runtime .series.secondary,
-body[data-view="popover"] .trend-suite.compact .series.secondary {
-  opacity: .085;
-}
-
-.trend-chart .series-area {
-  opacity: .24;
-}
-
-.trend-lane.history .series-area.secondary,
-.trend-lane.runtime .series-area.secondary {
-  opacity: .025;
-}
-
-.trend-chart .trend-point {
-  opacity: .34;
-}
-
-.trend-chart .trend-point.secondary {
-  opacity: .22;
-}
-
-.trend-chart .trend-point.is-selected {
-  opacity: 1;
-  stroke-width: 1.7;
-}
-
-.trend-chart .trend-point-hit.is-selected,
-.trend-hit:hover .trend-point-hit,
-.trend-hit:focus-visible .trend-point-hit {
-  fill: color-mix(in srgb, var(--fg) 2.2%, transparent);
-  stroke: color-mix(in srgb, var(--fg) 10%, transparent);
-}
-
 body[data-view="popover"] .trend-suite.compact .trend-chart {
   background:
     radial-gradient(circle at 16% 14%, color-mix(in srgb, var(--ok) 7%, transparent), transparent 32%),
@@ -10875,18 +10556,6 @@ body[data-view="popover"] .trend-suite.compact .trend-chart {
 
 body[data-view="popover"] .trend-suite.compact .trend-chart .grid {
   opacity: .28;
-}
-
-body[data-view="popover"] .trend-suite.compact .trend-chart .time-band {
-  opacity: .055;
-}
-
-.chart-axis-labels .axis-segment line {
-  opacity: .42;
-}
-
-.chart-axis-labels .axis-segment text {
-  opacity: .72;
 }
 
 /* Trend signal-plane pass: keep sparse samples selectable without turning the chart into visual shards. */
@@ -10900,50 +10569,6 @@ body[data-view="popover"] .trend-suite.compact .trend-chart .time-band {
 .trend-chart .grid {
   opacity: .2;
   stroke: color-mix(in srgb, var(--console-line) 28%, transparent);
-}
-
-.trend-chart .time-band {
-  opacity: .035;
-}
-
-.trend-chart .series {
-  stroke-width: 3.65;
-}
-
-.trend-chart .series.primary {
-  opacity: .98;
-}
-
-.trend-chart .series.secondary {
-  stroke-width: 1;
-  opacity: .07;
-}
-
-.trend-lane.runtime .series.secondary,
-body[data-view="popover"] .trend-suite.compact .series.secondary {
-  opacity: .055;
-}
-
-.trend-chart .series-area {
-  opacity: .34;
-}
-
-.trend-lane.history .series-area.secondary,
-.trend-lane.runtime .series-area.secondary {
-  opacity: .012;
-}
-
-.trend-chart .trend-point.is-anchor {
-  opacity: .16;
-}
-
-.trend-chart .trend-point.is-selected {
-  opacity: 1;
-  stroke-width: 1.55;
-}
-
-.trend-selection-line {
-  opacity: .62;
 }
 
 body[data-view="popover"] .trend-suite.compact .trend-chart {
@@ -10965,73 +10590,6 @@ body[data-view="popover"] .trend-suite.compact .trend-chart {
   opacity: .14;
 }
 
-.trend-chart .time-band {
-  opacity: .018;
-}
-
-.trend-selection-band {
-  fill: color-mix(in srgb, var(--accent-hi) 13%, transparent);
-  opacity: .42;
-  pointer-events: none;
-}
-
-.trend-selection-line {
-  display: none;
-}
-
-.trend-chart .series {
-  vector-effect: non-scaling-stroke;
-}
-
-.trend-chart .series.primary {
-  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--accent-hi) 18%, transparent));
-  stroke-width: 4.15;
-}
-
-.trend-chart .series.secondary {
-  opacity: .032;
-  stroke-width: .85;
-}
-
-.trend-lane.runtime .series.secondary,
-body[data-view="popover"] .trend-suite.compact .series.secondary {
-  opacity: .026;
-}
-
-.trend-chart .series-area {
-  opacity: .42;
-}
-
-.trend-lane.history .series-area.secondary,
-.trend-lane.runtime .series-area.secondary {
-  opacity: 0;
-}
-
-.trend-chart .trend-point.is-anchor {
-  opacity: .075;
-}
-
-.trend-chart .trend-point.is-selected {
-  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--fg) 20%, transparent));
-  opacity: 1;
-  stroke-width: 1.35;
-}
-
-.trend-chart .trend-point-hit.is-selected,
-.trend-hit:hover .trend-point-hit,
-.trend-hit:focus-visible .trend-point-hit {
-  fill: color-mix(in srgb, var(--fg) 1.6%, transparent);
-  stroke: color-mix(in srgb, var(--fg) 8%, transparent);
-}
-
-.chart-axis-labels .axis-segment line {
-  opacity: 0;
-}
-
-.chart-axis-labels .axis-segment text {
-  opacity: .48;
-}
-
 body[data-view="popover"] .trend-suite.compact .trend-chart {
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--fg) 1%, transparent), transparent 64%),
@@ -11051,44 +10609,6 @@ body[data-view="popover"] .trend-suite.compact .trend-chart {
   opacity: .08;
 }
 
-.trend-chart .time-band {
-  opacity: .01;
-}
-
-.trend-chart .series.primary {
-  opacity: .94;
-  stroke-width: 4.8;
-}
-
-.trend-chart .series.secondary,
-.trend-lane.runtime .series.secondary,
-body[data-view="popover"] .trend-suite.compact .series.secondary {
-  opacity: .018;
-  stroke-dasharray: none;
-  stroke-width: .7;
-}
-
-.trend-chart .series-area {
-  opacity: .5;
-}
-
-.trend-lane.history .series-area.secondary,
-.trend-lane.runtime .series-area.secondary {
-  opacity: 0;
-}
-
-.trend-chart .trend-point.is-anchor {
-  opacity: 0;
-}
-
-.trend-chart .trend-point.is-selected {
-  opacity: .92;
-}
-
-.chart-axis-labels .axis-segment text {
-  opacity: .32;
-}
-
 body[data-view="popover"] .trend-suite.compact .trend-chart {
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--fg) .8%, transparent), transparent 68%),
@@ -11097,14 +10617,6 @@ body[data-view="popover"] .trend-suite.compact .trend-chart {
 }
 
 /* Compact trend point-label pass: selected bucket labels should not be as tiny as passive axis ticks. */
-body[data-view="popover"] .trend-suite.compact .chart-axis-labels text.selected {
-  fill: var(--fg);
-  font-size: 13.4px;
-  font-weight: 890;
-  paint-order: stroke fill;
-  stroke: color-mix(in srgb, var(--bg) 92%, transparent);
-  stroke-width: 3.6px;
-}
 
 /* Compact trend readout emphasis pass: labels explain the pair, numerals carry the scan weight. */
 body[data-view="popover"] .trend-suite.compact .trend-lane-readout {
@@ -11186,18 +10698,6 @@ body[data-view="popover"] .trend-suite.compact .trend-readout-value.context::bef
   background: color-mix(in srgb, var(--fg-muted) 15%, transparent);
 }
 
-body[data-view="popover"] .trend-suite.compact .trend-selection-band {
-  fill: color-mix(in srgb, var(--accent-hi) 10%, transparent);
-  opacity: .32;
-}
-
-body[data-view="popover"] .trend-suite.compact .trend-chart .trend-point.is-selected {
-  opacity: 1;
-  stroke: color-mix(in srgb, var(--fg) 96%, transparent);
-  stroke-width: 1.9px;
-  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--accent-hi) 30%, transparent));
-}
-
 /* Project heatmap pass: one compact area map shares the selected trend range. */
 body[data-view="popover"] .trend-suite.compact {
   grid-template-rows: auto minmax(0, 1fr) auto auto;
@@ -11249,22 +10749,6 @@ body[data-view="popover"] .trend-suite.compact .project-heatmap-empty {
 }
 
 /* Trend edge refinement: the signal should feel precise, not marker-thick. */
-.trend-chart .series.primary {
-  stroke-width: 3.35;
-  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--accent-hi) 14%, transparent));
-}
-
-.trend-chart .series-area {
-  opacity: .42;
-}
-
-body[data-view="popover"] .trend-suite.compact .trend-chart .series.primary {
-  stroke-width: 3.15;
-}
-
-body[data-view="popover"] .trend-suite.compact .trend-chart .series-area {
-  opacity: .38;
-}
 
 /* Compact inspector numerals: labels stay small, numbers carry the scan weight. */
 .trend-inspector-anchor strong,
@@ -11338,15 +10822,6 @@ body[data-view="popover"] .trend-suite.compact .trend-chart {
   fill: color-mix(in srgb, var(--bg) 72%, transparent);
   stroke: color-mix(in srgb, var(--fg) 92%, transparent);
   stroke-width: 1.45;
-}
-
-body[data-view="popover"] .trend-suite.compact .trend-chart .series.primary {
-  stroke-width: 2.65;
-  opacity: .84;
-}
-
-body[data-view="popover"] .trend-suite.compact .trend-chart .series-area {
-  opacity: .28;
 }
 
 /* Metro heatmap pass: rounded outer sheet, square internal tiles, no squeezed labels. */
@@ -11544,214 +11019,6 @@ body[data-view="popover"] .trend-suite.compact .project-heatmap-tile.label-mini 
   line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* Professional chart skin: the canvas stays the truth layer; DOM chrome adds
-   only low-noise reading aids and metric hover detail. */
-.trend-signal-chart {
-  position: relative;
-  isolation: isolate;
-  overflow: visible;
-  border-radius: 8px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--fg) 4%, transparent), transparent 34%),
-    linear-gradient(90deg, color-mix(in srgb, var(--accent) 7%, transparent), transparent 42%, color-mix(in srgb, var(--run) 5%, transparent)),
-    repeating-linear-gradient(0deg, transparent 0 31px, color-mix(in srgb, var(--fg) 5%, transparent) 31px 32px),
-    color-mix(in srgb, var(--console-material-2) 56%, transparent);
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--fg) 7%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--fg) 10%, transparent);
-}
-
-.trend-signal-chart::before,
-.trend-signal-chart::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-}
-
-.trend-signal-chart::before {
-  background:
-    linear-gradient(90deg, transparent 0 9%, color-mix(in srgb, var(--fg) 5%, transparent) 9% calc(9% + 1px), transparent calc(9% + 1px) 100%),
-    linear-gradient(90deg, transparent 0 50%, color-mix(in srgb, var(--fg) 4%, transparent) 50% calc(50% + 1px), transparent calc(50% + 1px) 100%),
-    linear-gradient(90deg, transparent 0 91%, color-mix(in srgb, var(--fg) 5%, transparent) 91% calc(91% + 1px), transparent calc(91% + 1px) 100%);
-  opacity: .9;
-}
-
-.trend-signal-chart::after {
-  inset: auto 10px 10px 10px;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--fg) 13%, transparent), transparent);
-  opacity: .82;
-}
-
-.trend-signal-host {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  overflow: hidden;
-  border-radius: inherit;
-}
-
-.trend-signal-host table,
-.trend-signal-host canvas {
-  cursor: crosshair;
-}
-
-.trend-signal-selection {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  pointer-events: none;
-}
-
-.trend-signal-selection::before,
-.trend-signal-selection::after {
-  content: "";
-  position: absolute;
-  pointer-events: none;
-}
-
-.trend-signal-selection::before {
-  left: var(--kx);
-  top: 10px;
-  bottom: 18px;
-  width: 1px;
-  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--fg) 42%, transparent) 14%, color-mix(in srgb, var(--fg) 42%, transparent) 86%, transparent);
-}
-
-.trend-signal-selection::after {
-  left: 9px;
-  right: 9px;
-  top: var(--ky);
-  height: 1px;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent-hi) 34%, transparent) 16%, color-mix(in srgb, var(--accent-hi) 34%, transparent) 84%, transparent);
-}
-
-.trend-signal-selection-dot {
-  position: absolute;
-  left: var(--kx);
-  top: var(--ky);
-  width: 7px;
-  height: 7px;
-  border: 1px solid color-mix(in srgb, var(--fg) 88%, transparent);
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--bg) 76%, transparent);
-  box-shadow:
-    0 0 0 2px color-mix(in srgb, var(--bg) 72%, transparent),
-    0 0 0 5px color-mix(in srgb, var(--accent-hi) 10%, transparent);
-  transform: translate(-50%, -50%);
-}
-
-.trend-signal-tooltip {
-  position: absolute;
-  z-index: 80;
-  left: var(--tip-x);
-  top: var(--tip-y);
-  width: min(152px, calc(100% - 18px));
-  padding: 6px 7px 7px;
-  border: 1px solid color-mix(in srgb, var(--fg) 8%, transparent);
-  border-radius: 7px;
-  background:
-    radial-gradient(circle at 12px 10px, color-mix(in srgb, var(--accent-hi) 16%, transparent), transparent 34px),
-    linear-gradient(135deg, color-mix(in srgb, var(--fg) 6%, transparent), transparent 48%),
-    color-mix(in srgb, var(--console-material) 90%, transparent);
-  box-shadow:
-    0 16px 36px color-mix(in srgb, var(--bg) 40%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--bg) 18%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--fg) 10%, transparent);
-  backdrop-filter: blur(20px) saturate(1.2);
-  pointer-events: none;
-}
-
-.trend-signal-tooltip::before {
-  content: "";
-  position: absolute;
-  left: 7px;
-  top: 7px;
-  bottom: 7px;
-  width: 1px;
-  border-radius: 999px;
-  background: linear-gradient(180deg, var(--accent-hi), color-mix(in srgb, var(--run) 62%, transparent));
-  opacity: .62;
-}
-
-.trend-signal-tooltip.align-left.is-above { transform: translate(8px, calc(-100% - 8px)); }
-.trend-signal-tooltip.align-left.is-below { transform: translate(8px, 8px); }
-.trend-signal-tooltip.align-right.is-above { transform: translate(calc(-100% - 8px), calc(-100% - 8px)); }
-.trend-signal-tooltip.align-right.is-below { transform: translate(calc(-100% - 8px), 8px); }
-
-.trend-signal-tooltip-kicker {
-  display: block;
-  margin-left: 8px;
-  color: color-mix(in srgb, var(--fg-faint) 88%, transparent);
-  font-size: 7.6px;
-  font-weight: 820;
-  line-height: 1;
-}
-
-.trend-signal-tooltip-time {
-  display: block;
-  margin-top: 3px;
-  margin-left: 8px;
-  color: var(--fg);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 860;
-  line-height: 1;
-}
-
-.trend-signal-tooltip-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 5px;
-  margin-top: 7px;
-  margin-left: 8px;
-}
-
-.trend-signal-tooltip-grid span {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.trend-signal-tooltip-grid b {
-  overflow: hidden;
-  color: color-mix(in srgb, var(--fg-faint) 86%, transparent);
-  font-size: 7.3px;
-  font-weight: 760;
-  line-height: 1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.trend-signal-tooltip-grid em {
-  color: var(--fg);
-  font-family: var(--font-mono);
-  font-size: 12.2px;
-  font-style: normal;
-  font-weight: 880;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-
-:root[data-theme="light"] .trend-signal-chart {
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--fg) 3%, transparent), transparent 38%),
-    linear-gradient(90deg, color-mix(in srgb, var(--accent) 5%, transparent), transparent 44%, color-mix(in srgb, var(--run) 4%, transparent)),
-    repeating-linear-gradient(0deg, transparent 0 31px, color-mix(in srgb, var(--fg) 6%, transparent) 31px 32px),
-    color-mix(in srgb, var(--console-material-2) 74%, white);
-}
-
-:root[data-theme="light"] .trend-signal-tooltip {
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--fg) 4%, transparent), transparent 42%),
-    color-mix(in srgb, var(--console-material) 92%, white);
-  box-shadow:
-    0 14px 30px color-mix(in srgb, var(--fg) 10%, transparent),
-    inset 0 1px 0 color-mix(in srgb, white 76%, transparent);
 }
 
 .throughput-river-chart {
@@ -12585,15 +11852,6 @@ body[data-view="popover"] .trend-suite.compact .trend-duo {
   grid-template-columns: minmax(0, 1fr);
 }
 
-body[data-view="popover"] .trend-suite.compact .trend-lane.history {
-  padding-bottom: 8px;
-}
-
-body[data-view="popover"] .trend-suite.compact .trend-chart.trend-signal-chart {
-  height: 156px;
-  min-height: 156px;
-}
-
 body[data-view="popover"] .trend-suite.compact .project-heatmap {
   gap: 6px;
 }
@@ -12800,68 +12058,6 @@ body[data-view="popover"] .system-shell .popover-process-card {
   border-bottom-color: color-mix(in srgb, var(--console-line-soft) 86%, transparent);
 }
 
-body[data-view="popover"] .trend-suite.compact .trend-lane.runtime {
-  position: relative;
-  padding-bottom: 8px;
-  overflow: visible;
-}
-
-body[data-view="popover"] .trend-suite.compact .trend-lane.runtime .trend-lane-readout {
-  min-width: 134px;
-}
-
-.trend-runtime-curve {
-  position: relative;
-  min-height: 108px;
-  overflow: hidden;
-  border-radius: 7px;
-  background:
-    linear-gradient(120deg, color-mix(in srgb, var(--run) 10%, transparent), transparent 44%),
-    repeating-linear-gradient(90deg, transparent 0 35px, color-mix(in srgb, var(--fg) 4%, transparent) 35px 36px),
-    color-mix(in srgb, var(--console-material-2) 54%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 6%, transparent);
-}
-
-.trend-runtime-curve svg {
-  display: block;
-  width: 100%;
-  height: 108px;
-}
-
-.runtime-curve-area {
-  fill: color-mix(in srgb, var(--run) 14%, transparent);
-}
-
-.runtime-curve-line {
-  fill: none;
-  stroke: color-mix(in srgb, var(--run) 86%, var(--accent-hi));
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 2.2;
-  vector-effect: non-scaling-stroke;
-}
-
-.trend-runtime-curve circle {
-  cursor: pointer;
-  fill: color-mix(in srgb, var(--console-material) 92%, var(--bg));
-  stroke: color-mix(in srgb, var(--run) 76%, var(--fg));
-  stroke-width: 1.4;
-  vector-effect: non-scaling-stroke;
-}
-
-.trend-runtime-curve circle.is-selected {
-  fill: var(--fg);
-  stroke: color-mix(in srgb, var(--run) 90%, var(--fg));
-  stroke-width: 1.8;
-}
-
-.runtime-curve-crosshair {
-  stroke: color-mix(in srgb, var(--fg) 28%, transparent);
-  stroke-dasharray: 3 4;
-  stroke-width: .8;
-  vector-effect: non-scaling-stroke;
-}
-
 body[data-view="popover"] .trend-suite.compact .trend-runtime-drilldown {
   display: flex;
   position: relative;
@@ -13009,7 +12205,7 @@ body[data-view="popover"] .trend-runtime-drilldown-parts .other strong { color: 
 }
 
 body[data-view="popover"] .system-shell,
-body[data-view="popover"] .trend-suite.compact .trend-lane.runtime {
+body[data-view="popover"] .trend-suite.compact .trend-lane.activity-process {
   --pressure: #8fa8ff;
   --pressure-strong: #c5d2ff;
   --pressure-soft: rgba(143, 168, 255, .14);
@@ -13018,7 +12214,7 @@ body[data-view="popover"] .trend-suite.compact .trend-lane.runtime {
 }
 
 :root[data-theme="light"] body[data-view="popover"] .system-shell,
-:root[data-theme="light"] body[data-view="popover"] .trend-suite.compact .trend-lane.runtime {
+:root[data-theme="light"] body[data-view="popover"] .trend-suite.compact .trend-lane.activity-process {
   --pressure: #5577d8;
   --pressure-strong: #315ec7;
   --pressure-soft: rgba(85, 119, 216, .10);
@@ -13075,34 +12271,6 @@ body[data-view="popover"] .system-shell .popover-process-mainline b {
 
 :root[data-theme="light"] body[data-view="popover"] .system-shell .system-meter {
   background: rgba(49, 94, 199, .10);
-}
-
-body[data-view="popover"] .trend-suite.compact .trend-lane.runtime .trend-kicker,
-body[data-view="popover"] .trend-suite.compact .trend-lane.runtime .trend-readout-value.primary b {
-  color: var(--pressure-strong);
-}
-
-body[data-view="popover"] .trend-suite.compact .trend-lane.runtime .trend-runtime-curve {
-  background:
-    linear-gradient(120deg, var(--pressure-soft), transparent 44%),
-    repeating-linear-gradient(90deg, transparent 0 35px, color-mix(in srgb, var(--fg) 4%, transparent) 35px 36px),
-    color-mix(in srgb, var(--console-material-2) 54%, transparent);
-}
-
-body[data-view="popover"] .trend-suite.compact .trend-lane.runtime .runtime-curve-area {
-  fill: var(--pressure-soft);
-}
-
-body[data-view="popover"] .trend-suite.compact .trend-lane.runtime .runtime-curve-line {
-  stroke: color-mix(in srgb, var(--pressure) 82%, var(--accent-hi));
-}
-
-body[data-view="popover"] .trend-suite.compact .trend-lane.runtime .trend-runtime-curve circle {
-  stroke: var(--pressure);
-}
-
-body[data-view="popover"] .trend-suite.compact .trend-lane.runtime .trend-runtime-curve circle.is-selected {
-  stroke: var(--pressure-strong);
 }
 
 body[data-view="popover"] .system-shell {

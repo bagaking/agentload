@@ -1,0 +1,337 @@
+.trend-lane.activity-process {
+  grid-column: span 2;
+}
+
+.activity-process-head {
+  align-items: start;
+}
+
+.activity-process-head .trend-lane-title {
+  flex: 0 1 auto;
+}
+
+.activity-process-legend {
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  min-width: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--console-line-soft);
+}
+
+.activity-process-legend button {
+  display: grid;
+  grid-template-columns: 7px auto auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 28px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 0;
+  color: var(--fg-faint);
+  background: transparent;
+  cursor: pointer;
+}
+
+.activity-process-legend button + button {
+  border-left: 1px solid color-mix(in srgb, var(--console-line-soft) 72%, transparent);
+}
+
+.activity-process-legend button:disabled {
+  cursor: default;
+  opacity: .42;
+}
+
+.activity-process-legend button:focus-visible,
+.activity-process-legend button:hover:not(:disabled),
+.activity-process-legend button[aria-pressed="true"] {
+  outline: none;
+  background: color-mix(in srgb, currentColor 5%, transparent);
+}
+
+.activity-process-legend i {
+  width: 7px;
+  height: 7px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.activity-process-legend span {
+  overflow: hidden;
+  color: color-mix(in srgb, currentColor 74%, var(--fg-faint));
+  font-size: 8px;
+  font-weight: 760;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-process-legend strong {
+  color: currentColor;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 880;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.activity-process-legend .active {
+  color: var(--ok);
+}
+
+.activity-process-legend .sessions {
+  color: var(--accent-hi);
+}
+
+.activity-process-legend .processes {
+  color: var(--run);
+}
+
+.activity-process-chart {
+  position: relative;
+  isolation: isolate;
+  height: 156px;
+  min-height: 156px;
+  overflow: visible;
+  aspect-ratio: auto;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--console-material-2) 58%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--fg) 7%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--fg) 8%, transparent);
+}
+
+.activity-process-chart::before,
+.activity-process-chart::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.activity-process-chart::before {
+  inset: 0;
+  border-radius: inherit;
+  background: repeating-linear-gradient(0deg, transparent 0 31px, color-mix(in srgb, var(--fg) 4.5%, transparent) 31px 32px);
+}
+
+.activity-process-chart::after {
+  right: 10px;
+  bottom: 10px;
+  left: 10px;
+  height: 1px;
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+}
+
+.activity-process-host {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.activity-process-host table,
+.activity-process-host canvas {
+  cursor: crosshair;
+}
+
+.activity-process-selection {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  pointer-events: none;
+}
+
+.activity-process-bead {
+  position: absolute;
+  left: var(--bead-x);
+  top: var(--bead-y);
+  width: 7px;
+  height: 7px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--console-material) 88%, var(--bg));
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--bg) 74%, transparent),
+    0 0 0 4px color-mix(in srgb, currentColor 12%, transparent);
+  transform: translate(-50%, -50%);
+}
+
+.activity-process-bead.active {
+  color: var(--ok);
+}
+
+.activity-process-bead.sessions {
+  color: var(--accent-hi);
+}
+
+.activity-process-bead.processes {
+  color: var(--run);
+}
+
+.activity-process-tooltip {
+  position: absolute;
+  z-index: 80;
+  left: var(--tip-x);
+  top: var(--tip-y);
+  width: min(220px, calc(100% - 18px));
+  padding: 7px 8px 8px;
+  border: 1px solid color-mix(in srgb, var(--fg) 9%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--console-material) 94%, var(--bg));
+  box-shadow: 0 14px 32px color-mix(in srgb, var(--bg) 42%, transparent);
+  pointer-events: none;
+}
+
+.activity-process-tooltip.align-left.is-above {
+  transform: translate(8px, calc(-100% - 8px));
+}
+
+.activity-process-tooltip.align-left.is-below {
+  transform: translate(8px, 8px);
+}
+
+.activity-process-tooltip.align-right.is-above {
+  transform: translate(calc(-100% - 8px), calc(-100% - 8px));
+}
+
+.activity-process-tooltip.align-right.is-below {
+  transform: translate(calc(-100% - 8px), 8px);
+}
+
+.activity-process-tooltip > strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 860;
+  line-height: 1;
+}
+
+.activity-process-tooltip > div {
+  display: grid;
+  gap: 4px;
+}
+
+.activity-process-tooltip span {
+  display: grid;
+  grid-template-columns: 7px minmax(72px, 1fr) auto auto;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--fg-muted);
+}
+
+.activity-process-tooltip i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.activity-process-tooltip .active {
+  color: var(--ok);
+}
+
+.activity-process-tooltip .sessions {
+  color: var(--accent-hi);
+}
+
+.activity-process-tooltip .processes {
+  color: var(--run);
+}
+
+.activity-process-tooltip b {
+  overflow: hidden;
+  color: color-mix(in srgb, currentColor 72%, var(--fg-faint));
+  font-size: 8px;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-process-tooltip em {
+  color: currentColor;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-style: normal;
+  font-weight: 880;
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-process-tooltip small {
+  color: var(--fg-faint);
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  white-space: nowrap;
+}
+
+body[data-view="dashboard"] .trend-lane.throughput .trend-chart {
+  height: 156px;
+  min-height: 156px;
+  aspect-ratio: auto;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-lane.activity-process {
+  grid-column: auto;
+  padding-bottom: 8px;
+}
+
+body[data-view="popover"] .activity-process-legend span {
+  font-size: 8.4px;
+}
+
+body[data-view="popover"] .activity-process-legend strong {
+  font-size: 14px;
+}
+
+@media (max-width: 720px) {
+  .trend-lane.activity-process {
+    grid-column: auto;
+  }
+
+  .activity-process-head {
+    display: grid;
+  }
+
+  .activity-process-legend {
+    justify-content: stretch;
+    border-top: 1px solid var(--console-line-soft);
+    border-left: 0;
+  }
+
+  .activity-process-legend button {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 430px) {
+  .activity-process-chart,
+  body[data-view="dashboard"] .trend-lane.throughput .trend-chart {
+    height: 140px;
+    min-height: 140px;
+  }
+
+  .activity-process-legend button {
+    grid-template-columns: 6px minmax(0, 1fr) auto;
+    padding-inline: 5px;
+  }
+
+  .activity-process-legend span {
+    font-size: 7.6px;
+  }
+
+  .activity-process-tooltip small {
+    display: none;
+  }
+
+  .activity-process-tooltip span {
+    grid-template-columns: 7px minmax(72px, 1fr) auto;
+  }
+}

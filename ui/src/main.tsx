@@ -26,6 +26,7 @@ import "./styles/diagnostics.css";
 import "./styles/lineage.css";
 import "./styles/process-summary.css";
 import "./styles/system-resource-inspector.css";
+import "./styles/activity-process-trend.css";
 
 const TrendSuite = React.lazy(async () => {
   const module = await import("./trend/TrendSuite");

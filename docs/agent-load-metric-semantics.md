@@ -103,6 +103,14 @@ semantic layer says so.
 - Trend charts, selected-point readouts, hover tooltips, and inspectors must use
   the same sampled datum. Do not manufacture OHLC fields from adjacent points or
   show a derived plot value beside a different raw readout.
+- The session/process count chart may place recent-movement sessions, known
+  sessions, and visible PIDs on one time plane because all three are counts.
+  `active_burst_concurrency` is the number of sessions whose recent-activity
+  spans overlap the sampled time; it is not a record count or raw event count.
+  Each series keeps its own evidence family and actual sample timestamp.
+  Missing transcript or runtime coverage stays empty, and the UI must not
+  resample, synthesize aligned values, or carry one family forward to make the
+  lines align.
 - Runtime trend drilldowns may split a selected bucket into persisted process
   fields such as total visible PIDs, Coding Agent process distribution, host
   process distribution, mapped processes, unmapped processes, and matched share.

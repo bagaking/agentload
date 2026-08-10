@@ -1,16 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { Gauge, Info, Layers } from "lucide-react";
-import {
-  AreaSeries,
-  ColorType,
-  CrosshairMode,
-  LineStyle,
-  createChart,
-  type IChartApi,
-  type ISeriesApi,
-  type MouseEventParams,
-  type Time,
-} from "lightweight-charts";
 import { clampNumber, formatAge as formatRelativeAge, formatCopy, formatPct, formatTokenRate, type Translate } from "../lib/format";
 import { trendContextSessionValue, trendMappedProcessCount, trendMappingCoverageValue, trendOutputThroughputActiveSessions, trendOutputThroughputProjects, trendOutputThroughputState, trendOutputThroughputValue, trendOutputThroughputWindowSeconds, trendPrimaryValue, trendUnmappedProcessCount } from "../lib/metricSemantics";
 import {
@@ -25,6 +14,7 @@ import {
   type TrendWindow,
 } from "./types";
 import { toolDisplayName, toolIconName } from "../lib/activityModel";
+import { ActivityProcessTrend } from "./ActivityProcessTrend";
 import { ThroughputRiver } from "./ThroughputRiver";
 
 export type TrendSnapshot = {
@@ -73,21 +63,9 @@ type ProjectHeatmapHover = {
 
 type TrendSignalDatum = {
   at: string;
-  time: Time;
+  time: number;
   value: number;
   point: TrendPoint;
-  previous: number;
-};
-
-type TrendSignalOverlay = {
-  left: number;
-  top: number;
-};
-
-type TrendSignalHover = TrendSignalOverlay & {
-  align: "left" | "right";
-  vertical: "above" | "below";
-  datum: TrendSignalDatum;
 };
 
 export function TrendSuite({
@@ -118,10 +96,13 @@ export function TrendSuite({
   // Stable summary (and points) identities keep the chart data effect from
   // re-firing on focus-only re-renders.
   const laneSummaries: TrendLaneSummary[] = useMemo(() => [
-    trendLaneSummary("history", t("historyLane"), history, trendSelection.history),
-    trendLaneSummary("runtime", t("runtimeLane"), runtime, trendSelection.runtime),
+    trendLaneSummary("history", t("trendActiveSessions"), history, trendSelection.history),
+    trendLaneSummary("runtime", t("trendVisiblePids"), runtime, trendSelection.runtime),
     trendLaneSummary("throughput", t("throughputLane"), throughput, trendSelection.throughput),
   ].filter((summary) => Boolean(summary.trendWindow || summary.points.length)), [t, history, runtime, throughput, trendSelection.history, trendSelection.runtime, trendSelection.throughput]);
+  const historySummary = laneSummaries.find((summary) => summary.lane === "history");
+  const runtimeSummary = laneSummaries.find((summary) => summary.lane === "runtime");
+  const throughputSummary = laneSummaries.find((summary) => summary.lane === "throughput");
   const activeSummary = laneSummaries.find((summary) => summary.lane === focusedLane && summary.selected) ?? laneSummaries.find((summary) => summary.selected);
   return (
     <section className={`trend-suite ${compact ? "compact" : "dashboard"}`}>
@@ -141,17 +122,26 @@ export function TrendSuite({
       {laneSummaries.length ? (
         <>
           <div className="trend-duo">
-            {laneSummaries.map((summary) => (
-              <TrendLaneView
-                key={summary.lane}
+            {historySummary || runtimeSummary ? (
+              <ActivityProcessLane
                 t={t}
-                summary={summary}
-                isFocused={activeSummary?.lane === summary.lane}
+                history={historySummary}
+                runtime={runtimeSummary}
+                focusedLane={focusedLane}
                 compact={compact}
                 setFocusedLane={setFocusedLane}
                 setTrendSelection={setTrendSelection}
               />
-            ))}
+            ) : null}
+            {throughputSummary ? (
+              <ThroughputLaneView
+                t={t}
+                summary={throughputSummary}
+                isFocused={activeSummary?.lane === "throughput"}
+                setFocusedLane={setFocusedLane}
+                setTrendSelection={setTrendSelection}
+              />
+            ) : null}
           </div>
           <ProjectHeatmap t={t} window={projectHeatmap} projectActivity={projectActivity} compact={compact} />
           {compact ? null : <TrendSelectionInspector t={t} summary={activeSummary} compact={compact} />}
@@ -330,39 +320,141 @@ function formatHeatmapInlineValue(value: number): string {
   return String(value);
 }
 
-function TrendLaneView({
+function ActivityProcessLane({
+  t,
+  history,
+  runtime,
+  focusedLane,
+  compact,
+  setFocusedLane,
+  setTrendSelection,
+}: {
+  t: Translate;
+  history?: TrendLaneSummary;
+  runtime?: TrendLaneSummary;
+  focusedLane: TrendLane;
+  compact: boolean;
+  setFocusedLane: (lane: TrendLane) => void;
+  setTrendSelection: React.Dispatch<React.SetStateAction<Record<TrendLane, string | undefined>>>;
+}) {
+  const historySelected = history?.selected;
+  const runtimeSelected = runtime?.selected;
+  const historyWindow = history?.trendWindow;
+  const runtimeWindow = runtime?.trendWindow;
+  const range = historyWindow?.range || runtimeWindow?.range || t("unavailable");
+  const sampleMeta = formatCopy(t("activityProcessSamples"), {
+    sessions: history?.data.length ?? 0,
+    processes: runtime?.data.length ?? 0,
+  });
+  const selectHistory = useCallback(() => {
+    setFocusedLane("history");
+    if (historySelected?.at) setTrendSelection((current) => ({ ...current, history: historySelected.at }));
+  }, [historySelected?.at, setFocusedLane, setTrendSelection]);
+  const selectRuntime = useCallback(() => {
+    setFocusedLane("runtime");
+    if (runtimeSelected?.at) setTrendSelection((current) => ({ ...current, runtime: runtimeSelected.at }));
+  }, [runtimeSelected?.at, setFocusedLane, setTrendSelection]);
+  const selectChartPoints = useCallback(({ historyAt, runtimeAt }: { historyAt?: string; runtimeAt?: string }) => {
+    setTrendSelection((current) => ({
+      ...current,
+      history: historyAt || current.history,
+      runtime: runtimeAt || current.runtime,
+    }));
+  }, [setTrendSelection]);
+  return (
+    <article className={`trend-lane activity-process ${focusedLane !== "throughput" ? "is-focused" : ""}`}>
+      <div className="trend-lane-head activity-process-head">
+        <div className="trend-lane-title">
+          <span className="trend-kicker">{t("activityProcessLane")}</span>
+          <small>{range} · {sampleMeta}</small>
+        </div>
+        <div className="activity-process-legend" role="group" aria-label={t("selectedValues")}>
+          <button
+            aria-pressed={focusedLane === "history"}
+            className="active"
+            data-focus-key={focusKey("trend-legend", "active", historySelected?.at || "")}
+            disabled={!historySelected}
+            title={historySelected?.at ? formatDateTime(historySelected.at) : t("unavailable")}
+            type="button"
+            onClick={selectHistory}
+          >
+            <i aria-hidden="true" /><span>{t("trendActiveSessions")}</span><strong>{trendMetricValue(t, historySelected?.value)}</strong>
+          </button>
+          <button
+            aria-pressed={focusedLane === "history"}
+            className="sessions"
+            data-focus-key={focusKey("trend-legend", "sessions", historySelected?.at || "")}
+            disabled={!historySelected}
+            title={historySelected?.at ? formatDateTime(historySelected.at) : t("unavailable")}
+            type="button"
+            onClick={selectHistory}
+          >
+            <i aria-hidden="true" /><span>{t("metricKnownSessions")}</span><strong>{trendMetricValue(t, historySelected ? trendContextSessionValue(historySelected.point) ?? undefined : undefined)}</strong>
+          </button>
+          <button
+            aria-pressed={focusedLane === "runtime"}
+            className="processes"
+            data-focus-key={focusKey("trend-legend", "processes", runtimeSelected?.at || "")}
+            disabled={!runtimeSelected}
+            title={runtimeSelected?.at ? formatDateTime(runtimeSelected.at) : t("unavailable")}
+            type="button"
+            onClick={selectRuntime}
+          >
+            <i aria-hidden="true" /><span>{t("trendVisiblePids")}</span><strong>{trendMetricValue(t, runtimeSelected?.value)}</strong>
+          </button>
+        </div>
+      </div>
+      {compact && focusedLane === "runtime" ? <TrendRuntimeDrilldown t={t} summary={runtime} /> : null}
+      {(history?.data.length ?? 0) + (runtime?.data.length ?? 0) > 0 ? (
+        <ActivityProcessTrend
+          t={t}
+          title={t("activityProcessLane")}
+          historyPoints={history?.points ?? []}
+          runtimePoints={runtime?.points ?? []}
+          from={historyWindow?.from || runtimeWindow?.from}
+          to={historyWindow?.to || runtimeWindow?.to}
+          granularitySeconds={historyWindow?.granularity_seconds || runtimeWindow?.granularity_seconds}
+          selectedHistoryAt={historySelected?.at}
+          selectedRuntimeAt={runtimeSelected?.at}
+          onSelect={selectChartPoints}
+        />
+      ) : (
+        <section className="empty-inline"><Gauge size={18} /><span>{t("noTrend")}</span></section>
+      )}
+    </article>
+  );
+}
+
+function ThroughputLaneView({
   t,
   summary,
   isFocused,
-  compact,
   setFocusedLane,
   setTrendSelection,
 }: {
   t: Translate;
   summary: TrendLaneSummary;
   isFocused: boolean;
-  compact: boolean;
   setFocusedLane: (lane: TrendLane) => void;
   setTrendSelection: React.Dispatch<React.SetStateAction<Record<TrendLane, string | undefined>>>;
 }) {
-  const { lane, title, trendWindow, points, data, selected } = summary;
-  const selectedReadoutParts = selected ? trendSelectedReadoutParts(t, lane, selected) : [];
+  const { title, trendWindow, points, data, selected } = summary;
+  const selectedReadoutParts = selected ? trendSelectedReadoutParts(t, "throughput", selected) : [];
   const selectPoint = useCallback((at?: string) => {
-    setFocusedLane(lane);
-    if (at) setTrendSelection((current) => ({ ...current, [lane]: at }));
-  }, [lane, setFocusedLane, setTrendSelection]);
+    setFocusedLane("throughput");
+    if (at) setTrendSelection((current) => ({ ...current, throughput: at }));
+  }, [setFocusedLane, setTrendSelection]);
   return (
-    <article className={`trend-lane ${lane} ${isFocused ? "is-focused" : ""}`} onPointerEnter={() => setFocusedLane(lane)}>
+    <article className={`trend-lane throughput ${isFocused ? "is-focused" : ""}`} onPointerEnter={() => setFocusedLane("throughput")}>
       <div className="trend-lane-head">
         <div className="trend-lane-title">
           <span className="trend-kicker">{title}</span>
-          <small>{trendWindow?.range || t("unavailable")} · {data.length} {t("samples")}{lane === "throughput" && selected ? ` · ${formatTrendThroughputWindow(t, selected.point)}` : ""}</small>
+          <small>{trendWindow?.range || t("unavailable")} · {data.length} {t("samples")}{selected ? ` · ${formatTrendThroughputWindow(t, selected.point)}` : ""}</small>
         </div>
-        {compact && lane === "runtime" && isFocused ? <TrendRuntimeDrilldown t={t} summary={summary} /> : null}
         <button
           aria-pressed={isFocused}
           className="trend-lane-readout"
-          data-focus-key={focusKey("trend-lane-readout", lane, selected?.at || "")}
+          data-focus-key={focusKey("trend-lane-readout", "throughput", selected?.at || "")}
           disabled={!selected}
           title={selected?.at ? formatDateTime(selected.at) : t("unavailable")}
           type="button"
@@ -378,7 +470,7 @@ function TrendLaneView({
           </strong>
         </button>
       </div>
-      {summary.data.length ? (lane === "throughput" ? (
+      {summary.data.length ? (
         <ThroughputRiver
           key={trendWindow?.range}
           t={t}
@@ -389,70 +481,10 @@ function TrendLaneView({
           selectedAt={selected?.at}
           onSelect={selectPoint}
         />
-      ) : compact && lane === "runtime" ? (
-        <TrendRuntimeCurve t={t} summary={summary} selectedAt={selected?.at} onSelect={selectPoint} />
       ) : (
-        <TrendSignalChart
-          t={t}
-          lane={lane}
-          title={title}
-          points={points}
-          selectedAt={selected?.at}
-          onSelect={selectPoint}
-        />
-      )) : (
         <section className="empty-inline"><Gauge size={18} /><span>{t("noTrend")}</span></section>
       )}
     </article>
-  );
-}
-
-function TrendRuntimeCurve({ t, summary, selectedAt, onSelect }: { t: Translate; summary: TrendLaneSummary; selectedAt?: string; onSelect: (at?: string) => void }) {
-  const data = summary.data;
-  const width = 320;
-  const height = 88;
-  const pad = 10;
-  const maxValue = Math.max(1, ...data.map((item) => item.value));
-  const selected = selectedAt ? data.find((item) => item.at === selectedAt) ?? data[data.length - 1] : data[data.length - 1];
-  const pointAt = (index: number, item: TrendSignalDatum) => {
-    const x = data.length <= 1 ? width / 2 : pad + (index / (data.length - 1)) * (width - pad * 2);
-    const y = height - pad - (item.value / maxValue) * (height - pad * 2);
-    return { x, y };
-  };
-  const line = data.map((item, index) => {
-    const point = pointAt(index, item);
-    return `${point.x.toFixed(2)},${point.y.toFixed(2)}`;
-  }).join(" ");
-  const area = data.length ? `${pad},${height - pad} ${line} ${width - pad},${height - pad}` : "";
-  const selectedIndex = Math.max(0, data.findIndex((item) => item.at === selected?.at));
-  const selectedPoint = selected ? pointAt(selectedIndex, selected) : null;
-  return (
-    <div className="trend-runtime-curve" role="img" aria-label={`${summary.title} ${t("trend")}`}>
-      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
-        <polygon className="runtime-curve-area" points={area} />
-        <polyline className="runtime-curve-line" points={line} />
-        {data.map((item, index) => {
-          const point = pointAt(index, item);
-          const isSelected = item.at === selected?.at;
-          return (
-            <circle
-              className={isSelected ? "is-selected" : ""}
-              key={item.at || index}
-              cx={point.x}
-              cy={point.y}
-              r={isSelected ? 3.4 : 2.2}
-              onClick={() => onSelect(item.at)}
-            />
-          );
-        })}
-        {selectedPoint ? (
-          <>
-            <line className="runtime-curve-crosshair" x1={selectedPoint.x} x2={selectedPoint.x} y1={pad} y2={height - pad} />
-            <line className="runtime-curve-crosshair" x1={pad} x2={width - pad} y1={selectedPoint.y} y2={selectedPoint.y} />
-          </>
-        ) : null}
-      </svg>
-    </div>
   );
 }
 
@@ -564,217 +596,6 @@ function TrendDrilldownMark({ part }: { part: TrendDrilldownPart }) {
     return <img alt="" aria-hidden="true" src={`/api/tool-icon/${icon}`} />;
   }
   return <i aria-hidden="true">{part.label.slice(0, 1).toUpperCase()}</i>;
-}
-
-function TrendSignalChart({
-  t,
-  lane,
-  title,
-  points,
-  selectedAt,
-  onSelect,
-}: {
-  t: Translate;
-  lane: TrendLane;
-  title: string;
-  points: TrendPoint[];
-  selectedAt?: string;
-  onSelect: (at?: string) => void;
-}) {
-  const hostRef = useRef<HTMLDivElement | null>(null);
-  const chartRef = useRef<IChartApi | null>(null);
-  const areaRef = useRef<ISeriesApi<"Area"> | null>(null);
-  const data = useMemo(() => trendSignalData(points, lane), [points, lane]);
-  // The chart instance outlives snapshot polls, so click/crosshair handlers and
-  // the data pushes read the latest values through refs instead of effect deps.
-  const dataRef = useRef(data);
-  const onSelectRef = useRef(onSelect);
-  const selected = selectedAt ? data.find((item) => item.at === selectedAt) ?? data[data.length - 1] : data[data.length - 1];
-  const [overlay, setOverlay] = useState<TrendSignalOverlay | null>(null);
-  const [hover, setHover] = useState<TrendSignalHover | null>(null);
-  const [sizeKey, setSizeKey] = useState(0);
-  const theme = useResolvedTheme();
-
-  useEffect(() => {
-    onSelectRef.current = onSelect;
-  }, [onSelect]);
-
-  useEffect(() => {
-    const host = hostRef.current;
-    if (!host) return;
-    const styles = getComputedStyle(document.documentElement);
-    const bg = cssVar(styles, "--bg");
-    const faint = cssVar(styles, "--fg-faint");
-    const line = cssVar(styles, "--console-line-soft");
-    const ok = cssVar(styles, "--ok");
-    const run = cssVar(styles, "--run");
-    const accent = cssVar(styles, "--accent");
-    const accentHi = cssVar(styles, "--accent-hi");
-    const rect = host.getBoundingClientRect();
-    const chart = createChart(host, {
-      width: Math.max(1, Math.floor(rect.width)),
-      height: Math.max(1, Math.floor(rect.height)),
-      autoSize: false,
-      layout: {
-        background: { type: ColorType.Solid, color: "transparent" },
-        textColor: faint,
-        fontFamily: styles.getPropertyValue("--font-mono").trim() || undefined,
-        fontSize: 10,
-        attributionLogo: false,
-      },
-      grid: {
-        vertLines: { color: "transparent", visible: false },
-        horzLines: { color: colorMix(line, 0.34), style: LineStyle.SparseDotted },
-      },
-      rightPriceScale: { visible: false, borderVisible: false },
-      leftPriceScale: { visible: false, borderVisible: false },
-      timeScale: {
-        borderVisible: false,
-        timeVisible: true,
-        secondsVisible: false,
-        fixLeftEdge: true,
-        fixRightEdge: true,
-        barSpacing: trendBarSpacing(dataRef.current.length),
-        minBarSpacing: 2.8,
-      },
-      crosshair: {
-        mode: CrosshairMode.Normal,
-        vertLine: { color: accentHi, labelVisible: false, style: LineStyle.Dashed, width: 1 },
-        horzLine: { color: accent, labelVisible: false, style: LineStyle.Dashed, width: 1 },
-      },
-      localization: {
-        timeFormatter: (time: Time) => formatSignalTime(time),
-      },
-      handleScroll: false,
-      handleScale: false,
-    });
-    const primaryColor = lane === "history" ? ok : lane === "runtime" ? run : accent;
-    const area = chart.addSeries(AreaSeries, {
-      lineVisible: true,
-      lineColor: colorMix(primaryColor, 0.92),
-      lineWidth: 2,
-      topColor: colorMix(primaryColor, 0.28),
-      bottomColor: colorMix(bg, 0.0),
-      priceLineVisible: false,
-      lastValueVisible: false,
-      crosshairMarkerVisible: true,
-      crosshairMarkerRadius: 3,
-    });
-    const handleClick = (param: { time?: Time }) => {
-      if (!param.time || !dataRef.current.length) return;
-      const clicked = nearestSignalDatum(dataRef.current, param.time);
-      onSelectRef.current(clicked?.at);
-    };
-    const handleCrosshairMove = (param: MouseEventParams<Time>) => {
-      const point = param.point;
-      if (!param.time || !point || point.x < 0 || point.y < 0 || !dataRef.current.length) {
-        setHover(null);
-        return;
-      }
-      const hovered = nearestSignalDatum(dataRef.current, param.time);
-      if (!hovered) {
-        setHover(null);
-        return;
-      }
-      const width = host.clientWidth || rect.width;
-      const height = host.clientHeight || rect.height;
-      setHover({
-        datum: hovered,
-        left: clampNumber(point.x, 8, Math.max(8, width - 8)),
-        top: clampNumber(point.y, 10, Math.max(10, height - 10)),
-        align: point.x > width - 156 ? "right" : "left",
-        vertical: point.y < 72 ? "below" : "above",
-      });
-    };
-    chart.subscribeClick(handleClick);
-    chart.subscribeCrosshairMove(handleCrosshairMove);
-    chartRef.current = chart;
-    areaRef.current = area;
-    if (dataRef.current.length) {
-      applyTrendSignalData(chart, area, dataRef.current);
-    }
-    // Re-sync the selection overlay with the freshly created chart.
-    setSizeKey((value) => value + 1);
-    const resizeObserver = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (!entry) return;
-      const width = Math.max(1, Math.floor(entry.contentRect.width));
-      const height = Math.max(1, Math.floor(entry.contentRect.height));
-      chart.resize(width, height);
-      setSizeKey((value) => value + 1);
-    });
-    resizeObserver.observe(host);
-    return () => {
-      resizeObserver.disconnect();
-      chart.unsubscribeClick(handleClick);
-      chart.unsubscribeCrosshairMove(handleCrosshairMove);
-      chart.remove();
-      chartRef.current = null;
-      areaRef.current = null;
-    };
-  }, [lane, theme]);
-
-  useEffect(() => {
-    dataRef.current = data;
-    const chart = chartRef.current;
-    const areaSeries = areaRef.current;
-    if (!chart || !areaSeries) return;
-    applyTrendSignalData(chart, areaSeries, data);
-    setHover(null);
-  }, [data]);
-
-  useEffect(() => {
-    const chart = chartRef.current;
-    const areaSeries = areaRef.current;
-    if (!chart || !areaSeries || !selected) {
-      setOverlay(null);
-      return;
-    }
-    const update = () => {
-      const left = chart.timeScale().timeToCoordinate(selected.time);
-      const top = areaSeries.priceToCoordinate(selected.value);
-      setOverlay(left === null || top === null ? null : { left, top });
-    };
-    update();
-    const frame = window.requestAnimationFrame(update);
-    return () => window.cancelAnimationFrame(frame);
-  }, [selected, sizeKey]);
-
-  const hoverMetrics = hover ? trendSelectedReadoutParts(t, lane, hover.datum) : [];
-  const hoverDelta = hover ? hover.datum.value - hover.datum.previous : 0;
-
-  return (
-    <div className={`trend-chart trend-signal-chart lane-${lane}`} onMouseLeave={() => setHover(null)}>
-      <div className="trend-signal-host" ref={hostRef} role="img" aria-label={`${title} ${t("trend")}`} />
-      {overlay ? (
-        <div className="trend-signal-selection" style={{ "--kx": `${overlay.left}px`, "--ky": `${overlay.top}px` } as React.CSSProperties} aria-hidden="true">
-          <span className="trend-signal-selection-dot" />
-        </div>
-      ) : null}
-      {hover ? (
-        <div
-          className={`trend-signal-tooltip align-${hover.align} is-${hover.vertical}`}
-          style={{ "--tip-x": `${hover.left}px`, "--tip-y": `${hover.top}px` } as React.CSSProperties}
-          aria-hidden="true"
-        >
-          <span className="trend-signal-tooltip-kicker">{t("trendExactBucket")}</span>
-          <strong className="trend-signal-tooltip-time">{formatChartAxisLabel(hover.datum.at)}</strong>
-          <div className="trend-signal-tooltip-grid">
-            {hoverMetrics.map((metric) => (
-              <span key={metric.label}>
-                <b>{metric.label}</b>
-                <em>{metric.value}</em>
-              </span>
-            ))}
-            <span>
-              <b>Δ</b>
-              <em>{trendDeltaValue(lane, hoverDelta)}</em>
-            </span>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
 }
 
 function TrendSelectionInspector({ t, summary, compact }: { t: Translate; summary?: TrendLaneSummary; compact: boolean }) {
@@ -915,57 +736,8 @@ function trendSignalData(points: TrendPoint[], lane: TrendLane): TrendSignalDatu
   });
   const sorted = Array.from(byTime.entries())
     .sort((a, b) => a[0] - b[0])
-    .map(([seconds, item]) => ({ ...item, time: seconds as Time }));
-  return sorted.map((item, index) => {
-    const previous = sorted[Math.max(0, index - 1)];
-    return {
-      at: item.at,
-      time: item.time,
-      value: item.value,
-      point: item.point,
-      previous: previous?.value ?? item.value,
-    };
-  });
-}
-
-function applyTrendSignalData(chart: IChartApi, areaSeries: ISeriesApi<"Area">, data: TrendSignalDatum[]) {
-  areaSeries.setData(data.map(({ time, value }) => ({ time, value })));
-  chart.timeScale().applyOptions({ barSpacing: trendBarSpacing(data.length) });
-  chart.timeScale().fitContent();
-}
-
-function trendBarSpacing(count: number): number {
-  return count > 72 ? 4.2 : count > 36 ? 6.6 : 9.2;
-}
-
-// Chart colors are resolved from computed styles at creation time, so the
-// create effect must re-run when the document theme flips.
-function useResolvedTheme(): string {
-  const [theme, setTheme] = useState(() => document.documentElement.dataset.theme || "dark");
-  useEffect(() => {
-    const observer = new MutationObserver(() => {
-      setTheme(document.documentElement.dataset.theme || "dark");
-    });
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-    return () => observer.disconnect();
-  }, []);
-  return theme;
-}
-
-function nearestSignalDatum(data: TrendSignalDatum[], time: Time): TrendSignalDatum | undefined {
-  const target = typeof time === "number" ? time : Date.parse(String(time)) / 1000;
-  if (!Number.isFinite(target)) return data[data.length - 1];
-  return data.reduce((best, item) => {
-    const current = typeof item.time === "number" ? item.time : Date.parse(String(item.time)) / 1000;
-    const bestTime = typeof best.time === "number" ? best.time : Date.parse(String(best.time)) / 1000;
-    return Math.abs(current - target) < Math.abs(bestTime - target) ? item : best;
-  }, data[0]);
-}
-
-function formatSignalTime(time: Time): string {
-  const seconds = typeof time === "number" ? time : Date.parse(String(time)) / 1000;
-  if (!Number.isFinite(seconds)) return String(time);
-  return formatChartAxisLabel(new Date(seconds * 1000).toISOString());
+    .map(([seconds, item]) => ({ ...item, time: seconds }));
+  return sorted;
 }
 
 function projectHeatmapTiles(items: ProjectHeatmapItem[]): ProjectHeatmapTile[] {
@@ -1120,12 +892,6 @@ function formatTrendThroughputWindow(t: Translate, point: TrendPoint): string {
   return seconds === null ? t("unavailable") : formatRelativeAge(seconds, t);
 }
 
-function trendDeltaValue(lane: TrendLane, value: number): string {
-  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
-  const magnitude = lane === "throughput" ? formatTokenRate(Math.abs(value)) : String(Math.abs(value));
-  return `${sign}${magnitude}`;
-}
-
 function formatTrendWindow(t: Translate, window: TrendWindow | ProjectHeatmapWindow | undefined): string {
   const firstAt = window?.from;
   const lastAt = window?.to;
@@ -1139,32 +905,6 @@ function pointTimeMs(value?: string): number | null {
   if (!value) return null;
   const time = new Date(value).getTime();
   return Number.isFinite(time) ? time : null;
-}
-
-function cssVar(styles: CSSStyleDeclaration, name: string): string {
-  return styles.getPropertyValue(name).trim();
-}
-
-function colorMix(color: string, alpha: number): string {
-  const text = color.trim();
-  const clamped = clampNumber(alpha, 0, 1);
-  if (text.startsWith("#")) {
-    const hex = text.slice(1);
-    const normalized = hex.length === 3 ? hex.split("").map((char) => char + char).join("") : hex;
-    const value = Number.parseInt(normalized, 16);
-    if (Number.isFinite(value)) {
-      const r = (value >> 16) & 255;
-      const g = (value >> 8) & 255;
-      const b = value & 255;
-      return `rgba(${r}, ${g}, ${b}, ${clamped})`;
-    }
-  }
-  const rgbMatch = text.match(/^rgba?\(([^)]+)\)$/);
-  if (rgbMatch) {
-    const parts = rgbMatch[1].split(",").map((part) => part.trim()).slice(0, 3);
-    if (parts.length === 3) return `rgba(${parts.join(", ")}, ${clamped})`;
-  }
-  return text;
 }
 
 function formatDateTime(value: string): string {

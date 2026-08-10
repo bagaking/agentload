@@ -162,11 +162,13 @@ semantic layer before visual polish is accepted.
   plane under the tab switch must not jump between tabs. Align this rhythm to
   the tightest usable inset and available-width fill; do not make tabs match by
   adding a new bulky wrapper padding around every view.
-- Compact popover trend view keeps session movement, process pressure, output
-  throughput, and project distribution as separate readable lanes. Process
-  composition remains a process-lane drilldown, throughput remains a
-  project-separated TPS river, and neither may be folded into the project
-  heatmap. The heatmap must keep enough area to read project proportions.
+- Compact popover trend view combines active sessions, known sessions, and
+  visible PIDs in one clearly labeled count chart. They share a time plane, not
+  a semantic family: session lines retain transcript-derived samples and the
+  PID line retains persisted runtime samples. Process composition remains a
+  process-series drilldown, throughput remains a separate project-separated TPS
+  river, and neither may be folded into the project heatmap. The heatmap must
+  keep enough area to read project proportions.
 - Compact system view should use metric-appropriate components instead of one
   repeated card form: CPU may use a gauge with load/uptime, memory and disk use
   capacity rails, network foregrounds inbound/outbound throughput with local
@@ -199,8 +201,9 @@ semantic layer before visual polish is accepted.
   rate. Tool or host icons should identify the process before the text.
   The second line should be fixed metric rails, not a prose sentence, so disk
   read/write values cannot wrap into visually unrelated fragments.
-- Compact trend may keep a process trend lane, but it should use a simple
-  low-noise curve because runtime pressure is a sequence of point samples.
+- The combined session/process chart should use low-noise curves with a stable
+  legend for `active sessions`, `known sessions`, and `visible PIDs`. Never call
+  the session lines "records": they count sessions, not transcript entries.
 - Unmatched or unmapped processes still count for diagnostics, coverage, trend
   risk, and process ledgers, but they must not be counted as active agents or
   confirmed workload until they are mapped back to local session evidence.
@@ -356,9 +359,9 @@ semantic layer before visual polish is accepted.
   bucket" for chart hover or detail affordances where audit precision is the
   main task.
 - Selected trend inspectors should express metric relationships instead of
-  presenting unrelated readout tiles. Runtime selection should read like
-  processes = mapped + unmatched with matched share as a status badge; history
-  selection should keep fresh movement and session count visibly paired for the
+  presenting unrelated readout tiles. Process selection should read like
+  processes = mapped + unmatched with matched share as a status badge; session
+  selection should keep active and known session counts visibly paired for the
   same selected window.
 - Trend selection readout cells follow the same translucent instrument rule as
   compact metric cells. They should sit above the chart as light material
@@ -388,16 +391,15 @@ semantic layer before visual polish is accepted.
   strongest numeric weight; context values such as sessions or matched share
   stay smaller and quieter so they are not mistaken for the plotted line.
 - Trend lane headers and chart-local hover/readout overlays must not repeat the
-  same selected-bucket absolute values. Put selected time, primary value, and
-  context value in the lane header. Chart-local overlays should only appear
-  when they add clear audit value beyond the header; compact runtime curves may
-  rely on the selected bead and crosshair without any floating readout.
-- Compact runtime trend clicks may open a lightweight floating drilldown inside
-  the runtime lane. The float should not change the trend page layout or capture
+  same selected-bucket absolute values. Put selected values in the combined
+  legend. A chart tooltip may add audit value by showing each series' actual
+  sample time, especially when transcript and runtime samples do not align.
+- Selecting the visible-PID series may open a lightweight drilldown inside the
+  combined count lane. It should not change the trend page layout or capture
   chart pointer events, and it should explain the selected process count using
   persisted trend semantics. Prefer Coding Agent tool distribution when the
   selected trend sample carries it, fall back to host-process distribution when
-  available, and only use mapped/unmatched composition when no sampled
+  available, and only use mapped/unmapped composition when no sampled
   distribution exists.
 - Runtime trend drilldowns should stay subordinate to the chart. Prefer a
   header-integrated distribution strip over chart-covering floats; if a float is
