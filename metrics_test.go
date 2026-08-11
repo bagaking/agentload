@@ -570,178 +570,195 @@ func TestBuildRealtimeTrendWindowsBucketsLatestRuntimeSampleOnly(t *testing.T) {
 	}
 }
 
-func TestBuildThroughputTrendWindowsPreservesSparseTimeSeriesAcrossRanges(t *testing.T) {
+func TestBuildThroughputTrendWindowsDerivesSelectableWindowsFromMinuteFacts(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	samples := make([]TrendPoint, 0, 5)
-	for index := 0; index < 5; index++ {
-		samples = append(samples, throughputTrendPoint(now.Add(time.Duration(index-4)*30*time.Minute), float64(index)))
+	minutes := make([]ThroughputMinuteFact, 0, 20)
+	for index := 1; index <= 20; index++ {
+		minutes = append(minutes, throughputMinuteFact(now.Add(-time.Duration(20-index)*time.Minute), int64(index*60), "alpha"))
 	}
 
-	trends := buildThroughputTrendWindows(samples, now)
-	requireExactTrendRanges(t, trends)
-	for _, window := range trends.Windows {
-		if len(window.Points) != len(samples) {
-			t.Fatalf("%s throughput points = %d, want %d exact time samples", window.Range, len(window.Points), len(samples))
+	oneDay := requireTrendWindow(t, buildThroughputTrendWindows(minutes, nil, now), "1D")
+	oneMinute := requireThroughputSeries(t, oneDay, "minute:60")
+	fiveMinutes := requireThroughputSeries(t, oneDay, "minute:300")
+	fifteenMinutes := requireThroughputSeries(t, oneDay, "minute:900")
+	if len(oneMinute.Points) != 20 || len(fiveMinutes.Points) != 16 || len(fifteenMinutes.Points) != 6 {
+		t.Fatalf("unexpected rollup point counts: 1m=%d 5m=%d 15m=%d", len(oneMinute.Points), len(fiveMinutes.Points), len(fifteenMinutes.Points))
+	}
+	if got := oneMinute.Points[len(oneMinute.Points)-1].OutputTokensPerSecond; got != 20 {
+		t.Fatalf("latest 1m rate = %v, want 20", got)
+	}
+	if got := fiveMinutes.Points[len(fiveMinutes.Points)-1].OutputTokensPerSecond; got != 18 {
+		t.Fatalf("latest 5m rate = %v, want 18", got)
+	}
+	if got := fifteenMinutes.Points[len(fifteenMinutes.Points)-1].OutputTokensPerSecond; got != 13 {
+		t.Fatalf("latest 15m rate = %v, want 13", got)
+	}
+	if fiveMinutes.Summary == nil || fiveMinutes.Summary.Current == nil || *fiveMinutes.Summary.Current != 18 || fiveMinutes.Summary.WindowSeconds != 300 {
+		t.Fatalf("unexpected 5m summary: %+v", fiveMinutes.Summary)
+	}
+	if oneMinute.Summary == nil || oneMinute.Summary.WindowSeconds != 60 || fifteenMinutes.Summary == nil || fifteenMinutes.Summary.WindowSeconds != 900 {
+		t.Fatalf("summary windows do not match selected series: 1m=%+v 15m=%+v", oneMinute.Summary, fifteenMinutes.Summary)
+	}
+}
+
+func TestBuildThroughputTrendWindowsKeepsMinuteCoverageGaps(t *testing.T) {
+	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
+	minutes := make([]ThroughputMinuteFact, 0, 6)
+	for index := 0; index < 6; index++ {
+		minute := throughputMinuteFact(now.Add(-time.Duration(5-index)*time.Minute), 60, "alpha")
+		if index == 2 {
+			minute.OutputTokens = nil
+			minute.State = liveTokenRateStateUnavailable
+			minute.Projects = nil
 		}
-		if window.GranularitySeconds != 1800 {
-			t.Fatalf("%s throughput granularity = %d, want observed 1800s", window.Range, window.GranularitySeconds)
-		}
-		for index, point := range window.Points {
-			if !point.ThroughputSampled || !point.HasOutputTokensPerSecond || point.OutputTokensPerSecond != float64(index) {
-				t.Fatalf("%s point %d did not preserve exact throughput sample: %+v", window.Range, index, point)
-			}
-			if point.RuntimeSampled || point.HasPIDConcurrency {
-				t.Fatalf("%s throughput point leaked runtime fields: %+v", window.Range, point)
-			}
+		minutes = append(minutes, minute)
+	}
+
+	fiveMinutes := requireThroughputSeries(t, requireTrendWindow(t, buildThroughputTrendWindows(minutes, nil, now), "1D"), "minute:300")
+	if len(fiveMinutes.Points) != 2 || fiveMinutes.Summary != nil {
+		t.Fatalf("coverage gap became numeric throughput: %+v", fiveMinutes)
+	}
+	for _, point := range fiveMinutes.Points {
+		if point.HasOutputTokensPerSecond || point.OutputTokenThroughputState != liveTokenRateStateUnavailable {
+			t.Fatalf("coverage gap was hidden: %+v", point)
 		}
 	}
 }
 
-func TestBuildThroughputTrendWindowsCapsDenseSeriesWithExactSamples(t *testing.T) {
+func TestBuildThroughputTrendWindowsMarksAbsentMinuteCoverage(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	samples := make([]TrendPoint, 0, throughputTrendMaxPoints*2)
+	minutes := []ThroughputMinuteFact{
+		throughputMinuteFact(now.Add(-3*time.Minute), 60, "alpha"),
+		throughputMinuteFact(now.Add(-2*time.Minute), 60, "alpha"),
+		throughputMinuteFact(now, 60, "alpha"),
+	}
+
+	oneMinute := requireThroughputSeries(t, requireTrendWindow(t, buildThroughputTrendWindows(minutes, nil, now), "1D"), "minute:60")
+	if len(oneMinute.Points) != 4 {
+		t.Fatalf("absent minute was not represented as a coverage gap: %+v", oneMinute.Points)
+	}
+	gap := oneMinute.Points[2]
+	if gap.At != now.Add(-time.Minute).Format(time.RFC3339) || gap.HasOutputTokensPerSecond || gap.OutputTokenThroughputState != liveTokenRateStateNoData {
+		t.Fatalf("unexpected coverage-gap marker: %+v", gap)
+	}
+}
+
+func TestBuildThroughputTrendWindowsSummarizesBeforeDisplayReduction(t *testing.T) {
+	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
+	minutes := make([]ThroughputMinuteFact, 0, throughputTrendMaxPoints*2)
 	for index := 0; index < throughputTrendMaxPoints*2; index++ {
 		at := now.Add(-time.Duration(throughputTrendMaxPoints*2-1-index) * time.Minute)
-		samples = append(samples, throughputTrendPoint(at, float64(index)))
+		minutes = append(minutes, throughputMinuteFact(at, int64(index*60), "alpha"))
 	}
 
-	oneDay := requireTrendWindow(t, buildThroughputTrendWindows(samples, now), "1D")
-	if len(oneDay.Points) > throughputTrendMaxPoints {
-		t.Fatalf("dense throughput series returned %d points, max %d", len(oneDay.Points), throughputTrendMaxPoints)
+	oneMinute := requireThroughputSeries(t, requireTrendWindow(t, buildThroughputTrendWindows(minutes, nil, now), "1D"), "minute:60")
+	if oneMinute.Summary == nil || oneMinute.Summary.Max != 479 || oneMinute.Summary.P95 != 455 || oneMinute.Summary.Avg != 239.5 || oneMinute.Summary.SampleCount != 480 {
+		t.Fatalf("unexpected full-series summary: %+v", oneMinute.Summary)
 	}
-	if len(oneDay.Points) < throughputTrendMaxPoints-2 {
-		t.Fatalf("dense throughput series was over-reduced: %d points", len(oneDay.Points))
-	}
-	first := oneDay.Points[0]
-	last := oneDay.Points[len(oneDay.Points)-1]
-	if first.OutputTokensPerSecond != 0 || last.OutputTokensPerSecond != float64(len(samples)-1) {
-		t.Fatalf("downsampling must retain exact edge samples, got first=%+v last=%+v", first, last)
-	}
-	sourceRates := make(map[string]float64, len(samples))
-	for _, point := range samples {
-		sourceRates[point.At] = point.OutputTokensPerSecond
-	}
-	for _, point := range oneDay.Points {
-		if want, ok := sourceRates[point.At]; !ok || point.OutputTokensPerSecond != want {
-			t.Fatalf("downsampling derived a non-source sample: %+v", point)
-		}
+	if len(oneMinute.Points) >= oneMinute.Summary.SampleCount || len(oneMinute.Points) > throughputTrendMaxPoints {
+		t.Fatalf("summary used reduced series: points=%d summary=%+v", len(oneMinute.Points), oneMinute.Summary)
 	}
 }
 
-func TestBuildThroughputTrendWindowsSummarizesFullSeriesBeforeDownsampling(t *testing.T) {
+func TestBuildThroughputTrendWindowsPreservesGapDuringDisplayReduction(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	samples := make([]TrendPoint, 0, throughputTrendMaxPoints*2)
+	minutes := make([]ThroughputMinuteFact, 0, throughputTrendMaxPoints*2)
 	for index := 0; index < throughputTrendMaxPoints*2; index++ {
 		at := now.Add(-time.Duration(throughputTrendMaxPoints*2-1-index) * time.Minute)
-		samples = append(samples, throughputTrendPoint(at, float64(index)))
+		minute := throughputMinuteFact(at, 60, "alpha")
+		if index == throughputTrendMaxPoints {
+			minute.OutputTokens = nil
+			minute.State = liveTokenRateStateUnavailable
+			minute.Projects = nil
+		}
+		minutes = append(minutes, minute)
 	}
 
-	oneDay := requireTrendWindow(t, buildThroughputTrendWindows(samples, now), "1D")
-	summary := oneDay.OutputTokenRateSummary
-	if summary == nil {
-		t.Fatal("throughput summary is missing")
+	oneMinute := requireThroughputSeries(t, requireTrendWindow(t, buildThroughputTrendWindows(minutes, nil, now), "1D"), "minute:60")
+	for _, point := range oneMinute.Points {
+		if !point.HasOutputTokensPerSecond && point.OutputTokenThroughputState == liveTokenRateStateUnavailable {
+			return
+		}
 	}
-	if summary.Max != 479 || summary.P95 != 455 || summary.Avg != 239.5 || summary.SampleCount != 480 || summary.WindowSeconds != 300 {
-		t.Fatalf("unexpected full-series summary: %+v", summary)
-	}
-	if summary.Current == nil || *summary.Current != 479 || summary.CurrentAt != now.Format(time.RFC3339) {
-		t.Fatalf("unexpected current five-minute rate: %+v", summary)
-	}
-	if len(oneDay.Points) >= summary.SampleCount {
-		t.Fatalf("summary used displayed points instead of %d source samples", summary.SampleCount)
-	}
-}
-
-func TestBuildThroughputTrendWindowsRejectsMismatchedWindowSamples(t *testing.T) {
-	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	old := throughputTrendPoint(now.Add(-time.Minute), 99)
-	old.OutputTokenThroughputWindowSeconds = 180
-	current := throughputTrendPoint(now, 5)
-
-	oneDay := requireTrendWindow(t, buildThroughputTrendWindows([]TrendPoint{old, current}, now), "1D")
-	if len(oneDay.Points) != 1 || oneDay.Points[0].At != current.At {
-		t.Fatalf("mismatched rolling window leaked into trend: %+v", oneDay.Points)
-	}
-	if summary := oneDay.OutputTokenRateSummary; summary == nil || summary.Max != 5 || summary.SampleCount != 1 {
-		t.Fatalf("mismatched rolling window leaked into summary: %+v", summary)
-	}
-}
-
-func TestBuildThroughputTrendWindowsDoesNotUseOldRateAsCurrent(t *testing.T) {
-	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	past := throughputTrendPoint(now.Add(-30*time.Minute), 4)
-	unavailable := TrendPoint{
-		At:                                 now.Format(time.RFC3339),
-		OutputTokenThroughputState:         liveTokenRateStateUnavailable,
-		OutputTokenThroughputWindowSeconds: 300,
-		ThroughputSampled:                  true,
-	}
-
-	oneDay := requireTrendWindow(t, buildThroughputTrendWindows([]TrendPoint{past, unavailable}, now), "1D")
-	summary := oneDay.OutputTokenRateSummary
-	if summary == nil || summary.Max != 4 || summary.SampleCount != 1 {
-		t.Fatalf("historical summary missing: %+v", summary)
-	}
-	if summary.Current != nil || summary.CurrentAt != "" {
-		t.Fatalf("old numeric rate was presented as current: %+v", summary)
-	}
+	t.Fatalf("display reduction hid the unavailable gap: %+v", oneMinute.Points)
 }
 
 func TestBuildThroughputTrendWindowsKeepsCurrentMeasuredZero(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	past := throughputTrendPoint(now.Add(-time.Minute), 4)
-	current := throughputTrendPoint(now, 0)
-
-	oneDay := requireTrendWindow(t, buildThroughputTrendWindows([]TrendPoint{past, current}, now), "1D")
-	summary := oneDay.OutputTokenRateSummary
-	if summary == nil || summary.Max != 4 || summary.P95 != 4 || summary.Avg != 2 || summary.SampleCount != 2 {
-		t.Fatalf("measured zero missing from period summary: %+v", summary)
-	}
-	if summary.Current == nil || *summary.Current != 0 || summary.CurrentAt != now.Format(time.RFC3339) {
-		t.Fatalf("measured zero missing from current rate: %+v", summary)
+	oneMinute := requireThroughputSeries(t, requireTrendWindow(t, buildThroughputTrendWindows([]ThroughputMinuteFact{throughputMinuteFact(now, 0, "")}, nil, now), "1D"), "minute:60")
+	if oneMinute.Summary == nil || oneMinute.Summary.Current == nil || *oneMinute.Summary.Current != 0 || oneMinute.Summary.SampleCount != 1 {
+		t.Fatalf("measured zero missing from current summary: %+v", oneMinute.Summary)
 	}
 }
 
-func TestBuildThroughputTrendWindowsRejectsNumericSampleWithoutProjectPartition(t *testing.T) {
+func TestBuildThroughputTrendWindowsSeparatesLegacySeries(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	missing := throughputTrendPoint(now, 3)
-	missing.OutputTokenProjects = nil
-
-	oneDay := requireTrendWindow(t, buildThroughputTrendWindows([]TrendPoint{missing}, now), "1D")
-	if len(oneDay.Points) != 0 || oneDay.OutputTokenRateSummary != nil {
-		t.Fatalf("partition-missing numeric sample leaked into throughput trend: %+v", oneDay)
+	rate180 := 3.0
+	rate300 := 2.0
+	legacy := []LegacyThroughputFact{
+		{At: now.Add(-time.Minute).Format(time.RFC3339), State: liveTokenRateStateLive, WindowSeconds: 180, OutputTokensPerSecond: &rate180, Projects: []LiveTokenRateProjectSample{{Project: "alpha", OutputTokensPerSecond: rate180}}},
+		{At: now.Format(time.RFC3339), State: liveTokenRateStateLive, WindowSeconds: 300, OutputTokensPerSecond: &rate300, Projects: []LiveTokenRateProjectSample{{Project: "alpha", OutputTokensPerSecond: rate300}}},
+	}
+	oneDay := requireTrendWindow(t, buildThroughputTrendWindows(nil, legacy, now), "1D")
+	legacy180 := requireThroughputSeries(t, oneDay, "legacy:180")
+	legacy300 := requireThroughputSeries(t, oneDay, "legacy:300")
+	if legacy180.Kind != throughputSeriesKindLegacy || legacy300.Kind != throughputSeriesKindLegacy || len(legacy180.Points) != 1 || len(legacy300.Points) != 1 {
+		t.Fatalf("legacy windows were mixed or lost: 180=%+v 300=%+v", legacy180, legacy300)
+	}
+	if legacy180.Summary == nil || legacy180.Summary.Current != nil || legacy300.Summary == nil || legacy300.Summary.Current != nil {
+		t.Fatalf("legacy rate was presented as current: 180=%+v 300=%+v", legacy180.Summary, legacy300.Summary)
 	}
 }
 
-func TestBuildThroughputTrendWindowsPreservesProjectPartitions(t *testing.T) {
-	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	point := throughputTrendPoint(now, 3)
-	point.OutputTokenProjects = []LiveTokenRateProjectSample{
-		{Project: "alpha", OutputTokensPerSecond: 2, ActiveSessions: 2},
-		{Project: liveTokenRateUnassignedProject, OutputTokensPerSecond: 1, ActiveSessions: 1},
+func TestBuildThroughputTrendWindowsKeepsDistinctLegacySubsecondPoints(t *testing.T) {
+	now := time.Date(2026, 6, 28, 12, 0, 1, 0, time.UTC)
+	rate := 3.0
+	legacy := []LegacyThroughputFact{
+		{At: now.Add(-900 * time.Millisecond).Format(time.RFC3339Nano), State: liveTokenRateStateLive, WindowSeconds: 300, OutputTokensPerSecond: &rate, Projects: []LiveTokenRateProjectSample{}},
+		{At: now.Add(-100 * time.Millisecond).Format(time.RFC3339Nano), State: liveTokenRateStateLive, WindowSeconds: 300, OutputTokensPerSecond: &rate, Projects: []LiveTokenRateProjectSample{}},
 	}
+	series := requireThroughputSeries(t, requireTrendWindow(t, buildThroughputTrendWindows(nil, legacy, now), "1D"), "legacy:300")
+	if len(series.Points) != 2 || series.Points[0].At == series.Points[1].At {
+		t.Fatalf("distinct legacy observations collapsed: %+v", series.Points)
+	}
+}
 
-	for _, window := range buildThroughputTrendWindows([]TrendPoint{point}, now).Windows {
-		if len(window.Points) != 1 || len(window.Points[0].OutputTokenProjects) != 2 {
-			t.Fatalf("%s project partition was not preserved: %+v", window.Range, window.Points)
-		}
-		total := 0.0
-		for _, project := range window.Points[0].OutputTokenProjects {
-			total += project.OutputTokensPerSecond
-		}
-		if total != window.Points[0].OutputTokensPerSecond {
-			t.Fatalf("%s project rates sum to %v, aggregate %v", window.Range, total, window.Points[0].OutputTokensPerSecond)
-		}
-		decoded := marshalTrendPointJSON(t, window.Points[0])
-		if _, ok := decoded["output_token_projects"]; !ok {
-			t.Fatalf("%s JSON omitted project throughput partition", window.Range)
-		}
+func TestBuildThroughputTrendWindowsPreservesMinuteProjectPartitions(t *testing.T) {
+	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
+	tokens := int64(180)
+	minute := ThroughputMinuteFact{
+		At:            now.Format(time.RFC3339),
+		State:         liveTokenRateStateLive,
+		OutputTokens:  &tokens,
+		SessionHashes: []string{"a", "b"},
+		Projects: []ThroughputMinuteProjectFact{
+			{Project: "alpha", OutputTokens: 120, SessionHashes: []string{"a"}},
+			{Project: liveTokenRateUnassignedProject, OutputTokens: 60, SessionHashes: []string{"b"}},
+		},
+	}
+	series := requireThroughputSeries(t, requireTrendWindow(t, buildThroughputTrendWindows([]ThroughputMinuteFact{minute}, nil, now), "1D"), "minute:60")
+	point := series.Points[0]
+	if point.OutputTokensPerSecond != 3 || point.OutputTokenActiveSessions != 2 || len(point.OutputTokenProjects) != 2 {
+		t.Fatalf("minute project partition was not preserved: %+v", point)
+	}
+	total := 0.0
+	for _, project := range point.OutputTokenProjects {
+		total += project.OutputTokensPerSecond
+	}
+	if total != point.OutputTokensPerSecond {
+		t.Fatalf("project rates sum to %v, aggregate %v", total, point.OutputTokensPerSecond)
 	}
 }
 
 func TestTrendPointJSONDoesNotInventMissingProjectPartition(t *testing.T) {
-	point := throughputTrendPoint(time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC), 3)
-	point.OutputTokenProjects = nil
+	point := TrendPoint{
+		At:                                 time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		OutputTokensPerSecond:              3,
+		HasOutputTokensPerSecond:           true,
+		OutputTokenThroughputState:         liveTokenRateStateLive,
+		OutputTokenThroughputWindowSeconds: 300,
+		ThroughputSampled:                  true,
+	}
 	decoded := marshalTrendPointJSON(t, point)
 	if _, ok := decoded["output_token_projects"]; ok {
 		t.Fatal("missing stored project partition must remain absent")
@@ -789,51 +806,27 @@ func TestMergeRuntimeTrendsMarksSampledMetricPresence(t *testing.T) {
 	requireTrendPointKeysAbsent(t, decoded, "throughput_sampled", "output_tokens_per_second")
 }
 
-func TestMergeRuntimeTrendsCarriesLiveOutputThroughput(t *testing.T) {
-	generatedAt := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	sampler := newTestLiveTokenRateSampler(Config{CodexRoots: []string{t.TempDir()}})
-	sampler.published = liveTokenRatePublished{
-		Configured:   true,
-		Initialized:  true,
-		LatestSignal: generatedAt,
-		LatestEvent:  generatedAt,
-		Buckets:      []liveTokenRateEvent{{At: generatedAt, Tokens: 360, Session: "session-a"}},
-		Projects:     map[string]string{"session-a": "alpha"},
+func throughputMinuteFact(at time.Time, tokens int64, project string) ThroughputMinuteFact {
+	fact := ThroughputMinuteFact{
+		At:           at.Format(time.RFC3339),
+		State:        liveTokenRateStateZero,
+		OutputTokens: &tokens,
+		Projects:     []ThroughputMinuteProjectFact{},
 	}
-	app := &trayApp{liveTokenRate: sampler}
-	snapshot := app.rememberSnapshot(Snapshot{GeneratedAt: generatedAt.Format(time.RFC3339)})
-
-	point := requireTrendPoint(t, requireTrendWindow(t, snapshot.ThroughputTrends, "1D").Points, generatedAt)
-	if !point.ThroughputSampled || !point.HasOutputTokensPerSecond || point.OutputTokensPerSecond != 1.2 || point.OutputTokenThroughputState != liveTokenRateStateLive || point.OutputTokenThroughputWindowSeconds != 300 {
-		t.Fatalf("expected live output throughput in trend point, got %+v", point)
+	if tokens <= 0 {
+		return fact
 	}
-	if len(point.OutputTokenProjects) != 1 || point.OutputTokenProjects[0].Project != "alpha" || point.OutputTokenProjects[0].OutputTokensPerSecond != 1.2 {
-		t.Fatalf("expected exact project throughput partition, got %+v", point.OutputTokenProjects)
+	fact.State = liveTokenRateStateLive
+	fact.SessionHashes = []string{"session"}
+	if project == "" {
+		project = liveTokenRateUnassignedProject
 	}
-	decoded := marshalTrendPointJSON(t, point)
-	requireJSONFloat64(t, decoded, "output_tokens_per_second", 1.2)
-	requireJSONStringValue(t, decoded, "output_token_throughput_state", liveTokenRateStateLive)
-	requireJSONInt(t, decoded, "output_token_throughput_window_seconds", 300)
-}
-
-func throughputTrendPoint(at time.Time, rate float64) TrendPoint {
-	point := TrendPoint{
-		At:                                 at.Format(time.RFC3339),
-		OutputTokensPerSecond:              rate,
-		HasOutputTokensPerSecond:           true,
-		OutputTokenThroughputState:         liveTokenRateStateLive,
-		OutputTokenThroughputWindowSeconds: 300,
-		ThroughputSampled:                  true,
-	}
-	if rate > 0 {
-		point.OutputTokenProjects = []LiveTokenRateProjectSample{{
-			Project:               liveTokenRateUnassignedProject,
-			OutputTokensPerSecond: rate,
-		}}
-	} else {
-		point.OutputTokenProjects = []LiveTokenRateProjectSample{}
-	}
-	return point
+	fact.Projects = []ThroughputMinuteProjectFact{{
+		Project:       project,
+		OutputTokens:  tokens,
+		SessionHashes: []string{"session"},
+	}}
+	return fact
 }
 
 func countTrendPoints(points []TrendPoint, keep func(TrendPoint) bool) int {
@@ -854,6 +847,20 @@ func requireTrendWindow(t *testing.T, trends TrendSet, label string) *TrendWindo
 		}
 	}
 	t.Fatalf("missing %s trend window", label)
+	return nil
+}
+
+func requireThroughputSeries(t *testing.T, window *TrendWindow, key string) *ThroughputTrendSeries {
+	t.Helper()
+	if window == nil {
+		t.Fatalf("missing trend window for throughput series %s", key)
+	}
+	for i := range window.ThroughputSeries {
+		if window.ThroughputSeries[i].Key == key {
+			return &window.ThroughputSeries[i]
+		}
+	}
+	t.Fatalf("missing throughput series %s", key)
 	return nil
 }
 

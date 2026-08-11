@@ -246,19 +246,6 @@ func (s localHistoryState) trendPoints() []TrendPoint {
 			RuntimeProcesses:      append([]ProcessRuntimeSummary(nil), sample.RuntimeProcesses...),
 			HostAppProcesses:      append([]HostAppProcessSummary(nil), sample.HostAppProcesses...),
 		})
-		if throughput := sample.OutputTokenThroughput; throughput != nil {
-			point := &out[len(out)-1]
-			point.ThroughputSampled = true
-			point.OutputTokenThroughputState = throughput.State
-			point.OutputTokenThroughputWindowSeconds = throughput.WindowSeconds
-			if throughput.OutputTokensPerSecond != nil {
-				point.OutputTokensPerSecond = *throughput.OutputTokensPerSecond
-				point.HasOutputTokensPerSecond = true
-				point.OutputTokenActiveSessions = throughput.ActiveSessions
-				point.HasOutputTokenActiveSessions = true
-				point.OutputTokenProjects = cloneLiveTokenRateProjectSamples(throughput.Projects)
-			}
-		}
 	}
 	return out
 }

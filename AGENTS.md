@@ -24,8 +24,9 @@ trend charts, hover panels, and detail inspectors. The contracts live in
 
 ## Engineering Principles
 
-- 不保留向后兼容。过时的直接删，别加兼容层、别写 migration、别留
-  fallback。
+- 不保留长期向后兼容层或 fallback。无损的结构不兼容要自动、幂等、可恢复地
+  分批迁移；语义不兼容的数据保留为独立版本的 legacy series，不近似换算、
+  不和当前统计混用。迁移全部成功后直接删除旧结构。
 - 选能满足当前需求的最简单实现。不要预防性抽象，不要多此一举的配置层。
 - 系统分层长。先跑通一个最小的端到端版本，再往上加东西。绝不为了未完成的
   复杂度拆掉能跑的东西。

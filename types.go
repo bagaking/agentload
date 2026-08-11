@@ -49,14 +49,24 @@ type SnapshotConfig struct {
 }
 
 type SnapshotHistory struct {
-	StorePath           string `json:"store_path"`
-	LoadedSampleCount   int    `json:"loaded_sample_count"`
-	RetainedSampleCount int    `json:"retained_sample_count"`
-	DroppedSampleCount  int    `json:"dropped_sample_count"`
-	CorruptLineCount    int    `json:"corrupt_line_count"`
-	FirstSampleAt       string `json:"first_sample_at,omitempty"`
-	LastSampleAt        string `json:"last_sample_at,omitempty"`
-	LastWriteError      string `json:"last_write_error,omitempty"`
+	StorePath           string                     `json:"store_path"`
+	LoadedSampleCount   int                        `json:"loaded_sample_count"`
+	RetainedSampleCount int                        `json:"retained_sample_count"`
+	DroppedSampleCount  int                        `json:"dropped_sample_count"`
+	CorruptLineCount    int                        `json:"corrupt_line_count"`
+	FirstSampleAt       string                     `json:"first_sample_at,omitempty"`
+	LastSampleAt        string                     `json:"last_sample_at,omitempty"`
+	LastWriteError      string                     `json:"last_write_error,omitempty"`
+	Throughput          *SnapshotThroughputHistory `json:"throughput,omitempty"`
+}
+
+type SnapshotThroughputHistory struct {
+	StorePath          string `json:"store_path"`
+	MinuteFactCount    int    `json:"minute_fact_count"`
+	LegacyFactCount    int    `json:"legacy_fact_count"`
+	DroppedRecordCount int    `json:"dropped_record_count"`
+	CorruptRecordCount int    `json:"corrupt_record_count"`
+	LastWriteError     string `json:"last_write_error,omitempty"`
 }
 
 type CurrentMetrics struct {
@@ -276,15 +286,26 @@ type ProjectHeatmapItem struct {
 }
 
 type TrendWindow struct {
-	Range                  string                  `json:"range"`
-	From                   string                  `json:"from"`
-	To                     string                  `json:"to"`
-	GranularitySeconds     int                     `json:"granularity_seconds"`
-	SourceFrom             string                  `json:"source_from,omitempty"`
-	SourceLookbackHours    int                     `json:"source_lookback_hours,omitempty"`
-	HistoryComplete        bool                    `json:"history_complete"`
-	OutputTokenRateSummary *ThroughputTrendSummary `json:"output_token_rate_summary,omitempty"`
-	Points                 []TrendPoint            `json:"points"`
+	Range               string                  `json:"range"`
+	From                string                  `json:"from"`
+	To                  string                  `json:"to"`
+	GranularitySeconds  int                     `json:"granularity_seconds"`
+	SourceFrom          string                  `json:"source_from,omitempty"`
+	SourceLookbackHours int                     `json:"source_lookback_hours,omitempty"`
+	HistoryComplete     bool                    `json:"history_complete"`
+	ThroughputSeries    []ThroughputTrendSeries `json:"throughput_series,omitempty"`
+	Points              []TrendPoint            `json:"points"`
+}
+
+type ThroughputTrendSeries struct {
+	Key                string                  `json:"key"`
+	Kind               string                  `json:"kind"`
+	WindowSeconds      int                     `json:"window_seconds"`
+	GranularitySeconds int                     `json:"granularity_seconds"`
+	SourceFrom         string                  `json:"source_from,omitempty"`
+	HistoryComplete    bool                    `json:"history_complete"`
+	Summary            *ThroughputTrendSummary `json:"summary,omitempty"`
+	Points             []TrendPoint            `json:"points"`
 }
 
 type ThroughputTrendSummary struct {

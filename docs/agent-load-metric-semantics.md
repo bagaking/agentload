@@ -21,7 +21,7 @@ semantic layer says so.
 | Role matrix | `main_agent_sessions`, `subagent_sessions`, `unknown_role_sessions` and active role splits | Session role inference from thread source, parent thread, lane paths, and independent-run evidence | Process role guesses without mapped session evidence |
 | Tool coverage | project/tool `session_count`, `active_burst_count`, `process_count` | Per-tool aggregation of known sessions, recent movement, and process pressure | Treating process pressure as recent movement |
 | Token usage | `token_usage`, `token_usage_source`, `token_usage_confidence` | Parsed local transcript usage fields when present, including cumulative token-count events when the local trace exposes them | Inferring usage from process duration, CPU, memory, or elapsed time |
-| Output token throughput | `/api/live-token-rate` `output_tokens_per_second`, `projects`, `state`, `window_seconds`; persisted `throughput_trends` | Positive output-token events and safe cumulative-output counter deltas from local transcripts, projected onto a trailing 300-second wall-time window and attributed through the observer's project mapping | Input/cache/reasoning tokens, process activity, model decode speed, API-active-time throughput, or replayed deltas across collection gaps |
+| Output token throughput | `/api/live-token-rate` `output_tokens_per_second`, `projects`, `state`, `window_seconds`; minute facts and derived series in `throughput_trends` | Positive output-token events and safe cumulative-output counter deltas from local transcripts, stored in non-overlapping closed-minute facts and attributed through the observer's project mapping | Input/cache/reasoning tokens, process activity, model decode speed, API-active-time throughput, replayed deltas across collection gaps, or averaging previously derived rates |
 | Runtime telemetry | `runtime_telemetry` | Optional local adapter state for future OpenTelemetry or JSONL events | Replacing local process/session evidence or treating unconfigured telemetry as failure |
 | Diagnostic export | `diagnostics.export` and `/api/diagnostic-export` | Sanitized local snapshot with omitted private fields documented | Raw prompts, absolute paths, full command arguments, environment variables, transcript paths |
 
@@ -81,32 +81,36 @@ semantic layer says so.
   unconfigured transcript sources, recent-file capacity, and incomplete
   file-event coverage. Token volume or raw usage-event count is not an
   unavailable reason.
-- Each complete snapshot persists the then-current aggregate throughput datum,
-  its per-project partition, state, and rolling-window size. The project values
-  come from the same events and use the same 300-second denominator as the
-  aggregate, so their sum, including `unassigned`, equals the aggregate at that
-  sample time. Throughput trend density follows snapshot history cadence, not
-  the independent 30-second live sampler cadence; each numeric trend point
-  remains the exact trailing-window rate at its stored snapshot time.
-- History without a persisted project partition is missing evidence. Do not
-  migrate it, reconstruct it from the current project mix, or draw a synthetic
-  catch-all project layer.
-- `1D` through `30D` select the throughput observation range; they do not change
-  the 300-second rate denominator or collapse the range to the last process
-  bucket. Sparse ranges preserve every stored throughput sample. Dense ranges
-  retain at most 240 exact source samples distributed across observed time; the
-  backend must not sum or average overlapping rolling-window rates into invented
-  bucket throughput. The UI uses the selected range bounds as the horizontal
-  domain, so time without stored samples remains visibly empty.
-- The throughput trend should show the selected period's metrics at a glance:
-  `MAX`, `P95`, `AVG`, and `CUR(5m)`. `MAX`, nearest-rank `P95`, and `AVG` use
-  every valid numeric persisted sample in the selected range before the
-  240-point display reduction. Numeric zero is valid; missing, stale, no-data,
-  mismatched-window, and partition-missing samples are excluded. `CUR(5m)` is
-  only the latest currently fresh numeric sample and must not reuse an older
+- The persistent throughput fact is one closed, non-overlapping minute: minute
+  end, evidence state and reason, exact output-token count, exact sparse project
+  token partitions, and hashed contributing-session identities. A pointer-valued
+  token count keeps measured zero distinct from missing coverage. Snapshot
+  refresh cadence never controls minute-fact density.
+- The semantic layer derives trailing `1m`, `5m`, and `15m` rates by summing the
+  required consecutive minute facts once and dividing by the selected wall-time
+  window. It also unions hashed identities for exact contributing-session counts.
+  Any absent or non-numeric minute makes the derived window unavailable; the
+  denominator never shrinks and gaps never become zero.
+- Project rates are derived from the same minute facts and denominator as the
+  aggregate. Their sum, including `unassigned`, equals the aggregate. History
+  without an exact project partition is missing evidence; do not reconstruct it
+  from the current project mix or draw a synthetic catch-all layer.
+- `1D` through `30D` select only the horizontal observation range. `1m / 5m /
+  15m` independently select the rolling denominator. Dense series retain at
+  most 240 time-distributed source points after period statistics are computed;
+  missing coverage is retained as a gap marker and the river must break there.
+- The throughput trend shows `MAX`, nearest-rank `P95`, `AVG`, and
+  `CUR(<selected-window>)`. The first three use every valid numeric derived point
+  in the selected range before display reduction. Numeric zero is valid;
+  missing, stale, no-data, and partition-missing points are excluded. `CUR` is
+  present only when the latest point is currently fresh and never reuses an old
   non-zero value.
-- Persisted throughput samples whose rolling window is not 300 seconds are
-  obsolete evidence. Do not migrate, convert, or mix them into current trends.
+- Historical rolling-rate samples are semantically incompatible with minute
+  facts. Migrate them automatically in bounded, idempotent batches into
+  independently keyed `legacy:<seconds>` series. Never approximate them into
+  minute facts, mix them into current summaries, or expose a legacy value as
+  `CUR`. Clear the old main-history field only after every legacy batch and the
+  atomic main-history rewrite succeed.
 - UI labels may abbreviate for density, but tooltips and accessible labels must
   preserve the semantic name.
 - Trend charts, selected-point readouts, hover tooltips, and inspectors must use

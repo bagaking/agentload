@@ -477,6 +477,12 @@ func sanitizeSnapshotForClient(snapshot Snapshot) Snapshot {
 	snapshot.Config.HistoryFile = ""
 	snapshot.History.StorePath = ""
 	snapshot.History.LastWriteError = sanitizeTextForClient(snapshot.History.LastWriteError)
+	if snapshot.History.Throughput != nil {
+		throughput := *snapshot.History.Throughput
+		throughput.StorePath = ""
+		throughput.LastWriteError = sanitizeTextForClient(throughput.LastWriteError)
+		snapshot.History.Throughput = &throughput
+	}
 	snapshot.TranscriptStats.Errors = sanitizeTextListForClient(snapshot.TranscriptStats.Errors)
 	snapshot.CoordinationRisk = sanitizeCoordinationRiskForClient(snapshot.CoordinationRisk)
 	snapshot.ProjectFocus = sanitizeProjectFocusForClient(snapshot.ProjectFocus)
@@ -499,14 +505,18 @@ func sanitizeThroughputTrendsForClient(trends TrendSet) TrendSet {
 	}
 	windows := append([]TrendWindow(nil), trends.Windows...)
 	for i := range windows {
-		windows[i].Points = append([]TrendPoint(nil), windows[i].Points...)
-		for j := range windows[i].Points {
-			projects := cloneLiveTokenRateProjectSamples(windows[i].Points[j].OutputTokenProjects)
-			for k := range projects {
-				projects[k].Project = sanitizeProjectNameForClient(projects[k].Project)
+		series := append([]ThroughputTrendSeries(nil), windows[i].ThroughputSeries...)
+		for j := range series {
+			series[j].Points = append([]TrendPoint(nil), series[j].Points...)
+			for k := range series[j].Points {
+				projects := cloneLiveTokenRateProjectSamples(series[j].Points[k].OutputTokenProjects)
+				for l := range projects {
+					projects[l].Project = sanitizeProjectNameForClient(projects[l].Project)
+				}
+				series[j].Points[k].OutputTokenProjects = projects
 			}
-			windows[i].Points[j].OutputTokenProjects = projects
 		}
+		windows[i].ThroughputSeries = series
 	}
 	trends.Windows = windows
 	return trends

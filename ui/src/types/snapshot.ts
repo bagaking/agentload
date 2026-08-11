@@ -13,7 +13,18 @@ export type Snapshot = {
   realtime_trends?: TrendSet;
   throughput_trends?: TrendSet;
   project_heatmaps?: ProjectHeatmapSet;
-  history?: { retained_sample_count?: number; loaded_sample_count?: number; last_write_error?: string };
+  history?: {
+    retained_sample_count?: number;
+    loaded_sample_count?: number;
+    last_write_error?: string;
+    throughput?: {
+      minute_fact_count?: number;
+      legacy_fact_count?: number;
+      dropped_record_count?: number;
+      corrupt_record_count?: number;
+      last_write_error?: string;
+    };
+  };
   metric_registry?: MetricRegistryEntry[];
   diagnostics?: DiagnosticSnapshot;
   runtime_telemetry?: RuntimeTelemetrySnapshot;

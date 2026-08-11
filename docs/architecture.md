@@ -1,6 +1,6 @@
 # Agent Load Architecture
 
-> Status: living document, last verified 2026-08-10.
+> Status: living document, last verified 2026-08-12.
 
 This page is the contributor-facing map of the Go backend and the native shell.
 It describes how local evidence is acquired, aggregated into a snapshot,
@@ -21,7 +21,7 @@ numbers.
  OS counters ──> system_resources*.go ──> /api/system-resources│
                  system_thermal*.go                        history.jsonl
  token JSONL ──> live_token_rate.go ──┬────────────> /api/live-token-rate
-                                      └─> snapshot-time history sample
+                                      └─> throughput.jsonl minute facts
 ```
 
 ## 1. Acquisition
@@ -168,10 +168,11 @@ feed historic peaks and transcript trend windows.
   bounded by window duration and contributing sessions rather than raw usage
   update frequency, so high output throughput cannot itself trip an event-count
   capacity state.
-- Complete snapshot refreshes copy the sampler's current aggregate value, state,
-  rolling window, and contributing-session count into the persisted history
-  sample. This gives the Trend surface durable throughput points without making
-  snapshot readers advance sampler cursors or baselines.
+- The sampler closes non-overlapping one-minute facts independently of snapshot
+  refresh cadence. Each fact carries exact output tokens, evidence state, sparse
+  project partitions, and hashed contributing-session identities. The semantic
+  layer derives `1m`, `5m`, and `15m` rates from consecutive facts; snapshot
+  readers never advance sampler cursors or baselines.
 - Bucket aggregation is reproducible with
   `go test -run '^$' -bench '^BenchmarkLiveTokenRateBucketsThirtyTwoMillionUpdates$' -benchtime=32768000x -benchmem .`.
   It exercises 1,000 times the retired 32,768-event threshold and must retain a
@@ -270,12 +271,11 @@ One snapshot build, in order:
    Unavailable metrics stay unavailable; they are never converted to zero
    (`metric_registry.go` documents the missing-state contract per metric).
 
-## 3. Persistence — history JSONL (`history.go`, `tray.go`)
+## 3. Persistence — history JSONL (`history.go`, `throughput_history.go`, `tray.go`)
 
 - After each refresh, `trayApp.rememberSnapshot` converts the snapshot into a
   `HistorySample` (current metrics, summary, coordination-risk subset, project
-  rows, runtime/host-app summaries, and the current aggregate plus per-project
-  output-throughput datum) and appends one JSONL line to
+  rows, and runtime/host-app summaries) and appends one JSONL line to
   `Config.HistoryFile` (default
   `~/Library/Application Support/AgentLoad/history.jsonl`). The append runs
   under the process-local `historyFileMu` and the cross-process
@@ -289,19 +289,22 @@ One snapshot build, in order:
   of retained), `rewriteHistorySampleFile` rewrites it atomically via a temp
   file + sync + rename. Load/compaction and append hold the same stable lock
   file, so a second app instance cannot append into the file being replaced.
-- Retained samples feed `buildRealtimeTrendWindows` for process lanes,
-  `buildThroughputTrendWindows` for timestamped 300-second output-rate samples,
-  and `buildProjectHeatmapWindows`. All three are merged into the snapshot with
-  `history` metadata. Throughput ranges preserve sparse samples and cap dense
-  ranges at 240 time-distributed exact observations instead of inheriting the
-  wider process buckets. Each stored throughput point retains the sampler's
-  project partition; missing partitions are not migrated or reconstructed.
-  Samples with an obsolete rolling-window size are discarded without migration.
-  Each throughput range computes `MAX`, nearest-rank `P95`, `AVG`, and fresh
-  `CUR(5m)` from its complete valid persisted series before applying the
-  240-point display cap.
-  Transcript lanes in `trends` come directly from span data, so the three trend
-  sources stay independent.
+- `throughput.jsonl`, beside the main history file, uses a versioned envelope
+  with `minute_fact` and `legacy_rolling_rate` records. Minute facts are keyed by
+  minute end and retained for 30 days. `buildThroughputTrendWindows` derives
+  independent `minute:60`, `minute:300`, and `minute:900` series, then computes
+  `MAX`, nearest-rank `P95`, `AVG`, and fresh `CUR(<window>)` before applying the
+  240-point display cap. Any missing minute invalidates the affected rolling
+  point and remains a visible gap.
+- Startup migrates old main-history rolling-rate fields in batches of 256 into
+  versioned `legacy:<seconds>` series. Appends deduplicate by timestamp and
+  window, so a crash is resumable. Only after all batches succeed does an atomic
+  rewrite remove the old field. Legacy rates are never approximated into minute
+  facts, combined with current summaries, or exposed as current evidence.
+- Retained main-history samples feed `buildRealtimeTrendWindows` and
+  `buildProjectHeatmapWindows`; retained throughput facts feed only
+  `buildThroughputTrendWindows`. Transcript lanes in `trends` come directly from
+  span data, so all sources stay independent.
 
 ## 4. Delivery (`server.go`, `tray.go`)
 
@@ -378,6 +381,7 @@ One snapshot build, in order:
 | UI `/api/system-resources` poll | 2s while the System deck is visible | `ui/src/system/useLiveSystemResources.ts` |
 | UI `/api/live-token-rate` poll | 30s while the popover or dashboard is visible | `ui/src/live/useLiveTokenRate.ts` |
 | Per-PID disk I/O rates | delta per process-scan batch | `process_io.go` |
-| History JSONL append, including throughput trend datum | once per built snapshot | `tray.go`, `history.go` |
-| History retention / compaction | 30d retention; compaction check at startup load | `history.go` |
+| Main history JSONL append | once per built snapshot | `tray.go`, `history.go` |
+| Throughput minute-fact append | once per fully covered closed minute | `live_token_rate.go`, `throughput_history.go` |
+| History retention / compaction | 30d retention; compaction check at startup load | `history.go`, `throughput_history.go` |
 | Tray title/menu/tooltip update | after each background refresh | `tray.go` |

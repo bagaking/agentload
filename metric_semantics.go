@@ -166,7 +166,7 @@ func liveTokenRateSampleFromFacts(facts liveTokenRateFacts) LiveTokenRateSample 
 	}
 	window := facts.Window
 	if window <= 0 {
-		window = 180 * time.Second
+		window = liveTokenRateWindow
 	}
 	sample := LiveTokenRateSample{
 		State:                 liveTokenRateStateNoData,

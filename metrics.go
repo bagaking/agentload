@@ -2,6 +2,7 @@ package main
 
 import (
 	"sort"
+	"strconv"
 	"time"
 )
 
@@ -426,6 +427,22 @@ type runtimeTrendSample struct {
 
 const throughputTrendMaxPoints = 240
 
+const (
+	throughputSeriesKindMinuteRollup = "minute_rollup"
+	throughputSeriesKindLegacy       = "legacy_rolling_rate"
+)
+
+var throughputRollupWindows = []time.Duration{
+	time.Minute,
+	5 * time.Minute,
+	15 * time.Minute,
+}
+
+type throughputTimedMinute struct {
+	at   time.Time
+	fact ThroughputMinuteFact
+}
+
 func normalizeRuntimeSamples(samples []TrendPoint) []runtimeTrendSample {
 	out := make([]runtimeTrendSample, 0, len(samples))
 	for _, sample := range samples {
@@ -480,69 +497,215 @@ func bucketRuntimeSamples(samples []runtimeTrendSample, from, to time.Time, step
 	return out
 }
 
-func buildThroughputTrendWindows(samples []TrendPoint, now time.Time) TrendSet {
+func buildThroughputTrendWindows(minutes []ThroughputMinuteFact, legacy []LegacyThroughputFact, now time.Time) TrendSet {
 	if now.IsZero() {
 		return TrendSet{}
 	}
-	normalized := normalizeThroughputSamples(samples)
-	sourceFrom := time.Time{}
-	if len(normalized) > 0 {
-		sourceFrom = normalized[0].At
+	type sourceSeries struct {
+		key          string
+		kind         string
+		window       time.Duration
+		samples      []runtimeTrendSample
+		allowCurrent bool
 	}
+	sources := make([]sourceSeries, 0, len(throughputRollupWindows)+2)
+	for _, window := range throughputRollupWindows {
+		sources = append(sources, sourceSeries{
+			key:          "minute:" + formatDurationSeconds(window),
+			kind:         throughputSeriesKindMinuteRollup,
+			window:       window,
+			samples:      rollupThroughputMinutes(minutes, window),
+			allowCurrent: true,
+		})
+	}
+	legacyByWindow := map[int][]LegacyThroughputFact{}
+	for _, fact := range legacy {
+		if fact.WindowSeconds > 0 {
+			legacyByWindow[fact.WindowSeconds] = append(legacyByWindow[fact.WindowSeconds], fact)
+		}
+	}
+	legacyWindows := make([]int, 0, len(legacyByWindow))
+	for window := range legacyByWindow {
+		legacyWindows = append(legacyWindows, window)
+	}
+	sort.Ints(legacyWindows)
+	for _, windowSeconds := range legacyWindows {
+		window := time.Duration(windowSeconds) * time.Second
+		sources = append(sources, sourceSeries{
+			key:     "legacy:" + formatDurationSeconds(window),
+			kind:    throughputSeriesKindLegacy,
+			window:  window,
+			samples: legacyThroughputSamples(legacyByWindow[windowSeconds]),
+		})
+	}
+
 	trends := TrendSet{Windows: make([]TrendWindow, 0, len(defaultTrendSpecs))}
 	for _, spec := range defaultTrendSpecs {
 		from := now.Add(-spec.span)
-		rangeSamples := throughputSamplesInRange(normalized, from, now)
-		points, granularity := timeDistributedThroughputSamples(rangeSamples, throughputTrendMaxPoints)
 		window := TrendWindow{
-			Range:                  spec.label,
-			From:                   from.Format(time.RFC3339),
-			To:                     now.Format(time.RFC3339),
-			GranularitySeconds:     int(granularity / time.Second),
-			HistoryComplete:        !sourceFrom.IsZero() && !sourceFrom.After(from),
-			OutputTokenRateSummary: summarizeThroughputTrend(rangeSamples, now),
-			Points:                 points,
+			Range:            spec.label,
+			From:             from.Format(time.RFC3339),
+			To:               now.Format(time.RFC3339),
+			ThroughputSeries: make([]ThroughputTrendSeries, 0, len(sources)),
 		}
-		if !sourceFrom.IsZero() {
-			window.SourceFrom = sourceFrom.Format(time.RFC3339)
-			window.SourceLookbackHours = int(now.Sub(sourceFrom) / time.Hour)
+		for _, source := range sources {
+			rangeSamples := throughputSamplesInRange(source.samples, from, now)
+			points, granularity := timeDistributedThroughputSamples(rangeSamples, throughputTrendMaxPoints)
+			series := ThroughputTrendSeries{
+				Key:                source.key,
+				Kind:               source.kind,
+				WindowSeconds:      int(source.window / time.Second),
+				GranularitySeconds: int(granularity / time.Second),
+				Summary:            summarizeThroughputTrend(rangeSamples, now, source.allowCurrent),
+				Points:             points,
+			}
+			if len(source.samples) > 0 {
+				sourceFrom := source.samples[0].At
+				series.SourceFrom = sourceFrom.Format(time.RFC3339)
+				series.HistoryComplete = !sourceFrom.After(from)
+			}
+			window.ThroughputSeries = append(window.ThroughputSeries, series)
 		}
 		trends.Windows = append(trends.Windows, window)
 	}
 	return trends
 }
 
-func normalizeThroughputSamples(samples []TrendPoint) []runtimeTrendSample {
-	out := make([]runtimeTrendSample, 0, len(samples))
-	for _, sample := range samples {
-		if !sample.ThroughputSampled || sample.OutputTokenThroughputWindowSeconds != int(liveTokenRateWindow/time.Second) {
+func rollupThroughputMinutes(minutes []ThroughputMinuteFact, window time.Duration) []runtimeTrendSample {
+	windowCount := int(window / throughputMinuteResolution)
+	if windowCount <= 0 {
+		return nil
+	}
+	timed := make([]throughputTimedMinute, 0, len(minutes))
+	for _, minute := range minutes {
+		at, err := time.Parse(time.RFC3339, minute.At)
+		if err != nil || !at.Equal(at.Truncate(throughputMinuteResolution)) {
 			continue
 		}
-		if sample.HasOutputTokensPerSecond && sample.OutputTokenProjects == nil {
+		timed = append(timed, throughputTimedMinute{at: at, fact: cloneThroughputMinute(minute)})
+	}
+	sort.Slice(timed, func(i, j int) bool { return timed[i].at.Before(timed[j].at) })
+	out := make([]runtimeTrendSample, 0, len(timed))
+	runStart := 0
+	for index := range timed {
+		if index > 0 && timed[index].at.Sub(timed[index-1].at) != throughputMinuteResolution {
+			out = append(out, runtimeTrendSample{
+				At: timed[index-1].at.Add(throughputMinuteResolution),
+				Point: TrendPoint{
+					At:                                 timed[index-1].at.Add(throughputMinuteResolution).Format(time.RFC3339),
+					OutputTokenThroughputState:         liveTokenRateStateNoData,
+					OutputTokenThroughputWindowSeconds: int(window / time.Second),
+					ThroughputSampled:                  true,
+				},
+			})
+			runStart = index
+		}
+		if index-runStart+1 < windowCount {
 			continue
 		}
-		at, err := time.Parse(time.RFC3339, sample.At)
-		if err != nil {
+		windowMinutes := timed[index-windowCount+1 : index+1]
+		point := throughputRollupPoint(windowMinutes, window)
+		out = append(out, runtimeTrendSample{At: timed[index].at, Point: point})
+	}
+	return out
+}
+
+func throughputRollupPoint(minutes []throughputTimedMinute, window time.Duration) TrendPoint {
+	latest := minutes[len(minutes)-1]
+	point := TrendPoint{
+		At:                                 latest.at.Format(time.RFC3339),
+		OutputTokenThroughputState:         latest.fact.State,
+		OutputTokenThroughputWindowSeconds: int(window / time.Second),
+		ThroughputSampled:                  true,
+	}
+	for _, minute := range minutes {
+		if minute.fact.OutputTokens == nil {
+			point.OutputTokenThroughputState = combinedThroughputMissingState(point.OutputTokenThroughputState, minute.fact.State)
+			return point
+		}
+	}
+	projectTokens := map[string]int64{}
+	projectSessions := map[string]map[string]struct{}{}
+	allSessions := map[string]struct{}{}
+	var tokens int64
+	for _, minute := range minutes {
+		tokens = liveTokenRateSaturatingAdd(tokens, *minute.fact.OutputTokens)
+		for _, session := range minute.fact.SessionHashes {
+			allSessions[session] = struct{}{}
+		}
+		for _, project := range minute.fact.Projects {
+			projectTokens[project.Project] = liveTokenRateSaturatingAdd(projectTokens[project.Project], project.OutputTokens)
+			if projectSessions[project.Project] == nil {
+				projectSessions[project.Project] = map[string]struct{}{}
+			}
+			for _, session := range project.SessionHashes {
+				projectSessions[project.Project][session] = struct{}{}
+			}
+		}
+	}
+	point.OutputTokensPerSecond = float64(tokens) / window.Seconds()
+	point.HasOutputTokensPerSecond = true
+	point.OutputTokenActiveSessions = len(allSessions)
+	point.HasOutputTokenActiveSessions = true
+	point.OutputTokenThroughputState = liveTokenRateStateZero
+	if tokens > 0 {
+		point.OutputTokenThroughputState = liveTokenRateStateLive
+	}
+	point.OutputTokenProjects = make([]LiveTokenRateProjectSample, 0, len(projectTokens))
+	for project, projectTokens := range projectTokens {
+		if projectTokens <= 0 {
 			continue
 		}
-		out = append(out, runtimeTrendSample{
-			At: at,
-			Point: TrendPoint{
-				At:                                 at.Format(time.RFC3339),
-				OutputTokensPerSecond:              sample.OutputTokensPerSecond,
-				HasOutputTokensPerSecond:           sample.HasOutputTokensPerSecond,
-				OutputTokenThroughputState:         sample.OutputTokenThroughputState,
-				OutputTokenThroughputWindowSeconds: sample.OutputTokenThroughputWindowSeconds,
-				OutputTokenActiveSessions:          sample.OutputTokenActiveSessions,
-				HasOutputTokenActiveSessions:       sample.HasOutputTokenActiveSessions,
-				OutputTokenProjects:                cloneLiveTokenRateProjectSamples(sample.OutputTokenProjects),
-				ThroughputSampled:                  true,
-			},
+		point.OutputTokenProjects = append(point.OutputTokenProjects, LiveTokenRateProjectSample{
+			Project:               project,
+			OutputTokensPerSecond: float64(projectTokens) / window.Seconds(),
+			ActiveSessions:        len(projectSessions[project]),
 		})
 	}
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].At.Before(out[j].At)
+	sort.Slice(point.OutputTokenProjects, func(i, j int) bool {
+		if point.OutputTokenProjects[i].OutputTokensPerSecond == point.OutputTokenProjects[j].OutputTokensPerSecond {
+			return point.OutputTokenProjects[i].Project < point.OutputTokenProjects[j].Project
+		}
+		return point.OutputTokenProjects[i].OutputTokensPerSecond > point.OutputTokenProjects[j].OutputTokensPerSecond
 	})
+	return point
+}
+
+func combinedThroughputMissingState(left, right string) string {
+	priority := map[string]int{
+		liveTokenRateStateNoData:      1,
+		liveTokenRateStateStale:       2,
+		liveTokenRateStateUnavailable: 3,
+	}
+	if priority[right] > priority[left] {
+		return right
+	}
+	return left
+}
+
+func legacyThroughputSamples(facts []LegacyThroughputFact) []runtimeTrendSample {
+	out := make([]runtimeTrendSample, 0, len(facts))
+	for _, fact := range facts {
+		at, ok := parseObservedTime(fact.At)
+		if !ok || fact.WindowSeconds <= 0 {
+			continue
+		}
+		point := TrendPoint{
+			At:                                 at.Format(time.RFC3339Nano),
+			OutputTokenThroughputState:         fact.State,
+			OutputTokenThroughputWindowSeconds: fact.WindowSeconds,
+			ThroughputSampled:                  true,
+		}
+		if fact.OutputTokensPerSecond != nil && fact.Projects != nil {
+			point.OutputTokensPerSecond = *fact.OutputTokensPerSecond
+			point.HasOutputTokensPerSecond = true
+			point.OutputTokenActiveSessions = fact.ActiveSessions
+			point.HasOutputTokenActiveSessions = true
+			point.OutputTokenProjects = cloneLiveTokenRateProjectSamples(fact.Projects)
+		}
+		out = append(out, runtimeTrendSample{At: at, Point: point})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].At.Before(out[j].At) })
 	return out
 }
 
@@ -574,10 +737,15 @@ func timeDistributedThroughputSamples(filtered []runtimeTrendSample, maxPoints i
 	for _, sample := range filtered[1:] {
 		bucket := int(sample.At.Sub(filtered[0].At) / step)
 		if bucket == 0 {
+			if !sample.Point.HasOutputTokensPerSecond {
+				out[0] = sample
+			}
 			continue
 		}
 		if len(out) > 0 && bucket == lastBucket {
-			out[len(out)-1] = sample
+			if out[len(out)-1].Point.HasOutputTokensPerSecond || !sample.Point.HasOutputTokensPerSecond {
+				out[len(out)-1] = sample
+			}
 			continue
 		}
 		out = append(out, sample)
@@ -586,13 +754,17 @@ func timeDistributedThroughputSamples(filtered []runtimeTrendSample, maxPoints i
 	return throughputTrendPoints(out), step
 }
 
-func summarizeThroughputTrend(samples []runtimeTrendSample, now time.Time) *ThroughputTrendSummary {
+func summarizeThroughputTrend(samples []runtimeTrendSample, now time.Time, allowCurrent bool) *ThroughputTrendSummary {
 	rates := make([]float64, 0, len(samples))
 	sum := 0.0
 	maximum := 0.0
+	windowSeconds := 0
 	for _, sample := range samples {
 		if !sample.Point.HasOutputTokensPerSecond {
 			continue
+		}
+		if windowSeconds == 0 {
+			windowSeconds = sample.Point.OutputTokenThroughputWindowSeconds
 		}
 		rate := sample.Point.OutputTokensPerSecond
 		rates = append(rates, rate)
@@ -610,12 +782,12 @@ func summarizeThroughputTrend(samples []runtimeTrendSample, now time.Time) *Thro
 		Max:           maximum,
 		P95:           rates[p95Index-1],
 		Avg:           sum / float64(len(rates)),
-		WindowSeconds: int(liveTokenRateWindow / time.Second),
+		WindowSeconds: windowSeconds,
 		SampleCount:   len(rates),
 	}
 	latest := samples[len(samples)-1]
 	currentAge := now.Sub(latest.At)
-	if latest.Point.HasOutputTokensPerSecond && currentAge >= -liveTokenRateFutureSkew && currentAge <= liveTokenRateSampleInterval+liveTokenRateFutureSkew {
+	if allowCurrent && latest.Point.HasOutputTokensPerSecond && currentAge >= -liveTokenRateFutureSkew && currentAge <= throughputMinuteResolution+liveTokenRateFutureSkew {
 		current := latest.Point.OutputTokensPerSecond
 		summary.Current = &current
 		summary.CurrentAt = latest.At.Format(time.RFC3339)
@@ -623,11 +795,15 @@ func summarizeThroughputTrend(samples []runtimeTrendSample, now time.Time) *Thro
 	return summary
 }
 
+func formatDurationSeconds(duration time.Duration) string {
+	return strconv.Itoa(int(duration / time.Second))
+}
+
 func throughputTrendPoints(samples []runtimeTrendSample) []TrendPoint {
 	points := make([]TrendPoint, 0, len(samples))
 	for _, sample := range samples {
 		point := sample.Point
-		point.At = sample.At.Format(time.RFC3339)
+		point.At = sample.At.Format(time.RFC3339Nano)
 		points = append(points, point)
 	}
 	return points

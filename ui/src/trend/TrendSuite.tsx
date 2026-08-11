@@ -11,6 +11,7 @@ import {
   type TrendPoint,
   type TrendRange,
   type TrendSet,
+  type ThroughputTrendSeries,
   type TrendWindow,
 } from "./types";
 import { toolDisplayName, toolIconName } from "../lib/activityModel";
@@ -38,6 +39,7 @@ type TrendLaneSummary = {
   points: TrendPoint[];
   data: TrendSignalDatum[];
   selected?: TrendSignalDatum;
+  throughputSeries?: ThroughputTrendSeries;
 };
 
 type ProjectHeatmapTile = ProjectHeatmapItem & {
@@ -85,11 +87,14 @@ export function TrendSuite({
   trendSelection: Record<TrendLane, string | undefined>;
   setTrendSelection: React.Dispatch<React.SetStateAction<Record<TrendLane, string | undefined>>>;
 }) {
+  const [throughputSeriesKey, setThroughputSeriesKey] = useState("minute:300");
   const activeRanges = activeTrendRanges(snapshot);
   const effectiveRange = activeRanges.includes(range) ? range : activeRanges[0] ?? range;
   const history = trendWindowForRange(snapshot.trends, effectiveRange);
   const runtime = trendWindowForRange(snapshot.realtime_trends, effectiveRange);
   const throughput = trendWindowForRange(snapshot.throughput_trends, effectiveRange);
+  const throughputSeries = selectedThroughputSeries(throughput, throughputSeriesKey);
+  const throughputView = useMemo(() => throughputSeriesWindow(throughput, throughputSeries), [throughput, throughputSeries]);
   const projectHeatmap = projectHeatmapWindowForRange(snapshot.project_heatmaps, effectiveRange);
   const projectActivity = useMemo(() => projectHeatmapActivityByProject(snapshot.project_focus), [snapshot.project_focus]);
   const [focusedLane, setFocusedLane] = useState<TrendLane>("history");
@@ -98,8 +103,8 @@ export function TrendSuite({
   const laneSummaries: TrendLaneSummary[] = useMemo(() => [
     trendLaneSummary("history", t("trendActiveSessions"), history, trendSelection.history),
     trendLaneSummary("runtime", t("trendVisiblePids"), runtime, trendSelection.runtime),
-    trendLaneSummary("throughput", t("throughputLane"), throughput, trendSelection.throughput),
-  ].filter((summary) => Boolean(summary.trendWindow || summary.points.length)), [t, history, runtime, throughput, trendSelection.history, trendSelection.runtime, trendSelection.throughput]);
+    trendLaneSummary("throughput", t("throughputLane"), throughputView, trendSelection.throughput, throughputSeries),
+  ].filter((summary) => Boolean(summary.trendWindow || summary.points.length)), [t, history, runtime, throughputView, throughputSeries, trendSelection.history, trendSelection.runtime, trendSelection.throughput]);
   const historySummary = laneSummaries.find((summary) => summary.lane === "history");
   const runtimeSummary = laneSummaries.find((summary) => summary.lane === "runtime");
   const throughputSummary = laneSummaries.find((summary) => summary.lane === "throughput");
@@ -137,8 +142,11 @@ export function TrendSuite({
               <ThroughputLaneView
                 t={t}
                 summary={throughputSummary}
+                seriesOptions={throughput?.throughput_series ?? []}
+                selectedSeriesKey={throughputSeries?.key ?? "minute:300"}
                 isFocused={activeSummary?.lane === "throughput"}
                 setFocusedLane={setFocusedLane}
+                setSeriesKey={setThroughputSeriesKey}
                 setTrendSelection={setTrendSelection}
               />
             ) : null}
@@ -428,23 +436,32 @@ function ActivityProcessLane({
 function ThroughputLaneView({
   t,
   summary,
+  seriesOptions,
+  selectedSeriesKey,
   isFocused,
   setFocusedLane,
+  setSeriesKey,
   setTrendSelection,
 }: {
   t: Translate;
   summary: TrendLaneSummary;
+  seriesOptions: ThroughputTrendSeries[];
+  selectedSeriesKey: string;
   isFocused: boolean;
   setFocusedLane: (lane: TrendLane) => void;
+  setSeriesKey: (key: string) => void;
   setTrendSelection: React.Dispatch<React.SetStateAction<Record<TrendLane, string | undefined>>>;
 }) {
   const { title, trendWindow, points, selected } = summary;
-  const periodSummary = trendWindow?.output_token_rate_summary;
+  const series = summary.throughputSeries;
+  const periodSummary = series?.summary;
+  const windowLabel = formatThroughputWindowLabel(series?.window_seconds);
+  const legacySeries = series?.kind === "legacy_rolling_rate";
   const periodMetrics = [
     { label: "MAX", value: formatThroughputPeriodRate(periodSummary?.max) },
     { label: "P95", value: formatThroughputPeriodRate(periodSummary?.p95) },
     { label: "AVG", value: formatThroughputPeriodRate(periodSummary?.avg) },
-    { label: "CUR(5m)", value: formatThroughputPeriodRate(periodSummary?.current) },
+    ...(!legacySeries ? [{ label: `CUR(${windowLabel})`, value: formatThroughputPeriodRate(periodSummary?.current) }] : []),
   ];
   const selectPoint = useCallback((at?: string) => {
     setFocusedLane("throughput");
@@ -455,9 +472,28 @@ function ThroughputLaneView({
       <div className="trend-lane-head">
         <div className="trend-lane-title">
           <span className="trend-kicker">{title}</span>
-          <small>{trendWindow?.range || t("unavailable")} · {periodSummary?.sample_count ?? 0} {t("samples")} · 5m</small>
+          <small>{trendWindow?.range || t("unavailable")} · {periodSummary?.sample_count ?? 0} {t("samples")} · {windowLabel}</small>
+          <div className="throughput-window-switch" role="group" aria-label={t("throughputRateWindow")}>
+            {seriesOptions.map((option) => {
+              const key = String(option.key || "");
+              const legacy = option.kind === "legacy_rolling_rate";
+              const label = formatThroughputWindowLabel(option.window_seconds);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  className={legacy ? "legacy" : ""}
+                  aria-pressed={key === selectedSeriesKey}
+                  title={legacy ? `${t("throughputLegacyShort")} · ${label}` : `${t("throughputRateWindow")} · ${label}`}
+                  onClick={() => setSeriesKey(key)}
+                >
+                  {legacy ? `${t("throughputLegacyShort")} ${label}` : label}
+                </button>
+              );
+            })}
+          </div>
         </div>
-        <dl className="throughput-period-summary" aria-label={t("selectedValues")}>
+        <dl className={`throughput-period-summary ${legacySeries ? "legacy" : ""}`} aria-label={t("selectedValues")}>
           {periodMetrics.map((metric) => (
             <div key={metric.label} title={`${metric.label}: ${metric.value} ${t("tokenRateUnit")}`}>
               <dt>{metric.label}</dt>
@@ -468,7 +504,7 @@ function ThroughputLaneView({
       </div>
       {summary.data.length ? (
         <ThroughputRiver
-          key={trendWindow?.range}
+          key={`${trendWindow?.range}:${selectedSeriesKey}`}
           t={t}
           title={title}
           points={points}
@@ -696,11 +732,11 @@ function projectHeatmapWindowForRange(set: ProjectHeatmapSet | undefined, range:
   return set?.windows?.find((window) => window.range === range);
 }
 
-function trendLaneSummary(lane: TrendLane, title: string, trendWindow: TrendWindow | undefined, selectedAt?: string): TrendLaneSummary {
+function trendLaneSummary(lane: TrendLane, title: string, trendWindow: TrendWindow | undefined, selectedAt?: string, throughputSeries?: ThroughputTrendSeries): TrendLaneSummary {
   const sampleKey = lane === "history" ? "transcript_sampled" : lane === "runtime" ? "runtime_sampled" : "throughput_sampled";
-  const sampled = sampledPoints(trendWindow, sampleKey);
-  const points = lane === "throughput" ? sampled.filter((point) => trendOutputThroughputProjects(point) !== null) : sampled;
-  const data = trendSignalData(points, lane);
+  const points = sampledPoints(trendWindow, sampleKey);
+  const signalPoints = lane === "throughput" ? points.filter((point) => trendOutputThroughputProjects(point) !== null) : points;
+  const data = trendSignalData(signalPoints, lane);
   return {
     lane,
     title,
@@ -708,6 +744,26 @@ function trendLaneSummary(lane: TrendLane, title: string, trendWindow: TrendWind
     points,
     data,
     selected: selectedTrendDatum(data, selectedAt, lane),
+    throughputSeries,
+  };
+}
+
+function selectedThroughputSeries(window: TrendWindow | undefined, key: string): ThroughputTrendSeries | undefined {
+  const series = window?.throughput_series ?? [];
+  return series.find((item) => item.key === key)
+    ?? series.find((item) => item.key === "minute:300")
+    ?? series.find((item) => item.kind === "minute_rollup");
+}
+
+function throughputSeriesWindow(window: TrendWindow | undefined, series: ThroughputTrendSeries | undefined): TrendWindow | undefined {
+  if (!window || !series) return undefined;
+  return {
+    ...window,
+    granularity_seconds: series.granularity_seconds,
+    source_from: series.source_from,
+    source_lookback_hours: undefined,
+    history_complete: series.history_complete,
+    points: series.points,
   };
 }
 
@@ -731,11 +787,11 @@ function trendSignalData(points: TrendPoint[], lane: TrendLane): TrendSignalDatu
     const value = trendPrimaryValue(lane, point);
     const ms = pointTimeMs(at);
     if (!at || value === null || ms === null) return;
-    byTime.set(Math.floor(ms / 1000), { at, value, point });
+    byTime.set(ms, { at, value, point });
   });
   const sorted = Array.from(byTime.entries())
     .sort((a, b) => a[0] - b[0])
-    .map(([seconds, item]) => ({ ...item, time: seconds }));
+    .map(([milliseconds, item]) => ({ ...item, time: milliseconds / 1000 }));
   return sorted;
 }
 
@@ -879,6 +935,12 @@ function formatTrendTokenRate(t: Translate, value: number | null): string {
 
 function formatThroughputPeriodRate(value?: number): string {
   return typeof value === "number" && Number.isFinite(value) ? formatTokenRate(value) : "n/a";
+}
+
+function formatThroughputWindowLabel(seconds?: number): string {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds <= 0) return "n/a";
+  if (seconds % 60 === 0) return `${Math.round(seconds / 60)}m`;
+  return `${Math.round(seconds)}s`;
 }
 
 function formatThroughputState(t: Translate, point: TrendPoint): string {

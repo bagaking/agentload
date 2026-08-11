@@ -446,23 +446,27 @@ semantic layer before visual polish is accepted.
   stability. Count and pressure lanes use the existing maintained area-series
   component; do not manufacture OHLC semantics from point samples.
 - Output throughput uses a zero-baseline stacked area river with one layer per
-  persisted project, including `unassigned`. Horizontal positions follow the
-  stored sample timestamps inside the selected API window, including blank
-  space where history has not been recorded. Every range changes the horizontal
-  time domain only; it never changes the fixed 300-second TPS denominator. Do
-  not center the stack like a decorative streamgraph, infer past project shares
-  from the current snapshot, or synthesize a layer for history without project
-  partitions.
+  project, including `unassigned`. Horizontal positions follow the derived point
+  timestamps inside the selected API range, including blank space where minute
+  facts were not recorded. `1D / 3D / ...` changes only the horizontal domain;
+  the separate `1m / 5m / 15m` segmented control changes only the rolling
+  denominator. Do not center the stack like a decorative streamgraph, infer past
+  project shares from the current snapshot, bridge missing coverage, or
+  synthesize a layer for history without project partitions.
 - The existing chart dependency has no stacked-area series. Keep the small
   throughput SVG local to the trend module and limited to stacking persisted
   project values, time-based hit testing, and selection; do not add a second
   chart framework or turn it into a generic chart abstraction.
 - The throughput lane header must make the selected period readable at a glance
-  as `MAX / P95 / AVG / CUR(5m)`. The first three values summarize the full
-  persisted numeric series for that range before chart-point reduction;
-  `CUR(5m)` is current evidence rather than the last hovered point. Keep exact
-  point inspection in chart hover and selection instead of replacing the period
-  summary when the pointer moves.
+  as `MAX / P95 / AVG / CUR(<window>)`. The first three values summarize the full
+  derived numeric series for that range before chart-point reduction; `CUR`
+  names the selected rolling window and is current evidence rather than the last
+  hovered point. Keep exact point inspection in chart hover and selection instead
+  of replacing the period summary when the pointer moves.
+- Current minute-derived options are the default family, with `5m` selected
+  initially. Versioned legacy rolling-rate series may appear as visibly labeled
+  legacy options, but the UI must never select one as a fallback when a current
+  series is empty and must never show `CUR` for legacy evidence.
 - Trend chart hover must expose local observation meaning, not implementation
   or library provenance. Browser `title` text and tooltip-like affordances on
   the plot plane should show selected bucket time, primary metric, context

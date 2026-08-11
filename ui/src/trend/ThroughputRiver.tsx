@@ -18,6 +18,7 @@ type RiverDatum = {
   total: number;
   point: TrendPoint;
   projects: Map<string, number>;
+  segment: number;
 };
 
 type RiverLayer = {
@@ -168,19 +169,27 @@ export function ThroughputRiver({
 }
 
 function buildRiverModel(points: TrendPoint[], from?: string, to?: string): { data: RiverDatum[]; layers: RiverLayer[]; colors: Map<string, string>; maxTotal: number; minAt: number; maxAt: number } {
-  const data = points.flatMap((point): RiverDatum[] => {
+  const data: RiverDatum[] = [];
+  let segment = 0;
+  let previousWasValid = false;
+  [...points].sort((a, b) => String(a.at).localeCompare(String(b.at))).forEach((point) => {
     const at = String(point.at || "");
     const timestamp = Date.parse(at);
     const total = trendOutputThroughputValue(point);
     const partition = trendOutputThroughputProjects(point);
-    if (!at || !Number.isFinite(timestamp) || total === null || partition === null) return [];
+    if (!at || !Number.isFinite(timestamp) || total === null || partition === null) {
+      previousWasValid = false;
+      return;
+    }
+    if (!previousWasValid && data.length) segment += 1;
     const projects = new Map<string, number>();
     for (const project of partition) {
       const key = String(project.project);
       projects.set(key, (projects.get(key) ?? 0) + (project.output_tokens_per_second ?? 0));
     }
-    return [{ at, timestamp, total, point, projects }];
-  }).sort((a, b) => a.timestamp - b.timestamp);
+    data.push({ at, timestamp, total, point, projects, segment });
+    previousWasValid = true;
+  });
   const totals = new Map<string, number>();
   data.forEach((datum) => datum.projects.forEach((value, key) => totals.set(key, (totals.get(key) ?? 0) + value)));
   const keys = Array.from(totals.keys()).sort((a, b) => (totals.get(b) ?? 0) - (totals.get(a) ?? 0) || a.localeCompare(b));
@@ -239,6 +248,17 @@ function riverProjectLabel(key: string, t: Translate): string {
 
 function layerPath(lower: number[], upper: number[], data: RiverDatum[], minAt: number, maxAt: number, maxTotal: number): string {
   if (!data.length) return "";
+  const paths: string[] = [];
+  let start = 0;
+  for (let index = 1; index <= data.length; index += 1) {
+    if (index < data.length && data[index].segment === data[start].segment) continue;
+    paths.push(layerSegmentPath(lower.slice(start, index), upper.slice(start, index), data.slice(start, index), minAt, maxAt, maxTotal));
+    start = index;
+  }
+  return paths.join(" ");
+}
+
+function layerSegmentPath(lower: number[], upper: number[], data: RiverDatum[], minAt: number, maxAt: number, maxTotal: number): string {
   if (data.length === 1) {
     const x = pointX(data[0].timestamp, minAt, maxAt);
     return `M${(x - 2).toFixed(2)},${valueY(lower[0], maxTotal).toFixed(2)} L${(x - 2).toFixed(2)},${valueY(upper[0], maxTotal).toFixed(2)} L${(x + 2).toFixed(2)},${valueY(upper[0], maxTotal).toFixed(2)} L${(x + 2).toFixed(2)},${valueY(lower[0], maxTotal).toFixed(2)} Z`;

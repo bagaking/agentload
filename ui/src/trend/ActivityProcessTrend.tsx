@@ -47,8 +47,8 @@ type ActivityProcessValue = {
 
 type SelectionBead = {
   key: keyof CountSeries;
-  left: number;
-  top: number;
+  leftPct: number;
+  topPct: number;
 };
 
 type SeriesRefs = {
@@ -113,9 +113,7 @@ export function ActivityProcessTrend({
     const processColor = cssVar(styles, "--run");
     const rect = host.getBoundingClientRect();
     const chart = createChart(host, {
-      width: Math.max(1, Math.floor(rect.width)),
-      height: Math.max(1, Math.floor(rect.height)),
-      autoSize: false,
+      autoSize: true,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
         textColor: faint,
@@ -222,19 +220,7 @@ export function ActivityProcessTrend({
     seriesRef.current = refs;
     applyCountSeries(chart, refs, seriesDataRef.current, domainRef.current);
     setLayoutVersion((value) => value + 1);
-
-    const resizeObserver = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (!entry) return;
-      chart.resize(
-        Math.max(1, Math.floor(entry.contentRect.width)),
-        Math.max(1, Math.floor(entry.contentRect.height)),
-      );
-      setLayoutVersion((value) => value + 1);
-    });
-    resizeObserver.observe(host);
     return () => {
-      resizeObserver.disconnect();
       chart.unsubscribeClick(handleClick);
       chart.unsubscribeCrosshairMove(handleCrosshairMove);
       chart.remove();
@@ -251,7 +237,8 @@ export function ActivityProcessTrend({
     if (!chart || !refs) return;
     applyCountSeries(chart, refs, series, domainRef.current);
     setHover(null);
-    setLayoutVersion((value) => value + 1);
+    const frame = window.requestAnimationFrame(() => setLayoutVersion((value) => value + 1));
+    return () => window.cancelAnimationFrame(frame);
   }, [series, from, to, granularitySeconds]);
 
   useEffect(() => {
@@ -264,6 +251,12 @@ export function ActivityProcessTrend({
     const history = series.active.find((datum) => datum.at === selectedHistoryAt);
     const known = series.sessions.find((datum) => datum.at === selectedHistoryAt);
     const runtime = series.processes.find((datum) => datum.at === selectedRuntimeAt);
+    const width = hostRef.current?.clientWidth ?? 0;
+    const height = hostRef.current?.clientHeight ?? 0;
+    if (width <= 0 || height <= 0) {
+      setSelectionBeads([]);
+      return;
+    }
     const candidates: Array<{ key: keyof CountSeries; datum?: CountDatum; series: ISeriesApi<"Area"> | ISeriesApi<"Line"> }> = [
       { key: "active", datum: history, series: refs.active },
       { key: "sessions", datum: known, series: refs.sessions },
@@ -273,7 +266,11 @@ export function ActivityProcessTrend({
       if (!candidate.datum) return [];
       const left = chart.timeScale().timeToCoordinate(candidate.datum.time);
       const top = candidate.series.priceToCoordinate(candidate.datum.value);
-      return left === null || top === null ? [] : [{ key: candidate.key, left, top }];
+      return left === null || top === null ? [] : [{
+        key: candidate.key,
+        leftPct: (left / width) * 100,
+        topPct: (top / height) * 100,
+      }];
     });
     setSelectionBeads(beads);
   }, [series, selectedHistoryAt, selectedRuntimeAt, layoutVersion]);
@@ -286,7 +283,7 @@ export function ActivityProcessTrend({
           <span
             className={`activity-process-bead ${bead.key}`}
             key={bead.key}
-            style={{ "--bead-x": `${bead.left}px`, "--bead-y": `${bead.top}px` } as React.CSSProperties}
+            style={{ "--bead-x": `${bead.leftPct}%`, "--bead-y": `${bead.topPct}%` } as React.CSSProperties}
           />
         ))}
       </div>

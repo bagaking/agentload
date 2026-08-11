@@ -274,15 +274,20 @@ func TestHandleSnapshotAPIReturnsCompactJSONAndRefreshSlotHeader(t *testing.T) {
 		RefreshSlotID: "30s:2026-06-28T12:00:00Z",
 		ThroughputTrends: TrendSet{Windows: []TrendWindow{{
 			Range: "1D",
-			OutputTokenRateSummary: &ThroughputTrendSummary{
-				Max:           4,
-				P95:           3.5,
-				Avg:           1.25,
-				Current:       &currentRate,
-				CurrentAt:     "2026-06-28T12:00:00Z",
+			ThroughputSeries: []ThroughputTrendSeries{{
+				Key:           "minute:300",
+				Kind:          throughputSeriesKindMinuteRollup,
 				WindowSeconds: 300,
-				SampleCount:   42,
-			},
+				Summary: &ThroughputTrendSummary{
+					Max:           4,
+					P95:           3.5,
+					Avg:           1.25,
+					Current:       &currentRate,
+					CurrentAt:     "2026-06-28T12:00:00Z",
+					WindowSeconds: 300,
+					SampleCount:   42,
+				},
+			}},
 		}}},
 	}
 	app.haveSnapshot = true
@@ -308,7 +313,7 @@ func TestHandleSnapshotAPIReturnsCompactJSONAndRefreshSlotHeader(t *testing.T) {
 	if !strings.Contains(body, `"refresh_slot_id":"30s:2026-06-28T12:00:00Z"`) {
 		t.Fatalf("expected compact JSON refresh slot body, got %q", body)
 	}
-	if !strings.Contains(body, `"output_token_rate_summary":{"max":4,"p95":3.5,"avg":1.25,"current":2.5,"current_at":"2026-06-28T12:00:00Z","window_seconds":300,"sample_count":42}`) {
+	if !strings.Contains(body, `"throughput_series":[{"key":"minute:300","kind":"minute_rollup","window_seconds":300,"granularity_seconds":0,"history_complete":false,"summary":{"max":4,"p95":3.5,"avg":1.25,"current":2.5,"current_at":"2026-06-28T12:00:00Z","window_seconds":300,"sample_count":42},"points":null}]`) {
 		t.Fatalf("expected throughput period summary in snapshot JSON, got %q", body)
 	}
 }
@@ -670,7 +675,10 @@ func TestHandleSnapshotAPIRedactsConfigPaths(t *testing.T) {
 			HistoryFile:          filepath.Join("private", "state", "history.jsonl"),
 			ProcessRefreshTarget: 300,
 		},
-		History: SnapshotHistory{StorePath: filepath.Join("private", "state", "history.jsonl"), LoadedSampleCount: 2},
+		History: SnapshotHistory{
+			StorePath: filepath.Join("private", "state", "history.jsonl"), LoadedSampleCount: 2,
+			Throughput: &SnapshotThroughputHistory{StorePath: filepath.Join("private", "state", "throughput.jsonl"), MinuteFactCount: 12},
+		},
 	}
 	app.haveSnapshot = true
 	handler := app.handler()
@@ -692,10 +700,13 @@ func TestHandleSnapshotAPIRedactsConfigPaths(t *testing.T) {
 	if got.Config.HistoryFile != "" || got.History.StorePath != "" {
 		t.Fatalf("expected client history paths to be redacted, got config=%q history=%q", got.Config.HistoryFile, got.History.StorePath)
 	}
+	if got.History.Throughput == nil || got.History.Throughput.StorePath != "" || got.History.Throughput.MinuteFactCount != 12 {
+		t.Fatalf("expected throughput history path to be redacted without losing metadata, got %+v", got.History.Throughput)
+	}
 	if got.Config.IdleGapSeconds != 90 || got.Config.ProcessRefreshTarget != 300 || got.History.LoadedSampleCount != 2 {
 		t.Fatalf("expected non-path metadata to remain, got config=%+v history=%+v", got.Config, got.History)
 	}
-	if app.lastSnapshot.Config.HistoryFile == "" || len(app.lastSnapshot.Config.CodexRoots) == 0 || app.lastSnapshot.History.StorePath == "" {
+	if app.lastSnapshot.Config.HistoryFile == "" || len(app.lastSnapshot.Config.CodexRoots) == 0 || app.lastSnapshot.History.StorePath == "" || app.lastSnapshot.History.Throughput.StorePath == "" {
 		t.Fatalf("expected cached internal snapshot to retain path metadata, got config=%+v history=%+v", app.lastSnapshot.Config, app.lastSnapshot.History)
 	}
 	if strings.Contains(rec.Body.String(), "active.jsonl") {
@@ -768,16 +779,21 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 		},
 		ThroughputTrends: TrendSet{Windows: []TrendWindow{{
 			Range: "1D",
-			Points: []TrendPoint{{
-				At:                       "2026-06-28T12:00:00Z",
-				OutputTokensPerSecond:    2,
-				HasOutputTokensPerSecond: true,
-				OutputTokenProjects: []LiveTokenRateProjectSample{{
-					Project:               projectPath,
-					OutputTokensPerSecond: 2,
-					ActiveSessions:        1,
+			ThroughputSeries: []ThroughputTrendSeries{{
+				Key:           "minute:300",
+				Kind:          throughputSeriesKindMinuteRollup,
+				WindowSeconds: 300,
+				Points: []TrendPoint{{
+					At:                       "2026-06-28T12:00:00Z",
+					OutputTokensPerSecond:    2,
+					HasOutputTokensPerSecond: true,
+					OutputTokenProjects: []LiveTokenRateProjectSample{{
+						Project:               projectPath,
+						OutputTokensPerSecond: 2,
+						ActiveSessions:        1,
+					}},
+					ThroughputSampled: true,
 				}},
-				ThroughputSampled: true,
 			}},
 		}}},
 		Notes: []string{"checked " + sessionPath, "opened " + sessionFileURI},
@@ -819,7 +835,7 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 		got.CandidateWorkitems[0].Project != "agentload" ||
 		got.CandidateWorkitems[0].Key != "project=agentload|tool=codex|freshness=active" ||
 		got.CoordinationRisk.TopProject != "agentload" ||
-		got.ThroughputTrends.Windows[0].Points[0].OutputTokenProjects[0].Project != "agentload" {
+		got.ThroughputTrends.Windows[0].ThroughputSeries[0].Points[0].OutputTokenProjects[0].Project != "agentload" {
 		t.Fatalf("expected client project labels to be path-safe, got sessions=%+v projects=%+v candidates=%+v risk=%+v", got.LiveSessions, got.ProjectFocus, got.CandidateWorkitems, got.CoordinationRisk)
 	}
 	if len(got.LiveSessions[0].HostApps) != 1 || got.LiveSessions[0].HostApps[0].BundlePath != "" {
@@ -837,7 +853,7 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 		app.lastSnapshot.CandidateWorkitems[0].Project != projectPath ||
 		app.lastSnapshot.CandidateWorkitems[0].Key != "project="+projectPath+"|tool=codex|freshness=active" ||
 		app.lastSnapshot.CoordinationRisk.TopProject != projectPath ||
-		app.lastSnapshot.ThroughputTrends.Windows[0].Points[0].OutputTokenProjects[0].Project != projectPath {
+		app.lastSnapshot.ThroughputTrends.Windows[0].ThroughputSeries[0].Points[0].OutputTokenProjects[0].Project != projectPath {
 		t.Fatalf("expected internal project labels to retain local paths, got sessions=%+v projects=%+v candidates=%+v risk=%+v", app.lastSnapshot.LiveSessions, app.lastSnapshot.ProjectFocus, app.lastSnapshot.CandidateWorkitems, app.lastSnapshot.CoordinationRisk)
 	}
 	if !strings.Contains(app.lastSnapshot.ProjectFocus[0].ConfidenceReasons[0], sessionPath) ||

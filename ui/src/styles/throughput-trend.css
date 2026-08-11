@@ -12,6 +12,45 @@
   border-left: 1px solid var(--console-line-soft);
 }
 
+.throughput-period-summary.legacy {
+  grid-template-columns: repeat(3, minmax(48px, 1fr));
+}
+
+.throughput-window-switch {
+  display: inline-flex;
+  align-items: center;
+  align-self: start;
+  gap: 2px;
+  margin-top: 5px;
+  padding: 2px;
+  border-radius: 5px;
+  background: var(--inset);
+}
+
+.throughput-window-switch button {
+  min-width: 30px;
+  min-height: 22px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--fg-muted);
+  background: transparent;
+  font: 700 9px/1 var(--font-mono);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.throughput-window-switch button[aria-pressed="true"] {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.throughput-window-switch button.legacy {
+  color: var(--fg-faint);
+  border-left: 1px solid var(--console-line-soft);
+  border-radius: 0 4px 4px 0;
+}
+
 .throughput-period-summary > div {
   display: grid;
   align-content: center;
@@ -99,5 +138,14 @@ body[data-view="popover"] .trend-suite.compact .throughput-period-summary {
 
   .throughput-period-summary dd {
     font-size: 11.5px;
+  }
+
+  .throughput-window-switch {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .trend-inspector.throughput .trend-inspector-unit strong {
+    font-size: 14px;
   }
 }

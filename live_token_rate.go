@@ -86,6 +86,9 @@ type liveTokenRateSampler struct {
 	limitedUntil    time.Time
 	limitedReason   string
 	sessionProjects map[string]string
+	throughputStore *throughputHistoryStore
+	coverageStart   time.Time
+	lastMinuteEnd   time.Time
 
 	publishedMu sync.RWMutex
 	published   liveTokenRatePublished
@@ -146,6 +149,15 @@ func (sampler *liveTokenRateSampler) updateSnapshotProjects(projects map[string]
 	sampler.pollMu.Lock()
 	sampler.sessionProjects = cloneLiveTokenRateProjects(projects)
 	sampler.publishLocked(time.Now())
+	sampler.pollMu.Unlock()
+}
+
+func (sampler *liveTokenRateSampler) bindThroughputHistory(store *throughputHistoryStore) {
+	if sampler == nil {
+		return
+	}
+	sampler.pollMu.Lock()
+	sampler.throughputStore = store
 	sampler.pollMu.Unlock()
 }
 
@@ -252,8 +264,13 @@ func (sampler *liveTokenRateSampler) pollLocked(now time.Time) {
 	if !sampler.lastPoll.IsZero() && now.Sub(sampler.lastPoll) < liveTokenRateSampleInterval {
 		return
 	}
-	observationGap := !sampler.lastPoll.IsZero() && now.Sub(sampler.lastPoll) > liveTokenRateWindow
+	firstPoll := sampler.lastPoll.IsZero()
+	observationGap := !firstPoll && now.Sub(sampler.lastPoll) > liveTokenRateWindow
 	sampler.lastPoll = now
+	if firstPoll || observationGap {
+		sampler.coverageStart = now
+		sampler.lastMinuteEnd = now.Truncate(throughputMinuteResolution)
+	}
 	if sampler.files == nil {
 		sampler.files = map[string]liveTokenRateTrackedFile{}
 	}
@@ -297,7 +314,102 @@ func (sampler *liveTokenRateSampler) pollLocked(now time.Time) {
 			sampler.markEventLocked(latestEvent, now)
 		}
 	}
+	sampler.flushCompletedMinutesLocked(now)
 	sampler.pruneLocked(now)
+}
+
+func (sampler *liveTokenRateSampler) flushCompletedMinutesLocked(now time.Time) {
+	if sampler.throughputStore == nil || sampler.coverageStart.IsZero() || sampler.lastMinuteEnd.IsZero() {
+		return
+	}
+	target := now.Truncate(throughputMinuteResolution)
+	for sampler.lastMinuteEnd.Before(target) {
+		minuteEnd := sampler.lastMinuteEnd.Add(throughputMinuteResolution)
+		minuteStart := minuteEnd.Add(-throughputMinuteResolution)
+		if minuteStart.Before(sampler.coverageStart) {
+			sampler.lastMinuteEnd = minuteEnd
+			continue
+		}
+		fact := sampler.minuteFactLocked(minuteStart, minuteEnd)
+		if err := sampler.throughputStore.appendMinute(fact); err != nil {
+			return
+		}
+		sampler.lastMinuteEnd = minuteEnd
+	}
+}
+
+func (sampler *liveTokenRateSampler) minuteFactLocked(minuteStart, minuteEnd time.Time) ThroughputMinuteFact {
+	tokens, _, projects := liveTokenRateWindowBreakdown(
+		sampler.buckets,
+		sampler.sessionProjects,
+		minuteEnd,
+		throughputMinuteResolution,
+		0,
+	)
+	latestSignal := sampler.latestSignal
+	latestEvent := sampler.latestEvent
+	if latestSignal.After(minuteEnd.Add(liveTokenRateFutureSkew)) {
+		latestSignal = time.Time{}
+	}
+	if latestEvent.After(minuteEnd.Add(liveTokenRateFutureSkew)) {
+		latestEvent = time.Time{}
+	}
+	if tokens > 0 && latestSignal.IsZero() {
+		latestSignal = minuteEnd
+	}
+	if tokens > 0 && latestEvent.IsZero() {
+		latestEvent = minuteEnd
+	}
+	limitedStart := sampler.limitedUntil.Add(-liveTokenRateWindow)
+	limited := sampler.limitedUntil.After(minuteStart) && limitedStart.Before(minuteEnd)
+	sample := liveTokenRateSampleFromFacts(liveTokenRateFacts{
+		Configured:        sampler.adapters.hasUsageRoots(),
+		Initialized:       sampler.initialized && !latestSignal.IsZero(),
+		Limited:           limited,
+		UnavailableReason: sampler.limitedReason,
+		TokensInWindow:    tokens,
+		LatestSignal:      latestSignal,
+		LatestEvent:       latestEvent,
+		Window:            throughputMinuteResolution,
+		SampleInterval:    liveTokenRateSampleInterval,
+		StaleAfter:        liveTokenRateStaleAfter,
+		SampledAt:         minuteEnd,
+	})
+	fact := ThroughputMinuteFact{
+		At:                minuteEnd.Format(time.RFC3339),
+		State:             sample.State,
+		UnavailableReason: sample.UnavailableReason,
+	}
+	if sample.OutputTokensPerSecond == nil {
+		return fact
+	}
+	fact.OutputTokens = &tokens
+	allSessions := map[string]struct{}{}
+	for project, projectFacts := range projects {
+		if projectFacts.TokensInWindow <= 0 {
+			continue
+		}
+		projectFact := ThroughputMinuteProjectFact{
+			Project:      project,
+			OutputTokens: projectFacts.TokensInWindow,
+		}
+		for session := range projectFacts.Sessions {
+			hash := throughputSessionHash(session)
+			projectFact.SessionHashes = append(projectFact.SessionHashes, hash)
+			allSessions[hash] = struct{}{}
+		}
+		sort.Strings(projectFact.SessionHashes)
+		fact.Projects = append(fact.Projects, projectFact)
+	}
+	for session := range allSessions {
+		fact.SessionHashes = append(fact.SessionHashes, session)
+	}
+	sort.Strings(fact.SessionHashes)
+	sort.Slice(fact.Projects, func(i, j int) bool { return fact.Projects[i].Project < fact.Projects[j].Project })
+	if fact.Projects == nil {
+		fact.Projects = []ThroughputMinuteProjectFact{}
+	}
+	return fact
 }
 
 func (sampler *liveTokenRateSampler) syncEvidenceFilesLocked(now time.Time) {

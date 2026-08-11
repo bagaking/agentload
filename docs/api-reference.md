@@ -80,23 +80,26 @@ cold first poll can block noticeably.
   so at most one sanitize and one compression pass run per refresh slot.
 - **Empty state**: if the app has no observer and no cached snapshot the body
   is an empty `Snapshot` JSON (`{}`-equivalent with zero values).
-- **Throughput trends**: numeric `throughput_trends.windows[].points[]`
-  throughput samples expose `output_tokens_per_second`,
-  `output_token_throughput_state`,
-  `output_token_throughput_window_seconds`,
+- **Throughput trends**: each range exposes
+  `throughput_trends.windows[].throughput_series[]`. Current series keys are
+  `minute:60`, `minute:300`, and `minute:900`; their `kind` is `minute_rollup`.
+  Optional migrated keys use `legacy:<seconds>` and kind
+  `legacy_rolling_rate`. Every series includes `window_seconds`,
+  `granularity_seconds`, `source_from`, `history_complete`, `points`, and an
+  optional `summary`. Point fields are `output_tokens_per_second`,
+  `output_token_throughput_state`, `output_token_throughput_window_seconds`,
   `output_token_active_sessions`, `output_token_projects`, and
-  `throughput_sampled`. Each project item uses the same events and 300-second
-  denominator as the aggregate, and the items sum to that aggregate. `stale`,
-  `no_data`, and `unavailable` points omit the numeric rate and project list.
-  Samples without a stored project partition are not reconstructed. Each range
-  filters the stored time series independently from process bucketing. Sparse
-  ranges retain all samples; dense ranges retain up to 240 time-distributed
-  exact samples. Each window also exposes `output_token_rate_summary` with
-  `max`, nearest-rank `p95`, `avg`, optional fresh `current`, optional
-  `current_at`, `window_seconds`, and `sample_count`. Period statistics include
-  all valid numeric persisted samples, including zero, before the 240-point
-  display reduction. Missing or stale values are excluded; `current` is omitted
-  rather than carrying an older rate forward.
+  `throughput_sampled`. Project values use the same minute facts and denominator
+  as the aggregate and sum to it. Missing points omit the numeric rate and
+  project list; they are not reconstructed or coerced to zero.
+- **Throughput summaries**: `summary` contains `max`, nearest-rank `p95`, `avg`,
+  optional fresh `current`, optional `current_at`, `window_seconds`, and
+  `sample_count`. Statistics include all valid numeric points, including zero,
+  before the 240-point display reduction. Legacy summaries never include
+  `current`, and legacy/current families are never combined.
+- **Throughput storage health**: `history.throughput` reports retained minute
+  facts, legacy facts, dropped/corrupt record counts, and optional
+  `last_write_error`. Its local `store_path` is removed by the sanitize layer.
 - **Sanitization** (`sanitizeSnapshotForClient`): see "Sanitize layer" below.
 
 ### `GET /api/system-resources`

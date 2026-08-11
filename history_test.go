@@ -49,18 +49,6 @@ func TestLocalHistoryStoreAppendsAndReloadsSamples(t *testing.T) {
 		LoadPeakSource:               "historic",
 		LoadPeakAt:                   now.Add(-3 * time.Hour).Format(time.RFC3339),
 	}
-	rate := 2.5
-	sample.OutputTokenThroughput = &HistoryOutputTokenThroughput{
-		OutputTokensPerSecond: &rate,
-		State:                 liveTokenRateStateLive,
-		WindowSeconds:         300,
-		ActiveSessions:        2,
-		Projects: []LiveTokenRateProjectSample{
-			{Project: "agentload", OutputTokensPerSecond: 1.5, ActiveSessions: 1},
-			{Project: liveTokenRateUnassignedProject, OutputTokensPerSecond: 1, ActiveSessions: 1},
-		},
-	}
-
 	if err := state.recordSample(sample); err != nil {
 		t.Fatalf("recordSample: %v", err)
 	}
@@ -81,34 +69,8 @@ func TestLocalHistoryStoreAppendsAndReloadsSamples(t *testing.T) {
 	if reloaded.samples[0].CoordinationRisk.TopProject != "agentload" {
 		t.Fatalf("expected top project round-trip, got %+v", reloaded.samples[0].CoordinationRisk)
 	}
-	throughput := reloaded.samples[0].OutputTokenThroughput
-	if throughput == nil || throughput.OutputTokensPerSecond == nil || *throughput.OutputTokensPerSecond != rate || throughput.State != liveTokenRateStateLive || throughput.WindowSeconds != 300 || throughput.ActiveSessions != 2 {
-		t.Fatalf("expected output throughput round-trip, got %+v", throughput)
-	}
-	if len(throughput.Projects) != 2 || throughput.Projects[0].Project != "agentload" || throughput.Projects[0].OutputTokensPerSecond != 1.5 {
-		t.Fatalf("expected project throughput partition round-trip, got %+v", throughput.Projects)
-	}
 	if got := reloaded.snapshotMetadata().StorePath; got != path {
 		t.Fatalf("expected store path %q, got %q", path, got)
-	}
-}
-
-func TestHistoryThroughputPersistsMeasuredEmptyProjectPartition(t *testing.T) {
-	rate := 0.0
-	raw, err := json.Marshal(HistorySample{
-		At: "2026-06-28T12:00:00Z",
-		OutputTokenThroughput: &HistoryOutputTokenThroughput{
-			OutputTokensPerSecond: &rate,
-			State:                 liveTokenRateStateZero,
-			WindowSeconds:         300,
-			Projects:              []LiveTokenRateProjectSample{},
-		},
-	})
-	if err != nil {
-		t.Fatalf("marshal history sample: %v", err)
-	}
-	if !strings.Contains(string(raw), `"projects":[]`) {
-		t.Fatalf("measured empty project partition was not persisted: %s", raw)
 	}
 }
 
@@ -564,9 +526,9 @@ func TestMergeRuntimeTrendsUsesLoadedHistoryAndCurrentSample(t *testing.T) {
 	if len(currentPoint.HostAppProcesses) != 1 || currentPoint.HostAppProcesses[0].Name != "Cursor" || currentPoint.HostAppProcesses[0].PIDCount != 5 {
 		t.Fatalf("expected current point host process breakdown, got %+v", currentPoint.HostAppProcesses)
 	}
-	throughputPoint := requireTrendPoint(t, requireTrendWindow(t, snapshot.ThroughputTrends, "1D").Points, now)
-	if !throughputPoint.ThroughputSampled || throughputPoint.OutputTokenThroughputState != liveTokenRateStateUnavailable || throughputPoint.HasOutputTokensPerSecond {
-		t.Fatalf("expected unavailable throughput evidence without a numeric rate, got %+v", throughputPoint)
+	throughput := requireThroughputSeries(t, requireTrendWindow(t, snapshot.ThroughputTrends, "1D"), "minute:300")
+	if len(throughput.Points) != 0 || throughput.Summary != nil {
+		t.Fatalf("snapshot refresh invented a persisted throughput minute: %+v", throughput)
 	}
 	if snapshot.History.LoadedSampleCount != 2 {
 		t.Fatalf("expected loaded sample count 2 after current append, got %+v", snapshot.History)

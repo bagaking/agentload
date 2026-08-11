@@ -33,14 +33,15 @@ type trayApp struct {
 	stopCh    chan struct{}
 	refreshCh chan struct{}
 
-	lastMu       sync.RWMutex
-	lastSnapshot Snapshot
-	haveSnapshot bool
-	refreshing   bool
-	pendingSlot  string
-	activeSlot   string
-	lastSlot     string
-	history      localHistoryState
+	lastMu            sync.RWMutex
+	lastSnapshot      Snapshot
+	haveSnapshot      bool
+	refreshing        bool
+	pendingSlot       string
+	activeSlot        string
+	lastSlot          string
+	history           localHistoryState
+	throughputHistory *throughputHistoryStore
 
 	// historyFileMu serializes JSONL appends so disk I/O never runs under lastMu.
 	historyFileMu sync.Mutex
@@ -64,18 +65,31 @@ func newTrayApp(cfg Config, observer *Observer, logger *log.Logger, listener net
 	if err != nil && logger != nil {
 		logger.Printf("local history load failed: %v", err)
 	}
+	throughputHistory, throughputErr := loadThroughputHistoryStore(cfg.HistoryFile, time.Now())
+	if throughputErr != nil && logger != nil {
+		logger.Printf("throughput history load failed: %v", throughputErr)
+	}
+	if throughputHistory == nil {
+		throughputHistory = &throughputHistoryStore{path: throughputHistoryPath(cfg.HistoryFile)}
+	}
+	if err := migrateLegacyThroughputHistory(&history, throughputHistory); err != nil && logger != nil {
+		logger.Printf("legacy throughput migration failed: %v", err)
+	}
+	liveTokenRate := newLiveTokenRateSampler(observer.adapters, observer.evidenceIndex)
+	liveTokenRate.bindThroughputHistory(throughputHistory)
 	a := &trayApp{
-		cfg:           cfg,
-		observer:      observer,
-		logger:        logger,
-		listener:      listener,
-		baseURL:       strings.TrimRight(url, "/"),
-		popoverURL:    strings.TrimRight(url, "/") + "/",
-		dashboardURL:  strings.TrimRight(url, "/") + "/dashboard",
-		liveTokenRate: newLiveTokenRateSampler(observer.adapters, observer.evidenceIndex),
-		stopCh:        make(chan struct{}),
-		refreshCh:     make(chan struct{}, 1),
-		history:       history,
+		cfg:               cfg,
+		observer:          observer,
+		logger:            logger,
+		listener:          listener,
+		baseURL:           strings.TrimRight(url, "/"),
+		popoverURL:        strings.TrimRight(url, "/") + "/",
+		dashboardURL:      strings.TrimRight(url, "/") + "/dashboard",
+		liveTokenRate:     liveTokenRate,
+		stopCh:            make(chan struct{}),
+		refreshCh:         make(chan struct{}, 1),
+		history:           history,
+		throughputHistory: throughputHistory,
 	}
 	a.server = &http.Server{
 		Handler: a.handler(),
@@ -321,7 +335,6 @@ func (a *trayApp) rememberSnapshot(snapshot Snapshot) Snapshot {
 	sample := historySampleFromSnapshot(snapshot)
 	var sampleTime time.Time
 	sample.At, sampleTime = normalizeHistorySampleTimestamp(sample.At, time.Now())
-	a.attachLiveTokenThroughput(&sample, sampleTime)
 	// The JSONL append runs before taking lastMu so /api/snapshot readers never
 	// wait on disk I/O; historyFileMu alone keeps append ordering.
 	appendErr := a.appendHistorySample(sample)
@@ -342,23 +355,6 @@ func (a *trayApp) appendHistorySample(sample HistorySample) error {
 	return appendHistorySampleFile(a.history.path, sample)
 }
 
-func (a *trayApp) attachLiveTokenThroughput(sample *HistorySample, at time.Time) {
-	if sample == nil {
-		return
-	}
-	live := a.liveTokenRate.sample(at)
-	sample.OutputTokenThroughput = &HistoryOutputTokenThroughput{
-		State:          live.State,
-		WindowSeconds:  live.WindowSeconds,
-		ActiveSessions: live.ActiveSessions,
-		Projects:       cloneLiveTokenRateProjectSamples(live.Projects),
-	}
-	if live.OutputTokensPerSecond != nil {
-		rate := *live.OutputTokensPerSecond
-		sample.OutputTokenThroughput.OutputTokensPerSecond = &rate
-	}
-}
-
 func cloneLiveTokenRateProjectSamples(projects []LiveTokenRateProjectSample) []LiveTokenRateProjectSample {
 	if projects == nil {
 		return nil
@@ -369,12 +365,17 @@ func cloneLiveTokenRateProjectSamples(projects []LiveTokenRateProjectSample) []L
 func (a *trayApp) mergeRecordedSampleLocked(snapshot Snapshot, sample HistorySample, sampleTime time.Time, appendErr error) Snapshot {
 	a.history.recordSampleInMemory(sample, sampleTime, appendErr)
 	trendPoints := a.history.trendPoints()
+	minuteFacts, legacyFacts := a.throughputHistory.snapshot()
 	snapshot.RealtimeTrends = buildRealtimeTrendWindows(trendPoints, sampleTime)
-	snapshot.ThroughputTrends = buildThroughputTrendWindows(trendPoints, sampleTime)
+	snapshot.ThroughputTrends = buildThroughputTrendWindows(minuteFacts, legacyFacts, sampleTime)
 	snapshot.ProjectHeatmaps = buildProjectHeatmapWindows(a.history.samples, sampleTime)
 	snapshot.History = a.history.snapshotMetadata()
+	snapshot.History.Throughput = a.throughputHistory.snapshotMetadata()
 	if snapshot.History.LastWriteError != "" {
 		snapshot.Notes = uniqueSortedStrings(append(snapshot.Notes, "Local history append failed; see history.last_write_error."))
+	}
+	if snapshot.History.Throughput != nil && snapshot.History.Throughput.LastWriteError != "" {
+		snapshot.Notes = uniqueSortedStrings(append(snapshot.Notes, "Throughput history append failed; see history.throughput.last_write_error."))
 	}
 	return snapshot
 }
