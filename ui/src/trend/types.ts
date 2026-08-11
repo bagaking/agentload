@@ -12,8 +12,19 @@ export type TrendWindow = {
   granularity_seconds?: number;
   source_from?: string;
   source_lookback_hours?: number;
+  output_token_rate_summary?: ThroughputTrendSummary;
   points?: TrendPoint[];
   history_complete?: boolean;
+};
+
+export type ThroughputTrendSummary = {
+  max?: number;
+  p95?: number;
+  avg?: number;
+  current?: number;
+  current_at?: string;
+  window_seconds?: number;
+  sample_count?: number;
 };
 
 export type TrendPoint = {

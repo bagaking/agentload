@@ -276,14 +276,25 @@ type ProjectHeatmapItem struct {
 }
 
 type TrendWindow struct {
-	Range               string       `json:"range"`
-	From                string       `json:"from"`
-	To                  string       `json:"to"`
-	GranularitySeconds  int          `json:"granularity_seconds"`
-	SourceFrom          string       `json:"source_from,omitempty"`
-	SourceLookbackHours int          `json:"source_lookback_hours,omitempty"`
-	HistoryComplete     bool         `json:"history_complete"`
-	Points              []TrendPoint `json:"points"`
+	Range                  string                  `json:"range"`
+	From                   string                  `json:"from"`
+	To                     string                  `json:"to"`
+	GranularitySeconds     int                     `json:"granularity_seconds"`
+	SourceFrom             string                  `json:"source_from,omitempty"`
+	SourceLookbackHours    int                     `json:"source_lookback_hours,omitempty"`
+	HistoryComplete        bool                    `json:"history_complete"`
+	OutputTokenRateSummary *ThroughputTrendSummary `json:"output_token_rate_summary,omitempty"`
+	Points                 []TrendPoint            `json:"points"`
+}
+
+type ThroughputTrendSummary struct {
+	Max           float64  `json:"max"`
+	P95           float64  `json:"p95"`
+	Avg           float64  `json:"avg"`
+	Current       *float64 `json:"current,omitempty"`
+	CurrentAt     string   `json:"current_at,omitempty"`
+	WindowSeconds int      `json:"window_seconds"`
+	SampleCount   int      `json:"sample_count"`
 }
 
 type TrendPoint struct {

@@ -492,14 +492,16 @@ func buildThroughputTrendWindows(samples []TrendPoint, now time.Time) TrendSet {
 	trends := TrendSet{Windows: make([]TrendWindow, 0, len(defaultTrendSpecs))}
 	for _, spec := range defaultTrendSpecs {
 		from := now.Add(-spec.span)
-		points, granularity := timeDistributedThroughputSamples(normalized, from, now, throughputTrendMaxPoints)
+		rangeSamples := throughputSamplesInRange(normalized, from, now)
+		points, granularity := timeDistributedThroughputSamples(rangeSamples, throughputTrendMaxPoints)
 		window := TrendWindow{
-			Range:              spec.label,
-			From:               from.Format(time.RFC3339),
-			To:                 now.Format(time.RFC3339),
-			GranularitySeconds: int(granularity / time.Second),
-			HistoryComplete:    !sourceFrom.IsZero() && !sourceFrom.After(from),
-			Points:             points,
+			Range:                  spec.label,
+			From:                   from.Format(time.RFC3339),
+			To:                     now.Format(time.RFC3339),
+			GranularitySeconds:     int(granularity / time.Second),
+			HistoryComplete:        !sourceFrom.IsZero() && !sourceFrom.After(from),
+			OutputTokenRateSummary: summarizeThroughputTrend(rangeSamples, now),
+			Points:                 points,
 		}
 		if !sourceFrom.IsZero() {
 			window.SourceFrom = sourceFrom.Format(time.RFC3339)
@@ -513,7 +515,10 @@ func buildThroughputTrendWindows(samples []TrendPoint, now time.Time) TrendSet {
 func normalizeThroughputSamples(samples []TrendPoint) []runtimeTrendSample {
 	out := make([]runtimeTrendSample, 0, len(samples))
 	for _, sample := range samples {
-		if !sample.ThroughputSampled {
+		if !sample.ThroughputSampled || sample.OutputTokenThroughputWindowSeconds != int(liveTokenRateWindow/time.Second) {
+			continue
+		}
+		if sample.HasOutputTokensPerSecond && sample.OutputTokenProjects == nil {
 			continue
 		}
 		at, err := time.Parse(time.RFC3339, sample.At)
@@ -541,13 +546,17 @@ func normalizeThroughputSamples(samples []TrendPoint) []runtimeTrendSample {
 	return out
 }
 
-func timeDistributedThroughputSamples(samples []runtimeTrendSample, from, to time.Time, maxPoints int) ([]TrendPoint, time.Duration) {
+func throughputSamplesInRange(samples []runtimeTrendSample, from, to time.Time) []runtimeTrendSample {
 	filtered := make([]runtimeTrendSample, 0, len(samples))
 	for _, sample := range samples {
 		if !sample.At.Before(from) && !sample.At.After(to) {
 			filtered = append(filtered, sample)
 		}
 	}
+	return filtered
+}
+
+func timeDistributedThroughputSamples(filtered []runtimeTrendSample, maxPoints int) ([]TrendPoint, time.Duration) {
 	if len(filtered) == 0 {
 		return nil, 0
 	}
@@ -575,6 +584,43 @@ func timeDistributedThroughputSamples(samples []runtimeTrendSample, from, to tim
 		lastBucket = bucket
 	}
 	return throughputTrendPoints(out), step
+}
+
+func summarizeThroughputTrend(samples []runtimeTrendSample, now time.Time) *ThroughputTrendSummary {
+	rates := make([]float64, 0, len(samples))
+	sum := 0.0
+	maximum := 0.0
+	for _, sample := range samples {
+		if !sample.Point.HasOutputTokensPerSecond {
+			continue
+		}
+		rate := sample.Point.OutputTokensPerSecond
+		rates = append(rates, rate)
+		sum += rate
+		if len(rates) == 1 || rate > maximum {
+			maximum = rate
+		}
+	}
+	if len(rates) == 0 {
+		return nil
+	}
+	sort.Float64s(rates)
+	p95Index := (95*len(rates) + 99) / 100
+	summary := &ThroughputTrendSummary{
+		Max:           maximum,
+		P95:           rates[p95Index-1],
+		Avg:           sum / float64(len(rates)),
+		WindowSeconds: int(liveTokenRateWindow / time.Second),
+		SampleCount:   len(rates),
+	}
+	latest := samples[len(samples)-1]
+	currentAge := now.Sub(latest.At)
+	if latest.Point.HasOutputTokensPerSecond && currentAge >= -liveTokenRateFutureSkew && currentAge <= liveTokenRateSampleInterval+liveTokenRateFutureSkew {
+		current := latest.Point.OutputTokensPerSecond
+		summary.Current = &current
+		summary.CurrentAt = latest.At.Format(time.RFC3339)
+	}
+	return summary
 }
 
 func throughputTrendPoints(samples []runtimeTrendSample) []TrendPoint {

@@ -89,7 +89,7 @@ func TestHandleLiveTokenRateAPIReturnsPublishedSample(t *testing.T) {
 		Initialized:  true,
 		LatestSignal: now,
 		LatestEvent:  now,
-		Buckets:      []liveTokenRateEvent{{At: now, Tokens: 180, Session: "session-a"}},
+		Buckets:      []liveTokenRateEvent{{At: now, Tokens: 300, Session: "session-a"}},
 		Projects:     map[string]string{"session-a": "project-a"},
 	}
 	sampler.publishedMu.Unlock()
@@ -112,7 +112,7 @@ func TestHandleLiveTokenRateAPIReturnsPublishedSample(t *testing.T) {
 	if sample.State != liveTokenRateStateLive || sample.OutputTokensPerSecond == nil || *sample.OutputTokensPerSecond != 1 {
 		t.Fatalf("live token rate sample = %+v", sample)
 	}
-	if sample.Basis != liveTokenRateBasis || sample.WindowSeconds != 180 || sample.ActiveSessions != 1 {
+	if sample.Basis != liveTokenRateBasis || sample.WindowSeconds != 300 || sample.ActiveSessions != 1 {
 		t.Fatalf("live token rate metadata = %+v", sample)
 	}
 	if len(sample.Projects) != 1 || sample.Projects[0].Project != "project-a" || sample.Projects[0].OutputTokensPerSecond != 1 || sample.Projects[0].ActiveSessions != 1 {
@@ -267,11 +267,25 @@ func TestHandleRefreshAPINormalizesRequestedIntervalSlot(t *testing.T) {
 }
 
 func TestHandleSnapshotAPIReturnsCompactJSONAndRefreshSlotHeader(t *testing.T) {
+	currentRate := 2.5
 	app := &trayApp{}
-	app.rememberSnapshot(Snapshot{
+	app.lastSnapshot = Snapshot{
 		GeneratedAt:   "2026-06-28T12:00:00Z",
 		RefreshSlotID: "30s:2026-06-28T12:00:00Z",
-	})
+		ThroughputTrends: TrendSet{Windows: []TrendWindow{{
+			Range: "1D",
+			OutputTokenRateSummary: &ThroughputTrendSummary{
+				Max:           4,
+				P95:           3.5,
+				Avg:           1.25,
+				Current:       &currentRate,
+				CurrentAt:     "2026-06-28T12:00:00Z",
+				WindowSeconds: 300,
+				SampleCount:   42,
+			},
+		}}},
+	}
+	app.haveSnapshot = true
 	handler := app.handler()
 	req := httptest.NewRequest(http.MethodGet, "/api/snapshot", nil)
 	rec := httptest.NewRecorder()
@@ -293,6 +307,9 @@ func TestHandleSnapshotAPIReturnsCompactJSONAndRefreshSlotHeader(t *testing.T) {
 	}
 	if !strings.Contains(body, `"refresh_slot_id":"30s:2026-06-28T12:00:00Z"`) {
 		t.Fatalf("expected compact JSON refresh slot body, got %q", body)
+	}
+	if !strings.Contains(body, `"output_token_rate_summary":{"max":4,"p95":3.5,"avg":1.25,"current":2.5,"current_at":"2026-06-28T12:00:00Z","window_seconds":300,"sample_count":42}`) {
+		t.Fatalf("expected throughput period summary in snapshot JSON, got %q", body)
 	}
 }
 

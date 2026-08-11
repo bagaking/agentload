@@ -449,7 +449,7 @@ semantic layer before visual polish is accepted.
   persisted project, including `unassigned`. Horizontal positions follow the
   stored sample timestamps inside the selected API window, including blank
   space where history has not been recorded. Every range changes the horizontal
-  time domain only; it never changes the fixed 180-second TPS denominator. Do
+  time domain only; it never changes the fixed 300-second TPS denominator. Do
   not center the stack like a decorative streamgraph, infer past project shares
   from the current snapshot, or synthesize a layer for history without project
   partitions.
@@ -457,6 +457,12 @@ semantic layer before visual polish is accepted.
   throughput SVG local to the trend module and limited to stacking persisted
   project values, time-based hit testing, and selection; do not add a second
   chart framework or turn it into a generic chart abstraction.
+- The throughput lane header must make the selected period readable at a glance
+  as `MAX / P95 / AVG / CUR(5m)`. The first three values summarize the full
+  persisted numeric series for that range before chart-point reduction;
+  `CUR(5m)` is current evidence rather than the last hovered point. Keep exact
+  point inspection in chart hover and selection instead of replacing the period
+  summary when the pointer moves.
 - Trend chart hover must expose local observation meaning, not implementation
   or library provenance. Browser `title` text and tooltip-like affordances on
   the plot plane should show selected bucket time, primary metric, context

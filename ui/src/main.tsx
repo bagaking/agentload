@@ -27,6 +27,7 @@ import "./styles/lineage.css";
 import "./styles/process-summary.css";
 import "./styles/system-resource-inspector.css";
 import "./styles/activity-process-trend.css";
+import "./styles/throughput-trend.css";
 
 const TrendSuite = React.lazy(async () => {
   const module = await import("./trend/TrendSuite");
@@ -716,7 +717,7 @@ function DashboardFieldGrid({ t, snapshot, liveTokenRate }: { t: (key: string) =
 function LiveTokenRateReadout({ t, sample, compact = false }: { t: (key: string) => string; sample: LiveTokenRateSample | undefined; compact?: boolean }) {
   const state = normalizedLiveTokenRateState(sample);
   const rate = liveTokenRateValue(sample);
-  const window = formatAge(sample?.window_seconds || 180, t);
+  const window = formatAge(sample?.window_seconds || 300, t);
   const sessions = Math.max(0, Math.round(sample?.active_sessions || 0));
   let detail = t("outputThroughputNoData");
   if (state === "live") detail = formatCopy(t("outputThroughputLiveDetail"), { window, sessions });

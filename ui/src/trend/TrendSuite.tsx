@@ -438,8 +438,14 @@ function ThroughputLaneView({
   setFocusedLane: (lane: TrendLane) => void;
   setTrendSelection: React.Dispatch<React.SetStateAction<Record<TrendLane, string | undefined>>>;
 }) {
-  const { title, trendWindow, points, data, selected } = summary;
-  const selectedReadoutParts = selected ? trendSelectedReadoutParts(t, "throughput", selected) : [];
+  const { title, trendWindow, points, selected } = summary;
+  const periodSummary = trendWindow?.output_token_rate_summary;
+  const periodMetrics = [
+    { label: "MAX", value: formatThroughputPeriodRate(periodSummary?.max) },
+    { label: "P95", value: formatThroughputPeriodRate(periodSummary?.p95) },
+    { label: "AVG", value: formatThroughputPeriodRate(periodSummary?.avg) },
+    { label: "CUR(5m)", value: formatThroughputPeriodRate(periodSummary?.current) },
+  ];
   const selectPoint = useCallback((at?: string) => {
     setFocusedLane("throughput");
     if (at) setTrendSelection((current) => ({ ...current, throughput: at }));
@@ -449,26 +455,16 @@ function ThroughputLaneView({
       <div className="trend-lane-head">
         <div className="trend-lane-title">
           <span className="trend-kicker">{title}</span>
-          <small>{trendWindow?.range || t("unavailable")} · {data.length} {t("samples")}{selected ? ` · ${formatTrendThroughputWindow(t, selected.point)}` : ""}</small>
+          <small>{trendWindow?.range || t("unavailable")} · {periodSummary?.sample_count ?? 0} {t("samples")} · 5m</small>
         </div>
-        <button
-          aria-pressed={isFocused}
-          className="trend-lane-readout"
-          data-focus-key={focusKey("trend-lane-readout", "throughput", selected?.at || "")}
-          disabled={!selected}
-          title={selected?.at ? formatDateTime(selected.at) : t("unavailable")}
-          type="button"
-          onClick={() => selectPoint(selected?.at)}
-        >
-          <span className="trend-readout-time">{selected?.at ? formatChartAxisLabel(selected.at) : t("unavailable")}</span>
-          <strong className="trend-readout-values">
-            {selectedReadoutParts.length ? selectedReadoutParts.map((part) => (
-              <React.Fragment key={part.label}>
-                <span className={`trend-readout-value ${part.role}`}><em>{part.label}</em><b>{part.value}</b></span>
-              </React.Fragment>
-            )) : t("unavailable")}
-          </strong>
-        </button>
+        <dl className="throughput-period-summary" aria-label={t("selectedValues")}>
+          {periodMetrics.map((metric) => (
+            <div key={metric.label} title={`${metric.label}: ${metric.value} ${t("tokenRateUnit")}`}>
+              <dt>{metric.label}</dt>
+              <dd>{metric.value}</dd>
+            </div>
+          ))}
+        </dl>
       </div>
       {summary.data.length ? (
         <ThroughputRiver
@@ -711,12 +707,15 @@ function trendLaneSummary(lane: TrendLane, title: string, trendWindow: TrendWind
     trendWindow,
     points,
     data,
-    selected: selectedTrendDatum(data, selectedAt),
+    selected: selectedTrendDatum(data, selectedAt, lane),
   };
 }
 
-function selectedTrendDatum(data: TrendSignalDatum[], selectedAt?: string): TrendSignalDatum | undefined {
-  return data.find((datum) => datum.at === selectedAt) ?? [...data].reverse().find((datum) => datum.value > 0) ?? data[data.length - 1];
+function selectedTrendDatum(data: TrendSignalDatum[], selectedAt: string | undefined, lane: TrendLane): TrendSignalDatum | undefined {
+  const selected = data.find((datum) => datum.at === selectedAt);
+  if (selected) return selected;
+  if (lane === "throughput") return data[data.length - 1];
+  return [...data].reverse().find((datum) => datum.value > 0) ?? data[data.length - 1];
 }
 
 function sampledPoints(window: TrendWindow | undefined, sampledKey: "transcript_sampled" | "runtime_sampled" | "throughput_sampled"): TrendPoint[] {
@@ -876,6 +875,10 @@ function trendExplanationSections(t: Translate, lane: TrendLane, datum: TrendSig
 
 function formatTrendTokenRate(t: Translate, value: number | null): string {
   return value === null ? t("unavailable") : `${formatTokenRate(value)} ${t("tokenRateUnit")}`;
+}
+
+function formatThroughputPeriodRate(value?: number): string {
+  return typeof value === "number" && Number.isFinite(value) ? formatTokenRate(value) : "n/a";
 }
 
 function formatThroughputState(t: Translate, point: TrendPoint): string {

@@ -91,8 +91,8 @@ func TestLiveTokenRateSamplerStartsFromBaselineAndUsesCumulativeDelta(t *testing
 	appendCumulativeTokenLine(t, path, now.Add(30*time.Second), 280)
 	sampler.poll(now.Add(30 * time.Second))
 	sample := sampler.sample(now.Add(30 * time.Second))
-	if sample.State != liveTokenRateStateLive || sample.OutputTokensPerSecond == nil || math.Abs(*sample.OutputTokensPerSecond-1) > 0.0001 {
-		t.Fatalf("cumulative sample = %+v, want 1 output token/second", sample)
+	if sample.State != liveTokenRateStateLive || sample.OutputTokensPerSecond == nil || math.Abs(*sample.OutputTokensPerSecond-0.6) > 0.0001 {
+		t.Fatalf("cumulative sample = %+v, want 0.6 output tokens/second", sample)
 	}
 	if sample.ActiveSessions != 1 {
 		t.Fatalf("active sessions = %d, want 1", sample.ActiveSessions)
@@ -127,8 +127,8 @@ func TestLiveTokenRateWatchDiscoversResumedOldSessionWithoutReplay(t *testing.T)
 
 	appendCumulativeTokenLine(t, path, now.Add(60*time.Second), 460)
 	sampler.poll(now.Add(60 * time.Second))
-	if sample := sampler.sample(now.Add(60 * time.Second)); sample.State != liveTokenRateStateLive || sample.OutputTokensPerSecond == nil || math.Abs(*sample.OutputTokensPerSecond-1) > 0.0001 {
-		t.Fatalf("resumed session delta sample = %+v, want 1 output token/second", sample)
+	if sample := sampler.sample(now.Add(60 * time.Second)); sample.State != liveTokenRateStateLive || sample.OutputTokensPerSecond == nil || math.Abs(*sample.OutputTokensPerSecond-0.6) > 0.0001 {
+		t.Fatalf("resumed session delta sample = %+v, want 0.6 output tokens/second", sample)
 	}
 }
 
@@ -313,16 +313,16 @@ func TestLiveTokenRateSamplerRebaselinesAfterObservationGap(t *testing.T) {
 	sampler := newTestLiveTokenRateSampler(Config{CodexRoots: []string{root}})
 	sampler.poll(now)
 
-	appendCumulativeTokenLine(t, path, now.Add(181*time.Second), 1000)
-	sampler.poll(now.Add(181 * time.Second))
-	if sample := sampler.sample(now.Add(181 * time.Second)); sample.OutputTokensPerSecond == nil || *sample.OutputTokensPerSecond != 0 {
+	appendCumulativeTokenLine(t, path, now.Add(301*time.Second), 1000)
+	sampler.poll(now.Add(301 * time.Second))
+	if sample := sampler.sample(now.Add(301 * time.Second)); sample.OutputTokensPerSecond == nil || *sample.OutputTokensPerSecond != 0 {
 		t.Fatalf("observation gap replayed output history: %+v", sample)
 	}
 
-	appendCumulativeTokenLine(t, path, now.Add(211*time.Second), 1180)
-	sampler.poll(now.Add(211 * time.Second))
-	if sample := sampler.sample(now.Add(211 * time.Second)); sample.OutputTokensPerSecond == nil || math.Abs(*sample.OutputTokensPerSecond-1) > 0.0001 {
-		t.Fatalf("post-gap delta sample = %+v, want 1 output token/second", sample)
+	appendCumulativeTokenLine(t, path, now.Add(331*time.Second), 1180)
+	sampler.poll(now.Add(331 * time.Second))
+	if sample := sampler.sample(now.Add(331 * time.Second)); sample.OutputTokensPerSecond == nil || math.Abs(*sample.OutputTokensPerSecond-0.6) > 0.0001 {
+		t.Fatalf("post-gap delta sample = %+v, want 0.6 output tokens/second", sample)
 	}
 }
 
@@ -368,8 +368,8 @@ func TestLiveTokenRateSamplerRebaselinesRewrittenFile(t *testing.T) {
 
 	appendCumulativeTokenLine(t, path, now.Add(60*time.Second), 10180)
 	sampler.poll(now.Add(60 * time.Second))
-	if sample := sampler.sample(now.Add(60 * time.Second)); sample.OutputTokensPerSecond == nil || math.Abs(*sample.OutputTokensPerSecond-1) > 0.0001 {
-		t.Fatalf("post-rewrite delta sample = %+v, want 1 output token/second", sample)
+	if sample := sampler.sample(now.Add(60 * time.Second)); sample.OutputTokensPerSecond == nil || math.Abs(*sample.OutputTokensPerSecond-0.6) > 0.0001 {
+		t.Fatalf("post-rewrite delta sample = %+v, want 0.6 output tokens/second", sample)
 	}
 }
 
@@ -392,8 +392,8 @@ func TestLiveTokenRateSamplerRebaselinesTruncatedCounter(t *testing.T) {
 	}
 	appendCumulativeTokenLine(t, path, now.Add(60*time.Second), 190)
 	sampler.poll(now.Add(60 * time.Second))
-	if sample := sampler.sample(now.Add(60 * time.Second)); sample.OutputTokensPerSecond == nil || math.Abs(*sample.OutputTokensPerSecond-1) > 0.0001 {
-		t.Fatalf("post-truncation delta sample = %+v, want 1 output token/second", sample)
+	if sample := sampler.sample(now.Add(60 * time.Second)); sample.OutputTokensPerSecond == nil || math.Abs(*sample.OutputTokensPerSecond-0.6) > 0.0001 {
+		t.Fatalf("post-truncation delta sample = %+v, want 0.6 output tokens/second", sample)
 	}
 }
 
@@ -417,14 +417,14 @@ func TestLiveTokenRateSamplerStreamsOversizedAppend(t *testing.T) {
 	filler = append(filler, []byte(cumulativeTokenLine(now.Add(30*time.Second), 190))...)
 	appendTokenText(t, path, string(filler))
 	sampler.poll(now.Add(30 * time.Second))
-	if sample := sampler.sample(now.Add(30 * time.Second)); sample.OutputTokensPerSecond == nil || math.Abs(*sample.OutputTokensPerSecond-1) > 0.0001 {
-		t.Fatalf("streamed append sample = %+v, want 1 output token/second", sample)
+	if sample := sampler.sample(now.Add(30 * time.Second)); sample.OutputTokensPerSecond == nil || math.Abs(*sample.OutputTokensPerSecond-0.6) > 0.0001 {
+		t.Fatalf("streamed append sample = %+v, want 0.6 output tokens/second", sample)
 	}
 
 	appendCumulativeTokenLine(t, path, now.Add(60*time.Second), 370)
 	sampler.poll(now.Add(60 * time.Second))
-	if sample := sampler.sample(now.Add(60 * time.Second)); sample.OutputTokensPerSecond == nil || math.Abs(*sample.OutputTokensPerSecond-2) > 0.0001 {
-		t.Fatalf("second streamed delta sample = %+v, want 2 output tokens/second", sample)
+	if sample := sampler.sample(now.Add(60 * time.Second)); sample.OutputTokensPerSecond == nil || math.Abs(*sample.OutputTokensPerSecond-1.2) > 0.0001 {
+		t.Fatalf("second streamed delta sample = %+v, want 1.2 output tokens/second", sample)
 	}
 }
 
@@ -450,8 +450,8 @@ func TestLiveTokenRateSamplerWaitsForCompleteAppendedLine(t *testing.T) {
 
 	appendTokenText(t, path, line[split:])
 	sampler.poll(now.Add(60 * time.Second))
-	if sample := sampler.sample(now.Add(60 * time.Second)); sample.OutputTokensPerSecond == nil || math.Abs(*sample.OutputTokensPerSecond-1) > 0.0001 {
-		t.Fatalf("completed JSONL line sample = %+v, want 1 output token/second", sample)
+	if sample := sampler.sample(now.Add(60 * time.Second)); sample.OutputTokensPerSecond == nil || math.Abs(*sample.OutputTokensPerSecond-0.6) > 0.0001 {
+		t.Fatalf("completed JSONL line sample = %+v, want 0.6 output tokens/second", sample)
 	}
 }
 
@@ -486,13 +486,13 @@ func TestLiveTokenRateBucketsPreserveSparseIntervalClipping(t *testing.T) {
 	buckets := liveTokenRateBucketAccumulator{}
 	buckets.add(newLiveTokenRateIntervalEvent(now.Add(-10*time.Minute), now, 6000, "session-a"), now)
 	events := buckets.events()
-	if tokens, _ := liveTokenRateWindowFacts(events, now, liveTokenRateWindow, liveTokenRateFutureSkew); tokens != 1800 {
-		t.Fatalf("current bucketed interval = %d tokens, want 1800", tokens)
+	if tokens, _ := liveTokenRateWindowFacts(events, now, liveTokenRateWindow, liveTokenRateFutureSkew); tokens != 3000 {
+		t.Fatalf("current bucketed interval = %d tokens, want 3000", tokens)
 	}
-	if tokens, _ := liveTokenRateWindowFacts(events, now.Add(time.Minute), liveTokenRateWindow, liveTokenRateFutureSkew); tokens != 1200 {
-		t.Fatalf("bucketed interval one minute later = %d tokens, want 1200", tokens)
+	if tokens, _ := liveTokenRateWindowFacts(events, now.Add(time.Minute), liveTokenRateWindow, liveTokenRateFutureSkew); tokens != 2400 {
+		t.Fatalf("bucketed interval one minute later = %d tokens, want 2400", tokens)
 	}
-	if tokens, _ := liveTokenRateWindowFacts(events, now.Add(4*time.Minute), liveTokenRateWindow, liveTokenRateFutureSkew); tokens != 0 {
+	if tokens, _ := liveTokenRateWindowFacts(events, now.Add(6*time.Minute), liveTokenRateWindow, liveTokenRateFutureSkew); tokens != 0 {
 		t.Fatalf("expired bucketed interval = %d tokens, want 0", tokens)
 	}
 }

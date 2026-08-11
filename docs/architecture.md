@@ -150,7 +150,7 @@ feed historic peaks and transcript trend windows.
   session count.
 - New files start from a bounded tail baseline. File identity changes, boundary
   fingerprint changes, truncation, counter rollback, and observation gaps over
-  180 seconds rebaseline without replaying history. Large valid appends do not
+  300 seconds rebaseline without replaying history. Large valid appends do not
   rebaseline: they stream from the current cursor with memory bounded by one
   JSONL line.
 - Only explicit output-token fields contribute. The owning adapter decodes a
@@ -163,7 +163,7 @@ feed historic peaks and transcript trend windows.
 - Positive observations are folded immediately into one-second, per-session
   buckets. Sparse cumulative deltas are first distributed over their observed
   interval and then folded into the same buckets. The semantic layer clips those
-  buckets to a trailing 180-second wall-time window; the result is rolling
+  buckets to a trailing 300-second wall-time window; the result is rolling
   workload throughput, not model decode speed. Memory and API sampling work are
   bounded by window duration and contributing sessions rather than raw usage
   update frequency, so high output throughput cannot itself trip an event-count
@@ -290,12 +290,16 @@ One snapshot build, in order:
   file + sync + rename. Load/compaction and append hold the same stable lock
   file, so a second app instance cannot append into the file being replaced.
 - Retained samples feed `buildRealtimeTrendWindows` for process lanes,
-  `buildThroughputTrendWindows` for timestamped 180-second output-rate samples,
+  `buildThroughputTrendWindows` for timestamped 300-second output-rate samples,
   and `buildProjectHeatmapWindows`. All three are merged into the snapshot with
   `history` metadata. Throughput ranges preserve sparse samples and cap dense
   ranges at 240 time-distributed exact observations instead of inheriting the
   wider process buckets. Each stored throughput point retains the sampler's
   project partition; missing partitions are not migrated or reconstructed.
+  Samples with an obsolete rolling-window size are discarded without migration.
+  Each throughput range computes `MAX`, nearest-rank `P95`, `AVG`, and fresh
+  `CUR(5m)` from its complete valid persisted series before applying the
+  240-point display cap.
   Transcript lanes in `trends` come directly from span data, so the three trend
   sources stay independent.
 
@@ -369,7 +373,7 @@ One snapshot build, in order:
 | Transcript scan TTL cache | 60s (`-cache-ttl`) | `transcripts.go` |
 | Foreground transcript window | `idle_gap × 80`, clamped 2h–6h (default 2h); older files deferred | `transcripts.go` |
 | Background system resource sampler | 2s | `system_resources.go` |
-| Background output-token sampler | 30s; trailing window 180s; stale after 5m | `live_token_rate.go` |
+| Background output-token sampler | 30s; trailing window 300s; stale after 5m | `live_token_rate.go` |
 | UI auto-refresh cycle (POST `/api/refresh` + ETag polls) | selected refresh interval (default 5m); slot polls back off 0.5s→8s; deferred to a 60s floor while the user is reading | `ui/src/snapshot/useSnapshotController.ts` |
 | UI `/api/system-resources` poll | 2s while the System deck is visible | `ui/src/system/useLiveSystemResources.ts` |
 | UI `/api/live-token-rate` poll | 30s while the popover or dashboard is visible | `ui/src/live/useLiveTokenRate.ts` |

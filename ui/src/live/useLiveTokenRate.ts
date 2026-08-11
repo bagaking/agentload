@@ -22,7 +22,7 @@ export function useLiveTokenRate(active: boolean): LiveTokenRateSample | undefin
             output_tokens_per_second: null,
             state: "unavailable",
             basis: "output_tokens",
-            window_seconds: 180,
+            window_seconds: 300,
             sample_interval_seconds: 30,
           });
         }

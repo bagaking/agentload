@@ -53,7 +53,7 @@ func TestLocalHistoryStoreAppendsAndReloadsSamples(t *testing.T) {
 	sample.OutputTokenThroughput = &HistoryOutputTokenThroughput{
 		OutputTokensPerSecond: &rate,
 		State:                 liveTokenRateStateLive,
-		WindowSeconds:         180,
+		WindowSeconds:         300,
 		ActiveSessions:        2,
 		Projects: []LiveTokenRateProjectSample{
 			{Project: "agentload", OutputTokensPerSecond: 1.5, ActiveSessions: 1},
@@ -82,7 +82,7 @@ func TestLocalHistoryStoreAppendsAndReloadsSamples(t *testing.T) {
 		t.Fatalf("expected top project round-trip, got %+v", reloaded.samples[0].CoordinationRisk)
 	}
 	throughput := reloaded.samples[0].OutputTokenThroughput
-	if throughput == nil || throughput.OutputTokensPerSecond == nil || *throughput.OutputTokensPerSecond != rate || throughput.State != liveTokenRateStateLive || throughput.WindowSeconds != 180 || throughput.ActiveSessions != 2 {
+	if throughput == nil || throughput.OutputTokensPerSecond == nil || *throughput.OutputTokensPerSecond != rate || throughput.State != liveTokenRateStateLive || throughput.WindowSeconds != 300 || throughput.ActiveSessions != 2 {
 		t.Fatalf("expected output throughput round-trip, got %+v", throughput)
 	}
 	if len(throughput.Projects) != 2 || throughput.Projects[0].Project != "agentload" || throughput.Projects[0].OutputTokensPerSecond != 1.5 {
@@ -100,7 +100,7 @@ func TestHistoryThroughputPersistsMeasuredEmptyProjectPartition(t *testing.T) {
 		OutputTokenThroughput: &HistoryOutputTokenThroughput{
 			OutputTokensPerSecond: &rate,
 			State:                 liveTokenRateStateZero,
-			WindowSeconds:         180,
+			WindowSeconds:         300,
 			Projects:              []LiveTokenRateProjectSample{},
 		},
 	})

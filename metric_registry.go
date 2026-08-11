@@ -81,9 +81,9 @@ func defaultMetricRegistry() []MetricRegistryEntry {
 			Label:        "Output token throughput",
 			Unit:         "output tokens/second",
 			Source:       "positive output-token events and safe cumulative-output deltas from local transcripts",
-			Window:       "trailing 180 seconds of wall time",
+			Window:       "trailing 300 seconds of wall time",
 			MissingState: "unavailable, no_data, and stale remain distinct from a measured zero rate",
-			Description:  "Divides output tokens attributed to the trailing wall-time window by 180 seconds; cumulative deltas spanning sparse observations are distributed uniformly across their observed interval. This is workload throughput, not model decode speed.",
+			Description:  "Divides output tokens attributed to the trailing wall-time window by 300 seconds; cumulative deltas spanning sparse observations are distributed uniformly across their observed interval. This is workload throughput, not model decode speed.",
 		},
 		{
 			Key:          "runtime_telemetry",

@@ -24,7 +24,7 @@ func TestDefaultMetricRegistryContainsCoreFamilies(t *testing.T) {
 	if keys["token_usage"].MissingState == "zero" {
 		t.Fatalf("token usage must not treat missing usage as zero: %+v", keys["token_usage"])
 	}
-	if keys["output_token_throughput"].Window != "trailing 180 seconds of wall time" {
+	if keys["output_token_throughput"].Window != "trailing 300 seconds of wall time" {
 		t.Fatalf("output token throughput must disclose its wall-time window: %+v", keys["output_token_throughput"])
 	}
 }

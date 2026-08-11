@@ -17,7 +17,7 @@ import (
 
 const (
 	liveTokenRateSampleInterval    = 30 * time.Second
-	liveTokenRateWindow            = 180 * time.Second
+	liveTokenRateWindow            = 5 * time.Minute
 	liveTokenRateStaleAfter        = 5 * time.Minute
 	liveTokenRateRecentFileAge     = 15 * time.Minute
 	liveTokenRateTrackedFileMaxAge = 30 * time.Minute

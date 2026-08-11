@@ -85,13 +85,18 @@ cold first poll can block noticeably.
   `output_token_throughput_state`,
   `output_token_throughput_window_seconds`,
   `output_token_active_sessions`, `output_token_projects`, and
-  `throughput_sampled`. Each project item uses the same events and 180-second
+  `throughput_sampled`. Each project item uses the same events and 300-second
   denominator as the aggregate, and the items sum to that aggregate. `stale`,
   `no_data`, and `unavailable` points omit the numeric rate and project list.
   Samples without a stored project partition are not reconstructed. Each range
   filters the stored time series independently from process bucketing. Sparse
   ranges retain all samples; dense ranges retain up to 240 time-distributed
-  exact samples.
+  exact samples. Each window also exposes `output_token_rate_summary` with
+  `max`, nearest-rank `p95`, `avg`, optional fresh `current`, optional
+  `current_at`, `window_seconds`, and `sample_count`. Period statistics include
+  all valid numeric persisted samples, including zero, before the 240-point
+  display reduction. Missing or stale values are excluded; `current` is omitted
+  rather than carrying an older rate forward.
 - **Sanitization** (`sanitizeSnapshotForClient`): see "Sanitize layer" below.
 
 ### `GET /api/system-resources`
@@ -117,7 +122,7 @@ the same event window (`project`, `output_tokens_per_second`, and
 `active_sessions`); an empty array means measured zero. Missing or conflicting
 attribution is reported as project `unassigned`, so the project partition sums
 to the aggregate.
-The denominator is the fixed trailing 180-second wall-time window. This is
+The denominator is the fixed trailing 300-second wall-time window. This is
 aggregate output-token workload throughput, not model decode speed or
 API-active-time TPS. `Cache-Control: no-store`.
 

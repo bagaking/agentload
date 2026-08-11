@@ -1,0 +1,103 @@
+.trend-lane.throughput .trend-lane-head {
+  align-items: stretch;
+}
+
+.throughput-period-summary {
+  display: grid;
+  flex: 1 1 250px;
+  grid-template-columns: repeat(4, minmax(48px, 1fr));
+  min-width: 0;
+  max-width: 300px;
+  margin: 0;
+  border-left: 1px solid var(--console-line-soft);
+}
+
+.throughput-period-summary > div {
+  display: grid;
+  align-content: center;
+  justify-items: end;
+  gap: 2px;
+  min-width: 0;
+  padding: 2px 6px;
+}
+
+.throughput-period-summary > div + div {
+  border-left: 1px solid color-mix(in srgb, var(--console-line-soft) 72%, transparent);
+}
+
+.throughput-period-summary dt,
+.throughput-period-summary dd {
+  min-width: 0;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.throughput-period-summary dt {
+  color: var(--fg-faint);
+  font-size: 7.8px;
+  font-weight: 780;
+  line-height: 1;
+}
+
+.throughput-period-summary dd {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--fg);
+  font-size: 12.8px;
+  font-weight: 850;
+  line-height: 1;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 1180px) {
+  body[data-view="dashboard"] .trend-lane.throughput .trend-lane-head {
+    display: grid;
+    justify-content: stretch;
+  }
+
+  body[data-view="dashboard"] .throughput-period-summary {
+    width: 100%;
+    max-width: none;
+    border-top: 1px solid var(--console-line-soft);
+    border-left: 0;
+  }
+
+  body[data-view="dashboard"] .throughput-period-summary > div {
+    justify-items: start;
+  }
+}
+
+body[data-view="popover"] .trend-suite.compact .throughput-period-summary {
+  max-width: 320px;
+}
+
+@media (max-width: 430px) {
+  .trend-lane.throughput .trend-lane-head {
+    display: grid;
+    justify-content: stretch;
+  }
+
+  .throughput-period-summary,
+  body[data-view="popover"] .trend-suite.compact .throughput-period-summary {
+    width: 100%;
+    max-width: none;
+    border-top: 1px solid var(--console-line-soft);
+    border-left: 0;
+    justify-self: stretch;
+  }
+
+  .throughput-period-summary > div {
+    justify-items: start;
+    padding-inline: 4px;
+  }
+
+  .throughput-period-summary dt {
+    font-size: 7.2px;
+  }
+
+  .throughput-period-summary dd {
+    font-size: 11.5px;
+  }
+}

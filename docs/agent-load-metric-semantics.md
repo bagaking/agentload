@@ -21,7 +21,7 @@ semantic layer says so.
 | Role matrix | `main_agent_sessions`, `subagent_sessions`, `unknown_role_sessions` and active role splits | Session role inference from thread source, parent thread, lane paths, and independent-run evidence | Process role guesses without mapped session evidence |
 | Tool coverage | project/tool `session_count`, `active_burst_count`, `process_count` | Per-tool aggregation of known sessions, recent movement, and process pressure | Treating process pressure as recent movement |
 | Token usage | `token_usage`, `token_usage_source`, `token_usage_confidence` | Parsed local transcript usage fields when present, including cumulative token-count events when the local trace exposes them | Inferring usage from process duration, CPU, memory, or elapsed time |
-| Output token throughput | `/api/live-token-rate` `output_tokens_per_second`, `projects`, `state`, `window_seconds`; persisted `throughput_trends` | Positive output-token events and safe cumulative-output counter deltas from local transcripts, projected onto a trailing 180-second wall-time window and attributed through the observer's project mapping | Input/cache/reasoning tokens, process activity, model decode speed, API-active-time throughput, or replayed deltas across collection gaps |
+| Output token throughput | `/api/live-token-rate` `output_tokens_per_second`, `projects`, `state`, `window_seconds`; persisted `throughput_trends` | Positive output-token events and safe cumulative-output counter deltas from local transcripts, projected onto a trailing 300-second wall-time window and attributed through the observer's project mapping | Input/cache/reasoning tokens, process activity, model decode speed, API-active-time throughput, or replayed deltas across collection gaps |
 | Runtime telemetry | `runtime_telemetry` | Optional local adapter state for future OpenTelemetry or JSONL events | Replacing local process/session evidence or treating unconfigured telemetry as failure |
 | Diagnostic export | `diagnostics.export` and `/api/diagnostic-export` | Sanitized local snapshot with omitted private fields documented | Raw prompts, absolute paths, full command arguments, environment variables, transcript paths |
 
@@ -66,7 +66,7 @@ semantic layer says so.
 - High output throughput must not make the metric unavailable. Raw usage update
   frequency is not a capacity dimension: valid appends are parsed as a stream
   and immediately folded into fixed one-second, per-session buckets. Collection
-  capacity depends on the 180-second window and contributing sessions, not the
+  capacity depends on the 300-second window and contributing sessions, not the
   number of token updates inside that window.
 - A newly discovered token source establishes a baseline without replaying
   history. Counter resets, file replacement or truncation, and collection gaps
@@ -83,7 +83,7 @@ semantic layer says so.
   unavailable reason.
 - Each complete snapshot persists the then-current aggregate throughput datum,
   its per-project partition, state, and rolling-window size. The project values
-  come from the same events and use the same 180-second denominator as the
+  come from the same events and use the same 300-second denominator as the
   aggregate, so their sum, including `unassigned`, equals the aggregate at that
   sample time. Throughput trend density follows snapshot history cadence, not
   the independent 30-second live sampler cadence; each numeric trend point
@@ -92,12 +92,21 @@ semantic layer says so.
   migrate it, reconstruct it from the current project mix, or draw a synthetic
   catch-all project layer.
 - `1D` through `30D` select the throughput observation range; they do not change
-  the 180-second rate denominator or collapse the range to the last process
+  the 300-second rate denominator or collapse the range to the last process
   bucket. Sparse ranges preserve every stored throughput sample. Dense ranges
   retain at most 240 exact source samples distributed across observed time; the
   backend must not sum or average overlapping rolling-window rates into invented
   bucket throughput. The UI uses the selected range bounds as the horizontal
   domain, so time without stored samples remains visibly empty.
+- The throughput trend should show the selected period's metrics at a glance:
+  `MAX`, `P95`, `AVG`, and `CUR(5m)`. `MAX`, nearest-rank `P95`, and `AVG` use
+  every valid numeric persisted sample in the selected range before the
+  240-point display reduction. Numeric zero is valid; missing, stale, no-data,
+  mismatched-window, and partition-missing samples are excluded. `CUR(5m)` is
+  only the latest currently fresh numeric sample and must not reuse an older
+  non-zero value.
+- Persisted throughput samples whose rolling window is not 300 seconds are
+  obsolete evidence. Do not migrate, convert, or mix them into current trends.
 - UI labels may abbreviate for density, but tooltips and accessible labels must
   preserve the semantic name.
 - Trend charts, selected-point readouts, hover tooltips, and inspectors must use
