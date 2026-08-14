@@ -130,6 +130,19 @@ meta:
 - **测试抓出一个真 bug**：`compactHistorySampleFile` 收到的是**归档+热文件合并后**的集合，已归档的行每次压实会被**再归档一遍**，分区无界增长——而 **gzip 藏起了字节，从磁盘大小完全看不出来**。修复是 `writeArchivePartition` 读回既有内容去重。**「预期会红的测试没红」当时是覆盖缺口的信号**：既有夹具的冷集恒为空，归档路径零覆盖（D-021 附带）。
 - **验收**：五门全绿；真实数据迁移后**行数守恒经 Python 独立复算逐条吻合**（history -508、throughput -741 均精确等于保留窗口过期数，lifecycle +2 为迁移期间新事件）；65425 行归档 `invalid_json=0`、落在热窗口内 0 行；**重启二次压实 history/throughput 归档字节完全相同**（幂等），lifecycle 增的 6 行经核验是恰好跨过 2 天边界的 heartbeat；9 个文件全部 `0644`。**语义完整性**：`trends.windows` 五个区间全部正常，最长跨至 **2026-08-21**（整 30 天，只可能来自归档）；空闲 CPU **0.3%**。
 
+**2026-09-20 完成**（mini-sprint `M02_S05.006.RSI`，计划文件批次 2）：
+
+- **删掉 agent DB 的缓存旁路**：`transcripts.go` 原本对所有 agent DB **每次扫描强制全量重解析**。git archaeology 给出了准确解释——旁路（`5b81005`，19:27:03）比 WAL 感知的 `agentEvidenceStat`（`43251ae`，19:27:24）**早 21 秒**，它是真修复落地前的占位符，没人回来删。实测 **410ms/次 → 首次 400ms 后 ~9ms（45×）**。
+- **验证 WAL 检测时的一个假阳性，值得记**：第一版用两次独立 `sqlite3` 调用，plain stat 与 WAL-aware stat「都检测到了变化」，看似两者等价。**这个结论是错的**——关闭连接会 checkpoint 并截断 WAL，纯 WAL 写入这个场景根本没被构造出来。改用**持久连接**（stdin 管道 + SYNC 哨兵）才测到真实情形：主 db 停在 4096 字节不动，db+wal 从 16488 涨到 24728。
+- **删除 4 个 test-only wrapper**：`parseHermesStateDB` / `parseOpenCodeDBTrace` 返回 `traces[0]`，多会话 DB 在测试里永远只被看见第一条，**生产回归会被绿测试掩盖**。测试改为直调注册表解析路径并断言两个会话都回来；**变异测试确认断言有效**（注入 `traces[:1]` 如期失败）。
+- **Antigravity 接为 gemini 第二证据根，仅 timeline 档**：实测 44783 条记录、**0 个 token/usage 字段**，所以对 token 指标零贡献。`transcript_full.jsonl` 与 `transcript.jsonl` **逐字节相同**，文件名用精确匹配而非前缀——两个都收会让每个会话计两次。验证 102 文件 → 22087 事件 → **0 条 trace 声称 token**。
+- **RSI 面的计划偏差（本 sprint 唯一一处，已记入 D-022）**：计划的头条是「强制重解析计数器」，但**同批次第 1 项已经把那个浪费删了**。再上这个计数器它会**结构性恒为零**——一个永远显示 0 的仪表会被读成「已测量且为零」。该项**放弃**，不是延后。
+- **替代品是一个「已测未用」的发现**：`transcriptEvidenceIndexStats` 每次 reconcile 都在算 `Elapsed`/`VisitedEntries`/`PrunedDirectories`/`AgedOutFiles`，一路抵达 `transcripts.go`，**然后全仓库零消费者**。数据一直在算，只是被丢掉。
+- **两个诚实性陷阱（D-023）**：(a) 非 reconcile 的 pass 会把三个走查计数**显式清零**，直接呈现会把「本次没测」渲染成「耗时 0ms」；`AgedOutFiles` 例外，它描述索引内容而非走查，两次 pass 都是 9060，不需要守卫。(b) **装机后才发现的更要命的一条**：只报「本次 pass」等于几乎永远不报——索引约每进程只 reconcile 一次，`walk_measured` 稳态下**每次都是 false**。这在诚实性上无懈可击，在实用性上**和恒为零的计数器是同一类废物**。修法：索引保留 `lastWalk` + `MeasuredAt`，`lastStats` 的清零语义原样不动（有测试锁着）；对外 `WalkMeasured`＝有过真实测量，`WalkFresh`＝本次自己走的。
+- **`deferred` 与 `aged_out` 必须分成两个 signal**：本机 3474 deferred 对 9100 aged-out。前者在范围内本轮未扫（是缺口），后者在 7 天地平线外（不是缺口）。`evidence_index.go` 的注释早写明了这个区分，但**从未到达界面**——合成一个数会把范围外的量算进覆盖缺口，读起来像故障。
+- **验收**：五门全绿；**两处变异测试**均如期变红（去掉 `!WalkMeasured` 守卫实测报出 `Value:0ms`；删掉 `lastWalk` 赋值冷 pass 即失去测量）。装机（2026.09.20.153726）实测：冷启动 `elapsed_ms=319 visited=28555 pruned=936 aged=9100`，随后三次 pass **`walk_fresh=False` 但 `walk_measured=True` 且数值稳定保持**；诊断面 `evidence_out_of_horizon | 9100 files`、`evidence_walk_cost 319ms ok`。空闲 CPU **0.0%**。
+- **一次误判，记明**：装机后 5 分钟 `parsed_files=0` + `transcript scan wait cancelled` + 累计 CPU 2 分钟，我一度判定自己引入了 hang 并开始怀疑新加的 Antigravity 目录谓词。实测否掉：gemini 根走查 72ms/23 文件，完整快照 34s 正常完成。真因是**冷启动首扫本来就要几十秒，而我用短超时反复轮询——每次轮询都带自己的 context，超时即取消，于是永远看不到结果**。安静等一次就拿到 78/78。**验证长操作时，超时必须长于操作本身，否则你测的是自己的超时。**
+
 **当前活跃**：
 
 - **M01 地基**（本轮架构与熵审查修复已落地，发布门已复跑）。
@@ -166,6 +179,7 @@ meta:
 | `M02_S05.003.FIX.worktree_project_aggregation.md` | worktree 项目聚合：中途 cd 进临时目录导致同 rank cwd 竞争、项目名被沙盒目录名顶掉；`file://` cwd 让仓库边界解析全程 miss |
 | `M02_S05.004.VENDOR.extra_transcript_adapters.md` | 补录计划外落地的 gemini/opencode/hermes/openclaw/pi adapter；**代码档位与本机语料分开记账** |
 | `M02_S05.005.PERF.history_archive_compression.md` | 历史压缩：2 天热明文 + 按月 gzip 冷归档（109.5MB→12.26MB，零行丢失）；lifecycle 保留缺口与三处持久性/权限欠账 |
+| `M02_S05.006.RSI.scan_cost_and_absorbed_items.md` | 扫描开销诊断面（把索引已测未用的走查数据接上）+ 三个吸收项：删 agent DB 缓存旁路、删 4 个 test-only wrapper、Antigravity 以 timeline 档接入 |
 | `M03_S01.attention_state_engine.md` | 证据化会话 attention states 引擎 |
 | `M03_S02.needs_you_triage_and_tray.md` | needs-you 分诊面、菜单栏 glyph、tray i18n |
 | `M03_S03.one_keystroke_actions.md` | 一次按键动作：跳转/检视/续跑/显式停止 |
@@ -213,6 +227,7 @@ meta:
 | 2026-09-19 | mini-sprint `M02_S05.004.VENDOR`：补录另一会话落地的 gemini/opencode/hermes/openclaw/pi adapter（vendor 4→9） | `go vet ./...`、`go test ./...`、`npm --prefix ui run build`、`node scripts/validate_locales.js` 全绿；`ui/dist` 哈希与工作树产物一致。**8 路审计**（4 理解 + 4 对抗验证）四个 bundle 全部 `refuted: false` / `blockers: []`。**生产解析器实跑本机真实文件**：hermes `state.db` → **10287 个 trace、1932 个含 output token**（真实可用）；gemini 唯一真实文件 → `trace=nil`；openclaw/pi 各 0 个数据文件 | **代码档位 ≠ 本机语料，分两行记账**（mini-sprint §3）。四家出不了数是正确行为——`DecodeUsage` 在 `OutputTokens<=0` 时 `ok=false`、`nonEmptyTrace` 无事件时间即 nil；活体快照证实五家只在 `tool_coverage` 档位报真实观测 0，`token_usage`/`output_token_throughput` 两条经济档零输出。**我阻断提交的判断是错的**，四条理由塌三条，见 OPINIONS **D-019**。已知天花板：hermes 全解析 6.84s 且 DB 有意绕过 mtime 缓存（本机因 9 天未动而 deferred，活跃用户会每次付）；文档矩阵无生成器（归 M02_S01）；7 个新测试夹具全合成且 gemini 夹具形状与真实文件不符（测试债，本机无语料无法消除）。打包安装 `2026.09.19.192831`（dmg 8.5M / zip 7.9M，ad-hoc 签名），已装 `/Applications`；实机验证 `current_by_tool` 九家齐备，五家新 vendor 在 coverage 档位报真实 0、经济档零输出 |
 
 | 2026-09-20 | mini-sprint `M02_S05.005.PERF`：三个 JSONL 存储改为 2 天热明文 + 按月 gzip 冷归档（用户「我们是不是没有特地去对 history 做过压缩之类的操作？」） | `go vet ./...`、`go test ./...`（`ok agentload 7.846s`，新增 8 个测试）、`npm --prefix ui run build`、`node scripts/validate_locales.js`、`./build_macos_app.sh` 全绿。**真实数据迁移**（备份 `/tmp/agentload_backup_pre_install_20260920_103529`，73534 行 / 109.5MB）：109.5MB → **12.26MB（-88.8%）**，行数守恒经 Python 独立复算**逐条吻合**——history 热 514 + 归档 4199 = 4713，差 508 精确等于保留窗口过期数；throughput 差 741 同样精确吻合；lifecycle +2 为迁移期间新写入事件。归档 65425 行 `invalid_json=0`、落在热窗口内 **0** 行。**重启二次压实**：history/throughput 归档**字节完全相同**（幂等成立），lifecycle 增 6 行经核验是 09-18 10:35–10:40 恰好跨过 2 天边界的 heartbeat。9 个文件全部 `0644`（迁移前 `throughput.jsonl` 为 `0600`）。**语义完整性**：`trends.windows` 五区间全部正常，最长跨至 **2026-08-21**（整 30 天，只可能来自归档）；`/api/refresh` 后 `parsed_files=80`，空闲 CPU **0.3%** | 写路径一个字节未动（逐行 `Sync()` 的崩溃丢 1 行保证保持不变）。**否掉了三项指标全胜的 gzip 追加成员方案**——半成员污染其后所有成员（实测 100 行只读回 28），改整月原子重写（D-020 附带）。**测试抓出真 bug**：已归档行每次压实被再归档，分区无界增长且 **gzip 藏起字节从磁盘看不出来**；「预期会红的测试没红」是覆盖缺口的信号（D-021 附带）。**对抗评审「逐字节相同」依据被实测证伪**（实为严格子集），结论方向对但照错依据做会连 `snapshot_aborted` 的唯一证据一起删（D-021）。教训见 OPINIONS **D-020**（原子 ≠ 不丢）与 **D-021**（冗余判定必须自己比对字节） |
+| 2026-09-20 | mini-sprint `M02_S05.006.RSI`：删 agent DB 缓存旁路 + 删 4 个 test-only wrapper + Antigravity 接为 timeline 档 + 扫描开销诊断面（计划文件批次 2） | 五门全绿（`go vet ./...`、`go test ./...` `ok agentload 11.174s`、`npm --prefix ui run build`、`node scripts/validate_locales.js` 474 keys × 3 locales、`./scripts/package_macos_app.sh`）。**两处变异测试均如期变红**：去掉 `scanCostValue` 的 `!WalkMeasured` 守卫实测报出 `Value:0ms`；删掉 `index.lastWalk = index.lastStats` 冷 pass 即失去测量。**装机实测**（2026.09.20.153726）：冷启动 `walk_measured=true elapsed_ms=319 visited=28555 pruned=936 aged=9100`，随后三次 pass **`walk_fresh=False` 但 `walk_measured=True` 且数值稳定**；诊断面 `evidence_out_of_horizon \| 9100 files`、`evidence_walk_cost 319ms ok`。缓存旁路删除后 agent DB 解析 **410ms/次 → 首次 400ms 后 ~9ms（45×）**。Antigravity 102 文件 → 22087 事件 → **0 条 trace 声称 token**。空闲 CPU **0.0%** | **计划偏差一处（D-022）**：计划头条「强制重解析计数器」被同批次第 1 项消灭，再上会**结构性恒为零**，故放弃而非延后。**装机后才暴露的第二个陷阱（D-023）**：只报「本次 pass」的走查开销在稳态下每次都是 false（索引约每进程只 reconcile 一次），诚实但无用——改为保留 `lastWalk` + `MeasuredAt`，`WalkMeasured`/`WalkFresh` 分开表达。**一次误判**：冷启动 `parsed_files=0` 被我当成自己引入的 hang 并开始怀疑 Antigravity 谓词，实测否掉（gemini 根 72ms/23 文件，完整快照 34s 正常）——真因是**短超时反复轮询，每次轮询自带 context，超时即取消**。教训见 OPINIONS **D-022**（恒为零的指标不叫诚实）与 **D-023**（只报本次等于几乎不报）|
 
 **质检步骤库（随 sprint 验收累积）**：
 
@@ -233,3 +248,9 @@ meta:
   2. **压实类改动必须验幂等：连跑两次，归档字节应当完全相同**。本轮 history/throughput 二次压实后归档字节一致；lifecycle 增的 6 行经核验是恰好跨过热窗口边界的 heartbeat（正确行为）。**跨边界的增量与重复归档在行数上长得一样，必须看时间戳落在哪个带**。
   3. **压缩会藏起证据，缺陷要在解压后的行上验**。本轮真 bug（已归档行每次压实被再归档）在磁盘大小上**完全看不出来**——gzip 把重复内容压掉了。归档类断言一律对 `gunzip -c` 后的行数与内容做，不对文件大小做。
   4. **「预期会红的测试没红」先当覆盖缺口查，不要当好消息**。本轮既有夹具把过期行放在保留窗口外、保留行放在热窗口内，**冷集恒为空、归档路径零覆盖**，所以接上归档后全绿。新路径落地时若既有测试毫无反应，先确认它们是否**根本没走到新路径**。
+- **诊断/指标上线类改动追加（来源 `M02_S05.006.RSI`）**：
+  1. **上线一个指标前，先问它在稳态下取什么值**。诚实不等于有用：一个「结构性恒为零」或「结构性恒为空」的指标会被读成「已测量且结果为零」，比不上线更糟。本轮两次踩到同一形状——计划的重解析计数器（被同批修复消灭）与第一版走查开销（索引约每进程只 reconcile 一次，稳态恒为未测量）。**判据是「装机后连看三次稳态快照，它出数吗」**，不是「单元测试里它能出数吗」。
+  2. **`Has*` / `*Measured` 守卫必须做变异测试**。把守卫改成 `if false` 或删掉赋值，确认测试如期变红。本轮两处守卫都是这样确认的；不做这一步，一个永远为真的守卫和一个正确的守卫在绿测试下完全一样。
+  3. **区分「描述本次动作」与「描述当前状态」的字段，前者要守卫后者不要**。本轮 `Elapsed`/`VisitedEntries`/`PrunedDirectories` 描述走查（非 reconcile 时被显式清零，必须守卫），`AgedOutFiles` 描述索引内容（两次 pass 都是 9060，不需要守卫）。混在一起会要么虚构零、要么把真数据藏掉。
+  4. **本身语义不同的两个量不要合成一个数**。`deferred`（在范围内、本轮未扫，是缺口）与 `aged_out`（在地平线外，不是缺口）本机是 3474 对 9100，合并会把范围外的量算进覆盖缺口，读起来像故障。
+  5. **验证长操作时，超时必须长于操作本身**。本轮冷启动首扫要几十秒，我用短超时反复轮询——每次轮询自带 context，超时即取消，于是永远看不到结果，进而误判为自己引入了 hang。**你测的是自己的超时，不是被测对象。**

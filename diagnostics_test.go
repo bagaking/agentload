@@ -100,6 +100,52 @@ func TestDiagnosticBaselinesKeepEmptyMappingAndMeasuredTokensHonest(t *testing.T
 	}
 }
 
+func TestScanCostStaysUnavailableUntilAWalkHasRun(t *testing.T) {
+	// evidence_index.go zeroes its walk counters on a pass served from the
+	// index. Surfacing those unguarded would report "no walk has run" as a
+	// measured 0ms, so an unmeasured cost must have no number at all -- and
+	// must not be compared against the cost threshold.
+	unmeasured := Snapshot{TranscriptStats: TranscriptStats{
+		ScanCost: TranscriptScanCost{WalkMeasured: false, AgedOutFiles: 9060},
+	}}
+	diagnostics := buildDiagnosticsSnapshot(unmeasured, time.Now())
+	cost := requireDiagnosticBaseline(t, diagnostics.Baselines, "evidence_walk_cost")
+	if cost.Value != liveTokenRateStateNoData || cost.Status != "unavailable" {
+		t.Fatalf("expected an unmeasured walk to report no data, got %+v", cost)
+	}
+	if hasDiagnosticSignal(diagnostics.EvidenceGaps, "transcript_scan_expensive") {
+		t.Fatalf("expected no cost signal without a measurement, got %+v", diagnostics.EvidenceGaps)
+	}
+	// AgedOutFiles describes the index contents rather than the walk, so it
+	// survives a non-reconciling pass and is still reportable.
+	if !hasDiagnosticSignal(diagnostics.EvidenceGaps, "evidence_out_of_horizon") {
+		t.Fatalf("expected out-of-horizon evidence to stay reportable, got %+v", diagnostics.EvidenceGaps)
+	}
+
+	// A warm pass carries the last real walk, so the cost stays answerable
+	// between reconciles rather than blanking out for the process lifetime.
+	warm := Snapshot{TranscriptStats: TranscriptStats{
+		ScanCost: TranscriptScanCost{WalkMeasured: true, WalkFresh: false, ElapsedMs: 1173, VisitedEntries: 28145, PrunedDirectories: 934},
+	}}
+	diagnostics = buildDiagnosticsSnapshot(warm, time.Now())
+	cost = requireDiagnosticBaseline(t, diagnostics.Baselines, "evidence_walk_cost")
+	if cost.Value != "1173ms" || cost.Status != "watch" {
+		t.Fatalf("expected a warm pass to keep the last measured walk, got %+v", cost)
+	}
+	if !hasDiagnosticSignal(diagnostics.EvidenceGaps, "transcript_scan_expensive") {
+		t.Fatalf("expected an expensive measured walk to raise a signal, got %+v", diagnostics.EvidenceGaps)
+	}
+
+	fast := Snapshot{TranscriptStats: TranscriptStats{
+		ScanCost: TranscriptScanCost{WalkMeasured: true, WalkFresh: true, ElapsedMs: 9},
+	}}
+	diagnostics = buildDiagnosticsSnapshot(fast, time.Now())
+	cost = requireDiagnosticBaseline(t, diagnostics.Baselines, "evidence_walk_cost")
+	if cost.Value != "9ms" || cost.Status != "ok" {
+		t.Fatalf("expected a cheap measured walk to report ok, got %+v", cost)
+	}
+}
+
 func hasDiagnosticSignal(items []DiagnosticSignalSnapshot, kind string) bool {
 	for _, item := range items {
 		if item.Kind == kind {

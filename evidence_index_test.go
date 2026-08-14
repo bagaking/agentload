@@ -44,6 +44,35 @@ func TestTranscriptEvidenceIndexReconcilesOnceThenAppliesDirtyPaths(t *testing.T
 	}
 }
 
+func TestScanCostSurvivesAWarmPassWithoutClaimingItWalked(t *testing.T) {
+	// The index reconciles about once per process, so the walk cost has to
+	// outlive the pass that measured it or it is unobservable in practice.
+	// It still must not claim the warm pass did the walking.
+	now := time.Now().UTC().Truncate(time.Second)
+	root := filepath.Join(t.TempDir(), ".codex")
+	path := filepath.Join(root, "sessions", now.Format("2006"), now.Format("01"), now.Format("02"), "session.jsonl")
+	writeDiscoveryFixture(t, path, now)
+	registry, _ := countingCodexRegistry(Config{CodexRoots: []string{root}}, nil)
+	index := newTranscriptEvidenceIndex(registry)
+	cutoff := now.Add(-time.Hour)
+
+	cold := collectTranscriptCandidatesWithCoverage(context.Background(), index, registry, nil, cutoff, time.Time{})
+	if !cold.ScanCost.WalkMeasured || !cold.ScanCost.WalkFresh || cold.ScanCost.VisitedEntries == 0 || cold.ScanCost.MeasuredAt == "" {
+		t.Fatalf("cold collection scan cost = %+v", cold.ScanCost)
+	}
+
+	warm := collectTranscriptCandidatesWithCoverage(context.Background(), index, registry, nil, cutoff, time.Time{})
+	if warm.ScanCost.WalkFresh {
+		t.Fatalf("warm collection claimed it walked: %+v", warm.ScanCost)
+	}
+	if !warm.ScanCost.WalkMeasured || warm.ScanCost.MeasuredAt != cold.ScanCost.MeasuredAt {
+		t.Fatalf("warm collection lost the last measured walk: %+v", warm.ScanCost)
+	}
+	if warm.ScanCost.VisitedEntries != cold.ScanCost.VisitedEntries {
+		t.Fatalf("warm collection changed the walk counters: %+v", warm.ScanCost)
+	}
+}
+
 func TestTranscriptEvidenceIndexWatchGapTriggersOneReconciliation(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	root := filepath.Join(t.TempDir(), ".codex")

@@ -198,6 +198,21 @@ export type TranscriptStats = {
   configured_history_lookback_seconds?: number;
   cached?: boolean;
   errors?: string[];
+  scan_cost?: TranscriptScanCost;
+};
+
+// What the last evidence walk cost. The index reconciles about once per
+// process, so this is the last walk that actually ran rather than this pass's;
+// walk_fresh marks the pass that measured its own. walk_measured false means no
+// walk has run yet -- never a walk that cost zero.
+export type TranscriptScanCost = {
+  walk_measured?: boolean;
+  walk_fresh?: boolean;
+  measured_at?: string;
+  elapsed_ms?: number;
+  visited_entries?: number;
+  pruned_directories?: number;
+  aged_out_files?: number;
 };
 
 // One checkout of a project. `name: ""`/absent is the main checkout.

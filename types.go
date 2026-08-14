@@ -449,6 +449,26 @@ func jsonValue[T any](v T) *T {
 	return &v
 }
 
+// TranscriptScanCost reports what the evidence walk cost and how much evidence
+// it ruled out of scope. The index has always measured this and thrown it away,
+// so "where is the scan spending itself" had no answer from outside.
+//
+// The index reconciles roughly once per process, so almost every snapshot is
+// served from it and measures no walk of its own. Reporting only the current
+// pass would therefore be blank nearly always, so these carry the last walk
+// that really ran, and MeasuredAt says when. WalkFresh marks the pass that
+// measured its own walk. Absent counters mean no walk has run yet -- never a
+// walk that cost zero.
+type TranscriptScanCost struct {
+	WalkMeasured      bool   `json:"walk_measured"`
+	WalkFresh         bool   `json:"walk_fresh,omitempty"`
+	MeasuredAt        string `json:"measured_at,omitempty"`
+	ElapsedMs         int64  `json:"elapsed_ms,omitempty"`
+	VisitedEntries    int    `json:"visited_entries,omitempty"`
+	PrunedDirectories int    `json:"pruned_directories,omitempty"`
+	AgedOutFiles      int    `json:"aged_out_files,omitempty"`
+}
+
 type TranscriptStats struct {
 	ScannedFiles                     int      `json:"scanned_files"`
 	ParsedFiles                      int      `json:"parsed_files"`
@@ -460,6 +480,8 @@ type TranscriptStats struct {
 	ConfiguredHistoryLookbackSeconds int      `json:"configured_history_lookback_seconds,omitempty"`
 	Cached                           bool     `json:"cached"`
 	Errors                           []string `json:"errors,omitempty"`
+	// ScanCost carries the evidence-walk cost through to the diagnostics layer.
+	ScanCost TranscriptScanCost `json:"scan_cost"`
 }
 
 type ProjectSnapshot struct {
@@ -757,6 +779,10 @@ type TranscriptData struct {
 	ForegroundScanLookbackSeconds    int
 	ConfiguredHistoryLookbackSeconds int
 	Errors                           []string
+	// ScanCost is what the last evidence walk cost. The index computes it on
+	// every reconcile and previously discarded it, so "where is the scan
+	// spending itself" was unanswerable from outside.
+	ScanCost TranscriptScanCost
 	// evidenceRevision is internal provenance for cache publication. It is not
 	// serialized; public callers receive CoverageIncomplete when the revision
 	// changed during collection or parsing.

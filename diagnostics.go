@@ -7,6 +7,11 @@ import (
 	"time"
 )
 
+// transcriptScanCostWarnMs is the walk duration worth reporting. A refresh is
+// user-visible latency, so the threshold sits near the point where a walk is a
+// noticeable part of one rather than at a cost that merely exists.
+const transcriptScanCostWarnMs = 750
+
 func buildDiagnosticsSnapshot(snapshot Snapshot, now time.Time) DiagnosticSnapshot {
 	out := DiagnosticSnapshot{
 		GeneratedAt: now.Format(time.RFC3339Nano),
@@ -147,6 +152,33 @@ func buildDiagnosticEvidenceGaps(snapshot Snapshot) []DiagnosticSignalSnapshot {
 			Source:    "transcript_stats",
 		})
 	}
+	if snapshot.TranscriptStats.ScanCost.AgedOutFiles > 0 {
+		gaps = append(gaps, DiagnosticSignalSnapshot{
+			Kind:     "evidence_out_of_horizon",
+			Severity: "info",
+			Title:    "Evidence excluded by the history horizon",
+			// Deferred files are in scope and unscanned; these are out of scope
+			// entirely. Without the split, the deferred count above reads as a
+			// much larger gap than it is.
+			Detail:    "These transcripts exist on disk but fall outside the configured history horizon, so they are out of scope rather than a coverage gap.",
+			Evidence:  fmt.Sprintf("%d files older than the history horizon", snapshot.TranscriptStats.ScanCost.AgedOutFiles),
+			MetricKey: "recent_movement",
+			Source:    "transcript_stats",
+		})
+	}
+	// A walk is measured once per reconcile and reported until the next one, so
+	// the signal must say the measurement is the last walk, not this pass.
+	if snapshot.TranscriptStats.ScanCost.WalkMeasured && snapshot.TranscriptStats.ScanCost.ElapsedMs >= transcriptScanCostWarnMs {
+		gaps = append(gaps, DiagnosticSignalSnapshot{
+			Kind:      "transcript_scan_expensive",
+			Severity:  "info",
+			Title:     "Evidence walk is expensive",
+			Detail:    "The last full evidence walk took long enough to delay a refresh. Pruned directories show how much the walk already avoids.",
+			Evidence:  fmt.Sprintf("%dms last walk, %d entries visited, %d directories pruned", snapshot.TranscriptStats.ScanCost.ElapsedMs, snapshot.TranscriptStats.ScanCost.VisitedEntries, snapshot.TranscriptStats.ScanCost.PrunedDirectories),
+			MetricKey: "recent_movement",
+			Source:    "transcript_stats",
+		})
+	}
 	if len(snapshot.TranscriptStats.Errors) > 0 {
 		gaps = append(gaps, DiagnosticSignalSnapshot{
 			Kind:      "transcript_parse_errors",
@@ -240,6 +272,34 @@ func buildDiagnosticBaselines(snapshot Snapshot) []DiagnosticBaselineSnapshot {
 			Detail:    "Token usage is counted only when parsed usage fields exist and source/confidence marks it measured.",
 			MetricKey: "token_usage",
 		},
+		{
+			Key:       "evidence_walk_cost",
+			Label:     "Evidence walk cost",
+			Value:     scanCostValue(snapshot.TranscriptStats.ScanCost),
+			Status:    scanCostStatus(snapshot.TranscriptStats.ScanCost),
+			Detail:    "Duration of the last full evidence walk. The index reconciles about once per process, so this is the last measured walk, and stays no data until one has run.",
+			MetricKey: "recent_movement",
+		},
+	}
+}
+
+// scanCostValue keeps the zeroing trap in evidence_index.go from surfacing as a
+// measurement: an unmeasured walk has no duration, not a duration of zero.
+func scanCostValue(cost TranscriptScanCost) string {
+	if !cost.WalkMeasured {
+		return liveTokenRateStateNoData
+	}
+	return fmt.Sprintf("%dms", cost.ElapsedMs)
+}
+
+func scanCostStatus(cost TranscriptScanCost) string {
+	switch {
+	case !cost.WalkMeasured:
+		return "unavailable"
+	case cost.ElapsedMs >= transcriptScanCostWarnMs:
+		return "watch"
+	default:
+		return "ok"
 	}
 }
 

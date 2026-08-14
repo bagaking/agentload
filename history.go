@@ -206,7 +206,6 @@ func compactHistorySampleFile(path string, samples []HistorySample, now time.Tim
 	return rewriteHistorySampleFile(path, hot)
 }
 
-
 func historyFileNeedsCompaction(fileLineCount, retainedCount int) bool {
 	excess := fileLineCount - retainedCount
 	if excess <= 0 {

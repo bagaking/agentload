@@ -249,7 +249,6 @@ func compactThroughputHistoryFile(path string, minutes []ThroughputMinuteFact, l
 	return rewriteThroughputHistoryFile(path, hotMinutes, hotLegacy)
 }
 
-
 func normalizeThroughputMinute(raw *ThroughputMinuteFact) (ThroughputMinuteFact, time.Time, bool) {
 	if raw == nil {
 		return ThroughputMinuteFact{}, time.Time{}, false

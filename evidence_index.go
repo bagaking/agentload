@@ -24,6 +24,10 @@ type transcriptEvidenceIndexStats struct {
 	AgedOutFiles int
 	Reconciled   bool
 	Elapsed      time.Duration
+	// MeasuredAt is when the walk these counters describe actually ran. Stats
+	// for a pass served from the existing index carry zeroed counters and no
+	// MeasuredAt; lastWalk keeps the real measurement addressable instead.
+	MeasuredAt time.Time
 }
 
 type transcriptEvidenceSnapshot struct {
@@ -31,6 +35,9 @@ type transcriptEvidenceSnapshot struct {
 	Errors   []string
 	Complete bool
 	Stats    transcriptEvidenceIndexStats
+	// LastWalk is the most recent pass that actually walked the tree, kept so
+	// the scan cost stays answerable between reconciles. Zero until one runs.
+	LastWalk transcriptEvidenceIndexStats
 	// FilteredByCutoff counts files the index holds -- so within the history
 	// horizon -- that the foreground cutoff excluded from Files. These are the
 	// genuinely deferred ones: in scope, on disk, and not scanned this pass.
@@ -63,6 +70,10 @@ type transcriptEvidenceIndex struct {
 	revision          uint64
 	errors            []string
 	lastStats         transcriptEvidenceIndexStats
+	// lastWalk retains the newest stats that came from a real walk. lastStats is
+	// zeroed for a pass served from the index, so without this the walk cost is
+	// only observable during the one reconcile per process that produces it.
+	lastWalk transcriptEvidenceIndexStats
 
 	lifecycleMu    sync.Mutex
 	running        bool
@@ -392,8 +403,9 @@ func (index *transcriptEvidenceIndex) reconcileLocked(ctx context.Context, cutof
 	index.lastStats = transcriptEvidenceIndexStats{
 		CandidateCount: len(nextFiles), VisitedEntries: discovered.VisitedEntries,
 		PrunedDirectories: discovered.PrunedDirectories, AgedOutFiles: discovered.AgedOutFiles,
-		Reconciled: true, Elapsed: elapsed,
+		Reconciled: true, Elapsed: elapsed, MeasuredAt: started,
 	}
+	index.lastWalk = index.lastStats
 	index.reconciling = nil
 	close(flight)
 	committed = true
@@ -443,6 +455,7 @@ func (index *transcriptEvidenceIndex) currentSnapshot(cutoff time.Time, priority
 	var errors []string
 	var complete bool
 	var stats transcriptEvidenceIndexStats
+	var lastWalk transcriptEvidenceIndexStats
 	var revision uint64
 	filteredByCutoff := 0
 	index.mu.Lock()
@@ -487,12 +500,14 @@ func (index *transcriptEvidenceIndex) currentSnapshot(cutoff time.Time, priority
 		errors = append([]string(nil), index.errors...)
 		complete = index.complete
 		stats = index.lastStats
+		lastWalk = index.lastWalk
 		stats.CandidateCount = len(files)
 		stats.Reconciled = reconciled
 		if !reconciled {
 			stats.VisitedEntries = 0
 			stats.PrunedDirectories = 0
 			stats.Elapsed = 0
+			stats.MeasuredAt = time.Time{}
 		}
 		revision = index.revision
 	}()
@@ -506,7 +521,7 @@ func (index *transcriptEvidenceIndex) currentSnapshot(cutoff time.Time, priority
 		}
 		return files[i].File.Tool < files[j].File.Tool
 	})
-	return transcriptEvidenceSnapshot{Files: files, Errors: errors, Complete: complete, Stats: stats, FilteredByCutoff: filteredByCutoff, Revision: revision}
+	return transcriptEvidenceSnapshot{Files: files, Errors: errors, Complete: complete, Stats: stats, LastWalk: lastWalk, FilteredByCutoff: filteredByCutoff, Revision: revision}
 }
 
 func (index *transcriptEvidenceIndex) syncRoots() {

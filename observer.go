@@ -93,6 +93,7 @@ func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 			ConfiguredHistoryLookbackSeconds: data.ConfiguredHistoryLookbackSeconds,
 			Cached:                           cached,
 			Errors:                           append([]string(nil), data.Errors...),
+			ScanCost:                         data.ScanCost,
 		},
 		ProjectFocus:       projectFocus,
 		CandidateWorkitems: candidateWorkitems,

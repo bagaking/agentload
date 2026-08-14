@@ -118,13 +118,23 @@ export function transcriptScanSummary(t: Translate, stats: TranscriptStats, reta
 
 export function transcriptScanNote(t: Translate, stats: TranscriptStats): string {
   const window = formatAge(stats.foreground_scan_lookback_seconds, t);
+  const cost = scanCostNote(t, stats);
   if (stats.historical_scan_deferred) {
-    return `${t("historicalWalkDeferred")} · ${t("foregroundWindow")} ${window}`;
+    return `${t("historicalWalkDeferred")} · ${t("foregroundWindow")} ${window}${cost}`;
   }
   if ((stats.deferred_files ?? 0) > 0) {
-    return `${stats.deferred_files ?? 0} ${t("deferred")} · ${t("foregroundWindow")} ${window}`;
+    return `${stats.deferred_files ?? 0} ${t("deferred")} · ${t("foregroundWindow")} ${window}${cost}`;
   }
-  return `${t("foregroundWindowOnly")} · ${t("foregroundWindow")} ${window}`;
+  return `${t("foregroundWindowOnly")} · ${t("foregroundWindow")} ${window}${cost}`;
+}
+
+// The index reconciles about once per process, so this reports the last walk
+// that really ran. Nothing is printed until one has: absent means not measured,
+// never a walk that cost 0ms.
+function scanCostNote(t: Translate, stats: TranscriptStats): string {
+  const cost = stats.scan_cost;
+  if (!cost?.walk_measured) return "";
+  return ` · ${t("evidenceWalk")} ${cost.elapsed_ms ?? 0}ms / ${cost.pruned_directories ?? 0} ${t("pruned")}`;
 }
 
 export function deferredScanValue(t: Translate, stats?: TranscriptStats): string {

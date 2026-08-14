@@ -339,6 +339,7 @@ func (o *Observer) scanTranscriptsWithOptions(ctx context.Context, priority []Tr
 		ConfiguredHistoryLookbackSeconds: int(opts.HistoryLookback / time.Second),
 		Errors:                           walkErrors,
 		evidenceRevision:                 collection.Revision,
+		ScanCost:                         collection.ScanCost,
 	}
 
 	toParse := make([]transcriptCandidate, 0, len(files))
@@ -356,7 +357,7 @@ func (o *Observer) scanTranscriptsWithOptions(ctx context.Context, priority []Tr
 			}
 			cached, ok := o.fileCache[candidate.File.Path]
 			switch {
-			case !ok || isAgentDatabase(candidate.File):
+			case !ok:
 				toParse = append(toParse, candidate)
 				continue
 			case cached.Size == candidate.Size && cached.ModTime.Equal(candidate.ModTime):
@@ -751,6 +752,8 @@ type transcriptCandidateCollection struct {
 	// Deferred, and are counted so the reported gap matches the real one.
 	FilteredByCutoff int
 	Revision         uint64
+	// ScanCost is the index's own measurement of the walk that produced Files.
+	ScanCost TranscriptScanCost
 }
 
 func collectTranscriptCandidates(ctx context.Context, evidenceIndex *transcriptEvidenceIndex, adapters *codingAgentRegistry, priority []TranscriptFile, historyCutoff, foregroundCutoff time.Time) ([]transcriptCandidate, []string) {
@@ -852,7 +855,29 @@ func collectTranscriptCandidatesWithCoverage(ctx context.Context, evidenceIndex 
 		Complete:         indexed.Complete && ctx.Err() == nil,
 		FilteredByCutoff: deferredByCutoff,
 		Revision:         indexed.Revision,
+		ScanCost:         transcriptScanCostFrom(indexed),
 	}
+}
+
+// transcriptScanCostFrom prefers the last real walk over the current pass,
+// because only the reconciling pass measures one and every later snapshot is
+// served from the index. AgedOutFiles comes from the current stats: it
+// describes what the index now holds rather than what the walk cost.
+func transcriptScanCostFrom(indexed transcriptEvidenceSnapshot) TranscriptScanCost {
+	cost := TranscriptScanCost{
+		WalkFresh:    indexed.Stats.Reconciled,
+		AgedOutFiles: indexed.Stats.AgedOutFiles,
+	}
+	walk := indexed.LastWalk
+	if walk.MeasuredAt.IsZero() {
+		return cost
+	}
+	cost.WalkMeasured = true
+	cost.MeasuredAt = walk.MeasuredAt.Format(time.RFC3339Nano)
+	cost.ElapsedMs = walk.Elapsed.Milliseconds()
+	cost.VisitedEntries = walk.VisitedEntries
+	cost.PrunedDirectories = walk.PrunedDirectories
+	return cost
 }
 
 // transcriptScanErrorIsGlobal tells a scan-wide abort apart from a single bad
@@ -2334,6 +2359,7 @@ func cloneTranscriptData(in *TranscriptData) *TranscriptData {
 		ConfiguredHistoryLookbackSeconds: in.ConfiguredHistoryLookbackSeconds,
 		Errors:                           append([]string(nil), in.Errors...),
 		evidenceRevision:                 in.evidenceRevision,
+		ScanCost:                         in.ScanCost,
 	}
 	for path, trace := range in.Traces {
 		if trace == nil {

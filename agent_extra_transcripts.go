@@ -26,6 +26,9 @@ func extraEvidenceRelative(kind, rel string) bool {
 	base := p[len(p)-1]
 	switch kind {
 	case "gemini":
+		if isAntigravityTranscriptRelative(p, base) {
+			return true
+		}
 		return len(p) == 4 && p[0] == "tmp" && p[2] == "chats" && strings.HasPrefix(base, "session-") && (strings.HasSuffix(base, ".json") || strings.HasSuffix(base, ".jsonl"))
 	case "opencode":
 		if len(p) == 1 && strings.HasPrefix(base, "opencode") && strings.HasSuffix(base, ".db") {
@@ -42,10 +45,46 @@ func extraEvidenceRelative(kind, rel string) bool {
 	return false
 }
 
+// Antigravity is a second gemini evidence root, laid out as
+// antigravity-cli/brain/<session>/.system_generated/logs/transcript.jsonl.
+//
+// It is admitted at timeline evidence only. Every record carries created_at,
+// so session spans are real, but the whole corpus has no token or usage field
+// of any kind (measured: 44783 records, 0 such keys), so this root must never
+// contribute to token metrics.
+//
+// transcript_full.jsonl sits beside it and is byte-identical, so the name is
+// matched exactly rather than by prefix -- admitting both would count every
+// session twice.
+func isAntigravityTranscriptRelative(p []string, base string) bool {
+	return len(p) == 6 && p[0] == "antigravity-cli" && p[1] == "brain" &&
+		p[3] == ".system_generated" && p[4] == "logs" && base == "transcript.jsonl"
+}
+
+func isAntigravityDirectory(p []string) bool {
+	if p[0] != "antigravity-cli" {
+		return false
+	}
+	switch len(p) {
+	case 1:
+		return true
+	case 2, 3:
+		return p[1] == "brain"
+	case 4:
+		return p[1] == "brain" && p[3] == ".system_generated"
+	case 5:
+		return p[1] == "brain" && p[3] == ".system_generated" && p[4] == "logs"
+	}
+	return false
+}
+
 func extraEvidenceDirectory(kind, rel string) bool {
 	p := strings.Split(filepath.ToSlash(rel), "/")
 	switch kind {
 	case "gemini":
+		if isAntigravityDirectory(p) {
+			return true
+		}
 		return len(p) <= 3 && p[0] == "tmp" && (len(p) < 3 || p[2] == "chats")
 	case "openclaw":
 		return len(p) <= 3 && p[0] == "agents" && (len(p) < 3 || p[2] == "sessions")
@@ -171,16 +210,6 @@ func agentEvidenceStat(file TranscriptFile) (os.FileInfo, error) {
 
 type extraTranscriptParser struct{ kind string }
 
-// Compatibility helpers kept for focused parser fixtures; the registry uses
-// ParseSessions so shared databases still emit every session.
-func newExtraOutputUsageDecoder() agentOutputUsageDecoder {
-	return extraOutputUsageDecoder{kind: "gemini"}
-}
-
-func parseExtraTrace(kind string, file TranscriptFile, _ int64, _ *SessionTrace) (*SessionTrace, error) {
-	return parseExtraTraceContext(context.Background(), kind, file)
-}
-
 func (p extraTranscriptParser) ParseSessions(ctx context.Context, file TranscriptFile) ([]*SessionTrace, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -196,23 +225,6 @@ func (p extraTranscriptParser) ParseSessions(ctx context.Context, file Transcrip
 		return nil, err
 	}
 	return []*SessionTrace{trace}, err
-}
-
-func parseHermesStateDB(path string) (*SessionTrace, error) {
-	traces, err := parseHermesDatabaseSessions(context.Background(), path)
-	if len(traces) == 0 {
-		return nil, err
-	}
-	return traces[0], err
-}
-
-func parseOpenCodeDBTrace(path string) (*SessionTrace, error) {
-	traces, err := parseOpenCodeDatabaseSessions(context.Background(), path)
-	if len(traces) == 0 {
-		return nil, err
-	}
-	sort.SliceStable(traces, func(i, j int) bool { return traces[i].LastEvent.After(traces[j].LastEvent) })
-	return traces[0], err
 }
 
 func parseHermesDatabaseSessions(ctx context.Context, path string) ([]*SessionTrace, error) {
@@ -556,8 +568,12 @@ type localMessage struct {
 	Role       string          `json:"role"`
 	Timestamp  json.RawMessage `json:"timestamp"`
 	CreateTime string          `json:"createTime"`
-	CWD        string          `json:"cwd"`
-	Time       struct {
+	// CreatedAt is the Antigravity transcript's only time field. That corpus
+	// carries no token field of any kind, so it contributes session spans and
+	// nothing else.
+	CreatedAt string `json:"created_at"`
+	CWD       string `json:"cwd"`
+	Time      struct {
 		Created int64 `json:"created"`
 	} `json:"time"`
 	Path struct {
@@ -633,6 +649,9 @@ func messageTimestamp(m localMessage) time.Time {
 	if m.Time.Created > 0 {
 		return extraTimeValue(m.Time.Created)
 	}
+	if m.CreatedAt != "" {
+		return parseTimestampString(m.CreatedAt)
+	}
 	return parseTimestampString(m.CreateTime)
 }
 func messageUsage(kind string, m localMessage) TokenUsage {
@@ -675,8 +694,17 @@ func messageUsage(kind string, m localMessage) TokenUsage {
 }
 func localMessageRole(m localMessage) string {
 	role := firstNonEmptyString(m.Role, m.Type)
-	if role == "gemini" || role == "model" {
+	switch role {
+	case "gemini", "model":
 		return "assistant"
+	// Antigravity names the two conversational turn types in its own vocabulary.
+	// Every other record type it writes (tool calls, checkpoints, system notes)
+	// is deliberately left unmapped, so those lines are skipped rather than
+	// counted as turns.
+	case "PLANNER_RESPONSE":
+		return "assistant"
+	case "USER_INPUT":
+		return "user"
 	}
 	return role
 }
