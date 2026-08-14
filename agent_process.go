@@ -164,7 +164,7 @@ func isCodexInternalProcess(command processCommand) bool {
 	lowerRaw := strings.ToLower(raw)
 	if marker := strings.Index(lowerRaw, "/contents/macos/"); marker >= 0 && !strings.Contains(raw[:marker], " --") {
 		executable := strings.TrimSpace(lowerRaw[marker+len("/contents/macos/"):])
-		for _, name := range []string{"codex helper", "codex helper (renderer)", "codex helper (gpu)", "codex (renderer)", "codex (gpu)"} {
+		for _, name := range []string{"codex helper", "codex helper (renderer)", "codex helper (gpu)", "codex (renderer)", "codex (gpu)", "codex (service)"} {
 			if strings.HasPrefix(executable, name) && (len(executable) == len(name) || executable[len(name)] == ' ' || executable[len(name)] == '\t') {
 				return true
 			}
@@ -172,7 +172,7 @@ func isCodexInternalProcess(command processCommand) bool {
 	}
 	executablePath := commandExecutablePath(command.Raw)
 	base := normalizedExecutableBase(executablePath)
-	if base == "codex-code-mode-host" || base == "crashpad_handler" {
+	if base == "codex-code-mode-host" || base == "crashpad_handler" || base == "browser_crashpad_handler" {
 		return true
 	}
 	lowerPath := strings.ToLower(executablePath)
@@ -181,7 +181,7 @@ func isCodexInternalProcess(command processCommand) bool {
 	}
 	switch base {
 	case "codex helper", "codex helper (renderer)", "codex helper (gpu)",
-		"codex helper (utility)", "codex (renderer)", "codex (gpu)":
+		"codex helper (utility)", "codex (renderer)", "codex (gpu)", "codex (service)":
 		return true
 	default:
 		return false
