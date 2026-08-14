@@ -153,7 +153,11 @@ func (index *transcriptEvidenceIndex) installWatcher(construct func([]string) ev
 		// No platform watcher: claim no lifecycle state at all. Marking the
 		// index running with no goroutine behind it would leave running=true
 		// forever, so a later start could never install a watcher, and it would
-		// hide the fact that incremental coverage is unavailable.
+		// hide the fact that incremental coverage is unavailable. Also disable
+		// automatic restart: a constructor that cannot provide a watcher is a
+		// capability gap, not an unexpected exit, and retrying it on every token
+		// poll would force needless full reconciliations.
+		index.watcherEnabled = false
 		index.lifecycleMu.Unlock()
 		index.markGap("transcript evidence watcher is unavailable on this platform")
 		return

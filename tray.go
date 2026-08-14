@@ -571,24 +571,34 @@ func (a *trayApp) refreshOnce(slotID string) {
 		return
 	}
 	snapshot.RefreshSlotID = slotID
-	if snapshotScanAborted(ctx, snapshot) {
+	scanAborted := snapshotScanAborted(ctx, snapshot)
+	// A partial transcript scan must not replace the sampler's project mapping,
+	// but it must not prevent the sampler from starting either. Persistent parser
+	// errors are common enough that gating this independent live metric on a clean
+	// snapshot would leave it disabled for the rest of the session.
+	a.startLiveTokenRate(snapshot, scanAborted)
+	if scanAborted {
 		// Show the partial result but keep it out of history/cache so trends
 		// and heatmaps only build from complete samples; the next slot rescans.
 		a.applySnapshot(snapshot)
 		a.recordLifecycle(lifecycleEventFromSnapshot("snapshot_aborted", snapshotAbortReason(ctx, snapshot), snapshot))
 		return
 	}
-	// Project attribution is derived from the complete transcript snapshot. Keep
-	// the sampler's last known mapping during an incomplete refresh so a partial
-	// scan cannot relabel subsequent token events as unassigned.
-	if a.liveTokenRate != nil {
-		a.liveTokenRate.updateSnapshotProjects(snapshot.LiveTokenProjects)
-		if !a.isClosing() {
-			a.liveTokenRate.start(liveTokenRateSampleInterval)
-		}
-	}
 	snapshot = a.rememberSnapshot(snapshot)
 	a.applySnapshot(snapshot)
+}
+
+// startLiveTokenRate starts the independent token metric for every refresh. A
+// complete transcript snapshot may update attribution; an incomplete one keeps
+// the previous mapping but still allows the metric to report unassigned data.
+func (a *trayApp) startLiveTokenRate(snapshot Snapshot, scanAborted bool) {
+	if a == nil || a.liveTokenRate == nil || a.isClosing() {
+		return
+	}
+	if !scanAborted {
+		a.liveTokenRate.updateSnapshotProjects(snapshot.LiveTokenProjects)
+	}
+	a.liveTokenRate.start(liveTokenRateSampleInterval)
 }
 
 // snapshotScanAborted reports whether a snapshot came from a cancelled/expired

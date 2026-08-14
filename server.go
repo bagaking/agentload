@@ -836,6 +836,9 @@ func isCommandIdentityWord(field string) bool {
 }
 
 func sanitizeTextForClient(text string) string {
+	// Scan before splitting on whitespace so a local path such as a workspace
+	// with spaces is redacted as one value instead of leaking its later segments.
+	text = sanitizeEmbeddedAbsolutePaths(text)
 	fields := strings.Fields(strings.TrimSpace(text))
 	if len(fields) == 0 {
 		return text
@@ -879,6 +882,9 @@ func sanitizePathLikeValue(value string) string {
 	if base == "." || base == string(filepath.Separator) || base == "" {
 		return "local-path"
 	}
+	if strings.ContainsAny(base, " \t\r\n") {
+		return "local-path"
+	}
 	return base
 }
 
@@ -897,10 +903,7 @@ func sanitizeEmbeddedAbsolutePaths(token string) string {
 			break
 		}
 		start := searchFrom + offset
-		end := start + 1
-		for end < len(token) && !strings.ContainsRune(" \t\r\n\"'[]{}()<>,;:!?&|", rune(token[end])) {
-			end++
-		}
+		end := embeddedAbsolutePathEnd(token, start)
 		candidate := token[start:end]
 		if !filepath.IsAbs(candidate) {
 			searchFrom = start + 1
@@ -909,7 +912,17 @@ func sanitizeEmbeddedAbsolutePaths(token string) string {
 		if !changed {
 			out.Grow(len(token))
 		}
-		out.WriteString(token[last:start])
+		prefixEnd := start
+		if strings.HasSuffix(token[last:start], "file:") {
+			filePrefixStart := start - len("file:")
+			if filePrefixStart == 0 || strings.ContainsRune(" \t\r\n\"'([{:=", rune(token[filePrefixStart-1])) {
+				// The token-level sanitizer treats file URIs as paths, so do not
+				// expose the URI scheme when the whole-text pass handles a path
+				// that contains spaces.
+				prefixEnd = filePrefixStart
+			}
+		}
+		out.WriteString(token[last:prefixEnd])
 		out.WriteString(sanitizePathLikeValue(candidate))
 		last = end
 		searchFrom = end
@@ -920,6 +933,39 @@ func sanitizeEmbeddedAbsolutePaths(token string) string {
 	}
 	out.WriteString(token[last:])
 	return out.String()
+}
+
+func embeddedAbsolutePathEnd(text string, start int) int {
+	end := start + 1
+	for end < len(text) {
+		if strings.ContainsRune("\"'[]{}()<>,;:!?&|", rune(text[end])) {
+			return end
+		}
+		if !strings.ContainsRune(" \t\r\n", rune(text[end])) {
+			end++
+			continue
+		}
+		next := end
+		for next < len(text) && strings.ContainsRune(" \t\r\n", rune(text[next])) {
+			next++
+		}
+		if next == len(text) {
+			return next
+		}
+		wordEnd := next
+		for wordEnd < len(text) && !strings.ContainsRune(" \t\r\n", rune(text[wordEnd])) {
+			wordEnd++
+		}
+		word := text[next:wordEnd]
+		slash := strings.IndexByte(word, '/')
+		colon := strings.IndexByte(word, ':')
+		if strings.HasPrefix(word, "/") || strings.HasPrefix(word, "-") || strings.ContainsRune(word, '=') ||
+			(colon >= 0 && (slash < 0 || colon < slash)) {
+			return end
+		}
+		end = next
+	}
+	return end
 }
 
 func splitTokenPunctuation(token string) (string, string, string) {

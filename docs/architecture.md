@@ -82,10 +82,11 @@ numbers.
   symlink aliases and nested watch roots collapse to one physical watch owner.
   Adapter discovery errors also remain incomplete and retry on the next read;
   an error cannot become a permanently cached partial index.
-  The tray starts the watcher before the first snapshot, but starts live polling
-  only after that snapshot has merged process-derived roots and reconciled the
-  index. Startup therefore has watcher coverage without racing two differently
-  scoped discovery walks.
+  The tray starts the watcher before the first snapshot and arms live polling
+  after every snapshot attempt. A complete snapshot may update project
+  attribution; an incomplete snapshot keeps the previous mapping and still
+  reports token usage as unassigned where necessary, so one parser gap cannot
+  disable the independent live metric.
 - **TTL cache**: results are cached for `Config.TranscriptCacheTTL` (default
   60s) under a key derived from roots + priority files + idle gap + min
   interval + lookback. Any cached hit is deep-cloned before return.
@@ -118,7 +119,9 @@ numbers.
   disappeared are pruned after a successful scan. A parse error can coexist
   with a degraded trace (codex lane sidecar failures): both are kept so the
   session stays visible while the error is disclosed in
-  `transcript_stats.errors`.
+  `transcript_stats.errors`; unchanged failures are retried after a bounded
+  interval and a changed file retries immediately, so a transient parse error
+  cannot suppress history forever.
 
 Parsing runs in a worker pool of `min(NumCPU, 4)` goroutines. Each candidate is
 parsed through its registered full, tail, or append capability; the worker pool

@@ -531,6 +531,31 @@ func TestTranscriptEvidenceIndexStartWithoutPlatformWatcherStaysRestartable(t *t
 	}
 }
 
+func TestTranscriptEvidenceIndexDoesNotRetryUnavailableWatcherOnEverySnapshot(t *testing.T) {
+	root := filepath.Join(t.TempDir(), ".codex")
+	index := newTranscriptEvidenceIndex(defaultCodingAgentRegistry(Config{CodexRoots: []string{root}}))
+	calls := 0
+	index.startWithWatcher(func([]string) evidenceWatcher {
+		calls++
+		return nil
+	})
+
+	// A missing platform watcher is a capability gap. Once recorded, repeated
+	// consumer reads must not reconstruct that gap and force a full scan again.
+	index.snapshot(context.Background(), time.Time{}, nil)
+	index.snapshot(context.Background(), time.Time{}, nil)
+	if calls != 1 {
+		t.Fatalf("unavailable watcher was retried %d times, want one initial attempt", calls)
+	}
+
+	// An explicit later start is allowed to re-enable the constructor, which is
+	// how a new runtime generation can recover after the platform becomes ready.
+	fake := newFakeEvidenceWatcher()
+	index.startWithWatcher(func([]string) evidenceWatcher { return fake })
+	waitForIndexRunning(t, index, true)
+	index.stopIndex()
+}
+
 // fakeEvidenceWatcher is a controllable evidenceWatcher so watcher lifecycle
 // tests never depend on real filesystem events.
 type fakeEvidenceWatcher struct {

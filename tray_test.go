@@ -435,3 +435,30 @@ func TestSnapshotScanAborted(t *testing.T) {
 		})
 	}
 }
+
+func TestStartLiveTokenRateStartsForIncompleteSnapshotWithoutReplacingMapping(t *testing.T) {
+	sampler := newTestLiveTokenRateSampler(Config{})
+	t.Cleanup(sampler.stopSampler)
+	app := &trayApp{liveTokenRate: sampler}
+	sampler.updateSnapshotProjects(map[string]string{"codex\x00known": "known-project"})
+
+	app.startLiveTokenRate(Snapshot{
+		LiveTokenProjects: map[string]string{"codex\x00partial": "partial-project"},
+	}, true)
+
+	sampler.lifecycleMu.Lock()
+	running := sampler.running
+	sampler.lifecycleMu.Unlock()
+	if !running {
+		t.Fatal("incomplete snapshot prevented the live token sampler from starting")
+	}
+	sampler.pollMu.Lock()
+	projects := cloneLiveTokenRateProjects(sampler.sessionProjects)
+	sampler.pollMu.Unlock()
+	if len(projects) != 1 || projects["codex\x00known"] != "known-project" {
+		t.Fatalf("incomplete snapshot replaced the known project mapping: %+v", projects)
+	}
+	if _, ok := projects["codex\x00partial"]; ok {
+		t.Fatalf("incomplete snapshot introduced a partial project mapping: %+v", projects)
+	}
+}

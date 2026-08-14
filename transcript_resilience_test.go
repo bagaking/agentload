@@ -425,6 +425,38 @@ func TestScanTranscriptsPersistsParserPanicAsFileError(t *testing.T) {
 	}
 }
 
+func TestScanTranscriptsRetriesCachedParseErrorAfterBackoff(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "retry.jsonl")
+	if err := os.WriteFile(path, []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+	var calls atomic.Int32
+	parser := resilienceTranscriptParser{parse: func(file TranscriptFile) (*SessionTrace, error) {
+		if calls.Add(1) == 1 {
+			return nil, errors.New("transient parser failure")
+		}
+		return resilienceTrace(file), nil
+	}}
+	observer := newObserverWithRegistry(Config{}, resilienceRegistry(parser))
+	priority := []TranscriptFile{{Tool: "fault", Path: path}}
+
+	first := observer.scanTranscriptsWithOptions(context.Background(), priority, transcriptScanOptions{})
+	if !first.CoverageIncomplete || calls.Load() != 1 {
+		t.Fatalf("first transient failure was not recorded: calls=%d data=%+v", calls.Load(), first)
+	}
+
+	observer.mu.Lock()
+	cached := observer.fileCache[path]
+	cached.RetryAt = time.Now().Add(-time.Second)
+	observer.fileCache[path] = cached
+	observer.mu.Unlock()
+
+	second := observer.scanTranscriptsWithOptions(context.Background(), priority, transcriptScanOptions{})
+	if second.CoverageIncomplete || second.Traces[path] == nil || calls.Load() != 2 {
+		t.Fatalf("cached parse failure was not retried and cleared: calls=%d data=%+v", calls.Load(), second)
+	}
+}
+
 func TestTranscriptDataDoesNotReturnStaleCompletedFlight(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "waiter.jsonl")
 	if err := os.WriteFile(path, []byte("{}\n"), 0o644); err != nil {

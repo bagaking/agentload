@@ -1045,14 +1045,16 @@ func TestSanitizeTextForClientRedactsColonSeparatedPaths(t *testing.T) {
 func TestSanitizeTextForClientRedactsPathsInsideStructuredTokens(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "workspace", "agentload", "session.jsonl")
+	spacedPath := filepath.Join(root, "User Name", "Workspace Name", "session.jsonl")
 	cases := []string{
 		"map[" + path + "]",
 		`{"path":"` + path + `"}`,
 		"diagnostic=" + path + ":42:7",
+		"opened " + spacedPath + ": parse failed",
 	}
 	for _, raw := range cases {
 		got := sanitizeTextForClient(raw)
-		if strings.Contains(got, root) || strings.Contains(got, path) {
+		if strings.Contains(got, root) || strings.Contains(got, path) || strings.Contains(got, "User") || strings.Contains(got, "Workspace") {
 			t.Fatalf("expected structured path %q to be redacted, got %q", raw, got)
 		}
 		if !strings.Contains(got, "session.jsonl") {

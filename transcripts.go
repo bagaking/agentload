@@ -21,9 +21,10 @@ import (
 )
 
 const (
-	foregroundTranscriptMinLookback = 2 * time.Hour
-	foregroundTranscriptMaxLookback = 6 * time.Hour
-	transcriptHealthyWaitRetryLimit = 2
+	foregroundTranscriptMinLookback   = 2 * time.Hour
+	foregroundTranscriptMaxLookback   = 6 * time.Hour
+	transcriptHealthyWaitRetryLimit   = 2
+	transcriptParseErrorRetryInterval = time.Minute
 )
 
 type Observer struct {
@@ -68,6 +69,7 @@ type fileTraceCache struct {
 	EndsWithNewline bool
 	Trace           *SessionTrace
 	Err             string
+	RetryAt         time.Time
 }
 
 type transcriptParseFunc func(TranscriptFile) (*SessionTrace, error)
@@ -343,6 +345,10 @@ func (o *Observer) scanTranscriptsWithOptions(ctx context.Context, priority []Tr
 				continue
 			case cached.Size == candidate.Size && cached.ModTime.Equal(candidate.ModTime):
 				if cached.Err != "" {
+					if transcriptParseErrorRetryDue(cached.RetryAt, time.Now()) {
+						toParse = append(toParse, candidate)
+						continue
+					}
 					data.CoverageIncomplete = true
 					data.Errors = append(data.Errors, fmt.Sprintf("%s: %s", candidate.File.Path, cached.Err))
 				}
@@ -360,8 +366,8 @@ func (o *Observer) scanTranscriptsWithOptions(ctx context.Context, priority []Tr
 				})
 				continue
 			case cached.Err != "":
-				data.CoverageIncomplete = true
-				data.Errors = append(data.Errors, fmt.Sprintf("%s: %s", candidate.File.Path, cached.Err))
+				// The file changed since the previous failure, so that error no
+				// longer describes the candidate being parsed now.
 				toParse = append(toParse, candidate)
 				continue
 			default:
@@ -399,6 +405,7 @@ func (o *Observer) scanTranscriptsWithOptions(ctx context.Context, priority []Tr
 				EndsWithNewline: endsWithNewline,
 				Trace:           cloneSessionTrace(result.Trace),
 				Err:             result.Err.Error(),
+				RetryAt:         time.Now().Add(transcriptParseErrorRetryInterval),
 			}
 		} else {
 			updates[candidate.File.Path] = fileTraceCache{
@@ -441,6 +448,10 @@ func (o *Observer) scanTranscriptsWithOptions(ctx context.Context, priority []Tr
 	data.SessionSpans = buildSessionSpans(data.Traces, opts.MinInterval)
 	data.BurstSpans = buildBurstSpans(data.Traces, opts.IdleGap, opts.MinInterval)
 	return data
+}
+
+func transcriptParseErrorRetryDue(retryAt, now time.Time) bool {
+	return retryAt.IsZero() || !now.Before(retryAt)
 }
 
 func isContextError(err error) bool {
