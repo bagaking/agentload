@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"io"
 	"io/fs"
+	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -656,6 +658,43 @@ func TestHandleOpenHostAppAPIRejectsCrossOrigin(t *testing.T) {
 	}
 }
 
+func TestHandleOpenHostAppAPIRedactsOpenFailure(t *testing.T) {
+	root := t.TempDir()
+	bundlePath := filepath.Join(root, "Terminal.app")
+	if err := os.Mkdir(bundlePath, 0o755); err != nil {
+		t.Fatalf("mkdir app bundle: %v", err)
+	}
+	app := &trayApp{}
+	app.lastSnapshot = Snapshot{
+		LiveProcesses: []LiveProcessSnapshot{{
+			PID:     42,
+			HostApp: &HostApp{PID: 7, Name: "Terminal", BundlePath: bundlePath},
+		}},
+	}
+	app.haveSnapshot = true
+	app.openHostAppFunc = func(_ context.Context, gotPath string) ([]byte, error) {
+		if gotPath != bundlePath {
+			t.Fatalf("open path=%q, want %q", gotPath, bundlePath)
+		}
+		return []byte("open failed for " + bundlePath + " with private detail"), io.ErrUnexpectedEOF
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/open-host-app/7", nil)
+	rec := httptest.NewRecorder()
+	app.handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected status 502, got %d with body %q", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, bundlePath) || strings.Contains(body, "private detail") {
+		t.Fatalf("open failure leaked subprocess output: %q", body)
+	}
+	if !strings.Contains(body, "failed to open observed host app") {
+		t.Fatalf("expected stable open failure, got %q", body)
+	}
+}
+
 func TestHandleSnapshotAPIRedactsConfigPaths(t *testing.T) {
 	app := &trayApp{cfg: Config{RefreshInterval: 5 * time.Minute}}
 	app.lastSnapshot = Snapshot{
@@ -1000,6 +1039,99 @@ func TestSanitizeTextForClientRedactsColonSeparatedPaths(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected sanitized text %q to preserve %q", got, want)
 		}
+	}
+}
+
+func TestSanitizeTextForClientRedactsPathsInsideStructuredTokens(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "workspace", "agentload", "session.jsonl")
+	cases := []string{
+		"map[" + path + "]",
+		`{"path":"` + path + `"}`,
+		"diagnostic=" + path + ":42:7",
+	}
+	for _, raw := range cases {
+		got := sanitizeTextForClient(raw)
+		if strings.Contains(got, root) || strings.Contains(got, path) {
+			t.Fatalf("expected structured path %q to be redacted, got %q", raw, got)
+		}
+		if !strings.Contains(got, "session.jsonl") {
+			t.Fatalf("expected basename to remain useful for %q, got %q", raw, got)
+		}
+	}
+}
+
+func TestListenWithFallbackRequiresLoopbackAddress(t *testing.T) {
+	for _, tc := range []struct {
+		addr     string
+		valid    bool
+		contains string
+	}{
+		{addr: "127.0.0.1:0", valid: true},
+		{addr: "[::1]:0", valid: true},
+		{addr: "0.0.0.0:0", contains: "loopback"},
+		{addr: ":0", contains: "loopback"},
+		{addr: "[::]:0", contains: "loopback"},
+		{addr: "localhost:0", valid: true},
+	} {
+		t.Run(tc.addr, func(t *testing.T) {
+			err := validateLoopbackListenAddr(tc.addr)
+			if tc.valid {
+				if err != nil {
+					t.Fatalf("validateLoopbackListenAddr(%q): %v", tc.addr, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(strings.ToLower(err.Error()), tc.contains) {
+				t.Fatalf("validateLoopbackListenAddr(%q) = %v, want loopback error", tc.addr, err)
+			}
+		})
+	}
+}
+
+func TestListenWithFallbackNormalizesLocalhost(t *testing.T) {
+	listener, url, err := listenWithFallback("localhost:0")
+	if err != nil {
+		t.Fatalf("listenWithFallback(localhost): %v", err)
+	}
+	defer listener.Close()
+	if !strings.HasPrefix(url, "http://127.0.0.1:") {
+		t.Fatalf("localhost URL %q is not normalized to IPv4 loopback", url)
+	}
+}
+
+func TestListenWithFallbackUsesLoopbackEphemeralPortWhenBusy(t *testing.T) {
+	occupied, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer occupied.Close()
+
+	listener, url, err := listenWithFallback(occupied.Addr().String())
+	if err != nil {
+		t.Fatalf("listenWithFallback: %v", err)
+	}
+	defer listener.Close()
+	if listener.Addr().String() == occupied.Addr().String() {
+		t.Fatalf("fallback reused occupied address %q", occupied.Addr())
+	}
+	if !strings.HasPrefix(url, "http://127.0.0.1:") {
+		t.Fatalf("fallback URL %q is not loopback", url)
+	}
+}
+
+func TestListenerURLFormatsIPv6Loopback(t *testing.T) {
+	listener, err := net.Listen("tcp6", "[::1]:0")
+	if err != nil {
+		t.Skipf("IPv6 loopback unavailable: %v", err)
+	}
+	defer listener.Close()
+	got := listenerURL(listener)
+	if !strings.HasPrefix(got, "http://[::1]:") {
+		t.Fatalf("listener URL %q is not bracketed IPv6 loopback", got)
+	}
+	if parsed, err := url.Parse(got); err != nil || parsed.Hostname() != "::1" || parsed.Port() == "" {
+		t.Fatalf("listener URL %q is not a valid IPv6 URL: %v", got, err)
 	}
 }
 
@@ -1428,5 +1560,65 @@ func TestHandleOpenHostAppAPIGuardsMethodAndObservedEvidence(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected traversal path to be rejected with 404, got %d", rec.Code)
+	}
+}
+
+func TestHandleQuitAPIHandsOffToSystrayQuit(t *testing.T) {
+	originalQuit := systrayQuit
+	quit := make(chan struct{}, 1)
+	systrayQuit = func() { quit <- struct{}{} }
+	t.Cleanup(func() { systrayQuit = originalQuit })
+
+	lifecycle := newLifecycleLog(filepath.Join(t.TempDir(), "history.jsonl"))
+	app := &trayApp{logger: log.New(io.Discard, "", 0), lifecycle: lifecycle}
+	handler := app.handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/quit", nil)
+	req.Host = "127.0.0.1:8123"
+	req.Header.Set("Origin", "http://127.0.0.1:8123")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d with body %q", rec.Code, rec.Body.String())
+	}
+
+	// The quit hand-off is deferred so the response flushes first, but it must
+	// still arrive: a dropped hand-off leaves the app running after the user
+	// asked it to quit.
+	select {
+	case <-quit:
+	case <-time.After(10 * time.Second):
+		t.Fatal("quit api never handed off to systrayQuit")
+	}
+
+	names := readLifecycleEventNames(t, lifecycle.path)
+	if len(names) == 0 || names[0] != "quit_requested" {
+		t.Fatalf("expected quit_requested to be recorded, got %v", names)
+	}
+}
+
+func TestHandleQuitAPIHandsOffEvenWhenLifecycleRecordPanics(t *testing.T) {
+	originalQuit := systrayQuit
+	quit := make(chan struct{}, 1)
+	systrayQuit = func() { quit <- struct{}{} }
+	t.Cleanup(func() { systrayQuit = originalQuit })
+
+	// No lifecycle log: recordLifecycle tolerates it, and the hand-off must
+	// still reach the tray so the API-initiated shutdown is not skipped.
+	app := &trayApp{logger: log.New(io.Discard, "", 0)}
+	handler := app.handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/quit", nil)
+	req.Host = "127.0.0.1:8123"
+	req.Header.Set("Origin", "http://127.0.0.1:8123")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+	select {
+	case <-quit:
+	case <-time.After(10 * time.Second):
+		t.Fatal("quit api never handed off to systrayQuit")
 	}
 }

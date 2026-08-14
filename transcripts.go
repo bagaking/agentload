@@ -8,9 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,6 +23,7 @@ import (
 const (
 	foregroundTranscriptMinLookback = 2 * time.Hour
 	foregroundTranscriptMaxLookback = 6 * time.Hour
+	transcriptHealthyWaitRetryLimit = 2
 )
 
 type Observer struct {
@@ -77,14 +80,33 @@ type transcriptScanFlight struct {
 	complete bool
 }
 
-func (o *Observer) transcriptData(ctx context.Context, priority []TranscriptFile, now time.Time) (*TranscriptData, bool) {
-	key := transcriptCacheKey(o.adapters.roots(), priority, o.cfg.IdleGap, o.cfg.MinInterval, o.cfg.Lookback)
+func (o *Observer) transcriptData(ctx context.Context, priority []TranscriptFile, now time.Time) (result *TranscriptData, cached bool) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	var key string
+	var evidenceRevision uint64
+	healthyWaitRetries := 0
+	// Root changes themselves advance the evidence revision. Establish that
+	// cheap lifecycle state before capturing the scan revision, otherwise the
+	// first cold scan would always be stamped one revision behind its contents.
+	o.evidenceIndex.syncRoots()
 	for {
+		key = transcriptCacheKey(o.adapters.roots(), priority, o.cfg.IdleGap, o.cfg.MinInterval, o.cfg.Lookback)
 		o.mu.Lock()
-		if o.cache.Data != nil && o.cache.Key == key && now.Before(o.cache.ExpiresAt) {
+		// Capture the evidence revision while deciding the cache state. A watcher
+		// mutation that lands after this point must not be stamped as included by
+		// the scan that follows.
+		evidenceRevision = o.evidenceIndex.cacheRevision()
+		if o.cache.Data != nil && o.cache.Key == key && o.cache.EvidenceRevision == evidenceRevision && now.Before(o.cache.ExpiresAt) {
 			data := cloneTranscriptData(o.cache.Data)
 			o.mu.Unlock()
-			return data, true
+			// Close the small unlock window before returning a cache hit. A change
+			// observed here is retried instead of publishing a known-stale clone.
+			if o.evidenceIndex.cacheRevision() == evidenceRevision {
+				return data, true
+			}
+			continue
 		}
 		if flight := o.inflight[key]; flight != nil {
 			done := flight.done
@@ -92,13 +114,42 @@ func (o *Observer) transcriptData(ctx context.Context, priority []TranscriptFile
 			o.mu.Unlock()
 			select {
 			case <-done:
+				data := cloneTranscriptData(flight.data)
+				if flight.complete && transcriptDataRevisionValid(o, data) {
+					return data, false
+				}
 				if flight.complete {
-					return cloneTranscriptData(flight.data), false
+					// A completed flight should already have removed itself before
+					// closing done. Clear a stale guard defensively so a revision
+					// change cannot turn this waiter into a permanent retry loop.
+					o.mu.Lock()
+					if o.inflight[key] == flight {
+						delete(o.inflight, key)
+					}
+					o.mu.Unlock()
+				}
+				if flight.complete && ctx.Err() != nil {
+					if data == nil {
+						data = incompleteTranscriptData("transcript scan result became stale")
+					} else {
+						data.CoverageIncomplete = true
+						data.Errors = append(data.Errors, "transcript evidence changed before scan waiter returned")
+					}
+					return data, false
 				}
 				if ctx.Err() == nil {
-					continue
+					healthyWaitRetries++
+					if healthyWaitRetries < transcriptHealthyWaitRetryLimit {
+						continue
+					}
+					if data == nil {
+						data = &TranscriptData{Traces: map[string]*SessionTrace{}}
+					}
+					data.CoverageIncomplete = true
+					data.Errors = append(data.Errors, "transcript scan remained incomplete after bounded waiter retries")
+					return data, false
 				}
-				return cloneTranscriptData(flight.data), false
+				return data, false
 			case <-ctx.Done():
 				// The in-flight scan keeps running for other waiters; the
 				// cancelled caller returns early with whatever cached data exists.
@@ -106,6 +157,7 @@ func (o *Observer) transcriptData(ctx context.Context, priority []TranscriptFile
 				if cachedData == nil {
 					cachedData = &TranscriptData{Traces: map[string]*SessionTrace{}}
 				}
+				cachedData.CoverageIncomplete = true
 				cachedData.Errors = append(cachedData.Errors, fmt.Sprintf("transcript scan wait cancelled: %v", ctx.Err()))
 				return cachedData, cached
 			}
@@ -116,7 +168,43 @@ func (o *Observer) transcriptData(ctx context.Context, priority []TranscriptFile
 	o.inflight[key] = flight
 	o.mu.Unlock()
 
-	data := o.scanTranscriptsWithOptions(ctx, priority, transcriptScanOptions{
+	finished := false
+	finish := func(data *TranscriptData, complete bool, revision uint64) {
+		if data == nil {
+			data = incompleteTranscriptData("transcript scan returned no data")
+		}
+		o.mu.Lock()
+		if o.inflight[key] == flight {
+			flight.data = cloneTranscriptData(data)
+			flight.complete = complete
+			if complete {
+				o.cache = transcriptCacheState{
+					Key:              key,
+					ExpiresAt:        time.Now().Add(o.cfg.TranscriptCacheTTL),
+					EvidenceRevision: revision,
+					Data:             cloneTranscriptData(data),
+				}
+			}
+			delete(o.inflight, key)
+			close(flight.done)
+		}
+		o.mu.Unlock()
+		finished = true
+	}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			data := incompleteTranscriptData("transcript scan recovered after panic")
+			log.Printf("transcript scan panic recovered: %s\n%s",
+				sanitizeTextForClient(fmt.Sprint(recovered)),
+				sanitizeTextForClient(string(debug.Stack())))
+			if !finished {
+				finish(data, false, evidenceRevision)
+			}
+			result, cached = data, false
+		}
+	}()
+
+	data := o.scanTranscriptsSafely(ctx, priority, transcriptScanOptions{
 		HistoryCutoff:      now.Add(-o.cfg.Lookback),
 		ForegroundCutoff:   foregroundTranscriptCutoff(now, o.cfg.IdleGap),
 		HistoryLookback:    o.cfg.Lookback,
@@ -125,24 +213,56 @@ func (o *Observer) transcriptData(ctx context.Context, priority []TranscriptFile
 		IdleGap:            o.cfg.IdleGap,
 		MinInterval:        o.cfg.MinInterval,
 	})
-	savedAt := time.Now()
-
-	o.mu.Lock()
-	flight.data = cloneTranscriptData(data)
-	flight.complete = ctx.Err() == nil
-	// A cancelled scan produced partial data; keep it out of the cache so the
-	// next snapshot retries a full scan.
-	if flight.complete {
-		o.cache = transcriptCacheState{
-			Key:       key,
-			ExpiresAt: savedAt.Add(o.cfg.TranscriptCacheTTL),
-			Data:      cloneTranscriptData(data),
+	complete := ctx.Err() == nil && !data.CoverageIncomplete
+	scanRevision := data.evidenceRevision
+	if complete && o.evidenceIndex != nil {
+		currentRevision := o.evidenceIndex.cacheRevision()
+		if currentRevision != scanRevision {
+			// A watcher mutation landed while the scan was reading files. The result
+			// can still be useful to this caller, but it no longer describes one
+			// coherent evidence revision and must not enter the cache or history.
+			data.CoverageIncomplete = true
+			data.Errors = append(data.Errors, "transcript evidence changed during scan")
+			data.evidenceRevision = currentRevision
+			complete = false
 		}
 	}
-	delete(o.inflight, key)
-	close(flight.done)
-	o.mu.Unlock()
+	finish(data, complete, scanRevision)
 	return cloneTranscriptData(data), false
+}
+
+func transcriptDataRevisionValid(observer *Observer, data *TranscriptData) bool {
+	if data == nil || observer == nil || observer.evidenceIndex == nil {
+		return data != nil
+	}
+	return observer.evidenceIndex.cacheRevision() == data.evidenceRevision
+}
+
+func incompleteTranscriptData(reason string) *TranscriptData {
+	data := &TranscriptData{Traces: map[string]*SessionTrace{}, CoverageIncomplete: true}
+	if strings.TrimSpace(reason) != "" {
+		data.Errors = []string{reason}
+	}
+	return data
+}
+
+// scanTranscriptsSafely is the owner-level boundary for the complete scan. The
+// parser workers and evidence index each contain their own faults, but a future
+// aggregation/helper panic must still release the transcript singleflight and
+// publish an explicit incomplete result instead of poisoning the key.
+func (o *Observer) scanTranscriptsSafely(ctx context.Context, priority []TranscriptFile, opts transcriptScanOptions) (data *TranscriptData) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			log.Printf("transcript scan panic recovered: %s\n%s",
+				sanitizeTextForClient(fmt.Sprint(recovered)),
+				sanitizeTextForClient(string(debug.Stack())))
+			data = incompleteTranscriptData("transcript scan recovered after panic")
+		}
+		if data == nil {
+			data = incompleteTranscriptData("transcript scan returned no data")
+		}
+	}()
+	return o.scanTranscriptsWithOptions(ctx, priority, opts)
 }
 
 func transcriptCacheKey(roots map[string][]string, priority []TranscriptFile, idleGap, minInterval, lookback time.Duration) string {
@@ -183,59 +303,72 @@ type transcriptScanOptions struct {
 }
 
 func (o *Observer) scanTranscriptsWithOptions(ctx context.Context, priority []TranscriptFile, opts transcriptScanOptions) *TranscriptData {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	collectionCutoff := opts.HistoryCutoff
 	if opts.DeferHistoryWalk && !opts.ForegroundCutoff.IsZero() {
 		collectionCutoff = opts.ForegroundCutoff
 	}
-	files, walkErrors := collectTranscriptCandidates(ctx, o.evidenceIndex, o.adapters, priority, collectionCutoff, opts.ForegroundCutoff)
+	collection := collectTranscriptCandidatesWithCoverage(ctx, o.evidenceIndex, o.adapters, priority, collectionCutoff, opts.ForegroundCutoff)
+	files, walkErrors := collection.Files, collection.Errors
 	data := &TranscriptData{
 		Traces:                           make(map[string]*SessionTrace, len(files)),
 		ScannedFiles:                     len(files),
 		HistoricalScanDeferred:           opts.DeferHistoryWalk,
+		CoverageIncomplete:               !collection.Complete,
 		ForegroundScanLookbackSeconds:    int(opts.ForegroundLookback / time.Second),
 		ConfiguredHistoryLookbackSeconds: int(opts.HistoryLookback / time.Second),
 		Errors:                           walkErrors,
+		evidenceRevision:                 collection.Revision,
 	}
 
 	toParse := make([]transcriptCandidate, 0, len(files))
 	toAppend := make([]transcriptAppendCandidate, 0)
 	o.mu.Lock()
-	for _, candidate := range files {
-		if candidate.Deferred {
-			data.DeferredFiles++
-			continue
-		}
-		cached, ok := o.fileCache[candidate.File.Path]
-		switch {
-		case !ok:
-			toParse = append(toParse, candidate)
-			continue
-		case cached.Size == candidate.Size && cached.ModTime.Equal(candidate.ModTime):
-			if cached.Err != "" {
-				data.Errors = append(data.Errors, fmt.Sprintf("%s: %s", candidate.File.Path, cached.Err))
-			}
-			if cached.Trace == nil || len(cached.Trace.EventTimes) == 0 {
+	// Keep the cache decision in a defer-scoped lock. Adapter capabilities are
+	// extension points; a malformed CanAppend implementation must be converted
+	// into an incomplete scan by scanTranscriptsSafely without stranding o.mu.
+	func() {
+		defer o.mu.Unlock()
+		for _, candidate := range files {
+			if candidate.Deferred {
+				data.DeferredFiles++
 				continue
 			}
-			data.Traces[candidate.File.Path] = cloneSessionTrace(cached.Trace)
-			data.ParsedFiles++
-			continue
-		case canAppendParseTranscript(o.adapters, candidate.File, cached, candidate):
-			toAppend = append(toAppend, transcriptAppendCandidate{
-				Candidate: candidate,
-				Base:      cloneSessionTrace(cached.Trace),
-				Offset:    cached.Size,
-			})
-			continue
-		case cached.Err != "":
-			data.Errors = append(data.Errors, fmt.Sprintf("%s: %s", candidate.File.Path, cached.Err))
-			toParse = append(toParse, candidate)
-			continue
-		default:
-			toParse = append(toParse, candidate)
+			cached, ok := o.fileCache[candidate.File.Path]
+			switch {
+			case !ok:
+				toParse = append(toParse, candidate)
+				continue
+			case cached.Size == candidate.Size && cached.ModTime.Equal(candidate.ModTime):
+				if cached.Err != "" {
+					data.CoverageIncomplete = true
+					data.Errors = append(data.Errors, fmt.Sprintf("%s: %s", candidate.File.Path, cached.Err))
+				}
+				if cached.Trace == nil || len(cached.Trace.EventTimes) == 0 {
+					continue
+				}
+				data.Traces[candidate.File.Path] = cloneSessionTrace(cached.Trace)
+				data.ParsedFiles++
+				continue
+			case canAppendParseTranscript(o.adapters, candidate.File, cached, candidate):
+				toAppend = append(toAppend, transcriptAppendCandidate{
+					Candidate: candidate,
+					Base:      cloneSessionTrace(cached.Trace),
+					Offset:    cached.Size,
+				})
+				continue
+			case cached.Err != "":
+				data.CoverageIncomplete = true
+				data.Errors = append(data.Errors, fmt.Sprintf("%s: %s", candidate.File.Path, cached.Err))
+				toParse = append(toParse, candidate)
+				continue
+			default:
+				toParse = append(toParse, candidate)
+			}
 		}
-	}
-	o.mu.Unlock()
+	}()
 
 	updates := map[string]fileTraceCache{}
 	parseResults := parseTranscriptCandidates(ctx, o.adapters, toParse)
@@ -255,6 +388,7 @@ func (o *Observer) scanTranscriptsWithOptions(ctx context.Context, priority []Tr
 		}
 		endsWithNewline := fileEndsWithNewline(candidate.File.Path, candidate.Size)
 		if result.Err != nil {
+			data.CoverageIncomplete = true
 			data.Errors = append(data.Errors, fmt.Sprintf("%s: %v", candidate.File.Path, result.Err))
 			// A parse may return a degraded trace alongside its error (for
 			// example codex lane sidecar failures); keep both so the session
@@ -291,9 +425,18 @@ func (o *Observer) scanTranscriptsWithOptions(ctx context.Context, priority []Tr
 		o.mu.Unlock()
 	}
 	if ctx.Err() != nil {
+		data.CoverageIncomplete = true
 		data.Errors = append(data.Errors, fmt.Sprintf("transcript scan aborted early (%d files not parsed): %v", abortedParses, ctx.Err()))
 	} else {
 		o.pruneFileCache(files)
+	}
+	if o.evidenceIndex != nil {
+		currentRevision := o.evidenceIndex.cacheRevision()
+		if currentRevision != data.evidenceRevision {
+			data.CoverageIncomplete = true
+			data.Errors = append(data.Errors, "transcript evidence changed during scan")
+			data.evidenceRevision = currentRevision
+		}
 	}
 	data.SessionSpans = buildSessionSpans(data.Traces, opts.MinInterval)
 	data.BurstSpans = buildBurstSpans(data.Traces, opts.IdleGap, opts.MinInterval)
@@ -394,6 +537,67 @@ func canAppendParseTranscript(adapters *codingAgentRegistry, file TranscriptFile
 	return ok && parser.CanAppend(file)
 }
 
+func recoverTranscriptParsePanic(scope string, candidate transcriptCandidate, result *transcriptParseResult, fallback *SessionTrace) {
+	if recovered := recover(); recovered != nil {
+		scope = strings.TrimSpace(scope)
+		// Parser failures are local diagnostics, but their logs can be retained
+		// outside the snapshot response. Keep the useful file identity while
+		// avoiding a user/workspace path and redact paths in panic text/stack.
+		safePath := filepath.Base(filepath.Clean(candidate.File.Path))
+		if safePath == "." || safePath == string(filepath.Separator) || safePath == "" {
+			safePath = "local-transcript"
+		}
+		log.Printf("%s panic recovered for %s: %s\n%s", scope, safePath,
+			sanitizeTextForClient(fmt.Sprint(recovered)), sanitizeTextForClient(string(debug.Stack())))
+		*result = transcriptParseResult{
+			Candidate: candidate,
+			// An append parse already has a known-good prefix. Preserve that
+			// evidence when the parser panics while disclosing the failed job.
+			Trace: fallback,
+			Err:   fmt.Errorf("%s panic for %s: %v", scope, candidate.File.Path, recovered),
+		}
+	}
+}
+
+func parseTranscriptCandidate(ctx context.Context, adapters *codingAgentRegistry, candidate transcriptCandidate) (result transcriptParseResult) {
+	result.Candidate = candidate
+	defer recoverTranscriptParsePanic("transcript parser worker", candidate, &result, nil)
+	if err := ctx.Err(); err != nil {
+		result.Err = err
+		return result
+	}
+	parser, ok := adapters.transcriptParser(candidate.File.Tool)
+	if !ok {
+		result.Err = fmt.Errorf("%s transcript parser is unavailable", candidate.File.Tool)
+		return result
+	}
+	if candidate.TailParse {
+		result.Trace, result.Err = parser.ParseTail(candidate.File)
+	} else {
+		result.Trace, result.Err = parser.Parse(candidate.File)
+	}
+	return result
+}
+
+func parseAppendTranscriptCandidate(ctx context.Context, adapters *codingAgentRegistry, candidate transcriptAppendCandidate) (result transcriptParseResult) {
+	result.Candidate = candidate.Candidate
+	// Keep an isolated fallback so a panic cannot erase the cached prefix that
+	// was supplied for this append job.
+	fallback := cloneSessionTrace(candidate.Base)
+	defer recoverTranscriptParsePanic("transcript append worker", candidate.Candidate, &result, fallback)
+	if err := ctx.Err(); err != nil {
+		result.Err = err
+		return result
+	}
+	parser, ok := adapters.transcriptParser(candidate.Candidate.File.Tool)
+	if !ok {
+		result.Err = fmt.Errorf("%s transcript parser is unavailable", candidate.Candidate.File.Tool)
+		return result
+	}
+	result.Trace, result.Err = parser.ParseAppend(candidate.Candidate.File, candidate.Base, candidate.Offset)
+	return result
+}
+
 func parseTranscriptCandidates(ctx context.Context, adapters *codingAgentRegistry, candidates []transcriptCandidate) []transcriptParseResult {
 	results := make([]transcriptParseResult, len(candidates))
 	if len(candidates) == 0 {
@@ -419,38 +623,22 @@ func parseTranscriptCandidates(ctx context.Context, adapters *codingAgentRegistr
 	for i := 0; i < workerCount; i++ {
 		wg.Add(1)
 		go func() {
-			defer recoverBackgroundPanic("transcript parser worker")
 			defer wg.Done()
 			for item := range jobs {
-				if err := ctx.Err(); err != nil {
-					results[item.Index] = transcriptParseResult{Candidate: item.Candidate, Err: err}
-					continue
-				}
-				parser, ok := adapters.transcriptParser(item.Candidate.File.Tool)
-				if !ok {
-					results[item.Index] = transcriptParseResult{Candidate: item.Candidate, Err: fmt.Errorf("%s transcript parser is unavailable", item.Candidate.File.Tool)}
-					continue
-				}
-				var trace *SessionTrace
-				var err error
-				if item.Candidate.TailParse {
-					trace, err = parser.ParseTail(item.Candidate.File)
-				} else {
-					trace, err = parser.Parse(item.Candidate.File)
-				}
-				results[item.Index] = transcriptParseResult{
-					Candidate: item.Candidate,
-					Trace:     trace,
-					Err:       err,
-				}
+				results[item.Index] = parseTranscriptCandidate(ctx, adapters, item.Candidate)
 			}
 		}()
 	}
+dispatch:
 	for index, candidate := range candidates {
 		if ctx.Err() != nil {
 			break
 		}
-		jobs <- job{Index: index, Candidate: candidate}
+		select {
+		case jobs <- job{Index: index, Candidate: candidate}:
+		case <-ctx.Done():
+			break dispatch
+		}
 	}
 	close(jobs)
 	wg.Wait()
@@ -482,43 +670,44 @@ func parseAppendTranscriptCandidates(ctx context.Context, adapters *codingAgentR
 	for i := 0; i < workerCount; i++ {
 		wg.Add(1)
 		go func() {
-			defer recoverBackgroundPanic("transcript append worker")
 			defer wg.Done()
 			for item := range jobs {
-				if err := ctx.Err(); err != nil {
-					results[item.Index] = transcriptParseResult{Candidate: item.Candidate.Candidate, Err: err}
-					continue
-				}
-				parser, ok := adapters.transcriptParser(item.Candidate.Candidate.File.Tool)
-				if !ok {
-					results[item.Index] = transcriptParseResult{Candidate: item.Candidate.Candidate, Err: fmt.Errorf("%s transcript parser is unavailable", item.Candidate.Candidate.File.Tool)}
-					continue
-				}
-				trace, err := parser.ParseAppend(
-					item.Candidate.Candidate.File,
-					item.Candidate.Base,
-					item.Candidate.Offset,
-				)
-				results[item.Index] = transcriptParseResult{
-					Candidate: item.Candidate.Candidate,
-					Trace:     trace,
-					Err:       err,
-				}
+				results[item.Index] = parseAppendTranscriptCandidate(ctx, adapters, item.Candidate)
 			}
 		}()
 	}
+dispatch:
 	for index, candidate := range candidates {
 		if ctx.Err() != nil {
 			break
 		}
-		jobs <- job{Index: index, Candidate: candidate}
+		select {
+		case jobs <- job{Index: index, Candidate: candidate}:
+		case <-ctx.Done():
+			break dispatch
+		}
 	}
 	close(jobs)
 	wg.Wait()
 	return results
 }
 
+type transcriptCandidateCollection struct {
+	Files    []transcriptCandidate
+	Errors   []string
+	Complete bool
+	Revision uint64
+}
+
 func collectTranscriptCandidates(ctx context.Context, evidenceIndex *transcriptEvidenceIndex, adapters *codingAgentRegistry, priority []TranscriptFile, historyCutoff, foregroundCutoff time.Time) ([]transcriptCandidate, []string) {
+	collection := collectTranscriptCandidatesWithCoverage(ctx, evidenceIndex, adapters, priority, historyCutoff, foregroundCutoff)
+	return collection.Files, collection.Errors
+}
+
+func collectTranscriptCandidatesWithCoverage(ctx context.Context, evidenceIndex *transcriptEvidenceIndex, adapters *codingAgentRegistry, priority []TranscriptFile, historyCutoff, foregroundCutoff time.Time) transcriptCandidateCollection {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	scanErrors := []string{}
 	priorityKeys := map[string]struct{}{}
 	for _, file := range priority {
@@ -585,7 +774,12 @@ func collectTranscriptCandidates(ctx context.Context, evidenceIndex *transcriptE
 		}
 		return files[i].File.Tool < files[j].File.Tool
 	})
-	return files, scanErrors
+	return transcriptCandidateCollection{
+		Files:    files,
+		Errors:   scanErrors,
+		Complete: indexed.Complete && ctx.Err() == nil,
+		Revision: indexed.Revision,
+	}
 }
 
 func fileMayContainEventsAfterCutoff(path string, info os.FileInfo, cutoff time.Time) bool {
@@ -1859,9 +2053,11 @@ func cloneTranscriptData(in *TranscriptData) *TranscriptData {
 		DeferredFiles:                    in.DeferredFiles,
 		TailParsedFiles:                  in.TailParsedFiles,
 		HistoricalScanDeferred:           in.HistoricalScanDeferred,
+		CoverageIncomplete:               in.CoverageIncomplete,
 		ForegroundScanLookbackSeconds:    in.ForegroundScanLookbackSeconds,
 		ConfiguredHistoryLookbackSeconds: in.ConfiguredHistoryLookbackSeconds,
 		Errors:                           append([]string(nil), in.Errors...),
+		evidenceRevision:                 in.evidenceRevision,
 	}
 	for path, trace := range in.Traces {
 		if trace == nil {

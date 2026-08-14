@@ -38,6 +38,12 @@ var systemResourceSampler = struct {
 
 const systemResourceSampleInterval = 2 * time.Second
 
+const systemResourceSampleStaleAfter = 3 * systemResourceSampleInterval
+
+// sampleSystemResourcesNowFunc is the sampler's seam onto the platform read so
+// tests can inject a failing read; production always uses the real one.
+var sampleSystemResourcesNowFunc = sampleSystemResourcesNow
+
 // backgroundSystemResourceSampler owns the delta baseline at a fixed cadence so
 // CPU%/network rates do not depend on whichever client polled last. It is never
 // started implicitly; trayApp startup starts it explicitly.
@@ -47,7 +53,14 @@ var backgroundSystemResourceSampler = struct {
 	have       bool
 	generation uint64
 	latest     SystemResourceSnapshot
+	latestAt   time.Time
+	staleAfter time.Duration
 	stop       chan struct{}
+	done       chan struct{}
+
+	// transitionMu covers the full stop-and-join transition. The sampler owns
+	// process-wide baselines, so generations must never overlap even briefly.
+	transitionMu sync.Mutex
 }{}
 
 func startSystemResourceSampler(interval time.Duration) {
@@ -55,45 +68,141 @@ func startSystemResourceSampler(interval time.Duration) {
 		interval = systemResourceSampleInterval
 	}
 	s := &backgroundSystemResourceSampler
+	s.transitionMu.Lock()
+	defer s.transitionMu.Unlock()
 	s.Lock()
 	if s.running {
 		s.Unlock()
 		return
 	}
 	s.running = true
+	s.have = false
+	s.latest = SystemResourceSnapshot{}
+	s.latestAt = time.Time{}
+	s.staleAfter = interval * 3
 	s.generation++
 	s.stop = make(chan struct{})
+	s.done = make(chan struct{})
 	stop := s.stop
+	done := s.done
 	generation := s.generation
-	s.Unlock()
+	resetSystemResourceDeltaBaseline()
+	// The read function is bound once per generation so the running goroutine
+	// never depends on later reassignment of the package seam.
+	sample := sampleSystemResourcesNowFunc
+	if sample == nil {
+		sample = sampleSystemResourcesNow
+	}
 	go func() {
+		// Each sample runs as its own step: a panic in one read drops that
+		// sample instead of killing the sampler, and the deferred release
+		// clears `running` so a later start can re-arm the loop.
 		defer recoverBackgroundPanic("system resource sampler")
-		storeBackgroundSystemResourceSample(generation, sampleSystemResourcesNow())
+		defer releaseSystemResourceSamplerGeneration(generation, done)
+		runSystemResourceSample(generation, sample)
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
-				storeBackgroundSystemResourceSample(generation, sampleSystemResourcesNow())
+				runSystemResourceSample(generation, sample)
 			case <-stop:
 				return
 			}
 		}
 	}()
+	s.Unlock()
+}
+
+// releaseSystemResourceSamplerGeneration clears the running flag when the
+// goroutine that owns `generation` exits for any reason. Without it a panic that
+// escaped the loop would strand running=true, so startSystemResourceSampler
+// would no-op forever while latestBackgroundSystemResourceSample kept serving a
+// frozen sample.
+func releaseSystemResourceSamplerGeneration(generation uint64, done chan struct{}) {
+	s := &backgroundSystemResourceSampler
+	defer close(done)
+	s.Lock()
+	if s.running && s.generation == generation && s.done == done {
+		s.running = false
+		s.have = false
+		s.latest = SystemResourceSnapshot{}
+		s.latestAt = time.Time{}
+		s.staleAfter = 0
+		s.stop = nil
+		s.done = nil
+	}
+	s.Unlock()
+	// Do not reset the process-wide baseline here. A fresh generation may start
+	// immediately after this goroutine clears its state; the start/stop owners
+	// perform the reset while holding the transition lock, so an old generation
+	// cannot wipe the new generation's baseline.
+}
+
+func runSystemResourceSample(generation uint64, sample func() SystemResourceSnapshot) {
+	if sample == nil {
+		return
+	}
+	succeeded := false
+	runBackgroundStep("system resource sampler", func() {
+		storeBackgroundSystemResourceSample(generation, sample())
+		succeeded = true
+	})
+	if !succeeded {
+		invalidateBackgroundSystemResourceSample(generation)
+	}
+}
+
+func invalidateBackgroundSystemResourceSample(generation uint64) {
+	s := &backgroundSystemResourceSampler
+	owned := false
+	s.Lock()
+	if s.running && s.generation == generation {
+		owned = true
+		s.have = false
+		s.latest = SystemResourceSnapshot{}
+		s.latestAt = time.Time{}
+	}
+	s.Unlock()
+	if owned {
+		resetSystemResourceDeltaBaseline()
+	}
 }
 
 func stopSystemResourceSampler() {
 	s := &backgroundSystemResourceSampler
+	s.transitionMu.Lock()
+	defer s.transitionMu.Unlock()
 	s.Lock()
-	defer s.Unlock()
 	if !s.running {
+		s.have = false
+		s.latest = SystemResourceSnapshot{}
+		s.latestAt = time.Time{}
+		s.staleAfter = 0
+		s.Unlock()
+		resetSystemResourceDeltaBaseline()
 		return
 	}
-	close(s.stop)
+	stop := s.stop
+	done := s.done
 	s.running = false
 	s.have = false
 	s.latest = SystemResourceSnapshot{}
+	s.latestAt = time.Time{}
+	s.staleAfter = 0
 	s.stop = nil
+	s.done = nil
+	if stop != nil {
+		close(stop)
+	}
+	s.Unlock()
+	resetSystemResourceDeltaBaseline()
+	if done != nil {
+		<-done
+	}
+	// A read already in progress may have reached the baseline after the first
+	// reset; clear it again after the owner has joined.
+	resetSystemResourceDeltaBaseline()
 }
 
 func storeBackgroundSystemResourceSample(generation uint64, snapshot SystemResourceSnapshot) {
@@ -104,6 +213,7 @@ func storeBackgroundSystemResourceSample(generation uint64, snapshot SystemResou
 		return
 	}
 	s.latest = snapshot
+	s.latestAt = time.Now()
 	s.have = true
 }
 
@@ -111,7 +221,11 @@ func latestBackgroundSystemResourceSample() (SystemResourceSnapshot, bool) {
 	s := &backgroundSystemResourceSampler
 	s.Lock()
 	defer s.Unlock()
-	if !s.running || !s.have {
+	staleAfter := s.staleAfter
+	if staleAfter <= 0 {
+		staleAfter = systemResourceSampleStaleAfter
+	}
+	if !s.running || !s.have || (!s.latestAt.IsZero() && time.Since(s.latestAt) > staleAfter) {
 		return SystemResourceSnapshot{}, false
 	}
 	return s.latest, true
@@ -121,7 +235,24 @@ func sampleSystemResources() SystemResourceSnapshot {
 	if snapshot, ok := latestBackgroundSystemResourceSample(); ok {
 		return snapshot
 	}
+	backgroundSystemResourceSampler.Lock()
+	running := backgroundSystemResourceSampler.running
+	backgroundSystemResourceSampler.Unlock()
+	if running {
+		return unavailableSystemResourceSnapshot("System resource sample is unavailable while the background sampler is waiting for a fresh read.")
+	}
 	return sampleSystemResourcesNow()
+}
+
+func unavailableSystemResourceSnapshot(reason string) SystemResourceSnapshot {
+	return SystemResourceSnapshot{Notes: []string{reason}}
+}
+
+func resetSystemResourceDeltaBaseline() {
+	systemResourceSampler.Lock()
+	systemResourceSampler.previous = systemResourceCounters{}
+	systemResourceSampler.previousAt = time.Time{}
+	systemResourceSampler.Unlock()
 }
 
 func sampleSystemResourcesNow() SystemResourceSnapshot {

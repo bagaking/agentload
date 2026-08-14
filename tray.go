@@ -19,6 +19,9 @@ import (
 	"fyne.io/systray"
 )
 
+// trayShutdownTimeout bounds the graceful HTTP shutdown during tray exit.
+const trayShutdownTimeout = 5 * time.Second
+
 type trayApp struct {
 	cfg           Config
 	observer      *Observer
@@ -34,15 +37,41 @@ type trayApp struct {
 	stopCh    chan struct{}
 	refreshCh chan struct{}
 
+	shutdownMu       sync.Mutex
+	shutdownOnce     sync.Once
+	stopOnce         sync.Once
+	shutdownDone     chan struct{}
+	shutdownCtx      context.Context
+	shutdownCancel   context.CancelFunc
+	refreshDone      chan struct{}
+	menuDone         chan struct{}
+	heartbeatDone    <-chan struct{}
+	refreshStarted   bool
+	menuStarted      bool
+	heartbeatStarted bool
+
 	lastMu            sync.RWMutex
 	lastSnapshot      Snapshot
 	haveSnapshot      bool
+	closing           bool
 	refreshing        bool
 	pendingSlot       string
 	activeSlot        string
 	lastSlot          string
 	history           localHistoryState
 	throughputHistory *throughputHistoryStore
+
+	// mergeRecordedSampleFunc overrides the merge performed under lastMu. Nil in
+	// production; tests set it to inject a failing merge.
+	mergeRecordedSampleFunc func(Snapshot, HistorySample, time.Time, error) Snapshot
+
+	// openURLFunc is a test seam for the external URL opener. Nil in production;
+	// a contained menu step can then be tested with a real injected failure.
+	openURLFunc func(string)
+
+	// openHostAppFunc is a test seam for the external host-app opener. Nil in
+	// production; the handler uses /usr/bin/open directly in that case.
+	openHostAppFunc func(context.Context, string) ([]byte, error)
 
 	// historyFileMu serializes JSONL appends so disk I/O never runs under lastMu.
 	historyFileMu sync.Mutex
@@ -79,6 +108,7 @@ func newTrayApp(cfg Config, observer *Observer, logger *log.Logger, listener net
 	if err := migrateLegacyThroughputHistory(&history, throughputHistory); err != nil && logger != nil {
 		logger.Printf("legacy throughput migration failed: %v", err)
 	}
+	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
 	liveTokenRate := newLiveTokenRateSampler(observer.adapters, observer.evidenceIndex)
 	liveTokenRate.bindThroughputHistory(throughputHistory)
 	a := &trayApp{
@@ -93,6 +123,9 @@ func newTrayApp(cfg Config, observer *Observer, logger *log.Logger, listener net
 		lifecycle:         lifecycle,
 		stopCh:            make(chan struct{}),
 		refreshCh:         make(chan struct{}, 1),
+		shutdownDone:      make(chan struct{}),
+		shutdownCtx:       shutdownCtx,
+		shutdownCancel:    shutdownCancel,
 		history:           history,
 		throughputHistory: throughputHistory,
 	}
@@ -105,18 +138,165 @@ func newTrayApp(cfg Config, observer *Observer, logger *log.Logger, listener net
 func (a *trayApp) run() error {
 	startSystemResourceSampler(systemResourceSampleInterval)
 	a.observer.evidenceIndex.start()
-	a.lifecycle.startHeartbeat(a.stopCh, lifecycleHeartbeatInterval)
+	a.shutdownMu.Lock()
+	if a.lifecycle != nil {
+		heartbeatDone := a.lifecycle.startHeartbeat(a.stopCh, lifecycleHeartbeatInterval)
+		a.heartbeatDone = heartbeatDone
+		a.heartbeatStarted = heartbeatDone != nil
+	}
+	a.shutdownMu.Unlock()
 	go func() {
 		defer recoverBackgroundPanic("http server")
 		if err := a.server.Serve(a.listener); err != nil && err != http.ErrServerClosed {
 			a.logger.Printf("http server failed: %v", err)
 		}
 	}()
-	systray.Run(a.onReady, a.onExit)
+	systrayRun(a.onReady, a.onExit)
+	// On macOS, systray.Quit stops the native loop without necessarily sending
+	// the applicationWillTerminate notification that invokes onExit. Calling the
+	// idempotent owner here closes that normal-return path as well.
+	a.onExit()
+	return nil
+}
+
+func (a *trayApp) ensureShutdownState() chan struct{} {
+	if a == nil {
+		return nil
+	}
+	a.shutdownMu.Lock()
+	defer a.shutdownMu.Unlock()
+	if a.shutdownDone == nil {
+		a.shutdownDone = make(chan struct{})
+	}
+	if a.shutdownCtx == nil {
+		a.shutdownCtx, a.shutdownCancel = context.WithCancel(context.Background())
+	}
+	return a.shutdownDone
+}
+
+func (a *trayApp) refreshContext() context.Context {
+	if a == nil {
+		return context.Background()
+	}
+	a.shutdownMu.Lock()
+	defer a.shutdownMu.Unlock()
+	if a.shutdownCtx == nil {
+		a.shutdownCtx, a.shutdownCancel = context.WithCancel(context.Background())
+	}
+	return a.shutdownCtx
+}
+
+func (a *trayApp) registerLoopDone(refresh bool) chan struct{} {
+	if a == nil {
+		return nil
+	}
+	a.shutdownMu.Lock()
+	defer a.shutdownMu.Unlock()
+	done := make(chan struct{})
+	if refresh {
+		a.refreshDone = done
+		a.refreshStarted = true
+	} else {
+		a.menuDone = done
+		a.menuStarted = true
+	}
+	return done
+}
+
+func (a *trayApp) loopDone(refresh bool) (chan struct{}, bool) {
+	if a == nil {
+		return nil, false
+	}
+	a.shutdownMu.Lock()
+	defer a.shutdownMu.Unlock()
+	if refresh {
+		return a.refreshDone, a.refreshStarted
+	}
+	return a.menuDone, a.menuStarted
+}
+
+func (a *trayApp) heartbeatLoopDone() (<-chan struct{}, bool) {
+	if a == nil {
+		return nil, false
+	}
+	a.shutdownMu.Lock()
+	defer a.shutdownMu.Unlock()
+	return a.heartbeatDone, a.heartbeatStarted
+}
+
+func (a *trayApp) markClosing() {
+	if a == nil {
+		return
+	}
+	a.lastMu.Lock()
+	a.closing = true
+	a.pendingSlot = ""
+	a.lastMu.Unlock()
+}
+
+func (a *trayApp) isClosing() bool {
+	if a == nil {
+		return true
+	}
+	a.lastMu.RLock()
+	defer a.lastMu.RUnlock()
+	return a.closing
+}
+
+func (a *trayApp) cancelShutdownContext() {
+	if a == nil {
+		return
+	}
+	a.shutdownMu.Lock()
+	cancel := a.shutdownCancel
+	a.shutdownMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+func (a *trayApp) closeStopChannel() {
+	if a == nil {
+		return
+	}
+	a.stopOnce.Do(func() {
+		if a.stopCh != nil {
+			close(a.stopCh)
+		}
+	})
+}
+
+func (a *trayApp) waitForTrayLoops() error {
+	deadline := time.NewTimer(trayShutdownTimeout)
+	defer deadline.Stop()
+	wait := func(done <-chan struct{}, started bool) error {
+		if !started || done == nil {
+			return nil
+		}
+		select {
+		case <-done:
+			return nil
+		case <-deadline.C:
+			return fmt.Errorf("tray background loop did not stop within %s", trayShutdownTimeout)
+		}
+	}
+	for _, refresh := range []bool{true, false} {
+		done, started := a.loopDone(refresh)
+		if err := wait(done, started); err != nil {
+			return err
+		}
+	}
+	if done, started := a.heartbeatLoopDone(); wait(done, started) != nil {
+		return fmt.Errorf("tray heartbeat did not stop within %s", trayShutdownTimeout)
+	}
 	return nil
 }
 
 func (a *trayApp) onReady() {
+	a.ensureShutdownState()
+	if a.isClosing() {
+		return
+	}
 	icon := renderStatusIcon(CurrentMetrics{}, true)
 	systray.SetTemplateIcon(icon, icon)
 	systray.SetTitle("…")
@@ -144,53 +324,103 @@ func (a *trayApp) onReady() {
 		systray.SetTooltip("Agent Load: native popover unavailable, click opens dashboard")
 	}
 
+	menuDone := a.registerLoopDone(false)
 	go func() {
+		defer close(menuDone)
 		defer recoverBackgroundPanic("tray menu clicks")
 		a.handleMenuClicks()
 	}()
+	refreshDone := a.registerLoopDone(true)
 	go func() {
+		defer close(refreshDone)
 		defer recoverBackgroundPanic("tray refresh loop")
 		a.refreshLoop()
 	}()
 }
 
 func (a *trayApp) onExit() {
-	a.recordLifecycle(lifecycleEvent{Event: "shutdown_begin"})
-	select {
-	case <-a.stopCh:
-	default:
-		close(a.stopCh)
+	if a == nil {
+		return
 	}
-	nativePopoverHide()
-	nativePopoverInstallStatusClickFallback("")
-	nativePopoverConfigureDashboard("")
-	a.liveTokenRate.stopSampler()
-	a.observer.evidenceIndex.stopIndex()
-	stopSystemResourceSampler()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	shutdownDone := a.ensureShutdownState()
+	a.shutdownOnce.Do(func() {
+		defer close(shutdownDone)
+		a.performShutdown()
+	})
+	if shutdownDone != nil {
+		<-shutdownDone
+	}
+}
+
+func (a *trayApp) performShutdown() {
 	var shutdownErr error
-	if err := a.server.Shutdown(ctx); err != nil && !strings.Contains(strings.ToLower(err.Error()), "closed network connection") {
-		shutdownErr = err
-		a.logger.Printf("server shutdown failed: %v", err)
-	}
+	runBackgroundStep("tray shutdown begin", func() {
+		a.recordLifecycle(lifecycleEvent{Event: "shutdown_begin"})
+	})
+	a.markClosing()
+	runBackgroundStep("tray shutdown signal", a.closeStopChannel)
+	a.cancelShutdownContext()
+	// Refresh/menu loops must stop before their shared evidence and sampler
+	// owners are released. This closes the cancellation chain at its source and
+	// prevents shutdown_complete from racing an in-flight refresh.
+	runBackgroundStep("tray shutdown background loops", func() {
+		if err := a.waitForTrayLoops(); err != nil {
+			shutdownErr = err
+		}
+	})
+	// Every cleanup step is contained separately: a panic in one owner (popover
+	// teardown, a sampler stop) must not skip the remaining releases, the HTTP
+	// shutdown, or the shutdown_complete record. Each owner is called inside the
+	// closure rather than passed as a method value, so resolving the receiver is
+	// contained too.
+	runBackgroundStep("tray shutdown popover", func() {
+		nativePopoverHide()
+		nativePopoverInstallStatusClickFallback("")
+		nativePopoverConfigureDashboard("")
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), trayShutdownTimeout)
+	defer cancel()
+	runBackgroundStep("tray shutdown http server", func() {
+		if a.server == nil {
+			return
+		}
+		if err := a.server.Shutdown(ctx); err != nil && !strings.Contains(strings.ToLower(err.Error()), "closed network connection") {
+			shutdownErr = err
+			if a.logger != nil {
+				a.logger.Printf("server shutdown failed: %v", err)
+			}
+		}
+	})
+	runBackgroundStep("tray shutdown live token rate", func() {
+		if a.liveTokenRate != nil {
+			a.liveTokenRate.stopSampler()
+		}
+	})
+	runBackgroundStep("tray shutdown evidence index", func() {
+		if a.observer != nil && a.observer.evidenceIndex != nil {
+			a.observer.evidenceIndex.stopIndex()
+		}
+	})
+	runBackgroundStep("tray shutdown system resources", stopSystemResourceSampler)
 	event := lifecycleEvent{Event: "shutdown_complete"}
 	if shutdownErr != nil {
 		event.Error = shutdownErr.Error()
 	}
-	a.recordLifecycle(event)
+	runBackgroundStep("tray shutdown complete record", func() { a.recordLifecycle(event) })
 }
 
 func (a *trayApp) handleMenuClicks() {
 	for {
 		select {
 		case <-a.mOpenDashboard.ClickedCh:
-			a.openURL(a.dashboardURL)
+			runBackgroundStep("tray menu click", func() { a.openURL(a.dashboardURL) })
 		case <-a.mRefreshNow.ClickedCh:
-			a.requestRefresh()
+			runBackgroundStep("tray menu click", func() { a.requestRefresh() })
 		case <-a.mQuit.ClickedCh:
-			a.recordLifecycle(lifecycleEvent{Event: "quit_requested", Reason: "menu"})
-			systrayQuit()
+			runBackgroundStep("tray menu click", func() {
+				a.recordLifecycle(lifecycleEvent{Event: "quit_requested", Reason: "menu"})
+			})
+			runBackgroundStep("tray menu quit", systrayQuit)
 			return
 		case <-a.stopCh:
 			return
@@ -199,20 +429,17 @@ func (a *trayApp) handleMenuClicks() {
 }
 
 func (a *trayApp) refreshLoop() {
-	a.requestRefreshForSlot(a.refreshSlotID(time.Now()))
+	// Contained: the very first request runs before the loop exists, so a panic
+	// here would kill refreshLoop outright and the tray would never refresh
+	// again for the whole session, ticker and menu clicks included.
+	runBackgroundStep("tray refresh loop", func() {
+		a.requestRefreshForSlot(a.refreshSlotID(time.Now()))
+	})
 	if a.cfg.RefreshInterval <= 0 {
 		for {
 			select {
 			case <-a.refreshCh:
-				slotID := a.claimRefreshSlot()
-				if slotID == "" {
-					continue
-				}
-				a.setRefreshing(true)
-				a.applyLoadingState()
-				a.refreshOnce(slotID)
-				a.finishRefreshSlot(slotID)
-				a.setRefreshing(false)
+				a.runRefreshStep()
 			case <-a.stopCh:
 				return
 			}
@@ -223,21 +450,37 @@ func (a *trayApp) refreshLoop() {
 	for {
 		select {
 		case <-a.refreshCh:
-			slotID := a.claimRefreshSlot()
-			if slotID == "" {
-				continue
-			}
-			a.setRefreshing(true)
-			a.applyLoadingState()
-			a.refreshOnce(slotID)
-			a.finishRefreshSlot(slotID)
-			a.setRefreshing(false)
+			a.runRefreshStep()
 		case <-ticker.C:
-			a.requestRefreshForSlot(a.refreshSlotID(time.Now()))
+			runBackgroundStep("tray refresh schedule", func() {
+				a.requestRefreshForSlot(a.refreshSlotID(time.Now()))
+			})
 		case <-a.stopCh:
 			return
 		}
 	}
+}
+
+// runRefreshStep performs one refresh and contains any panic to that refresh.
+// The slot and refreshing guards are released in defers so a failed snapshot
+// drops a single sample instead of stranding activeSlot/refreshing, which would
+// make claimRefreshSlot reject every later slot and leave the UI reporting a
+// refresh that never finishes.
+func (a *trayApp) runRefreshStep() {
+	if a.isClosing() {
+		return
+	}
+	slotID := a.claimRefreshSlot()
+	if slotID == "" {
+		return
+	}
+	defer a.setRefreshing(false)
+	defer a.finishRefreshSlot(slotID)
+	a.setRefreshing(true)
+	runBackgroundStep("tray refresh loop", func() {
+		a.applyLoadingState()
+		a.refreshOnce(slotID)
+	})
 }
 
 func (a *trayApp) requestRefresh() string {
@@ -257,6 +500,10 @@ func (a *trayApp) requestRefreshForSlot(slotID string) string {
 		slotID = a.refreshSlotID(time.Now())
 	}
 	a.lastMu.Lock()
+	if a.closing {
+		a.lastMu.Unlock()
+		return slotID
+	}
 	if slotID == a.lastSlot || slotID == a.activeSlot || slotID == a.pendingSlot {
 		a.lastMu.Unlock()
 		return slotID
@@ -273,6 +520,10 @@ func (a *trayApp) requestRefreshForSlot(slotID string) string {
 func (a *trayApp) claimRefreshSlot() string {
 	a.lastMu.Lock()
 	defer a.lastMu.Unlock()
+	if a.closing {
+		a.pendingSlot = ""
+		return ""
+	}
 	slotID := a.pendingSlot
 	if slotID == "" {
 		slotID = a.refreshSlotID(time.Now())
@@ -310,18 +561,31 @@ func (a *trayApp) refreshSlotIDForInterval(now time.Time, interval time.Duration
 }
 
 func (a *trayApp) refreshOnce(slotID string) {
-	ctx, cancel := context.WithTimeout(context.Background(), clampDuration(a.cfg.Lookback/10, 90*time.Second, 5*time.Minute))
+	if a.isClosing() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(a.refreshContext(), clampDuration(a.cfg.Lookback/10, 90*time.Second, 5*time.Minute))
 	defer cancel()
 	snapshot := a.observer.Snapshot(ctx)
+	if a.isClosing() {
+		return
+	}
 	snapshot.RefreshSlotID = slotID
-	a.liveTokenRate.updateSnapshotProjects(snapshot.LiveTokenProjects)
-	a.liveTokenRate.start(liveTokenRateSampleInterval)
 	if snapshotScanAborted(ctx, snapshot) {
 		// Show the partial result but keep it out of history/cache so trends
 		// and heatmaps only build from complete samples; the next slot rescans.
 		a.applySnapshot(snapshot)
 		a.recordLifecycle(lifecycleEventFromSnapshot("snapshot_aborted", snapshotAbortReason(ctx, snapshot), snapshot))
 		return
+	}
+	// Project attribution is derived from the complete transcript snapshot. Keep
+	// the sampler's last known mapping during an incomplete refresh so a partial
+	// scan cannot relabel subsequent token events as unassigned.
+	if a.liveTokenRate != nil {
+		a.liveTokenRate.updateSnapshotProjects(snapshot.LiveTokenProjects)
+		if !a.isClosing() {
+			a.liveTokenRate.start(liveTokenRateSampleInterval)
+		}
 	}
 	snapshot = a.rememberSnapshot(snapshot)
 	a.applySnapshot(snapshot)
@@ -331,25 +595,27 @@ func (a *trayApp) refreshOnce(slotID string) {
 // context or an aborted transcript scan; such partial samples would undercount
 // concurrency if committed to history or served as the cached snapshot.
 func snapshotScanAborted(ctx context.Context, snapshot Snapshot) bool {
-	if ctx.Err() != nil {
+	if ctx != nil && ctx.Err() != nil {
 		return true
 	}
-	for _, scanErr := range snapshot.TranscriptStats.Errors {
-		if strings.Contains(scanErr, "transcript scan aborted early") || strings.Contains(scanErr, "transcript scan wait cancelled") {
-			return true
-		}
+	if snapshot.TranscriptStats.CoverageIncomplete {
+		return true
+	}
+	if len(snapshot.TranscriptStats.Errors) > 0 {
+		return true
 	}
 	return false
 }
 
 func snapshotAbortReason(ctx context.Context, snapshot Snapshot) string {
-	if ctx.Err() != nil {
+	if ctx != nil && ctx.Err() != nil {
 		return ctx.Err().Error()
 	}
-	for _, scanErr := range snapshot.TranscriptStats.Errors {
-		if strings.Contains(scanErr, "transcript scan aborted early") || strings.Contains(scanErr, "transcript scan wait cancelled") {
-			return scanErr
-		}
+	if snapshot.TranscriptStats.CoverageIncomplete {
+		return "transcript evidence coverage incomplete"
+	}
+	if len(snapshot.TranscriptStats.Errors) > 0 {
+		return snapshot.TranscriptStats.Errors[0]
 	}
 	return ""
 }
@@ -367,6 +633,11 @@ func (a *trayApp) isRefreshing() bool {
 }
 
 func (a *trayApp) rememberSnapshot(snapshot Snapshot) Snapshot {
+	if snapshot.TranscriptStats.CoverageIncomplete {
+		// Incomplete evidence may be displayed for this refresh, but it must not
+		// become the durable in-memory or JSONL history source of truth.
+		return snapshot
+	}
 	sample := historySampleFromSnapshot(snapshot)
 	var sampleTime time.Time
 	sample.At, sampleTime = normalizeHistorySampleTimestamp(sample.At, time.Now())
@@ -377,10 +648,15 @@ func (a *trayApp) rememberSnapshot(snapshot Snapshot) Snapshot {
 		a.logger.Printf("local history append failed: %v", appendErr)
 	}
 	a.lastMu.Lock()
-	snapshot = a.mergeRecordedSampleLocked(snapshot, sample, sampleTime, appendErr)
-	a.lastSnapshot = snapshot
-	a.haveSnapshot = true
-	a.lastMu.Unlock()
+	// The unlock is deferred inside its own scope: mergeRecordedSampleLocked
+	// builds trend/heatmap windows, so a panic there must not strand the write
+	// lock every snapshot reader and refresh guard waits on.
+	func() {
+		defer a.lastMu.Unlock()
+		snapshot = a.mergeRecordedSampleUnderLock(snapshot, sample, sampleTime, appendErr)
+		a.lastSnapshot = snapshot
+		a.haveSnapshot = true
+	}()
 	event := lifecycleEventFromSnapshot("snapshot_recorded", "", snapshot)
 	if appendErr != nil {
 		event.Error = appendErr.Error()
@@ -409,6 +685,17 @@ func cloneLiveTokenRateProjectSamples(projects []LiveTokenRateProjectSample) []L
 		return nil
 	}
 	return append([]LiveTokenRateProjectSample{}, projects...)
+}
+
+// mergeRecordedSampleUnderLock is the merge step as invoked while lastMu is
+// held. It exists as its own field-backed seam so a test can inject a panicking
+// merge and prove the lock is still released; production leaves it nil and uses
+// mergeRecordedSampleLocked.
+func (a *trayApp) mergeRecordedSampleUnderLock(snapshot Snapshot, sample HistorySample, sampleTime time.Time, appendErr error) Snapshot {
+	if a.mergeRecordedSampleFunc != nil {
+		return a.mergeRecordedSampleFunc(snapshot, sample, sampleTime, appendErr)
+	}
+	return a.mergeRecordedSampleLocked(snapshot, sample, sampleTime, appendErr)
 }
 
 func (a *trayApp) mergeRecordedSampleLocked(snapshot Snapshot, sample HistorySample, sampleTime time.Time, appendErr error) Snapshot {
@@ -539,6 +826,10 @@ func (a *trayApp) togglePopover() {
 func (a *trayApp) openURL(url string) {
 	url = strings.TrimSpace(url)
 	if url == "" {
+		return
+	}
+	if a != nil && a.openURLFunc != nil {
+		a.openURLFunc(url)
 		return
 	}
 	var cmd *exec.Cmd
@@ -680,6 +971,13 @@ func renderStatusIcon(metrics CurrentMetrics, loading bool) []byte {
 	return buf.Bytes()
 }
 
-func systrayQuit() {
+// systrayQuit is a seam so tests can observe the quit hand-off without driving a
+// real Cocoa tray; production always quits the systray.
+var systrayQuit = func() {
 	systray.Quit()
 }
+
+// systrayRun is a seam for the post-native-loop cleanup contract. Production
+// delegates to fyne.io/systray; tests can model a normal native-loop return
+// without starting a Cocoa status item.
+var systrayRun = systray.Run

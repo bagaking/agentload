@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLifecycleLogPathUsesHistoryDirectory(t *testing.T) {
@@ -81,5 +82,90 @@ func TestLifecycleLogRecordAppendsQuitAndHeartbeatEvents(t *testing.T) {
 	}
 	if first.Event != "quit_requested" || first.Reason != "api" || second.Event != "heartbeat" {
 		t.Fatalf("unexpected lifecycle events: %+v %+v", first, second)
+	}
+}
+
+func TestStartHeartbeatKeepsBeatingAfterABeatPanics(t *testing.T) {
+	historyPath := filepath.Join(t.TempDir(), "AgentLoad", "history.jsonl")
+	lifecycle := newLifecycleLog(historyPath)
+	stop := make(chan struct{})
+	beats := make(chan int, 8)
+
+	// The first beat panics. The loop must keep beating: a panic that unwinds the
+	// goroutine stops heartbeats for the whole session, so a live run looks dead
+	// in the lifecycle log with nothing to distinguish it from a crash.
+	count := 0
+	done := lifecycle.startHeartbeatWithBeat(stop, 5*time.Millisecond, func() {
+		count++
+		// Non-blocking: the beat must never wedge on a full channel, or the loop
+		// would stall and this test would report a hang instead of a verdict.
+		select {
+		case beats <- count:
+		default:
+		}
+		if count == 1 {
+			panic("record failed")
+		}
+	})
+	defer func() {
+		close(stop)
+		<-done
+	}()
+
+	deadline := time.After(10 * time.Second)
+	seen := 0
+	for seen < 3 {
+		select {
+		case seen = <-beats:
+		case <-deadline:
+			t.Fatalf("heartbeat loop stopped after the panicking beat: saw %d beats", seen)
+		}
+	}
+}
+
+func TestStartHeartbeatRecordsBeatsAndHonoursStop(t *testing.T) {
+	historyPath := filepath.Join(t.TempDir(), "AgentLoad", "history.jsonl")
+	lifecycle := newLifecycleLog(historyPath)
+	stop := make(chan struct{})
+	done := lifecycle.startHeartbeat(stop, 5*time.Millisecond)
+
+	beat := false
+	for i := 0; i < 1000 && !beat; i++ {
+		if raw, err := os.ReadFile(lifecycle.path); err == nil && strings.Contains(string(raw), `"event":"heartbeat"`) {
+			beat = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !beat {
+		t.Fatal("expected the heartbeat loop to record a beat")
+	}
+
+	// Cancellation must still be honoured after the containment change: the loop
+	// has to observe stop rather than only ever waking on the ticker.
+	close(stop)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("heartbeat loop did not join after stop")
+	}
+	stopped := false
+	for i := 0; i < 200; i++ {
+		before, err := os.ReadFile(lifecycle.path)
+		if err != nil {
+			t.Fatalf("read lifecycle log: %v", err)
+		}
+		time.Sleep(20 * time.Millisecond)
+		after, err := os.ReadFile(lifecycle.path)
+		if err != nil {
+			t.Fatalf("read lifecycle log: %v", err)
+		}
+		if len(before) == len(after) {
+			stopped = true
+			break
+		}
+	}
+	if !stopped {
+		t.Fatal("expected the heartbeat loop to stop writing after stop was closed")
 	}
 }

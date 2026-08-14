@@ -84,7 +84,10 @@ func (watcher *darwinEvidenceWatcher) run(stream *fsevents.EventStream, paths []
 	defer func() { stream.Stop() }()
 	for {
 		select {
-		case events := <-stream.Events:
+		case events, ok := <-stream.Events:
+			if !ok {
+				return
+			}
 			batch := projectEvidenceWatchEvents(events)
 			if len(batch.Paths) == 0 && batch.Complete {
 				continue

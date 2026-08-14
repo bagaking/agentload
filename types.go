@@ -424,6 +424,7 @@ type TranscriptStats struct {
 	DeferredFiles                    int      `json:"deferred_files"`
 	TailParsedFiles                  int      `json:"tail_parsed_files,omitempty"`
 	HistoricalScanDeferred           bool     `json:"historical_scan_deferred,omitempty"`
+	CoverageIncomplete               bool     `json:"coverage_incomplete,omitempty"`
 	ForegroundScanLookbackSeconds    int      `json:"foreground_scan_lookback_seconds,omitempty"`
 	ConfiguredHistoryLookbackSeconds int      `json:"configured_history_lookback_seconds,omitempty"`
 	Cached                           bool     `json:"cached"`
@@ -703,15 +704,21 @@ type TranscriptData struct {
 	DeferredFiles                    int
 	TailParsedFiles                  int
 	HistoricalScanDeferred           bool
+	CoverageIncomplete               bool
 	ForegroundScanLookbackSeconds    int
 	ConfiguredHistoryLookbackSeconds int
 	Errors                           []string
+	// evidenceRevision is internal provenance for cache publication. It is not
+	// serialized; public callers receive CoverageIncomplete when the revision
+	// changed during collection or parsing.
+	evidenceRevision uint64
 }
 
 type transcriptCacheState struct {
-	Key       string
-	ExpiresAt time.Time
-	Data      *TranscriptData
+	Key              string
+	ExpiresAt        time.Time
+	EvidenceRevision uint64
+	Data             *TranscriptData
 }
 
 type LiveProcess struct {

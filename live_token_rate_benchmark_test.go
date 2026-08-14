@@ -32,6 +32,68 @@ func BenchmarkCodingAgentUsageDecoder(b *testing.B) {
 	}
 }
 
+// The dedupe hot path must cost the same whether a file tracks one message or a
+// saturated map, so these guards compare shapes rather than machine-specific
+// nanoseconds or byte counts. A per-message validation walk shows up here as
+// allocation that scales with the tracked map instead of staying flat.
+func TestLiveTokenRateRepeatedMessageDoesNotAllocate(t *testing.T) {
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	tracked := liveTokenRateTrackedFile{}
+	for index := 0; index < liveTokenRateMaxMessages; index++ {
+		liveTokenRateRememberMessage(&tracked, fmt.Sprintf("session-a\x00message-%05d", index), 1, now)
+	}
+	hot := "session-a\x00message-00000"
+	output := int64(1)
+	// Warm the fast path first so one-time validation is not measured.
+	liveTokenRateRememberMessage(&tracked, hot, output, now)
+
+	allocs := testing.AllocsPerRun(2048, func() {
+		output++
+		liveTokenRateRememberMessage(&tracked, hot, output, now)
+	})
+	// Re-touching a tracked message only relinks list pointers, so the steady
+	// state allocates nothing; allow one for accounting noise.
+	if allocs > 1 {
+		t.Fatalf("re-touching a tracked message allocated %.2f times per call, want <= 1", allocs)
+	}
+	if len(tracked.MessageUsage) != liveTokenRateMaxMessages {
+		t.Fatalf("hot path changed the tracked map size: %d, want %d", len(tracked.MessageUsage), liveTokenRateMaxMessages)
+	}
+}
+
+func TestLiveTokenRateMessageIngestCostStaysFlat(t *testing.T) {
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	perMessageAllocs := func(messages int) float64 {
+		result := testing.Benchmark(func(b *testing.B) {
+			b.ReportAllocs()
+			for iteration := 0; iteration < b.N; iteration++ {
+				tracked := liveTokenRateTrackedFile{}
+				for index := 0; index < messages; index++ {
+					liveTokenRateMessageDelta(&tracked, fmt.Sprintf("session-a\x00message-%05d", index), 1, now)
+				}
+			}
+		})
+		if result.N == 0 {
+			t.Fatal("ingest benchmark did not run")
+		}
+		return float64(result.AllocsPerOp()) / float64(messages)
+	}
+
+	// Below the bound the map only grows; past it every insert also evicts. Both
+	// regimes must cost a constant number of allocations per message.
+	small := perMessageAllocs(liveTokenRateMaxMessages / 8)
+	saturated := perMessageAllocs(liveTokenRateMaxMessages * 4)
+	if small <= 0 {
+		t.Fatalf("small ingest reported %.3f allocations per message", small)
+	}
+	// A per-message walk over the tracked map grows this ratio with the map, so
+	// generous slack still separates flat from linear by orders of magnitude.
+	if saturated > small*4 {
+		t.Fatalf("per-message allocations grew with tracked state: %.3f at %d messages vs %.3f at %d messages",
+			saturated, liveTokenRateMaxMessages*4, small, liveTokenRateMaxMessages/8)
+	}
+}
+
 // One operation ingests the retired raw-event threshold across Claude, Codex,
 // and Trae files. A 1000x benchtime therefore proves 32,768,000 append updates.
 func BenchmarkLiveTokenRateMultiFileAppend(b *testing.B) {
@@ -83,6 +145,7 @@ func BenchmarkLiveTokenRateMultiFileAppend(b *testing.B) {
 	for iteration := 0; iteration < b.N; iteration++ {
 		b.StopTimer()
 		tracked := make([]liveTokenRateTrackedFile, len(paths))
+		infos := make([]os.FileInfo, len(paths))
 		for index, path := range paths {
 			if err := os.WriteFile(path, baselines[index], 0o600); err != nil {
 				b.Fatal(err)
@@ -92,11 +155,8 @@ func BenchmarkLiveTokenRateMultiFileAppend(b *testing.B) {
 				b.Fatal(err)
 			}
 			tracked[index] = sampler.rebaselineFile(path, tools[index], info, now)
-		}
-		b.StartTimer()
-
-		allBuckets := make([]liveTokenRateEvent, 0, len(paths))
-		for index, path := range paths {
+			// Append outside the timed region so the measurement reflects parse
+			// and dedupe cost rather than filesystem writes.
 			file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
 			if err != nil {
 				b.Fatal(err)
@@ -108,15 +168,19 @@ func BenchmarkLiveTokenRateMultiFileAppend(b *testing.B) {
 			if err := file.Close(); err != nil {
 				b.Fatal(err)
 			}
-			info, err := os.Stat(path)
-			if err != nil {
+			if infos[index], err = os.Stat(path); err != nil {
 				b.Fatal(err)
 			}
+		}
+		b.StartTimer()
+
+		allBuckets := make([]liveTokenRateEvent, 0, len(paths))
+		for index, path := range paths {
 			decoder, ok := registry.usageDecoder(tools[index])
 			if !ok {
 				b.Fatalf("missing %s usage decoder", tools[index])
 			}
-			updated, buckets, _, _ := liveTokenRateReadAppend(path, tracked[index], info, appendAt, decoder)
+			updated, buckets, _, _ := liveTokenRateReadAppend(path, tracked[index], infos[index], appendAt, decoder)
 			tracked[index] = updated
 			allBuckets = append(allBuckets, buckets...)
 		}

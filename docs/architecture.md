@@ -89,6 +89,10 @@ numbers.
 - **TTL cache**: results are cached for `Config.TranscriptCacheTTL` (default
   60s) under a key derived from roots + priority files + idle gap + min
   interval + lookback. Any cached hit is deep-cloned before return.
+- **Revision gate**: the evidence index revision is captured before a scan and
+  checked again before publication. If watcher activity changes the evidence
+  set while parsing, the result remains available to the current caller but is
+  marked incomplete and is excluded from the TTL cache and durable history.
 - **Singleflight**: concurrent snapshot builds join one in-flight scan via the
   `inflight` map. A waiter whose context is cancelled returns whatever cached
   data exists and appends a `transcript scan wait cancelled` error; the scan
@@ -353,6 +357,13 @@ One snapshot build, in order:
   (curl, the native shell) stay allowed. A top-level wrapper rejects any
   `.`/`..` path segment. The listener binds `127.0.0.1:8642` and falls back to
   an ephemeral port when the address is taken (`listenWithFallback`).
+  `localhost` is normalized to `127.0.0.1`; wildcard and non-loopback listen
+  addresses are rejected.
+- **Shutdown ownership**: `trayApp.run` invokes the idempotent `onExit` after
+  the native systray loop returns, covering macOS quit paths that do not invoke
+  the callback themselves. Shutdown cancels refresh, menu, and heartbeat loops
+  and joins them before releasing the evidence index, token sampler, and system
+  resource sampler.
 
 ## 5. Consumers
 

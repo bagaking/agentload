@@ -2,8 +2,19 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"io"
+	"log"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"fyne.io/systray"
 )
 
 func TestClampDuration(t *testing.T) {
@@ -26,6 +37,363 @@ func TestClampDuration(t *testing.T) {
 				t.Fatalf("clampDuration(%s, %s, %s) = %s, want %s", tt.value, tt.floor, tt.ceiling, got, tt.want)
 			}
 		})
+	}
+}
+
+// readLifecycleEventNames returns the ordered event names recorded in a
+// lifecycle log so shutdown ordering can be asserted from the durable record.
+func readLifecycleEventNames(t *testing.T, path string) []string {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read lifecycle log %q: %v", path, err)
+	}
+	names := []string{}
+	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var event lifecycleEvent
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			t.Fatalf("decode lifecycle line %q: %v", line, err)
+		}
+		names = append(names, event.Event)
+	}
+	return names
+}
+
+// newShutdownTestApp builds a trayApp with a real listener, HTTP server and
+// lifecycle log so onExit exercises the actual cleanup path.
+func newShutdownTestApp(t *testing.T) (*trayApp, *lifecycleLog) {
+	t.Helper()
+	cfg := Config{HistoryFile: filepath.Join(t.TempDir(), "history.jsonl")}
+	lifecycle := newLifecycleLog(cfg.HistoryFile)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	observer := newObserver(cfg)
+	app := &trayApp{
+		cfg:           cfg,
+		observer:      observer,
+		logger:        log.New(io.Discard, "", 0),
+		listener:      listener,
+		liveTokenRate: newLiveTokenRateSampler(observer.adapters, observer.evidenceIndex),
+		lifecycle:     lifecycle,
+		stopCh:        make(chan struct{}),
+		refreshCh:     make(chan struct{}, 1),
+	}
+	app.server = &http.Server{Handler: app.handler()}
+	return app, lifecycle
+}
+
+func TestOnExitCompletesEveryCleanupStep(t *testing.T) {
+	app, lifecycle := newShutdownTestApp(t)
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- app.server.Serve(app.listener) }()
+	addr := app.listener.Addr().String()
+
+	startSystemResourceSampler(time.Hour)
+	t.Cleanup(stopSystemResourceSampler)
+
+	app.onExit()
+
+	// Shutdown must reach the HTTP server, not stop at an earlier owner.
+	select {
+	case err := <-serveErr:
+		if err != http.ErrServerClosed {
+			t.Fatalf("expected ErrServerClosed from Serve, got %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("http server was never shut down by onExit")
+	}
+	if _, err := net.DialTimeout("tcp", addr, 500*time.Millisecond); err == nil {
+		t.Fatal("expected the listener to be closed after onExit")
+	}
+
+	// Background owners must be released, and the record must show shutdown ran
+	// to completion rather than stopping midway.
+	if _, ok := latestBackgroundSystemResourceSample(); ok {
+		t.Fatal("expected onExit to stop the system resource sampler")
+	}
+	select {
+	case <-app.stopCh:
+	default:
+		t.Fatal("expected onExit to close stopCh")
+	}
+	names := readLifecycleEventNames(t, lifecycle.path)
+	if len(names) < 2 || names[0] != "shutdown_begin" || names[len(names)-1] != "shutdown_complete" {
+		t.Fatalf("expected shutdown_begin..shutdown_complete, got %v", names)
+	}
+}
+
+func TestRunCleansUpWhenSystrayReturnsWithoutOnExit(t *testing.T) {
+	app, lifecycle := newShutdownTestApp(t)
+	originalRun := systrayRun
+	systrayRun = func(func(), func()) {}
+	t.Cleanup(func() { systrayRun = originalRun })
+
+	if err := app.run(); err != nil {
+		t.Fatalf("run returned an error: %v", err)
+	}
+	names := readLifecycleEventNames(t, lifecycle.path)
+	beginCount, completeCount := 0, 0
+	for _, name := range names {
+		if name == "shutdown_begin" {
+			beginCount++
+		}
+		if name == "shutdown_complete" {
+			completeCount++
+		}
+	}
+	if beginCount != 1 || completeCount != 1 {
+		t.Fatalf("run did not close the post-native-loop shutdown path: events=%v", names)
+	}
+}
+
+func TestOnExitStillShutsDownWhenAnEarlierStepPanics(t *testing.T) {
+	app, lifecycle := newShutdownTestApp(t)
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- app.server.Serve(app.listener) }()
+
+	// Inject a panic at the evidence-index owner's Stop boundary. The remaining
+	// steps, the HTTP shutdown and the shutdown_complete record must still run:
+	// a delayed or skipped API teardown is exactly the failure being guarded.
+	done := make(chan struct{})
+	close(done)
+	index := &transcriptEvidenceIndex{
+		running: true,
+		stop:    make(chan struct{}),
+		done:    done,
+		watcher: &panickingStopEvidenceWatcher{events: make(chan evidenceWatchBatch)},
+	}
+	app.observer = &Observer{evidenceIndex: index}
+
+	app.onExit()
+
+	select {
+	case err := <-serveErr:
+		if err != http.ErrServerClosed {
+			t.Fatalf("expected ErrServerClosed from Serve, got %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("a panicking cleanup step skipped the http server shutdown")
+	}
+	names := readLifecycleEventNames(t, lifecycle.path)
+	if len(names) == 0 || names[len(names)-1] != "shutdown_complete" {
+		t.Fatalf("expected shutdown_complete after a panicking cleanup step, got %v", names)
+	}
+	index.lifecycleMu.Lock()
+	running := index.running
+	index.lifecycleMu.Unlock()
+	if running {
+		t.Fatal("evidence-index cleanup did not run before shutdown completed")
+	}
+}
+
+func TestOnExitIsIdempotent(t *testing.T) {
+	app, _ := newShutdownTestApp(t)
+	go func() { _ = app.server.Serve(app.listener) }()
+	app.onExit()
+	// A second exit (menu quit plus API quit) must not panic on the closed
+	// stopCh or the already-stopped owners.
+	app.onExit()
+}
+
+func TestOnExitCancelsAndJoinsInFlightRefresh(t *testing.T) {
+	originalDiscover := discoverLiveProcessesFunc
+	entered := make(chan struct{}, 1)
+	discoverLiveProcessesFunc = func(ctx context.Context, _ *codingAgentRegistry) ([]LiveProcess, []string) {
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		<-ctx.Done()
+		return nil, nil
+	}
+	t.Cleanup(func() { discoverLiveProcessesFunc = originalDiscover })
+
+	observer := newObserver(Config{})
+	app := &trayApp{
+		cfg:           Config{RefreshInterval: time.Hour, Lookback: time.Hour},
+		observer:      observer,
+		logger:        log.New(io.Discard, "", 0),
+		liveTokenRate: newLiveTokenRateSampler(observer.adapters, observer.evidenceIndex),
+		stopCh:        make(chan struct{}),
+		refreshCh:     make(chan struct{}, 1),
+	}
+	refreshDone := app.registerLoopDone(true)
+	go func() {
+		defer close(refreshDone)
+		app.refreshLoop()
+	}()
+
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("refresh did not reach the cancellable process discovery")
+	}
+	started := time.Now()
+	app.onExit()
+	if elapsed := time.Since(started); elapsed > trayShutdownTimeout+time.Second {
+		t.Fatalf("onExit exceeded its bounded refresh shutdown, took %s", elapsed)
+	}
+	select {
+	case <-refreshDone:
+	default:
+		t.Fatal("onExit returned while the refresh loop was still running")
+	}
+	if app.isRefreshing() {
+		t.Fatal("refresh guard remained set after joined shutdown")
+	}
+}
+
+func TestOnExitConcurrentCallsShareOneShutdown(t *testing.T) {
+	app, lifecycle := newShutdownTestApp(t)
+	go func() { _ = app.server.Serve(app.listener) }()
+	const callers = 8
+	var wg sync.WaitGroup
+	wg.Add(callers)
+	for i := 0; i < callers; i++ {
+		go func() {
+			defer wg.Done()
+			app.onExit()
+		}()
+	}
+	wg.Wait()
+	names := readLifecycleEventNames(t, lifecycle.path)
+	beginCount, completeCount := 0, 0
+	for _, name := range names {
+		if name == "shutdown_begin" {
+			beginCount++
+		}
+		if name == "shutdown_complete" {
+			completeCount++
+		}
+	}
+	if beginCount != 1 || completeCount != 1 {
+		t.Fatalf("concurrent onExit recorded begin=%d complete=%d events=%v", beginCount, completeCount, names)
+	}
+}
+
+func TestRunRefreshStepReleasesGuardsWhenRefreshPanics(t *testing.T) {
+	app := &trayApp{
+		cfg:       Config{RefreshInterval: time.Minute},
+		logger:    log.New(io.Discard, "", 0),
+		stopCh:    make(chan struct{}),
+		refreshCh: make(chan struct{}, 1),
+	}
+	// A nil observer makes refreshOnce panic inside the contained step.
+	slotID := app.refreshSlotID(time.Now())
+	app.requestRefreshForSlot(slotID)
+	app.runRefreshStep()
+
+	// Both guards must be released, otherwise the UI reports a refresh that
+	// never finishes and claimRefreshSlot rejects every later slot forever.
+	if app.isRefreshing() {
+		t.Fatal("expected refreshing to be cleared after a panicking refresh")
+	}
+	app.lastMu.RLock()
+	activeSlot := app.activeSlot
+	app.lastMu.RUnlock()
+	if activeSlot != "" {
+		t.Fatalf("expected activeSlot to be released, got %q", activeSlot)
+	}
+
+	// A later slot must still be claimable, proving refreshes can resume.
+	nextSlot := app.refreshSlotIDForInterval(time.Now().Add(2*time.Minute), time.Minute)
+	app.requestRefreshForSlot(nextSlot)
+	if claimed := app.claimRefreshSlot(); claimed != nextSlot {
+		t.Fatalf("expected to claim the next slot %q after a panicking refresh, got %q", nextSlot, claimed)
+	}
+}
+
+func TestRememberSnapshotReleasesLastMuWhenMergePanics(t *testing.T) {
+	app := &trayApp{
+		logger:    log.New(io.Discard, "", 0),
+		history:   localHistoryState{path: filepath.Join(t.TempDir(), "history.jsonl")},
+		refreshCh: make(chan struct{}, 1),
+	}
+	// Inject a failing merge. The real merge helpers are all nil-safe today, so
+	// the panic has to be injected to exercise the lock scope at all.
+	merged := false
+	app.mergeRecordedSampleFunc = func(Snapshot, HistorySample, time.Time, error) Snapshot {
+		merged = true
+		panic("merge failed")
+	}
+
+	func() {
+		defer func() { _ = recover() }()
+		app.rememberSnapshot(Snapshot{GeneratedAt: time.Now().Format(time.RFC3339)})
+	}()
+	if !merged {
+		t.Fatal("expected the injected merge to run under lastMu")
+	}
+
+	// lastMu must not be stranded: a stranded write lock deadlocks every
+	// snapshot reader, the tray and the whole HTTP API.
+	acquired := make(chan struct{})
+	go func() {
+		app.lastMu.Lock()
+		app.lastMu.Unlock()
+		close(acquired)
+	}()
+	select {
+	case <-acquired:
+	case <-time.After(5 * time.Second):
+		t.Fatal("lastMu was left locked after a panic inside rememberSnapshot")
+	}
+}
+
+func TestHandleMenuClicksSurvivesPanickingClickAndStillQuits(t *testing.T) {
+	originalQuit := systrayQuit
+	quit := make(chan struct{}, 1)
+	systrayQuit = func() { quit <- struct{}{} }
+	t.Cleanup(func() { systrayQuit = originalQuit })
+
+	app := &trayApp{
+		logger:    log.New(io.Discard, "", 0),
+		stopCh:    make(chan struct{}),
+		refreshCh: make(chan struct{}, 1),
+		// A nil lifecycle is fine; recordLifecycle tolerates it. The URL opener is
+		// injected below so the first click reaches the real contained step and
+		// panics deterministically.
+		mOpenDashboard: &systray.MenuItem{ClickedCh: make(chan struct{}, 1)},
+		mRefreshNow:    &systray.MenuItem{ClickedCh: make(chan struct{}, 1)},
+		mQuit:          &systray.MenuItem{ClickedCh: make(chan struct{}, 1)},
+	}
+	opened := make(chan struct{}, 1)
+	app.dashboardURL = "http://127.0.0.1:1/dashboard"
+	app.openURLFunc = func(string) {
+		opened <- struct{}{}
+		panic("synthetic URL opener failure")
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		app.handleMenuClicks()
+	}()
+
+	// The first click must actually panic inside the production URL-opening step.
+	app.mOpenDashboard.ClickedCh <- struct{}{}
+	select {
+	case <-opened:
+	case <-time.After(5 * time.Second):
+		t.Fatal("dashboard click did not reach the injected URL opener")
+	}
+	// The loop must survive that panic and still serve the later Quit click.
+	app.mQuit.ClickedCh <- struct{}{}
+
+	select {
+	case <-quit:
+	case <-time.After(5 * time.Second):
+		t.Fatal("expected the menu loop to reach the quit hand-off")
+	}
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("expected handleMenuClicks to return after quit")
 	}
 }
 
@@ -53,10 +421,10 @@ func TestSnapshotScanAborted(t *testing.T) {
 			want:     true,
 		},
 		{
-			name:     "ordinary parse error is not an abort",
+			name:     "ordinary transcript error is an abort",
 			ctx:      context.Background(),
-			snapshot: Snapshot{TranscriptStats: TranscriptStats{Errors: []string{"/tmp/x.jsonl: invalid JSON"}}},
-			want:     false,
+			snapshot: Snapshot{TranscriptStats: TranscriptStats{Errors: []string{"session.jsonl: invalid JSON"}}},
+			want:     true,
 		},
 	}
 	for _, tt := range tests {

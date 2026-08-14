@@ -170,7 +170,9 @@ context.
 
 - **Response** (`202 Accepted`): `{"ok": true, "name": string, "pid": int}`.
 - **Errors**: `404` when the PID is not an observed host app or has no bundle
-  path; `502` with the `open` output when launching fails.
+  path; `502` with a stable generic error when launching fails. Subprocess
+  output is not returned because it may contain local paths or other private
+  diagnostics.
 
 ## Lookup API
 

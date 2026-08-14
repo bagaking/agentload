@@ -78,6 +78,7 @@ func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 			DeferredFiles:                    data.DeferredFiles,
 			TailParsedFiles:                  data.TailParsedFiles,
 			HistoricalScanDeferred:           data.HistoricalScanDeferred,
+			CoverageIncomplete:               data.CoverageIncomplete,
 			ForegroundScanLookbackSeconds:    data.ForegroundScanLookbackSeconds,
 			ConfiguredHistoryLookbackSeconds: data.ConfiguredHistoryLookbackSeconds,
 			Cached:                           cached,
@@ -114,8 +115,10 @@ func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 func buildSnapshotNotes(snapshot Snapshot, processNotes, sessionNotes []string) []string {
 	notes := append([]string{}, processNotes...)
 	notes = append(notes, sessionNotes...)
-	if len(snapshot.TranscriptStats.Errors) > 0 {
-		notes = append(notes, "Some transcript files could not be parsed; see transcript_stats.errors.")
+	if snapshot.TranscriptStats.CoverageIncomplete {
+		notes = append(notes, "Transcript evidence coverage is incomplete; current counts may undercount. See transcript_stats.errors.")
+	} else if len(snapshot.TranscriptStats.Errors) > 0 {
+		notes = append(notes, "Some transcript evidence reported errors; see transcript_stats.errors.")
 	}
 	if snapshot.TranscriptStats.DeferredFiles > 0 {
 		notes = append(notes, fmt.Sprintf(

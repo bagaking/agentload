@@ -49,6 +49,14 @@ type liveTokenRateTrackedFile struct {
 	LastTotalAt      time.Time
 	MessageUsage     map[string]*liveTokenRateMessageUsage
 	MessageOrder     *list.List
+
+	// messageStateValidated records that MessageUsage and MessageOrder hold the
+	// same identities one-for-one, with every usage.order pointing at its own
+	// element. The mutators below preserve that invariant, so validation runs
+	// once per foreign state instead of once per message. The zero value keeps
+	// unvalidated state honest: a struct literal or a fresh file re-validates
+	// before anything trusts the order list.
+	messageStateValidated bool
 }
 
 type liveTokenRateObservation struct {
@@ -93,10 +101,16 @@ type liveTokenRateSampler struct {
 	publishedMu sync.RWMutex
 	published   liveTokenRatePublished
 
-	lifecycleMu sync.Mutex
-	running     bool
-	stop        chan struct{}
-	done        chan struct{}
+	// lifecycleTransitionMu serializes start/stop across the join. Without a
+	// separate transition lock, a new generation could start while the old
+	// goroutine was still unwinding and mutate the shared polling baseline.
+	lifecycleTransitionMu sync.Mutex
+	lifecycleMu           sync.Mutex
+	generation            uint64
+	running               bool
+	stop                  chan struct{}
+	done                  chan struct{}
+	cancel                context.CancelFunc
 }
 
 func newLiveTokenRateSampler(adapters *codingAgentRegistry, evidenceIndex *transcriptEvidenceIndex) *liveTokenRateSampler {
@@ -200,39 +214,86 @@ func (sampler *liveTokenRateSampler) start(interval time.Duration) {
 	if interval < liveTokenRateSampleInterval {
 		interval = liveTokenRateSampleInterval
 	}
+	sampler.startLoopWithContext(interval, func(ctx context.Context, now time.Time) {
+		sampler.pollContext(ctx, now)
+	})
+}
+
+// startLoop owns the sampler goroutine and accepts a time-only poll seam for
+// deterministic lifecycle tests. Production uses startLoopWithContext so a
+// shutdown can cancel an evidence read in progress.
+func (sampler *liveTokenRateSampler) startLoop(interval time.Duration, poll func(time.Time)) {
+	if sampler == nil || poll == nil {
+		return
+	}
+	sampler.startLoopWithContext(interval, func(_ context.Context, now time.Time) {
+		poll(now)
+	})
+}
+
+func (sampler *liveTokenRateSampler) startLoopWithContext(interval time.Duration, poll func(context.Context, time.Time)) {
+	if sampler == nil || poll == nil {
+		return
+	}
+	if interval <= 0 {
+		interval = liveTokenRateSampleInterval
+	}
+	sampler.lifecycleTransitionMu.Lock()
+	defer sampler.lifecycleTransitionMu.Unlock()
 	sampler.lifecycleMu.Lock()
 	if sampler.running {
 		sampler.lifecycleMu.Unlock()
 		return
 	}
+	sampler.generation++
+	generation := sampler.generation
 	sampler.running = true
 	sampler.stop = make(chan struct{})
 	sampler.done = make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	sampler.cancel = cancel
 	stop := sampler.stop
 	done := sampler.done
-	sampler.lifecycleMu.Unlock()
 
 	go func() {
-		defer close(done)
 		defer recoverBackgroundPanic("live token rate sampler")
-		sampler.poll(time.Now())
+		defer sampler.releaseSamplerLifecycle(generation, done)
+		runBackgroundStep("live token rate sampler", func() { poll(ctx, time.Now()) })
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
 			select {
 			case now := <-ticker.C:
-				sampler.poll(now)
+				runBackgroundStep("live token rate sampler", func() { poll(ctx, now) })
 			case <-stop:
 				return
 			}
 		}
 	}()
+	sampler.lifecycleMu.Unlock()
+}
+
+// releaseSamplerLifecycle makes an unexpected sampler exit restartable. The
+// stop path clears the same fields before waiting, so the identity check keeps
+// an old goroutine from clobbering a newer generation's lifecycle state.
+func (sampler *liveTokenRateSampler) releaseSamplerLifecycle(generation uint64, done chan struct{}) {
+	defer close(done)
+	sampler.lifecycleMu.Lock()
+	if sampler.running && sampler.generation == generation && sampler.done == done {
+		sampler.running = false
+		sampler.stop = nil
+		sampler.done = nil
+		sampler.cancel = nil
+	}
+	sampler.lifecycleMu.Unlock()
 }
 
 func (sampler *liveTokenRateSampler) stopSampler() {
 	if sampler == nil {
 		return
 	}
+	sampler.lifecycleTransitionMu.Lock()
+	defer sampler.lifecycleTransitionMu.Unlock()
 	sampler.lifecycleMu.Lock()
 	if !sampler.running {
 		sampler.lifecycleMu.Unlock()
@@ -240,28 +301,50 @@ func (sampler *liveTokenRateSampler) stopSampler() {
 	}
 	stop := sampler.stop
 	done := sampler.done
+	cancel := sampler.cancel
 	sampler.running = false
 	sampler.stop = nil
 	sampler.done = nil
-	close(stop)
+	sampler.cancel = nil
+	if stop != nil {
+		close(stop)
+	}
 	sampler.lifecycleMu.Unlock()
-	<-done
+	if cancel != nil {
+		cancel()
+	}
+	if done != nil {
+		<-done
+	}
 }
 
 func (sampler *liveTokenRateSampler) poll(now time.Time) {
+	sampler.pollContext(context.Background(), now)
+}
+
+func (sampler *liveTokenRateSampler) pollContext(ctx context.Context, now time.Time) {
 	if sampler == nil {
 		return
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	if now.IsZero() {
 		now = time.Now()
 	}
 	sampler.pollMu.Lock()
 	defer sampler.pollMu.Unlock()
-	sampler.pollLocked(now)
+	sampler.pollLocked(ctx, now)
 	sampler.publishLocked(now)
 }
 
-func (sampler *liveTokenRateSampler) pollLocked(now time.Time) {
+func (sampler *liveTokenRateSampler) pollLocked(ctx context.Context, now time.Time) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if ctx.Err() != nil {
+		return
+	}
 	if !sampler.lastPoll.IsZero() && now.Sub(sampler.lastPoll) < liveTokenRateSampleInterval {
 		return
 	}
@@ -275,7 +358,10 @@ func (sampler *liveTokenRateSampler) pollLocked(now time.Time) {
 	if sampler.files == nil {
 		sampler.files = map[string]liveTokenRateTrackedFile{}
 	}
-	sampler.syncEvidenceFilesLocked(now)
+	sampler.syncEvidenceFilesLocked(ctx, now)
+	if ctx.Err() != nil {
+		return
+	}
 	for path, tracked := range sampler.files {
 		info, err := os.Stat(path)
 		if err != nil || info.IsDir() {
@@ -413,8 +499,11 @@ func (sampler *liveTokenRateSampler) minuteFactLocked(minuteStart, minuteEnd tim
 	return fact
 }
 
-func (sampler *liveTokenRateSampler) syncEvidenceFilesLocked(now time.Time) {
-	indexed := sampler.evidenceIndex.snapshot(context.Background(), now.Add(-foregroundTranscriptMaxLookback), nil)
+func (sampler *liveTokenRateSampler) syncEvidenceFilesLocked(ctx context.Context, now time.Time) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	indexed := sampler.evidenceIndex.snapshot(ctx, now.Add(-foregroundTranscriptMaxLookback), nil)
 	if !indexed.Complete {
 		sampler.markLimitedLocked(now, liveTokenRateUnavailableWatchIncomplete)
 	}
@@ -541,6 +630,9 @@ func liveTokenRateReadAppend(path string, tracked liveTokenRateTrackedFile, info
 	}
 	original := tracked
 	tracked.MessageUsage, tracked.MessageOrder = cloneLiveTokenRateMessages(tracked.MessageUsage, tracked.MessageOrder)
+	// The clone pairs every identity with exactly one element it owns, so the
+	// append loop below starts from validated state regardless of the source.
+	tracked.messageStateValidated = true
 	buckets := liveTokenRateBucketAccumulator{}
 	latestSignal := time.Time{}
 	latestEvent := time.Time{}
@@ -621,7 +713,10 @@ func cloneLiveTokenRateMessages(source map[string]*liveTokenRateMessageUsage, or
 		for element := order.Front(); element != nil; element = element.Next() {
 			identity, _ := element.Value.(string)
 			usage := source[identity]
-			if identity == "" || usage == nil {
+			// A repeated identity in the source order would otherwise push a
+			// second element while the map keeps only the last copy, leaving the
+			// clone longer than its map with an orphaned element.
+			if identity == "" || usage == nil || cloned[identity] != nil {
 				continue
 			}
 			copy := *usage
@@ -629,8 +724,48 @@ func cloneLiveTokenRateMessages(source map[string]*liveTokenRateMessageUsage, or
 			cloned[identity] = &copy
 		}
 	}
+	validCount := 0
 	for identity, usage := range source {
-		if usage == nil || cloned[identity] != nil {
+		if identity != "" && usage != nil {
+			validCount++
+		}
+	}
+	if len(cloned) != validCount {
+		// A foreign or corrupted order cannot define a safe eviction sequence.
+		// Rebuild deterministically from the retained timestamps rather than
+		// relying on Go's deliberately randomized map iteration order.
+		type entry struct {
+			identity string
+			usage    *liveTokenRateMessageUsage
+		}
+		entries := make([]entry, 0, validCount)
+		for identity, usage := range source {
+			if identity == "" || usage == nil {
+				continue
+			}
+			entries = append(entries, entry{identity: identity, usage: usage})
+		}
+		sort.Slice(entries, func(i, j int) bool {
+			left, right := entries[i].usage.LastSeen, entries[j].usage.LastSeen
+			if left.IsZero() != right.IsZero() {
+				return left.IsZero()
+			}
+			if left.Equal(right) {
+				return entries[i].identity < entries[j].identity
+			}
+			return left.Before(right)
+		})
+		cloned = make(map[string]*liveTokenRateMessageUsage, len(entries))
+		clonedOrder = list.New()
+		for _, entry := range entries {
+			copy := *entry.usage
+			copy.order = clonedOrder.PushBack(entry.identity)
+			cloned[entry.identity] = &copy
+		}
+		return cloned, clonedOrder
+	}
+	for identity, usage := range source {
+		if identity == "" || usage == nil || cloned[identity] != nil {
 			continue
 		}
 		copy := *usage
@@ -683,18 +818,25 @@ func liveTokenRateEnsureMessageState(tracked *liveTokenRateTrackedFile) {
 	if tracked.MessageUsage == nil {
 		tracked.MessageUsage = map[string]*liveTokenRateMessageUsage{}
 	}
+	if tracked.messageStateValidated && tracked.MessageOrder != nil {
+		return
+	}
 	if len(tracked.MessageUsage) == 0 {
 		tracked.MessageOrder = list.New()
+		tracked.messageStateValidated = true
 		return
 	}
 	if tracked.MessageOrder == nil {
 		liveTokenRateRebuildMessageOrder(tracked)
+		tracked.messageStateValidated = true
 		return
 	}
 	if liveTokenRateRepairMessageOrder(tracked) {
+		tracked.messageStateValidated = true
 		return
 	}
 	liveTokenRateRebuildMessageOrder(tracked)
+	tracked.messageStateValidated = true
 }
 
 func liveTokenRateRepairMessageOrder(tracked *liveTokenRateTrackedFile) bool {
@@ -754,7 +896,11 @@ func liveTokenRateRebuildMessageOrder(tracked *liveTokenRateTrackedFile) {
 }
 
 func liveTokenRatePruneMessages(tracked *liveTokenRateTrackedFile, now time.Time) {
-	if tracked == nil || len(tracked.MessageUsage) == 0 || tracked.MessageOrder == nil {
+	if tracked == nil {
+		return
+	}
+	liveTokenRateEnsureMessageState(tracked)
+	if len(tracked.MessageUsage) == 0 || tracked.MessageOrder == nil {
 		return
 	}
 	for tracked.MessageOrder.Len() > 0 {
@@ -771,23 +917,35 @@ func liveTokenRatePruneMessages(tracked *liveTokenRateTrackedFile, now time.Time
 	if len(tracked.MessageUsage) == 0 {
 		tracked.MessageUsage = nil
 		tracked.MessageOrder = nil
+		tracked.messageStateValidated = false
 	}
 }
 
 func liveTokenRateForgetOldestMessage(tracked *liveTokenRateTrackedFile) {
-	if tracked == nil || tracked.MessageOrder == nil {
+	if tracked == nil {
 		return
 	}
-	element := tracked.MessageOrder.Front()
-	if element == nil {
+	if tracked.MessageOrder != nil {
+		if element := tracked.MessageOrder.Front(); element != nil {
+			identity, _ := element.Value.(string)
+			tracked.MessageOrder.Remove(element)
+			if usage := tracked.MessageUsage[identity]; usage != nil {
+				usage.order = nil
+			}
+			delete(tracked.MessageUsage, identity)
+			return
+		}
+	}
+	// The order list is empty while the map still holds entries, so no eviction
+	// could name one. Drop a single entry directly: the callers bound the map,
+	// not the list, and would otherwise spin without ever reaching their bound.
+	for identity, usage := range tracked.MessageUsage {
+		if usage != nil {
+			usage.order = nil
+		}
+		delete(tracked.MessageUsage, identity)
 		return
 	}
-	identity, _ := element.Value.(string)
-	tracked.MessageOrder.Remove(element)
-	if usage := tracked.MessageUsage[identity]; usage != nil {
-		usage.order = nil
-	}
-	delete(tracked.MessageUsage, identity)
 }
 
 func liveTokenRateBoundaryFingerprint(path string, offset int64) ([sha256.Size]byte, bool) {

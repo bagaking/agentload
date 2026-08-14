@@ -63,6 +63,7 @@ type lifecycleTranscriptStats struct {
 	DeferredFiles          int  `json:"deferred_files"`
 	TailParsedFiles        int  `json:"tail_parsed_files,omitempty"`
 	HistoricalScanDeferred bool `json:"historical_scan_deferred,omitempty"`
+	CoverageIncomplete     bool `json:"coverage_incomplete,omitempty"`
 	Cached                 bool `json:"cached"`
 	ErrorCount             int  `json:"error_count,omitempty"`
 }
@@ -150,8 +151,8 @@ func (l *lifecycleLog) recordPanic() {
 	if recovered := recover(); recovered != nil {
 		_ = l.record(lifecycleEvent{
 			Event: "panic",
-			Error: fmt.Sprint(recovered),
-			Stack: string(debug.Stack()),
+			Error: sanitizeTextForClient(fmt.Sprint(recovered)),
+			Stack: sanitizeTextForClient(string(debug.Stack())),
 		})
 		panic(recovered)
 	}
@@ -192,6 +193,7 @@ func lifecycleTranscriptStatsFromSnapshot(stats TranscriptStats) *lifecycleTrans
 		DeferredFiles:          stats.DeferredFiles,
 		TailParsedFiles:        stats.TailParsedFiles,
 		HistoricalScanDeferred: stats.HistoricalScanDeferred,
+		CoverageIncomplete:     stats.CoverageIncomplete,
 		Cached:                 stats.Cached,
 		ErrorCount:             len(stats.Errors),
 	}
@@ -231,24 +233,42 @@ func lifecycleHostAppProcesses(processes []HostAppProcessSummary) []lifecycleHos
 	return out
 }
 
-func (l *lifecycleLog) startHeartbeat(stop <-chan struct{}, interval time.Duration) {
+func (l *lifecycleLog) startHeartbeat(stop <-chan struct{}, interval time.Duration) <-chan struct{} {
 	if l == nil {
-		return
+		return nil
+	}
+	return l.startHeartbeatWithBeat(stop, interval, func() {
+		_ = l.record(lifecycleEvent{Event: "heartbeat"})
+	})
+}
+
+// startHeartbeatWithBeat owns the beat loop with the beat itself injected, so a
+// test can drive a panicking beat through the real loop instead of asserting on
+// a copy of it.
+func (l *lifecycleLog) startHeartbeatWithBeat(stop <-chan struct{}, interval time.Duration, beat func()) <-chan struct{} {
+	if l == nil || beat == nil {
+		return nil
 	}
 	if interval <= 0 {
 		interval = lifecycleHeartbeatInterval
 	}
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		defer recoverBackgroundPanic("lifecycle heartbeat")
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
-				_ = l.record(lifecycleEvent{Event: "heartbeat"})
+				// Contained per beat: a panic while recording one heartbeat must
+				// not end the loop, or heartbeats stop for the whole session and
+				// the run looks dead in the lifecycle log.
+				runBackgroundStep("lifecycle heartbeat", beat)
 			case <-stop:
 				return
 			}
 		}
 	}()
+	return done
 }

@@ -8,8 +8,10 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -289,6 +291,307 @@ func TestLiveTokenRateMessageDedupeRebuildsInconsistentOrder(t *testing.T) {
 	if tracked.MessageUsage["session-a\x00old-message"].order == nil || tracked.MessageUsage["session-a\x00new-message"].order == nil {
 		t.Fatalf("rebuilt order did not restore usage pointers: %+v", tracked.MessageUsage)
 	}
+}
+
+// assertLiveTokenRateMessageStateConsistent locks the invariant the ingest fast
+// path depends on: the map and order list name the same identities one-for-one,
+// and every usage points at its own element in that list.
+func assertLiveTokenRateMessageStateConsistent(t *testing.T, tracked *liveTokenRateTrackedFile) {
+	t.Helper()
+	if len(tracked.MessageUsage) == 0 {
+		if tracked.MessageOrder != nil && tracked.MessageOrder.Len() != 0 {
+			t.Fatalf("empty usage map kept %d order elements", tracked.MessageOrder.Len())
+		}
+		return
+	}
+	if tracked.MessageOrder == nil {
+		t.Fatalf("usage map holds %d entries with no order list", len(tracked.MessageUsage))
+	}
+	if tracked.MessageOrder.Len() != len(tracked.MessageUsage) {
+		t.Fatalf("order length %d does not match usage map size %d", tracked.MessageOrder.Len(), len(tracked.MessageUsage))
+	}
+	seen := map[string]struct{}{}
+	for element := tracked.MessageOrder.Front(); element != nil; element = element.Next() {
+		identity, ok := element.Value.(string)
+		if !ok {
+			t.Fatalf("order element holds a non-string value %v", element.Value)
+		}
+		if _, duplicate := seen[identity]; duplicate {
+			t.Fatalf("order list repeats identity %q", identity)
+		}
+		seen[identity] = struct{}{}
+		usage := tracked.MessageUsage[identity]
+		if usage == nil {
+			t.Fatalf("order list names identity %q that the usage map does not hold", identity)
+		}
+		if usage.order != element {
+			t.Fatalf("usage %q points at a different element than the order list holds", identity)
+		}
+	}
+	for identity, usage := range tracked.MessageUsage {
+		if usage == nil {
+			t.Fatalf("usage map holds a nil entry for %q", identity)
+		}
+		if usage.order == nil {
+			t.Fatalf("usage %q has no order element", identity)
+		}
+		if _, ok := seen[identity]; !ok {
+			t.Fatalf("usage %q is missing from the order list", identity)
+		}
+	}
+}
+
+func liveTokenRateMessageOrderIdentities(tracked *liveTokenRateTrackedFile) []string {
+	if tracked.MessageOrder == nil {
+		return nil
+	}
+	identities := make([]string, 0, tracked.MessageOrder.Len())
+	for element := tracked.MessageOrder.Front(); element != nil; element = element.Next() {
+		identity, _ := element.Value.(string)
+		identities = append(identities, identity)
+	}
+	return identities
+}
+
+func TestLiveTokenRateMessageDedupeEvictsLeastRecentlySeen(t *testing.T) {
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	tracked := liveTokenRateTrackedFile{}
+	identity := func(index int) string { return fmt.Sprintf("session-a\x00message-%05d", index) }
+	for index := 0; index < liveTokenRateMaxMessages; index++ {
+		liveTokenRateRememberMessage(&tracked, identity(index), 1, now)
+	}
+
+	// Re-touching the oldest identity must move it behind its successor, so the
+	// next insert evicts that successor instead.
+	liveTokenRateRememberMessage(&tracked, identity(0), 2, now)
+	liveTokenRateRememberMessage(&tracked, "session-a\x00fresh", 5, now)
+
+	if len(tracked.MessageUsage) != liveTokenRateMaxMessages {
+		t.Fatalf("usage map size = %d, want %d", len(tracked.MessageUsage), liveTokenRateMaxMessages)
+	}
+	if tracked.MessageUsage[identity(0)] == nil {
+		t.Fatalf("re-touched identity %q was evicted despite being most recent", identity(0))
+	}
+	if tracked.MessageUsage[identity(1)] != nil {
+		t.Fatalf("least recently seen identity %q survived eviction", identity(1))
+	}
+	if tracked.MessageUsage["session-a\x00fresh"] == nil {
+		t.Fatal("newly remembered identity was not retained")
+	}
+	if back := tracked.MessageOrder.Back(); back == nil || back.Value != "session-a\x00fresh" {
+		t.Fatalf("most recent identity is not at the back of the order: %v", back)
+	}
+	assertLiveTokenRateMessageStateConsistent(t, &tracked)
+}
+
+func TestLiveTokenRateMessageDedupePrunesExpiredButKeepsFresh(t *testing.T) {
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	expired := now.Add(-liveTokenRateMessageRetention - time.Minute)
+	tracked := liveTokenRateTrackedFile{}
+	liveTokenRateRememberMessage(&tracked, "session-a\x00expired-first", 3, expired)
+	liveTokenRateRememberMessage(&tracked, "session-a\x00expired-second", 4, expired)
+	liveTokenRateRememberMessage(&tracked, "session-a\x00fresh", 6, now)
+
+	// A new message prunes by retention before inserting, so both expired
+	// identities go and the fresh one stays deduped against its own history.
+	if delta := liveTokenRateMessageDelta(&tracked, "session-a\x00incoming", 9, now); delta != 9 {
+		t.Fatalf("incoming message delta = %d, want 9", delta)
+	}
+	if tracked.MessageUsage["session-a\x00expired-first"] != nil || tracked.MessageUsage["session-a\x00expired-second"] != nil {
+		t.Fatalf("expired identities survived retention pruning: %+v", liveTokenRateMessageOrderIdentities(&tracked))
+	}
+	if tracked.MessageUsage["session-a\x00fresh"] == nil {
+		t.Fatal("fresh identity was pruned with the expired ones")
+	}
+	if delta := liveTokenRateMessageDelta(&tracked, "session-a\x00fresh", 6, now); delta != 0 {
+		t.Fatalf("retained identity lost its dedupe history: delta = %d, want 0", delta)
+	}
+	assertLiveTokenRateMessageStateConsistent(t, &tracked)
+}
+
+func TestLiveTokenRateMessageStateStaysConsistentAcrossSaturatedIngest(t *testing.T) {
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	tracked := liveTokenRateTrackedFile{}
+	// Drive past the bound so inserts, LRU re-touches, evictions, and retention
+	// pruning all interleave, then prove the pointers still agree.
+	for index := 0; index < liveTokenRateMaxMessages*3; index++ {
+		identity := fmt.Sprintf("session-a\x00message-%05d", index)
+		at := now.Add(time.Duration(index) * time.Millisecond)
+		if delta := liveTokenRateMessageDelta(&tracked, identity, 1, at); delta != 1 {
+			t.Fatalf("new message delta = %d, want 1", delta)
+		}
+		if index%7 == 0 {
+			if delta := liveTokenRateMessageDelta(&tracked, identity, 3, at); delta != 2 {
+				t.Fatalf("re-touched message delta = %d, want 2", delta)
+			}
+		}
+		if len(tracked.MessageUsage) > liveTokenRateMaxMessages || tracked.MessageOrder.Len() > liveTokenRateMaxMessages {
+			t.Fatalf("dedupe exceeded bound: map=%d order=%d", len(tracked.MessageUsage), tracked.MessageOrder.Len())
+		}
+	}
+	assertLiveTokenRateMessageStateConsistent(t, &tracked)
+
+	liveTokenRatePruneMessages(&tracked, now.Add(liveTokenRateMessageRetention*2))
+	if len(tracked.MessageUsage) != 0 {
+		t.Fatalf("retention prune left %d entries", len(tracked.MessageUsage))
+	}
+	// A fully pruned file must still accept new messages.
+	if delta := liveTokenRateMessageDelta(&tracked, "session-a\x00after-prune", 4, now); delta != 4 {
+		t.Fatalf("post-prune delta = %d, want 4", delta)
+	}
+	assertLiveTokenRateMessageStateConsistent(t, &tracked)
+}
+
+func TestCloneLiveTokenRateMessagesIsolatesSourceState(t *testing.T) {
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	source := liveTokenRateTrackedFile{}
+	for index := 0; index < 3; index++ {
+		liveTokenRateRememberMessage(&source, fmt.Sprintf("session-a\x00message-%d", index), int64(index+1), now)
+	}
+	before := liveTokenRateMessageOrderIdentities(&source)
+
+	cloned := liveTokenRateTrackedFile{}
+	cloned.MessageUsage, cloned.MessageOrder = cloneLiveTokenRateMessages(source.MessageUsage, source.MessageOrder)
+	if len(cloned.MessageUsage) != len(source.MessageUsage) {
+		t.Fatalf("clone size = %d, want %d", len(cloned.MessageUsage), len(source.MessageUsage))
+	}
+	for identity, usage := range cloned.MessageUsage {
+		if usage == source.MessageUsage[identity] {
+			t.Fatalf("clone shares the usage pointer for %q", identity)
+		}
+	}
+	assertLiveTokenRateMessageStateConsistent(t, &cloned)
+
+	// Mutating the clone must leave the source byte-for-byte intact.
+	liveTokenRateRememberMessage(&cloned, "session-a\x00message-0", 99, now.Add(time.Hour))
+	liveTokenRateForgetOldestMessage(&cloned)
+	if got := liveTokenRateMessageOrderIdentities(&source); !slices.Equal(got, before) {
+		t.Fatalf("source order changed with the clone: %v, want %v", got, before)
+	}
+	for index := 0; index < 3; index++ {
+		identity := fmt.Sprintf("session-a\x00message-%d", index)
+		usage := source.MessageUsage[identity]
+		if usage == nil || usage.Output != int64(index+1) || !usage.LastSeen.Equal(now) {
+			t.Fatalf("source usage %q was mutated: %+v", identity, usage)
+		}
+	}
+	assertLiveTokenRateMessageStateConsistent(t, &source)
+}
+
+func TestCloneLiveTokenRateMessagesConvergesFromRepeatedOrderIdentity(t *testing.T) {
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	// A repeated identity in the source order would otherwise clone into an
+	// order list longer than its map, leaving an element nothing can evict.
+	source := liveTokenRateTrackedFile{
+		MessageUsage: map[string]*liveTokenRateMessageUsage{
+			"session-a\x00duplicated": {Output: 5, LastSeen: now},
+			"session-a\x00missing":    {Output: 7, LastSeen: now},
+		},
+		MessageOrder: list.New(),
+	}
+	source.MessageOrder.PushBack("session-a\x00duplicated")
+	source.MessageOrder.PushBack("session-a\x00duplicated")
+
+	cloned := liveTokenRateTrackedFile{}
+	cloned.MessageUsage, cloned.MessageOrder = cloneLiveTokenRateMessages(source.MessageUsage, source.MessageOrder)
+	assertLiveTokenRateMessageStateConsistent(t, &cloned)
+	if len(cloned.MessageUsage) != 2 {
+		t.Fatalf("clone size = %d, want 2", len(cloned.MessageUsage))
+	}
+	if delta := liveTokenRateMessageDelta(&cloned, "session-a\x00duplicated", 8, now); delta != 3 {
+		t.Fatalf("cloned dedupe delta = %d, want 3", delta)
+	}
+	assertLiveTokenRateMessageStateConsistent(t, &cloned)
+}
+
+func TestLiveTokenRateForgetOldestMessageAlwaysShrinksUsage(t *testing.T) {
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	// An order list that names nothing the map holds must not stall the callers'
+	// eviction loops, which bound the map rather than the list.
+	tracked := liveTokenRateTrackedFile{
+		MessageUsage: map[string]*liveTokenRateMessageUsage{
+			"session-a\x00unreachable": {Output: 4, LastSeen: now},
+		},
+		MessageOrder: list.New(),
+	}
+	for len(tracked.MessageUsage) > 0 {
+		before := len(tracked.MessageUsage)
+		liveTokenRateForgetOldestMessage(&tracked)
+		if len(tracked.MessageUsage) >= before {
+			t.Fatalf("eviction made no progress at map size %d", before)
+		}
+	}
+
+	// The same guarantee must hold when the list names a stale identity.
+	tracked = liveTokenRateTrackedFile{
+		MessageUsage: map[string]*liveTokenRateMessageUsage{
+			"session-a\x00live": {Output: 4, LastSeen: now},
+		},
+		MessageOrder: list.New(),
+	}
+	tracked.MessageOrder.PushBack("session-a\x00stale")
+	for attempts := 0; len(tracked.MessageUsage) > 0; attempts++ {
+		if attempts > 4 {
+			t.Fatalf("eviction did not drain a stale order list: map=%d", len(tracked.MessageUsage))
+		}
+		liveTokenRateForgetOldestMessage(&tracked)
+	}
+}
+
+func TestLiveTokenRateReadAppendKeepsOriginalStateOnScannerError(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	root := t.TempDir()
+	projects := filepath.Join(root, "projects", "project-a")
+	if err := os.MkdirAll(projects, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(projects, "session.jsonl")
+	claudeLine := func(at time.Time, id string, output int64) string {
+		return `{"timestamp":"` + at.Format(time.RFC3339) + `","sessionId":"session-a","message":{"id":"` + id + `","usage":{"output_tokens":` + strconv.FormatInt(output, 10) + `}}}` + "\n"
+	}
+	if err := os.WriteFile(path, []byte(claudeLine(now, "msg-1", 10)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	registry := defaultCodingAgentRegistry(Config{ClaudeRoots: []string{root}})
+	sampler := newLiveTokenRateSampler(registry, newTranscriptEvidenceIndex(registry))
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := sampler.rebaselineFile(path, "claude", info, now)
+	if original.MessageUsage["session-a\x00msg-1"] == nil {
+		t.Fatalf("baseline did not remember the message: %+v", original.MessageUsage)
+	}
+	snapshot := *original.MessageUsage["session-a\x00msg-1"]
+	orderBefore := liveTokenRateMessageOrderIdentities(&original)
+
+	// A single line past the scanner's token limit makes scanner.Err() report
+	// bufio.ErrTooLong after the loop, which must roll the whole append back.
+	oversized := append(bytes.Repeat([]byte("x"), liveTokenRateMaxJSONLineBytes+1), '\n')
+	appendTokenText(t, path, string(oversized))
+	info, err = os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoder, ok := registry.usageDecoder("claude")
+	if !ok {
+		t.Fatal("claude usage decoder is unavailable")
+	}
+	updated, buckets, latestSignal, latestEvent := liveTokenRateReadAppend(path, original, info, now.Add(30*time.Second), decoder)
+	if len(buckets) != 0 || !latestSignal.IsZero() || !latestEvent.IsZero() {
+		t.Fatalf("scanner error still reported progress: buckets=%d signal=%v event=%v", len(buckets), latestSignal, latestEvent)
+	}
+	if updated.Offset != original.Offset {
+		t.Fatalf("rolled-back offset = %d, want %d", updated.Offset, original.Offset)
+	}
+	usage := original.MessageUsage["session-a\x00msg-1"]
+	if usage == nil || usage.Output != snapshot.Output || !usage.LastSeen.Equal(snapshot.LastSeen) {
+		t.Fatalf("original usage was mutated through the clone: %+v, want %+v", usage, &snapshot)
+	}
+	if got := liveTokenRateMessageOrderIdentities(&original); !slices.Equal(got, orderBefore) {
+		t.Fatalf("original order changed: %v, want %v", got, orderBefore)
+	}
+	assertLiveTokenRateMessageStateConsistent(t, &original)
 }
 
 type blockingAgentUsageDecoder struct {
@@ -600,6 +903,38 @@ func TestLiveTokenRateSamplerLifecycleIsIdempotent(t *testing.T) {
 	sampler.stopSampler()
 	if sample := sampler.sample(time.Now()); sample.State != liveTokenRateStateUnavailable || sample.UnavailableReason != liveTokenRateUnavailableNotConfigured {
 		t.Fatalf("unconfigured lifecycle sample = %+v", sample)
+	}
+}
+
+func TestLiveTokenRateSamplerContinuesAfterPanickingPoll(t *testing.T) {
+	sampler := newTestLiveTokenRateSampler(Config{})
+	var calls atomic.Int32
+	recovered := make(chan struct{})
+	sampler.startLoop(5*time.Millisecond, func(time.Time) {
+		if calls.Add(1) == 1 {
+			panic("synthetic token poll failure")
+		}
+		select {
+		case <-recovered:
+		default:
+			close(recovered)
+		}
+	})
+	t.Cleanup(sampler.stopSampler)
+
+	select {
+	case <-recovered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("token sampler stopped after a panicking poll")
+	}
+	if calls.Load() < 2 {
+		t.Fatalf("poll calls = %d, want at least 2", calls.Load())
+	}
+	sampler.lifecycleMu.Lock()
+	running := sampler.running
+	sampler.lifecycleMu.Unlock()
+	if !running {
+		t.Fatal("token sampler was not still running after the recovered poll")
 	}
 }
 

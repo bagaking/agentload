@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 )
 
@@ -14,9 +15,14 @@ func startLifecycleSignalLogger(lifecycle *lifecycleLog) func() {
 	go func() {
 		select {
 		case sig := <-signals:
-			_ = lifecycle.record(lifecycleEvent{
-				Event:  "signal",
-				Signal: sig.String(),
+			// Recording is best-effort and must never swallow the signal: if it
+			// panics we still reset the handler and re-raise, so the process
+			// honours the signal instead of ignoring the user's SIGINT/SIGTERM.
+			runBackgroundStep("lifecycle signal logger", func() {
+				_ = lifecycle.record(lifecycleEvent{
+					Event:  "signal",
+					Signal: sig.String(),
+				})
 			})
 			signal.Reset(sig)
 			if syscallSignal, ok := sig.(syscall.Signal); ok {
@@ -29,9 +35,14 @@ func startLifecycleSignalLogger(lifecycle *lifecycleLog) func() {
 		}
 	}()
 
+	// The returned stop is idempotent so callers can invoke it from more than one
+	// shutdown path without closing `done` twice.
+	var stopOnce sync.Once
 	return func() {
-		signal.Stop(signals)
-		close(done)
+		stopOnce.Do(func() {
+			signal.Stop(signals)
+			close(done)
+		})
 	}
 }
 

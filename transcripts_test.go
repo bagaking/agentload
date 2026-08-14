@@ -515,6 +515,38 @@ func TestTranscriptDataHealthyWaiterRetriesIncompleteFlight(t *testing.T) {
 	}
 }
 
+func TestTranscriptDataCacheInvalidatesAfterEvidenceMutation(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	root := filepath.Join(t.TempDir(), ".codex")
+	day := filepath.Join(root, "sessions", now.Format("2006"), now.Format("01"), now.Format("02"))
+	firstPath := filepath.Join(day, "first.jsonl")
+	writeDiscoveryFixture(t, firstPath, now)
+	observer := newObserver(Config{
+		CodexRoots:         []string{root},
+		IdleGap:            90 * time.Second,
+		MinInterval:        15 * time.Second,
+		Lookback:           time.Hour,
+		TranscriptCacheTTL: time.Minute,
+	})
+
+	first, firstCached := observer.transcriptData(context.Background(), nil, now)
+	if firstCached || first.CoverageIncomplete || first.ScannedFiles != 1 {
+		t.Fatalf("initial transcript data = cached=%v data=%+v", firstCached, first)
+	}
+	second, secondCached := observer.transcriptData(context.Background(), nil, now)
+	if !secondCached || second.CoverageIncomplete {
+		t.Fatalf("expected a complete cache hit, got cached=%v data=%+v", secondCached, second)
+	}
+
+	secondPath := filepath.Join(day, "second.jsonl")
+	writeDiscoveryFixture(t, secondPath, now.Add(time.Minute))
+	observer.evidenceIndex.recordWatchBatch(evidenceWatchBatch{Complete: true, Paths: []string{secondPath}})
+	third, thirdCached := observer.transcriptData(context.Background(), nil, now)
+	if thirdCached || third.CoverageIncomplete || third.ScannedFiles != 2 {
+		t.Fatalf("evidence mutation reused stale cache: cached=%v data=%+v", thirdCached, third)
+	}
+}
+
 func TestCollectTranscriptCandidatesSurfacesWalkErrors(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("permission errors are not observable as root")

@@ -29,6 +29,10 @@ import (
 //go:embed ui/dist/* ui/dist/assets/* ui/tool-icons/*
 var uiAssets embed.FS
 
+// quitAPIHandoffDelay lets the quit response reach the client before the tray
+// tears the process down.
+const quitAPIHandoffDelay = 150 * time.Millisecond
+
 func (a *trayApp) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", a.handlePopoverPage)
@@ -64,7 +68,16 @@ func (a *trayApp) handleLiveTokenRateAPI(w http.ResponseWriter, r *http.Request)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(a.liveTokenRate.sample(time.Now()))
+	sample := LiveTokenRateSample{}
+	if a.liveTokenRate != nil {
+		sample = a.liveTokenRate.sample(time.Now())
+	} else {
+		sample = liveTokenRateSampleFromFacts(liveTokenRateFacts{
+			Window: liveTokenRateWindow, SampleInterval: liveTokenRateSampleInterval,
+			StaleAfter: liveTokenRateStaleAfter, SampledAt: time.Now(),
+		})
+	}
+	_ = json.NewEncoder(w).Encode(sanitizeLiveTokenRateSampleForClient(sample))
 }
 
 func (a *trayApp) handleSystemResourcesAPI(w http.ResponseWriter, r *http.Request) {
@@ -316,7 +329,11 @@ func (a *trayApp) handleQuitAPI(w http.ResponseWriter, r *http.Request) {
 	a.recordLifecycle(lifecycleEvent{Event: "quit_requested", Reason: "api"})
 	jsonResponse(w, http.StatusOK, map[string]bool{"ok": true})
 	go func() {
-		time.Sleep(150 * time.Millisecond)
+		// The quit hand-off is deferred so the HTTP response flushes first; the
+		// recover keeps a panic here from killing the process before the tray
+		// gets its quit, which is the only way this cleanup path runs.
+		defer recoverBackgroundPanic("quit api")
+		time.Sleep(quitAPIHandoffDelay)
 		systrayQuit()
 	}()
 }
@@ -419,9 +436,16 @@ func (a *trayApp) handleOpenHostAppAPI(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	cmd := exec.CommandContext(r.Context(), "/usr/bin/open", app.BundlePath)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		http.Error(w, strings.TrimSpace(string(output)), http.StatusBadGateway)
+	openHostApp := a.openHostAppFunc
+	if openHostApp == nil {
+		openHostApp = func(ctx context.Context, bundlePath string) ([]byte, error) {
+			return exec.CommandContext(ctx, "/usr/bin/open", bundlePath).CombinedOutput()
+		}
+	}
+	if _, err := openHostApp(r.Context(), app.BundlePath); err != nil {
+		// `open` may include the full bundle path or other local diagnostics in
+		// stderr. The endpoint is client-facing, so expose only a stable error.
+		http.Error(w, "failed to open observed host app", http.StatusBadGateway)
 		return
 	}
 	jsonResponse(w, http.StatusAccepted, map[string]any{
@@ -451,6 +475,9 @@ func (a *trayApp) snapshotForInternalUse(ctx context.Context) (Snapshot, bool) {
 	}
 	if a.observer == nil {
 		return Snapshot{}, false
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	ctx, cancel := context.WithTimeout(ctx, clampDuration(a.cfg.Lookback/10, 45*time.Second, 5*time.Minute))
 	defer cancel()
@@ -521,6 +548,22 @@ func sanitizeThroughputTrendsForClient(trends TrendSet) TrendSet {
 	}
 	trends.Windows = windows
 	return trends
+}
+
+func sanitizeLiveTokenRateSampleForClient(sample LiveTokenRateSample) LiveTokenRateSample {
+	sample.State = sanitizeTokenForClient(sample.State)
+	sample.Basis = sanitizeTokenForClient(sample.Basis)
+	sample.Source = sanitizeTokenForClient(sample.Source)
+	sample.Method = sanitizeTokenForClient(sample.Method)
+	sample.UnavailableReason = sanitizeTextForClient(sample.UnavailableReason)
+	if len(sample.Projects) == 0 {
+		return sample
+	}
+	sample.Projects = append([]LiveTokenRateProjectSample(nil), sample.Projects...)
+	for i := range sample.Projects {
+		sample.Projects[i].Project = sanitizeProjectNameForClient(sample.Projects[i].Project)
+	}
+	return sample
 }
 
 func sanitizeRuntimeTelemetryForClient(telemetry RuntimeTelemetrySnapshot) RuntimeTelemetrySnapshot {
@@ -817,12 +860,12 @@ func sanitizeTokenForClient(token string) string {
 		return token
 	}
 	if key, value, ok := strings.Cut(core, "="); ok {
-		return prefix + key + "=" + sanitizePathLikeValue(value) + suffix
+		return sanitizeEmbeddedAbsolutePaths(prefix + key + "=" + sanitizePathLikeValue(value) + suffix)
 	}
 	if key, value, ok := strings.Cut(core, ":"); ok && key != "" && value != "" {
-		return prefix + key + ":" + sanitizePathLikeValue(value) + suffix
+		return sanitizeEmbeddedAbsolutePaths(prefix + key + ":" + sanitizePathLikeValue(value) + suffix)
 	}
-	return prefix + sanitizePathLikeValue(core) + suffix
+	return sanitizeEmbeddedAbsolutePaths(prefix + sanitizePathLikeValue(core) + suffix)
 }
 
 func sanitizePathLikeValue(value string) string {
@@ -837,6 +880,46 @@ func sanitizePathLikeValue(value string) string {
 		return "local-path"
 	}
 	return base
+}
+
+// sanitizeEmbeddedAbsolutePaths closes the gap between token-level redaction
+// and structured/error text where an absolute path is surrounded by non-path
+// characters. The surrounding syntax is retained, while every recognized local
+// path is reduced to its base.
+func sanitizeEmbeddedAbsolutePaths(token string) string {
+	last := 0
+	searchFrom := 0
+	changed := false
+	var out strings.Builder
+	for searchFrom < len(token) {
+		offset := strings.IndexByte(token[searchFrom:], '/')
+		if offset < 0 {
+			break
+		}
+		start := searchFrom + offset
+		end := start + 1
+		for end < len(token) && !strings.ContainsRune(" \t\r\n\"'[]{}()<>,;:!?&|", rune(token[end])) {
+			end++
+		}
+		candidate := token[start:end]
+		if !filepath.IsAbs(candidate) {
+			searchFrom = start + 1
+			continue
+		}
+		if !changed {
+			out.Grow(len(token))
+		}
+		out.WriteString(token[last:start])
+		out.WriteString(sanitizePathLikeValue(candidate))
+		last = end
+		searchFrom = end
+		changed = true
+	}
+	if !changed {
+		return token
+	}
+	out.WriteString(token[last:])
+	return out.String()
 }
 
 func splitTokenPunctuation(token string) (string, string, string) {
@@ -1199,14 +1282,18 @@ func hasDotPathSegment(rawPath string) bool {
 }
 
 func listenWithFallback(addr string) (net.Listener, string, error) {
-	ln, err := net.Listen("tcp", addr)
+	normalizedAddr, err := normalizeLoopbackListenAddr(addr)
+	if err != nil {
+		return nil, "", err
+	}
+	ln, err := net.Listen("tcp", normalizedAddr)
 	if err == nil {
 		return ln, listenerURL(ln), nil
 	}
 	if !isAddrInUse(err) {
 		return nil, "", err
 	}
-	host, _, splitErr := net.SplitHostPort(addr)
+	host, _, splitErr := net.SplitHostPort(normalizedAddr)
 	if splitErr != nil {
 		return nil, "", err
 	}
@@ -1215,6 +1302,27 @@ func listenWithFallback(addr string) (net.Listener, string, error) {
 		return nil, "", fallbackErr
 	}
 	return ln, listenerURL(ln), nil
+}
+
+func validateLoopbackListenAddr(addr string) error {
+	_, err := normalizeLoopbackListenAddr(addr)
+	return err
+}
+
+func normalizeLoopbackListenAddr(addr string) (string, error) {
+	host, port, err := net.SplitHostPort(strings.TrimSpace(addr))
+	if err != nil {
+		return "", fmt.Errorf("listen address must be host:port: %w", err)
+	}
+	host = strings.Trim(host, "[]")
+	if strings.EqualFold(host, "localhost") {
+		host = "127.0.0.1"
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() {
+		return "", fmt.Errorf("listen address must use a loopback IP, got %q", host)
+	}
+	return net.JoinHostPort(host, port), nil
 }
 
 func listenerURL(ln net.Listener) string {
@@ -1230,7 +1338,7 @@ func listenerURL(ln net.Listener) string {
 	if host == "0.0.0.0" {
 		host = "127.0.0.1"
 	}
-	return fmt.Sprintf("http://%s:%s", host, port)
+	return "http://" + net.JoinHostPort(host, port)
 }
 
 func isAddrInUse(err error) bool {
