@@ -30,18 +30,42 @@ structure while controlling system entropy.
 
 ## Initial Capability Truth
 
-| Agent | Process identity | Transcript evidence | Output usage | Initial adapter scope |
-| --- | --- | --- | --- | --- |
-| Claude | verified | verified | verified | full existing parity |
-| Codex / CodexL | verified | verified | verified | full existing parity |
-| Trae / TraeX | verified | verified | verified | full existing parity |
-| Grok | verified | verified | verified | full parity; usage is per-turn, not cumulative |
-| Gemini | verified | verified (JSON/JSONL session files) | verified (per-message output) | transcript + live usage |
-| OpenCode | verified | verified (SQLite or legacy message JSON) | unsupported (database-backed) | all session traces; transcript-only |
-| Cursor | generic host-app evidence only | unsupported (no per-line timestamps) | unsupported (recorded counters are all zero) | identity-only adapter; do not classify the app host as an agent |
-| Hermes | verified | verified (read-only `state.db`) | unsupported (database-backed) | all session rows from SQLite |
-| OpenClaw | verified | verified (agent session JSONL) | verified (per-message output) | transcript + live usage |
-| Pi | verified | verified (sessions and session-artifacts JSONL) | verified (per-message output) | transcript + live usage |
+The table below is generated from the adapter registry
+(`defaultCodingAgentRegistry` in `agent_registry.go`), which is the only place
+that knows what each adapter actually parses. `TestCapabilityMatrixDocMatchesTheRegistry`
+fails the build when the two disagree, so a capability change cannot ship
+without the published table moving with it. Regenerate with:
+
+```
+UPDATE_CAPABILITY_MATRIX=1 go test . -run TestCapabilityMatrixDocMatchesTheRegistry
+```
+
+A cell reads `supported` only when the adapter holds the matching capability
+slot. A nil slot renders `unsupported` — never an inferred parity.
+
+<!-- BEGIN GENERATED CAPABILITY MATRIX -->
+<!-- Generated from defaultCodingAgentRegistry by TestCapabilityMatrixDocMatchesTheRegistry. Do not edit by hand. -->
+
+| Agent | Process identity | Evidence discovery | Transcript evidence | Output usage | Evidence read |
+| --- | --- | --- | --- | --- | --- |
+| claude | supported | supported | supported | supported | `projects/**/*.jsonl` |
+| codex | supported | supported | supported | supported | `sessions/YYYY/MM/DD/rollout-*.jsonl` |
+| cursor | unsupported | unsupported | unsupported | unsupported | none |
+| gemini | supported | supported | supported | supported | `tmp/**/chats/session-*.json(l)`<br>`antigravity-cli/brain/<session>/.system_generated/logs/transcript.jsonl` |
+| grok | supported | supported | supported | supported | `sessions/<cwd>/<session>/updates.jsonl` |
+| hermes | supported | supported | supported | unsupported | `state.db (read-only)` |
+| openclaw | supported | supported | supported | supported | `agents/*/sessions/*.jsonl` |
+| opencode | supported | supported | supported | unsupported | `storage/message/**`<br>`storage/*.db` |
+| pi | supported | supported | supported | supported | `agent/sessions/**.jsonl`<br>`agent/session-artifacts/**.jsonl` |
+| trae | supported | supported | supported | supported | `sessions/**/*.jsonl` |
+
+- **cursor**: host-app ancestry only: CLI transcripts carry no timestamp or token field, and IDE per-message counters are all zero
+- **gemini**: the antigravity root carries created_at but no token field of any kind, so it contributes session spans only
+- **grok**: usage is per-turn, not cumulative, and is repeated under usage.modelUsage.<model>
+- **hermes**: usage is database-backed and not decoded
+- **opencode**: usage is database-backed and not decoded
+
+<!-- END GENERATED CAPABILITY MATRIX -->
 
 Registering an agent name is not evidence support. New capabilities require
 real fixtures or an installed-source contract and focused parser/discovery

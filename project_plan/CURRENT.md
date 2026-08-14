@@ -143,6 +143,16 @@ meta:
 - **验收**：五门全绿；**两处变异测试**均如期变红（去掉 `!WalkMeasured` 守卫实测报出 `Value:0ms`；删掉 `lastWalk` 赋值冷 pass 即失去测量）。装机（2026.09.20.153726）实测：冷启动 `elapsed_ms=319 visited=28555 pruned=936 aged=9100`，随后三次 pass **`walk_fresh=False` 但 `walk_measured=True` 且数值稳定保持**；诊断面 `evidence_out_of_horizon | 9100 files`、`evidence_walk_cost 319ms ok`。空闲 CPU **0.0%**。
 - **一次误判，记明**：装机后 5 分钟 `parsed_files=0` + `transcript scan wait cancelled` + 累计 CPU 2 分钟，我一度判定自己引入了 hang 并开始怀疑新加的 Antigravity 目录谓词。实测否掉：gemini 根走查 72ms/23 文件，完整快照 34s 正常完成。真因是**冷启动首扫本来就要几十秒，而我用短超时反复轮询——每次轮询都带自己的 context，超时即取消，于是永远看不到结果**。安静等一次就拿到 78/78。**验证长操作时，超时必须长于操作本身，否则你测的是自己的超时。**
 
+**2026-09-20 完成**（`M02_S01` 部分落地：能力矩阵 code→doc 单端同源）：
+
+- **触发事件不是排期，是一次真实漂移**：Antigravity 接进 gemini adapter 后，`docs/coding-agent-evidence-adapters.md` 的手写能力表**毫无反应**——全仓库没有任何东西比对过代码与文档。这正是 M02_S01 存在的理由，所以先补这一格。
+- **注册表成为唯一真相源**：`codingAgentAdapter` 增 `Evidence`（实际读取的磁盘形状）与 `Note`（某槽为何缺席／带什么陷阱），十个 adapter 全部声明。`capability_matrix.go` 直接读四个能力槽渲染表格——**nil 槽一律 `unsupported`，绝不软化、绝不从兄弟槽推断对等**。
+- **文档表格改为标记包裹的生成区**，`spliceCapabilityMatrix` 只替换标记之间的内容，**标记缺失时报错而非猜测**（防止把手写散文整体覆盖掉）。
+- **三个测试**：doc 与注册表一致性门、nil 槽必须渲染 unsupported、凡解析 transcript 的 adapter 必须声明证据形状（且 gemini 必须声明两个根——专盯「往既有 adapter 加第二个证据根」这个**已经发生过**的失败形状）。
+- **变异测试两类都确认有效**：删掉 antigravity 声明 → 两个测试同时变红；给 hermes 塞一个它并不具备的 Usage 槽 → doc 判定陈旧并打印出错误行 `| hermes | … | supported |`。
+- **明确未做，不得误读为完成**：7 个信号族**没有对应代码结构**（代码只有 4 个能力槽），生成的是「4 槽 × 10 vendor」而非「7 族 × N vendor」；4 态 cell 未实现，当前只有二元 supported/unsupported（能力槽本身二元，造 partial 会是虚构）；`/api` endpoint 与 dashboard 面板未做。**KR1 只满足「docs 一端 + 代码源」，KR2/KR3 未触及。**
+- **这笔账的性质**：4 槽 → 7 族是需要先定义信号族与证据映射的**设计工作**，不是接线工作；在那之前生成 7 列表只会产出无依据的 cell，违反本 sprint 自己的 KR3。
+
 **当前活跃**：
 
 - **M01 地基**（本轮架构与熵审查修复已落地，发布门已复跑）。
@@ -228,6 +238,7 @@ meta:
 
 | 2026-09-20 | mini-sprint `M02_S05.005.PERF`：三个 JSONL 存储改为 2 天热明文 + 按月 gzip 冷归档（用户「我们是不是没有特地去对 history 做过压缩之类的操作？」） | `go vet ./...`、`go test ./...`（`ok agentload 7.846s`，新增 8 个测试）、`npm --prefix ui run build`、`node scripts/validate_locales.js`、`./build_macos_app.sh` 全绿。**真实数据迁移**（备份 `/tmp/agentload_backup_pre_install_20260920_103529`，73534 行 / 109.5MB）：109.5MB → **12.26MB（-88.8%）**，行数守恒经 Python 独立复算**逐条吻合**——history 热 514 + 归档 4199 = 4713，差 508 精确等于保留窗口过期数；throughput 差 741 同样精确吻合；lifecycle +2 为迁移期间新写入事件。归档 65425 行 `invalid_json=0`、落在热窗口内 **0** 行。**重启二次压实**：history/throughput 归档**字节完全相同**（幂等成立），lifecycle 增 6 行经核验是 09-18 10:35–10:40 恰好跨过 2 天边界的 heartbeat。9 个文件全部 `0644`（迁移前 `throughput.jsonl` 为 `0600`）。**语义完整性**：`trends.windows` 五区间全部正常，最长跨至 **2026-08-21**（整 30 天，只可能来自归档）；`/api/refresh` 后 `parsed_files=80`，空闲 CPU **0.3%** | 写路径一个字节未动（逐行 `Sync()` 的崩溃丢 1 行保证保持不变）。**否掉了三项指标全胜的 gzip 追加成员方案**——半成员污染其后所有成员（实测 100 行只读回 28），改整月原子重写（D-020 附带）。**测试抓出真 bug**：已归档行每次压实被再归档，分区无界增长且 **gzip 藏起字节从磁盘看不出来**；「预期会红的测试没红」是覆盖缺口的信号（D-021 附带）。**对抗评审「逐字节相同」依据被实测证伪**（实为严格子集），结论方向对但照错依据做会连 `snapshot_aborted` 的唯一证据一起删（D-021）。教训见 OPINIONS **D-020**（原子 ≠ 不丢）与 **D-021**（冗余判定必须自己比对字节） |
 | 2026-09-20 | mini-sprint `M02_S05.006.RSI`：删 agent DB 缓存旁路 + 删 4 个 test-only wrapper + Antigravity 接为 timeline 档 + 扫描开销诊断面（计划文件批次 2） | 五门全绿（`go vet ./...`、`go test ./...` `ok agentload 11.174s`、`npm --prefix ui run build`、`node scripts/validate_locales.js` 474 keys × 3 locales、`./scripts/package_macos_app.sh`）。**两处变异测试均如期变红**：去掉 `scanCostValue` 的 `!WalkMeasured` 守卫实测报出 `Value:0ms`；删掉 `index.lastWalk = index.lastStats` 冷 pass 即失去测量。**装机实测**（2026.09.20.153726）：冷启动 `walk_measured=true elapsed_ms=319 visited=28555 pruned=936 aged=9100`，随后三次 pass **`walk_fresh=False` 但 `walk_measured=True` 且数值稳定**；诊断面 `evidence_out_of_horizon \| 9100 files`、`evidence_walk_cost 319ms ok`。缓存旁路删除后 agent DB 解析 **410ms/次 → 首次 400ms 后 ~9ms（45×）**。Antigravity 102 文件 → 22087 事件 → **0 条 trace 声称 token**。空闲 CPU **0.0%** | **计划偏差一处（D-022）**：计划头条「强制重解析计数器」被同批次第 1 项消灭，再上会**结构性恒为零**，故放弃而非延后。**装机后才暴露的第二个陷阱（D-023）**：只报「本次 pass」的走查开销在稳态下每次都是 false（索引约每进程只 reconcile 一次），诚实但无用——改为保留 `lastWalk` + `MeasuredAt`，`WalkMeasured`/`WalkFresh` 分开表达。**一次误判**：冷启动 `parsed_files=0` 被我当成自己引入的 hang 并开始怀疑 Antigravity 谓词，实测否掉（gemini 根 72ms/23 文件，完整快照 34s 正常）——真因是**短超时反复轮询，每次轮询自带 context，超时即取消**。教训见 OPINIONS **D-022**（恒为零的指标不叫诚实）与 **D-023**（只报本次等于几乎不报）|
+| 2026-09-20 | `M02_S01` 部分落地：能力矩阵 code→doc 单端同源（触发事件是同日 `M02_S05.006.RSI` 造成的一次真实文档漂移） | 五门全绿（`go vet ./...`、`go test ./...` `ok agentload 13.206s`、`npm --prefix ui run build`、`node scripts/validate_locales.js`、打包）。**变异测试两类均如期变红**：删掉 gemini 的 antigravity 证据声明 → `TestCapabilityMatrixDocMatchesTheRegistry` 与 `TestCapabilityMatrixDeclaresEveryEvidenceRootTheParserReads` 同时失败；给 hermes 注入它并不具备的 Usage 槽 → doc 判定陈旧并打印 `\| hermes \| … \| supported \|`。生成表比旧手写表**多出** `Evidence discovery` 列、每个 adapter 的磁盘路径形状、以及旧表里根本不存在的 **antigravity 根** | **漂移是实测到的而非假设的**：Antigravity 接入后手写表毫无反应，因为全仓库没有任何东西比对代码与文档。**nil 槽一律渲染 `unsupported`**，绝不软化也绝不从兄弟槽推断。`spliceCapabilityMatrix` 在标记缺失时**报错而非猜测**，避免把手写散文整体覆盖。**明确未做**：7 信号族无对应代码结构（只有 4 能力槽）、4 态 cell 未实现（槽本身二元，造 partial 即虚构）、`/api` 与 UI 面板未做——KR1 只满足 docs 一端，KR2/KR3 未触及 |
 
 **质检步骤库（随 sprint 验收累积）**：
 
@@ -254,3 +265,8 @@ meta:
   3. **区分「描述本次动作」与「描述当前状态」的字段，前者要守卫后者不要**。本轮 `Elapsed`/`VisitedEntries`/`PrunedDirectories` 描述走查（非 reconcile 时被显式清零，必须守卫），`AgedOutFiles` 描述索引内容（两次 pass 都是 9060，不需要守卫）。混在一起会要么虚构零、要么把真数据藏掉。
   4. **本身语义不同的两个量不要合成一个数**。`deferred`（在范围内、本轮未扫，是缺口）与 `aged_out`（在地平线外，不是缺口）本机是 3474 对 9100，合并会把范围外的量算进覆盖缺口，读起来像故障。
   5. **验证长操作时，超时必须长于操作本身**。本轮冷启动首扫要几十秒，我用短超时反复轮询——每次轮询自带 context，超时即取消，于是永远看不到结果，进而误判为自己引入了 hang。**你测的是自己的超时，不是被测对象。**
+- **能力/证据声明类改动追加（来源 `M02_S01` 部分落地）**：
+  1. **改了 adapter 能力槽或证据根，验收必须含 `go test . -run TestCapabilityMatrixDocMatchesTheRegistry`**。这条现在是发布门：注册表是唯一真相源，文档里的表从它生成。有意变更时用 `UPDATE_CAPABILITY_MATRIX=1` 重新生成再复核 diff，**绝不手改生成区**。
+  2. **往既有 adapter 加第二个证据根时，`Evidence` 必须同步声明**。这正是本轮触发漂移的形状（Antigravity 进了 gemini 解析器却没进任何表）。`TestCapabilityMatrixDeclaresEveryEvidenceRootTheParserReads` 专盯这个。
+  3. **新能力槽上线前先做两类变异**：删掉一条证据声明（应点红 doc 陈旧 + 证据根缺失两个测试）、给一个不具备该能力的 adapter 注入槽（应打印出错误行）。**没红过的门等于没有门。**
+  4. **`unsupported` 是结论不是待办**。复核生成表时逐行确认每个 `unsupported` 都有实测理由（记在 `Note` 或 docs 散文里），不能让「还没做」和「实测没有」在表上长得一样。

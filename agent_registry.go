@@ -41,6 +41,21 @@ type codingAgentAdapter struct {
 	ID           string
 	Roots        []string
 	Capabilities agentCapabilities
+	// Evidence names the on-disk shapes this adapter reads, one entry per
+	// distinct layout. It exists because a capability slot says "this adapter
+	// parses something" without saying what, and a second evidence root under
+	// an existing agent is otherwise invisible from outside the parser.
+	//
+	// ponytail: declared beside the predicates rather than derived from them --
+	// the relative-path matchers are predicates, not an enumerable list. The
+	// ceiling is that this can drift from the predicate; the capability matrix
+	// test pins the rendered result, so drift shows up as a failing doc diff
+	// rather than a silent one.
+	Evidence []string
+	// Note qualifies the row in the generated capability matrix: why a slot is
+	// absent, or which trap a present one carries. Held here so the published
+	// matrix has a single owner in code.
+	Note string
 }
 
 // codingAgentRegistry is the code-owned composition root for coding-agent
@@ -97,8 +112,9 @@ func newCodingAgentRegistry(adapters ...codingAgentAdapter) *codingAgentRegistry
 func defaultCodingAgentRegistry(cfg Config) *codingAgentRegistry {
 	return newCodingAgentRegistry(
 		codingAgentAdapter{
-			ID:    "claude",
-			Roots: cfg.ClaudeRoots,
+			ID:       "claude",
+			Roots:    cfg.ClaudeRoots,
+			Evidence: []string{"projects/**/*.jsonl"},
 			Capabilities: agentCapabilities{
 				Process:    newClaudeProcessIdentity(),
 				Discovery:  claudeTranscriptDiscovery{},
@@ -107,8 +123,9 @@ func defaultCodingAgentRegistry(cfg Config) *codingAgentRegistry {
 			},
 		},
 		codingAgentAdapter{
-			ID:    "codex",
-			Roots: cfg.CodexRoots,
+			ID:       "codex",
+			Roots:    cfg.CodexRoots,
+			Evidence: []string{"sessions/YYYY/MM/DD/rollout-*.jsonl"},
 			Capabilities: agentCapabilities{
 				Process:    newCodexProcessIdentity(),
 				Discovery:  codexTranscriptDiscovery{},
@@ -117,8 +134,9 @@ func defaultCodingAgentRegistry(cfg Config) *codingAgentRegistry {
 			},
 		},
 		codingAgentAdapter{
-			ID:    "trae",
-			Roots: cfg.TraeRoots,
+			ID:       "trae",
+			Roots:    cfg.TraeRoots,
+			Evidence: []string{"sessions/**/*.jsonl"},
 			Capabilities: agentCapabilities{
 				Process:    newTraeProcessIdentity(),
 				Discovery:  traeTranscriptDiscovery{},
@@ -127,8 +145,10 @@ func defaultCodingAgentRegistry(cfg Config) *codingAgentRegistry {
 			},
 		},
 		codingAgentAdapter{
-			ID:    "grok",
-			Roots: cfg.GrokRoots,
+			ID:       "grok",
+			Roots:    cfg.GrokRoots,
+			Evidence: []string{"sessions/<cwd>/<session>/updates.jsonl"},
+			Note:     "usage is per-turn, not cumulative, and is repeated under usage.modelUsage.<model>",
 			Capabilities: agentCapabilities{
 				Process:    newGrokProcessIdentity(),
 				Discovery:  grokTranscriptDiscovery{},
@@ -139,6 +159,11 @@ func defaultCodingAgentRegistry(cfg Config) *codingAgentRegistry {
 		codingAgentAdapter{
 			ID:    "gemini",
 			Roots: cfg.GeminiRoots,
+			Evidence: []string{
+				"tmp/**/chats/session-*.json(l)",
+				"antigravity-cli/brain/<session>/.system_generated/logs/transcript.jsonl",
+			},
+			Note: "the antigravity root carries created_at but no token field of any kind, so it contributes session spans only",
 			Capabilities: agentCapabilities{
 				Process:    newGeminiProcessIdentity(),
 				Discovery:  extraTranscriptDiscovery{kind: "gemini"},
@@ -147,18 +172,25 @@ func defaultCodingAgentRegistry(cfg Config) *codingAgentRegistry {
 			},
 		},
 		codingAgentAdapter{
-			ID:    "opencode",
-			Roots: cfg.OpenCodeRoots,
+			ID:       "opencode",
+			Roots:    cfg.OpenCodeRoots,
+			Evidence: []string{"storage/message/**", "storage/*.db"},
+			Note:     "usage is database-backed and not decoded",
 			Capabilities: agentCapabilities{
 				Process:    newOpenCodeProcessIdentity(),
 				Discovery:  extraTranscriptDiscovery{kind: "opencode"},
 				Transcript: extraTranscriptParser{kind: "opencode"},
 			},
 		},
-		codingAgentAdapter{ID: "cursor"},
 		codingAgentAdapter{
-			ID:    "hermes",
-			Roots: cfg.HermesRoots,
+			ID:   "cursor",
+			Note: "host-app ancestry only: CLI transcripts carry no timestamp or token field, and IDE per-message counters are all zero",
+		},
+		codingAgentAdapter{
+			ID:       "hermes",
+			Roots:    cfg.HermesRoots,
+			Evidence: []string{"state.db (read-only)"},
+			Note:     "usage is database-backed and not decoded",
 			Capabilities: agentCapabilities{
 				Process:    newHermesProcessIdentity(),
 				Discovery:  extraTranscriptDiscovery{kind: "hermes"},
@@ -166,8 +198,9 @@ func defaultCodingAgentRegistry(cfg Config) *codingAgentRegistry {
 			},
 		},
 		codingAgentAdapter{
-			ID:    "openclaw",
-			Roots: cfg.OpenClawRoots,
+			ID:       "openclaw",
+			Roots:    cfg.OpenClawRoots,
+			Evidence: []string{"agents/*/sessions/*.jsonl"},
 			Capabilities: agentCapabilities{
 				Process:    newOpenClawProcessIdentity(),
 				Discovery:  extraTranscriptDiscovery{kind: "openclaw"},
@@ -176,8 +209,9 @@ func defaultCodingAgentRegistry(cfg Config) *codingAgentRegistry {
 			},
 		},
 		codingAgentAdapter{
-			ID:    "pi",
-			Roots: cfg.PiRoots,
+			ID:       "pi",
+			Roots:    cfg.PiRoots,
+			Evidence: []string{"agent/sessions/**.jsonl", "agent/session-artifacts/**.jsonl"},
 			Capabilities: agentCapabilities{
 				Process:    newPiProcessIdentity(),
 				Discovery:  extraTranscriptDiscovery{kind: "pi"},
