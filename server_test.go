@@ -1027,6 +1027,27 @@ func TestHandleProcessDiagnosticAPIRedactsLocalEvidence(t *testing.T) {
 	}
 }
 
+func TestSanitizeTextForClientKeepsProseSlashesWhileRedactingPaths(t *testing.T) {
+	// A slash inside a word is prose, not a path. Treating it as one used to eat
+	// the separator and the word after it, so the attribution reason shown to the
+	// user read "no parsed transcript cwdlocal-path" — a sanitizer turning an
+	// explanation into gibberish.
+	tests := []struct{ in, want string }{
+		{"no parsed transcript cwd/project evidence", "no parsed transcript cwd/project evidence"},
+		{"anchored under a home/global directory", "anchored under a home/global directory"},
+		{"and/or", "and/or"},
+		// Real absolute paths must still be redacted to their basename.
+		{"see /Users/me/secret/deep/file.jsonl now", "see file.jsonl now"},
+		{"path=/Users/me/secret/deep/file.jsonl", "path=file.jsonl"},
+		{"error at /Users/me/proj/a/b/c.jsonl: boom", "error at c.jsonl: boom"},
+	}
+	for _, tt := range tests {
+		if got := sanitizeTextForClient(tt.in); got != tt.want {
+			t.Fatalf("sanitizeTextForClient(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
 func TestSanitizeTextForClientRedactsColonSeparatedPaths(t *testing.T) {
 	root := t.TempDir()
 	workspacePath := filepath.Join(root, "workspace", "agentload")

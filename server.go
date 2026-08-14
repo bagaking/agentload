@@ -916,6 +916,14 @@ func sanitizeEmbeddedAbsolutePaths(token string) string {
 			break
 		}
 		start := searchFrom + offset
+		// A slash glued to the previous word is prose ("cwd/project evidence",
+		// "and/or"), not an embedded absolute path. Only a slash that starts a
+		// token can begin one, so requiring a boundary here stops the scan from
+		// eating the separator and the word after it.
+		if start > 0 && !strings.ContainsRune(" \t\r\n\"'([{:=,", rune(token[start-1])) {
+			searchFrom = start + 1
+			continue
+		}
 		end := embeddedAbsolutePathEnd(token, start)
 		candidate := token[start:end]
 		if !filepath.IsAbs(candidate) {
