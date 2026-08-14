@@ -76,15 +76,20 @@ export function ThroughputRiver({
   const deckIndex = hoverSampleIndex != null ? hoverSampleIndex : pinIndex >= 0 ? pinIndex : null;
   const deckDatum = deckIndex != null ? model.data[deckIndex] : null;
 
-  // Row membership + order derived from the WHOLE PERIOD (model.layers is period-total desc),
-  // so hovering never reshuffles rows; only the numbers change.
+  // Rank by the number each row actually shows. Ordering by period total while
+  // displaying the inspected instant put a 113 token/s project below an 83, and
+  // an idle project at the top — the list read as unsorted because it was
+  // sorted by a quantity that was nowhere on screen.
   const rows = useMemo(() => {
-    return model.layers.map((layer) => {
-      const totalTokens = model.data.reduce((sum, d) => sum + (d.projects.get(layer.key) ?? 0), 0);
-      const avgRate = model.data.length > 0 ? totalTokens / model.data.length : 0;
-      return { key: layer.key, color: layer.color, label: riverProjectLabel(layer.key, t), totalTokens, avgRate };
-    });
-  }, [model, t]);
+    return model.layers
+      .map((layer) => {
+        const totalTokens = model.data.reduce((sum, d) => sum + (d.projects.get(layer.key) ?? 0), 0);
+        const avgRate = model.data.length > 0 ? totalTokens / model.data.length : 0;
+        const value = deckDatum ? (deckDatum.projects.get(layer.key) ?? 0) : avgRate;
+        return { key: layer.key, color: layer.color, label: riverProjectLabel(layer.key, t), totalTokens, avgRate, value };
+      })
+      .sort((a, b) => b.value - a.value || b.totalTokens - a.totalTokens || a.key.localeCompare(b.key));
+  }, [model, deckDatum, t]);
   const baseLimit = compact ? 4 : 8;
   const visibleRows = expanded ? rows : rows.slice(0, baseLimit);
   const smoothing = model.windowSeconds ? formatCopy(t("throughputSmoothingWindow"), { window: model.windowSeconds }) : "";
@@ -261,11 +266,10 @@ export function ThroughputRiver({
           <div className="ranking-sort-note">{t("throughputRankedByPeriodTotal")}{smoothing ? ` · ${smoothing}` : ""}</div>
           <div className="ranking-list">
             {visibleRows.map((row) => {
-              const instant = deckDatum ? (deckDatum.projects.get(row.key) ?? 0) : null;
-              const value = instant != null ? instant : row.avgRate;
+              const value = row.value;
               const active = value > 0;
               const share = deckDatum
-                ? shareOf(instant ?? 0, deckDatum.total)
+                ? shareOf(value, deckDatum.total)
                 : shareOf(row.totalTokens, model.periodTotalAll);
               const meta = projectWorktrees?.get(row.key.toLowerCase());
               const branchTag = meta?.branches?.[0] || meta?.worktrees?.[0];
@@ -304,8 +308,7 @@ export function ThroughputRiver({
       ) : (
         <div className="throughput-river-projects" aria-label={t("throughputProjectSplit")}>
           {visibleRows.map((row) => {
-            const instant = deckDatum ? (deckDatum.projects.get(row.key) ?? 0) : null;
-            const value = instant != null ? instant : row.avgRate;
+            const value = row.value;
             return (
               <span key={row.key} title={`${row.label}: ${formatTokenRate(value)} ${t("tokenRateUnit")}`}>
                 <i style={{ backgroundColor: row.color }} />
