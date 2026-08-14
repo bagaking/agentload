@@ -418,14 +418,18 @@ func TestForegroundTranscriptScanDefersOlderNonPriorityFiles(t *testing.T) {
 		MinInterval:        15 * time.Second,
 	})
 
-	if data.ScannedFiles != 3 {
-		t.Fatalf("expected three candidates, got %+v", data)
+	// ScannedFiles counts what this pass actually read, so the deferred file is
+	// not in it -- it is in DeferredFiles instead. Three candidates, two read.
+	if data.ScannedFiles != 2 {
+		t.Fatalf("expected two scanned files, got %+v", data)
 	}
 	if data.DeferredFiles != 1 {
 		t.Fatalf("expected one older non-priority file to be deferred, got %+v", data)
 	}
-	if reads.Load() != 1 || tailReads.Load() != 1 || data.ParsedFiles != 2 || data.TailParsedFiles != 1 {
-		t.Fatalf("expected priority to full-parse and recent to tail-parse, full=%d tail=%d data=%+v", reads.Load(), tailReads.Load(), data)
+	// The priority file is stale, so it tail-parses like the recent one: being
+	// priority exempts it from deferral, not from the cheap read path.
+	if reads.Load() != 0 || tailReads.Load() != 2 || data.ParsedFiles != 2 || data.TailParsedFiles != 2 {
+		t.Fatalf("expected the stale priority file to tail-parse, full=%d tail=%d data=%+v", reads.Load(), tailReads.Load(), data)
 	}
 	if data.Traces[oldPath] != nil {
 		t.Fatalf("expected old non-priority trace to be absent from foreground data")
@@ -489,8 +493,12 @@ func TestForegroundTranscriptScanCanDeferHistoryWalk(t *testing.T) {
 	if data.ScannedFiles != 2 {
 		t.Fatalf("expected only recent and priority candidates when history walk is deferred, got %+v", data)
 	}
-	if data.DeferredFiles != 0 || !data.HistoricalScanDeferred {
-		t.Fatalf("expected full historical parsing to be marked deferred without per-file count, got %+v", data)
+	// The old file is a real gap in this snapshot and is counted as one. The
+	// priority file is also older than the cutoff but is still scanned, so it is
+	// not counted -- reporting it would overstate the gap the same way reporting
+	// zero understated it.
+	if data.DeferredFiles != 1 || !data.HistoricalScanDeferred {
+		t.Fatalf("expected the skipped file to be counted as deferred, got %+v", data)
 	}
 	if data.Traces[oldPath] != nil || data.Traces[priorityPath] == nil || data.Traces[recentPath] == nil {
 		t.Fatalf("expected priority and recent traces only, got %+v", data.Traces)
@@ -531,7 +539,8 @@ func TestForegroundTranscriptScanDefersFreshMTimeWhenTailIsOlder(t *testing.T) {
 		MinInterval:        15 * time.Second,
 	})
 
-	if data.ScannedFiles != 1 || data.DeferredFiles != 1 {
+	// The single candidate is deferred, so nothing was scanned this pass.
+	if data.ScannedFiles != 0 || data.DeferredFiles != 1 {
 		t.Fatalf("expected fresh-mtime old-tail candidate to be deferred, got %+v", data)
 	}
 	if reads.Load() != 0 || data.ParsedFiles != 0 {
@@ -667,5 +676,67 @@ func TestResolveRepoBoundaryMemoExpiresSoNewReposAreSeen(t *testing.T) {
 
 	if got, _, _ := resolveRepoBoundary(dir); got != repo {
 		t.Fatalf("repo created after the memo was warmed was not picked up: got %q, want %q", got, repo)
+	}
+}
+
+// Once the index holds a file, ageing past the foreground cutoff must be
+// counted, not silently dropped. The live app reported "1 deferred" while 13
+// live sessions were missing, because files excluded at collection time never
+// reached the counter -- the app was under-reporting its own coverage gap.
+func TestDeferredCountIncludesIndexedFilesAgedOut(t *testing.T) {
+	tmp := t.TempDir()
+	codexRoot := filepath.Join(tmp, ".codex")
+	sessionsDir := filepath.Join(codexRoot, "sessions", "2026", "06", "28")
+	recentPath := filepath.Join(sessionsDir, "recent.jsonl")
+	agedPath := filepath.Join(sessionsDir, "aged.jsonl")
+	if err := os.MkdirAll(sessionsDir, 0o755); err != nil {
+		t.Fatalf("mkdir transcript dir: %v", err)
+	}
+	for _, path := range []string{recentPath, agedPath} {
+		if err := os.WriteFile(path, []byte(`{"timestamp":"2026-06-28T12:00:00Z","payload":{"id":"x","cwd":"workspace/agentload"}}`+"\n"), 0o644); err != nil {
+			t.Fatalf("write transcript: %v", err)
+		}
+	}
+	recentTime := time.Date(2026, 6, 28, 12, 10, 0, 0, time.UTC)
+	for _, path := range []string{recentPath, agedPath} {
+		if err := os.Chtimes(path, recentTime, recentTime); err != nil {
+			t.Fatalf("set mtime: %v", err)
+		}
+	}
+
+	observer := newObserver(Config{
+		IdleGap:     90 * time.Second,
+		MinInterval: 15 * time.Second,
+		Lookback:    24 * time.Hour,
+		CodexRoots:  []string{codexRoot},
+	})
+	opts := transcriptScanOptions{
+		HistoryCutoff:      time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC),
+		ForegroundCutoff:   time.Date(2026, 6, 28, 11, 0, 0, 0, time.UTC),
+		HistoryLookback:    24 * time.Hour,
+		ForegroundLookback: time.Hour,
+		IdleGap:            90 * time.Second,
+		MinInterval:        15 * time.Second,
+	}
+	// First scan indexes both files while they are inside the foreground window.
+	if data := observer.scanTranscriptsWithOptions(context.Background(), nil, opts); data.ScannedFiles != 2 {
+		t.Fatalf("expected both files indexed on the first scan, got %+v", data)
+	}
+
+	// The aged file now falls outside the foreground window, exactly as a live
+	// session's transcript does once the agent goes quiet. Re-indexing is forced
+	// so the index observes the new mtime the way the watcher does in the app.
+	agedTime := time.Date(2026, 6, 28, 9, 30, 0, 0, time.UTC)
+	if err := os.Chtimes(agedPath, agedTime, agedTime); err != nil {
+		t.Fatalf("age the transcript: %v", err)
+	}
+	observer.evidenceIndex.markGap("test forced re-index")
+	opts.DeferHistoryWalk = true
+	data := observer.scanTranscriptsWithOptions(context.Background(), nil, opts)
+	if data.DeferredFiles != 1 {
+		t.Fatalf("expected the aged-out file to be counted as deferred, got %+v", data)
+	}
+	if data.Traces[agedPath] != nil {
+		t.Fatalf("expected the aged-out file to stay unparsed, got %+v", data.Traces)
 	}
 }

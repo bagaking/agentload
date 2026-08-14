@@ -21,6 +21,10 @@ type transcriptDiscoveryResult struct {
 	Errors            []string
 	VisitedEntries    int
 	PrunedDirectories int
+	// AgedOutFiles counts transcripts the walk found but the cutoff excluded.
+	// They are real evidence the snapshot does not cover, so they are reported
+	// rather than dropped silently.
+	AgedOutFiles int
 }
 
 type transcriptDiscoveryCapability interface {
@@ -189,6 +193,7 @@ func (r *transcriptDiscoveryResult) merge(other transcriptDiscoveryResult) {
 	r.Errors = append(r.Errors, other.Errors...)
 	r.VisitedEntries += other.VisitedEntries
 	r.PrunedDirectories += other.PrunedDirectories
+	r.AgedOutFiles += other.AgedOutFiles
 }
 
 type directoryDecision struct {
@@ -260,6 +265,7 @@ func walkEvidenceTree(ctx context.Context, root, agentID string, cutoff time.Tim
 			return nil
 		}
 		if !cutoff.IsZero() && entryInfo.ModTime().Before(cutoff) {
+			result.AgedOutFiles++
 			return nil
 		}
 		result.Files = append(result.Files, discoveredTranscriptFile{

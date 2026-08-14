@@ -510,3 +510,84 @@ func TestGrokInlinePromptArgvIsRedactedBeforeReachingClients(t *testing.T) {
 		t.Fatalf("expected the agent to stay identifiable, got %q", sanitized)
 	}
 }
+
+// A live agent's transcript must reach the priority list even when lsof reports
+// no open file. Every real claude/grok process holds no .jsonl handle -- claude
+// appends and closes, and grok keeps events.jsonl open rather than the
+// updates.jsonl this app parses -- so SessionFiles is empty on the real machine
+// and the argv session id is the only link from the process to its transcript.
+// Without that link a live session whose transcript predates the foreground
+// window is never scanned and renders as missing_transcript forever.
+func TestRootsFromLiveProcessesResolvesTranscriptsFromArgvSessionID(t *testing.T) {
+	root := t.TempDir()
+	claudeRoot := filepath.Join(root, ".claude")
+	grokRoot := filepath.Join(root, ".grok")
+	codexRoot := filepath.Join(root, ".codex")
+	traeRoot := filepath.Join(root, ".trae")
+	claudeSessionID := "e3ba6143-3bbc-4c86-ac5b-cc19e7760af9"
+	grokSessionID := "01a09be4-f6b8-7fb3-8f96-47f950dd20df"
+	// Both ids are uuidv7; the timestamp each encodes is the date directory the
+	// vendor files it under, and that is what narrows the glob to one directory.
+	// codexSessionID stamps 2026-09-09, traeSessionID 2026-09-16.
+	codexSessionID := "01a0865f-39d5-7b10-a073-c3df6bff44af"
+	traeSessionID := "01a0a5e3-edee-7c61-9097-c47e54f00ed7"
+	claudeSession := filepath.Join(claudeRoot, "projects", "-Users-alice-proj", claudeSessionID+".jsonl")
+	grokSession := filepath.Join(grokRoot, "sessions", "%2FUsers%2Falice%2Fproj", grokSessionID, "updates.jsonl")
+	codexSession := filepath.Join(codexRoot, "sessions", "2026", "09", "09", "rollout-2026-09-09T21-33-02-"+codexSessionID+".jsonl")
+	traeSession := filepath.Join(traeRoot, "cli", "sessions", "2026", "09", "16", "rollout-2026-09-16T00-26-13-"+traeSessionID+".jsonl")
+	for _, path := range []string{claudeSession, grokSession, codexSession, traeSession} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir transcript dir: %v", err)
+		}
+		if err := os.WriteFile(path, []byte("{}\n"), 0o644); err != nil {
+			t.Fatalf("write transcript: %v", err)
+		}
+	}
+
+	processes := []LiveProcess{
+		{PID: 1, Tool: "claude", Command: "claude --resume " + claudeSessionID + " --dangerously-skip-permissions"},
+		{PID: 2, Tool: "grok", Command: "grok --resume " + grokSessionID + " --permission-mode bypassPermissions"},
+		// codex and trae pass the session as a bare subcommand argument, which
+		// is the form every live codex process on the dev machine uses.
+		{PID: 3, Tool: "codex", Command: "codex resume " + codexSessionID + " --dangerously-bypass-hook-trust"},
+		{PID: 4, Tool: "trae", Command: "trae resume " + traeSessionID},
+	}
+	registry := defaultCodingAgentRegistry(Config{
+		ClaudeRoots: []string{claudeRoot},
+		GrokRoots:   []string{grokRoot},
+		CodexRoots:  []string{codexRoot},
+		TraeRoots:   []string{traeRoot},
+	})
+
+	_, priority := rootsFromLiveProcesses(processes, registry)
+	want := []TranscriptFile{
+		{Tool: "claude", Path: claudeSession, SessionIDHint: claudeSessionID},
+		{Tool: "codex", Path: codexSession, SessionIDHint: codexSessionID},
+		{Tool: "grok", Path: grokSession, SessionIDHint: grokSessionID},
+		{Tool: "trae", Path: traeSession, SessionIDHint: traeSessionID},
+	}
+	if !slices.Equal(priority, want) {
+		t.Fatalf("expected argv session ids to resolve to their transcripts, got %#v", priority)
+	}
+}
+
+// A session id with no transcript on disk must resolve to nothing. Inventing a
+// path here would put a fabricated file into the priority list.
+func TestTranscriptForSessionIDDoesNotInventPaths(t *testing.T) {
+	root := t.TempDir()
+	registry := defaultCodingAgentRegistry(Config{
+		ClaudeRoots: []string{filepath.Join(root, ".claude")},
+		GrokRoots:   []string{filepath.Join(root, ".grok")},
+		CodexRoots:  []string{filepath.Join(root, ".codex")},
+		TraeRoots:   []string{filepath.Join(root, ".trae")},
+	})
+	for _, tool := range []string{"claude", "grok", "codex", "trae"} {
+		// Both a uuidv7 (date-narrowed glob) and a uuidv4 (wide glob) must come
+		// back empty rather than as a constructed path.
+		for _, sessionID := range []string{"e3ba6143-3bbc-4c86-ac5b-cc19e7760af9", "01a0865f-39d5-7b10-a073-c3df6bff44af"} {
+			if file, ok := registry.transcriptForSessionID(tool, sessionID); ok {
+				t.Fatalf("expected %s to resolve nothing without a transcript, got %#v", tool, file)
+			}
+		}
+	}
+}

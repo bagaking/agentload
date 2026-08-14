@@ -1,0 +1,136 @@
+/* Dashboard footer: the bottom-left refresh dock plus the scan line.
+   RefreshDock is shared with the popover, but every rule styling it over there
+   is scoped to body[data-view="popover"], so the dashboard states its own. */
+
+.dashboard-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+  padding: 9px 4px 2px;
+  border-top: 1px solid color-mix(in srgb, var(--console-line-soft) 62%, transparent);
+}
+
+.dashboard-footer .footer-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dashboard-footer .footer-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+
+.dashboard-footer .footer-refresh:hover,
+.dashboard-footer .footer-refresh:focus-visible {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--console-line-soft) 48%, transparent);
+}
+
+.dashboard-footer .footer-refresh:disabled {
+  cursor: default;
+}
+
+.dashboard-footer .footer-refresh .footer-time {
+  font: 600 11.5px/1 var(--font-mono);
+  white-space: nowrap;
+}
+
+.dashboard-footer .footer-cadence {
+  position: relative;
+  display: inline-flex;
+}
+
+.dashboard-footer .footer-cadence-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 26px;
+  padding: 0 7px;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-sm);
+  font: 700 11.5px/1 var(--font-mono);
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+
+.dashboard-footer .footer-cadence-pill:hover,
+.dashboard-footer .footer-cadence-pill:focus-visible,
+.dashboard-footer .footer-cadence-pill[aria-expanded="true"] {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--console-line-soft) 48%, transparent);
+}
+
+.dashboard-footer .footer-cadence-pill.is-paused {
+  opacity: .65;
+}
+
+/* Opens upward: the dock sits at the bottom of a long scrolling page. */
+.dashboard-footer .footer-cadence-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 5px);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 124px;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--console-material-2);
+  box-shadow: 0 10px 28px color-mix(in srgb, #000 38%, transparent);
+}
+
+.dashboard-footer .footer-cadence-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--console-text-soft);
+  font: 600 11.5px/1 var(--font-mono);
+  text-align: left;
+  cursor: pointer;
+}
+
+.dashboard-footer .footer-cadence-menu button:hover,
+.dashboard-footer .footer-cadence-menu button:focus-visible {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--console-line-soft) 48%, transparent);
+  outline: none;
+}
+
+.dashboard-footer .footer-cadence-menu button.is-selected {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 22%, var(--console-material-2));
+}
+
+.dashboard-footer .footer-cadence-menu button .cadence-check {
+  color: var(--accent-hi);
+}
+
+.dashboard-footer-note {
+  font: 500 11.5px/1 var(--font-mono);
+  color: var(--console-text-faint);
+  letter-spacing: .01em;
+}

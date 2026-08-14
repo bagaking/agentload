@@ -17,8 +17,13 @@ type transcriptEvidenceIndexStats struct {
 	CandidateCount    int
 	VisitedEntries    int
 	PrunedDirectories int
-	Reconciled        bool
-	Elapsed           time.Duration
+	// AgedOutFiles counts transcripts the last walk found but excluded as older
+	// than the configured history horizon. Those are out of scope rather than
+	// deferred, so this is diagnostic only and must not reach DeferredFiles --
+	// on this dev machine it is ~11k files against 2.8k genuinely deferred.
+	AgedOutFiles int
+	Reconciled   bool
+	Elapsed      time.Duration
 }
 
 type transcriptEvidenceSnapshot struct {
@@ -26,6 +31,11 @@ type transcriptEvidenceSnapshot struct {
 	Errors   []string
 	Complete bool
 	Stats    transcriptEvidenceIndexStats
+	// FilteredByCutoff counts files the index holds -- so within the history
+	// horizon -- that the foreground cutoff excluded from Files. These are the
+	// genuinely deferred ones: in scope, on disk, and not scanned this pass.
+	// Files the walk never admitted are outside the horizon, not a gap.
+	FilteredByCutoff int
 	// Revision identifies the exact index state represented by Files. Consumers
 	// compare it after parsing so a watcher mutation cannot be published as a
 	// complete scan when it landed between collection and parse completion.
@@ -381,7 +391,8 @@ func (index *transcriptEvidenceIndex) reconcileLocked(ctx context.Context, cutof
 	}
 	index.lastStats = transcriptEvidenceIndexStats{
 		CandidateCount: len(nextFiles), VisitedEntries: discovered.VisitedEntries,
-		PrunedDirectories: discovered.PrunedDirectories, Reconciled: true, Elapsed: elapsed,
+		PrunedDirectories: discovered.PrunedDirectories, AgedOutFiles: discovered.AgedOutFiles,
+		Reconciled: true, Elapsed: elapsed,
 	}
 	index.reconciling = nil
 	close(flight)
@@ -433,6 +444,7 @@ func (index *transcriptEvidenceIndex) currentSnapshot(cutoff time.Time, priority
 	var complete bool
 	var stats transcriptEvidenceIndexStats
 	var revision uint64
+	filteredByCutoff := 0
 	index.mu.Lock()
 	// Deferred unlock: this block dereferences file.Info while holding index.mu,
 	// so a malformed entry must not strand the lock every snapshot reader, the
@@ -463,6 +475,11 @@ func (index *transcriptEvidenceIndex) currentSnapshot(cutoff time.Time, priority
 				continue
 			}
 			if !isPriority && !cutoff.IsZero() && file.Info.ModTime().Before(cutoff) {
+				// Counted here because the index still holds the entry: the walk
+				// admitted it and it has aged since. A file the walk itself
+				// skipped is counted there instead, so neither is missed nor
+				// double counted.
+				filteredByCutoff++
 				continue
 			}
 			files = append(files, file)
@@ -489,7 +506,7 @@ func (index *transcriptEvidenceIndex) currentSnapshot(cutoff time.Time, priority
 		}
 		return files[i].File.Tool < files[j].File.Tool
 	})
-	return transcriptEvidenceSnapshot{Files: files, Errors: errors, Complete: complete, Stats: stats, Revision: revision}
+	return transcriptEvidenceSnapshot{Files: files, Errors: errors, Complete: complete, Stats: stats, FilteredByCutoff: filteredByCutoff, Revision: revision}
 }
 
 func (index *transcriptEvidenceIndex) syncRoots() {

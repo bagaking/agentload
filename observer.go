@@ -192,6 +192,18 @@ func rootsFromLiveProcesses(processes []LiveProcess, adapters *codingAgentRegist
 			prioritySet[file.Tool+"\x00"+file.Path] = file
 			addRoot(file.Tool, adapters.rootFromTranscriptFile(file))
 		}
+		// lsof reports no transcript for most live agents, so the session id on
+		// the command line is the only link left between the process and its
+		// file. Resolving it here keeps a running session in the foreground scan
+		// after it has gone quiet for longer than the foreground window.
+		for _, hint := range extractSessionHints(process.Command) {
+			file, ok := adapters.transcriptForSessionID(process.Tool, hint)
+			if !ok {
+				continue
+			}
+			prioritySet[file.Tool+"\x00"+file.Path] = file
+			addRoot(file.Tool, adapters.rootFromTranscriptFile(file))
+		}
 		for _, root := range adapters.rootsFromCommand(process.Tool, process.Command) {
 			addRoot(process.Tool, root)
 		}

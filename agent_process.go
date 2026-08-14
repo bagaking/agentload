@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -48,7 +49,11 @@ type builtinProcessIdentity struct {
 	transcriptPath     func(string) bool
 	rootFromTranscript func(string) string
 	sessionIDHint      func(string) string
-	commandRootPattern *regexp.Regexp
+	// transcriptForSessionID is the inverse of sessionIDHint: it turns a session
+	// id read off a process command line back into the transcript on disk. A
+	// vendor leaves it nil when its derived session id is not the argv id.
+	transcriptForSessionID func(roots []string, sessionID string) (TranscriptFile, bool)
+	commandRootPattern     *regexp.Regexp
 }
 
 func (p builtinProcessIdentity) MatchesCommand(command processCommand) bool {
@@ -83,6 +88,13 @@ func (p builtinProcessIdentity) RootFromTranscriptPath(path string) string {
 	return p.rootFromTranscript(path)
 }
 
+func (p builtinProcessIdentity) TranscriptForSessionID(roots []string, sessionID string) (TranscriptFile, bool) {
+	if p.transcriptForSessionID == nil {
+		return TranscriptFile{}, false
+	}
+	return p.transcriptForSessionID(roots, sessionID)
+}
+
 func (p builtinProcessIdentity) RootsFromCommand(command processCommand) []string {
 	if p.commandRootPattern == nil {
 		return nil
@@ -112,6 +124,13 @@ func newClaudeProcessIdentity() agentProcessIdentity {
 		},
 		rootFromTranscript: func(path string) string { return configRootFromPath(path, ".claude") },
 		sessionIDHint:      genericTranscriptSessionID,
+		transcriptForSessionID: func(roots []string, sessionID string) (TranscriptFile, bool) {
+			patterns := make([]string, 0, len(roots))
+			for _, root := range roots {
+				patterns = append(patterns, filepath.Join(root, "projects", "*", sessionID+".jsonl"))
+			}
+			return transcriptFromSessionGlob("claude", sessionID, patterns)
+		},
 		commandRootPattern: commandRootPattern(".claude"),
 	}
 }
@@ -155,6 +174,13 @@ func newCodexProcessIdentity() agentProcessIdentity {
 		},
 		rootFromTranscript: func(path string) string { return configRootFromPath(path, ".codex") },
 		sessionIDHint:      codexTranscriptSessionID,
+		transcriptForSessionID: func(roots []string, sessionID string) (TranscriptFile, bool) {
+			patterns := datedRolloutSessionGlobs(roots, "sessions", sessionID)
+			for _, root := range roots {
+				patterns = append(patterns, filepath.Join(root, "archived_sessions", "rollout-*-"+sessionID+".jsonl"))
+			}
+			return transcriptFromSessionGlob("codex", sessionID, patterns)
+		},
 		commandRootPattern: commandRootPattern(".codex"),
 	}
 }
@@ -274,6 +300,14 @@ func newTraeProcessIdentity() agentProcessIdentity {
 		},
 		rootFromTranscript: traeRootFromPath,
 		sessionIDHint:      genericTranscriptSessionID,
+		transcriptForSessionID: func(roots []string, sessionID string) (TranscriptFile, bool) {
+			// sessionIDHint derives the whole filename stem, but the parsed
+			// trace does not keep it: processTraeTraceLine overwrites SessionID
+			// with session_meta's payload.id, which is the bare uuid on the
+			// command line. So a file resolved here keys to the same session the
+			// argv hint does, and upgrades that row instead of forking one.
+			return transcriptFromSessionGlob("trae", sessionID, datedRolloutSessionGlobs(roots, filepath.Join("cli", "sessions"), sessionID))
+		},
 		commandRootPattern: commandRootPattern(filepath.Join(".trae", "cli")),
 	}
 }
@@ -292,6 +326,13 @@ func newGrokProcessIdentity() agentProcessIdentity {
 		},
 		rootFromTranscript: func(path string) string { return configRootFromPath(path, ".grok") },
 		sessionIDHint:      grokTranscriptSessionID,
+		transcriptForSessionID: func(roots []string, sessionID string) (TranscriptFile, bool) {
+			patterns := make([]string, 0, len(roots))
+			for _, root := range roots {
+				patterns = append(patterns, filepath.Join(root, "sessions", "*", sessionID, grokTranscriptFileName))
+			}
+			return transcriptFromSessionGlob("grok", sessionID, patterns)
+		},
 		commandRootPattern: commandRootPattern(".grok"),
 	}
 }
@@ -494,4 +535,75 @@ func existingCommandRoots(command string, pattern *regexp.Regexp) []string {
 	}
 	sort.Strings(roots)
 	return roots
+}
+
+// sessionIDPattern is the shape a session id must have before it is used to
+// build a glob. Live codex command lines carry ids like "fco_01a0…",
+// "msg_01a0…" and "call_1IPY…" alongside real session ids; globbing one of
+// those could match an unrelated transcript, so only a bare uuid is accepted.
+var sessionIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+// datedRolloutSessionGlobs builds the globs for the vendors that file a
+// session as "<root>/<dir>/YYYY/MM/DD/rollout-<timestamp>-<id>.jsonl".
+//
+// A uuidv7 id carries its own creation time, which is the date directory the
+// file sits in (verified across 5275 local codex rollouts, zero mismatches), so
+// the walk narrows from every date directory to one. Measured on this machine:
+// 913ms across 2253 directories versus 20ms for the same 33 ids and the same
+// 12 hits. A non-v7 id keeps the wide glob rather than resolving to nothing.
+func datedRolloutSessionGlobs(roots []string, dir, sessionID string) []string {
+	day := ""
+	if created, ok := uuidV7Time(sessionID); ok {
+		day = filepath.Join(created.Format("2006"), created.Format("01"), created.Format("02"))
+	} else {
+		day = filepath.Join("*", "*", "*")
+	}
+	patterns := make([]string, 0, len(roots))
+	for _, root := range roots {
+		patterns = append(patterns, filepath.Join(root, dir, day, "rollout-*-"+sessionID+".jsonl"))
+	}
+	return patterns
+}
+
+// uuidV7Time reads the millisecond timestamp out of a uuidv7. Any other uuid
+// version reports no time rather than a decoded nonsense date.
+func uuidV7Time(sessionID string) (time.Time, bool) {
+	if !sessionIDPattern.MatchString(sessionID) || sessionID[14] != '7' {
+		return time.Time{}, false
+	}
+	millis, err := strconv.ParseInt(sessionID[0:8]+sessionID[9:13], 16, 64)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return time.UnixMilli(millis), true
+}
+
+// transcriptFromSessionGlob returns the newest existing file matching one of
+// the patterns. It never constructs a path it has not seen on disk: a session
+// with no transcript resolves to nothing rather than to a plausible guess.
+func transcriptFromSessionGlob(agentID, sessionID string, patterns []string) (TranscriptFile, bool) {
+	if !sessionIDPattern.MatchString(sessionID) {
+		return TranscriptFile{}, false
+	}
+	newest := ""
+	var newestAt time.Time
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			continue
+		}
+		for _, match := range matches {
+			info, statErr := os.Stat(match)
+			if statErr != nil || info.IsDir() {
+				continue
+			}
+			if newest == "" || info.ModTime().After(newestAt) {
+				newest, newestAt = match, info.ModTime()
+			}
+		}
+	}
+	if newest == "" {
+		return TranscriptFile{}, false
+	}
+	return TranscriptFile{Tool: agentID, Path: filepath.Clean(newest), SessionIDHint: sessionID}, true
 }

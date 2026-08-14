@@ -310,15 +310,27 @@ func (o *Observer) scanTranscriptsWithOptions(ctx context.Context, priority []Tr
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	collectionCutoff := opts.HistoryCutoff
-	if opts.DeferHistoryWalk && !opts.ForegroundCutoff.IsZero() {
-		collectionCutoff = opts.ForegroundCutoff
-	}
-	collection := collectTranscriptCandidatesWithCoverage(ctx, o.evidenceIndex, o.adapters, priority, collectionCutoff, opts.ForegroundCutoff)
+	// The collection always runs at the history horizon, even when the history
+	// walk is deferred. Collapsing it to the foreground cutoff would drop every
+	// in-scope-but-stale file before it could be counted, so the app reported a
+	// gap of 1 while 13 live sessions were actually missing their transcript.
+	// These files are still not parsed -- addFile marks them deferred -- the
+	// change is only that they are now counted.
+	collection := collectTranscriptCandidatesWithCoverage(ctx, o.evidenceIndex, o.adapters, priority, opts.HistoryCutoff, opts.ForegroundCutoff)
 	files, walkErrors := collection.Files, collection.Errors
+	// Candidates the foreground cutoff deferred are counted, not scanned, so
+	// ScannedFiles stays "files this pass actually read" rather than growing to
+	// the whole in-horizon candidate set.
+	scanned := 0
+	for _, candidate := range files {
+		if !candidate.Deferred {
+			scanned++
+		}
+	}
 	data := &TranscriptData{
-		Traces:                           make(map[string]*SessionTrace, len(files)),
-		ScannedFiles:                     len(files),
+		Traces:                           make(map[string]*SessionTrace, scanned),
+		ScannedFiles:                     scanned,
+		DeferredFiles:                    collection.FilteredByCutoff,
 		HistoricalScanDeferred:           opts.DeferHistoryWalk,
 		CoverageIncomplete:               !collection.Complete,
 		ForegroundScanLookbackSeconds:    int(opts.ForegroundLookback / time.Second),
@@ -713,7 +725,11 @@ type transcriptCandidateCollection struct {
 	Files    []transcriptCandidate
 	Errors   []string
 	Complete bool
-	Revision uint64
+	// FilteredByCutoff counts files the collection cutoff excluded before they
+	// became candidates. They are deferred just like a candidate marked
+	// Deferred, and are counted so the reported gap matches the real one.
+	FilteredByCutoff int
+	Revision         uint64
 }
 
 func collectTranscriptCandidates(ctx context.Context, evidenceIndex *transcriptEvidenceIndex, adapters *codingAgentRegistry, priority []TranscriptFile, historyCutoff, foregroundCutoff time.Time) ([]transcriptCandidate, []string) {
@@ -743,12 +759,19 @@ func collectTranscriptCandidatesWithCoverage(ctx context.Context, evidenceIndex 
 		_, priorityFile := priorityKeys[key]
 		deferred := false
 		tailParse := false
-		if !priorityFile && !foregroundCutoff.IsZero() {
-			if info.ModTime().Before(foregroundCutoff) {
+		if !foregroundCutoff.IsZero() {
+			switch {
+			case priorityFile:
+				// A priority file is never deferred, but one that has gone quiet
+				// still only needs its tail: the session is live, so recent events
+				// place it, and a full read here would re-parse the whole file on
+				// every append. The largest observed live transcript is 133MB.
+				tailParse = info.ModTime().Before(foregroundCutoff)
+			case info.ModTime().Before(foregroundCutoff):
 				deferred = true
-			} else if !fileMayContainEventsAfterCutoff(file.Path, info, foregroundCutoff) {
+			case !fileMayContainEventsAfterCutoff(file.Path, info, foregroundCutoff):
 				deferred = true
-			} else {
+			default:
 				tailParse = true
 			}
 		}
@@ -772,6 +795,17 @@ func collectTranscriptCandidatesWithCoverage(ctx context.Context, evidenceIndex 
 		}
 	}
 
+	// The walk counts every file the cutoff excluded, but a priority file is
+	// re-admitted afterwards and does get scanned, so it is not a gap.
+	deferredByCutoff := indexed.FilteredByCutoff
+	for _, candidate := range seen {
+		if candidate.Priority && candidate.ModTime.Before(foregroundCutoff) {
+			deferredByCutoff--
+		}
+	}
+	if deferredByCutoff < 0 {
+		deferredByCutoff = 0
+	}
 	files := make([]transcriptCandidate, 0, len(seen))
 	for _, file := range seen {
 		files = append(files, file)
@@ -792,10 +826,11 @@ func collectTranscriptCandidatesWithCoverage(ctx context.Context, evidenceIndex 
 		return files[i].File.Tool < files[j].File.Tool
 	})
 	return transcriptCandidateCollection{
-		Files:    files,
-		Errors:   scanErrors,
-		Complete: indexed.Complete && ctx.Err() == nil,
-		Revision: indexed.Revision,
+		Files:            files,
+		Errors:           scanErrors,
+		Complete:         indexed.Complete && ctx.Err() == nil,
+		FilteredByCutoff: deferredByCutoff,
+		Revision:         indexed.Revision,
 	}
 }
 

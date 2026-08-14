@@ -15,6 +15,7 @@ type agentProcessIdentity interface {
 	DisplayIdentity(command processCommand) string
 	TranscriptFileForPath(path string) (TranscriptFile, bool)
 	RootFromTranscriptPath(path string) string
+	TranscriptForSessionID(roots []string, sessionID string) (TranscriptFile, bool)
 	RootsFromCommand(command processCommand) []string
 }
 
@@ -325,6 +326,24 @@ func (r *codingAgentRegistry) rootsFromCommand(agentID, command string) []string
 	return r.adapters[index].Capabilities.Process.RootsFromCommand(newProcessCommand(command))
 }
 
+// transcriptForSessionID resolves a session id read from a process command line
+// back to the transcript on disk, so a live session whose file predates the
+// foreground scan window still reaches the priority list. lsof cannot supply
+// this: claude closes its transcript between appends and grok holds
+// events.jsonl rather than the updates.jsonl this app parses.
+func (r *codingAgentRegistry) transcriptForSessionID(agentID, sessionID string) (TranscriptFile, bool) {
+	if r == nil {
+		return TranscriptFile{}, false
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	index, ok := r.byID[strings.TrimSpace(strings.ToLower(agentID))]
+	if !ok || r.adapters[index].Capabilities.Process == nil || len(r.adapters[index].Roots) == 0 {
+		return TranscriptFile{}, false
+	}
+	return r.adapters[index].Capabilities.Process.TranscriptForSessionID(r.adapters[index].Roots, strings.TrimSpace(sessionID))
+}
+
 func (r *codingAgentRegistry) rootFromTranscriptFile(file TranscriptFile) string {
 	if r == nil {
 		return ""
@@ -354,10 +373,7 @@ func (r *codingAgentRegistry) discoverTranscripts(ctx context.Context, cutoff ti
 			continue
 		}
 		discovered := adapter.Capabilities.Discovery.Discover(ctx, adapter.ID, uniquePhysicalEvidenceRoots(adapter.Roots), cutoff)
-		result.Files = append(result.Files, discovered.Files...)
-		result.Errors = append(result.Errors, discovered.Errors...)
-		result.VisitedEntries += discovered.VisitedEntries
-		result.PrunedDirectories += discovered.PrunedDirectories
+		result.merge(discovered)
 	}
 	return result
 }

@@ -19,6 +19,10 @@ var sessionHintPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)sessionid["=: ]+"?([0-9a-f-]{8,})`),
 	regexp.MustCompile(`(?i)session_id["=: ]+"?([0-9a-f-]{8,})`),
 	regexp.MustCompile(`(?i)(?:--resume|--thread-id|--session-id)[= ]([0-9a-f-]{8,})`),
+	// codex and trae take the session as a bare subcommand argument
+	// ("codex resume <uuid>"), not a flag. Anchored on a full uuid so an
+	// unrelated word after "resume" cannot be read as a session.
+	regexp.MustCompile(`(?i)\bresume[= ]+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b`),
 	regexp.MustCompile(`(?i)CODEX_THREAD_ID=([0-9a-f-]{8,})`),
 }
 

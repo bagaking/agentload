@@ -67,6 +67,15 @@ meta:
 - **顺带验证一条安全边界**：grok 的 `-- <prompt>` 形态会把整段用户输入（实测含真实 OAuth token / API key）放进 argv。现有 `sanitizeCommandForClient` 已挡住，未泄漏；已补回归测试锁死。
 - **M02_S04 需改写**：其前提「gemini-cli 是 JSONL」被实测推翻，验收标准须按 protobuf-in-SQLite 现状重写，conformance kit 的第二样本改用 grok。详见 M02_S05 §7。
 
+**2026-09-16 完成**（mini-sprint `M02_S05.001.FIX`，计划外缺陷修复）：
+
+- **活跃 session 永久丢归属已修**：live agent 的 transcript 一旦静默超过 2 小时前台窗口，就永远不再被扫描，渲染成 `missing_transcript`。根因是既有的 priority 旁路只由 lsof 供料，而 lsof 对本机 agent 几乎无效（grok 持 `events.jsonl` 非 `updates.jsonl`；claude append-then-close 不常驻 fd）。修复是把 argv 里**早就解析出来**的 session id 反解成磁盘路径，喂进同一条旁路，不新增机制。实机：claude 10/19 → **17/18**，grok 2/6 → **6/6**。
+- **四家 vendor 全部落地**（claude/codex/trae/grok），兑现用户「四家全做」的明确选择。codex/trae 借 uuidv7 内嵌时间戳把日期目录从通配收窄为定值（本机 5275 个 rollout 零例外），**913ms → 20.3ms**。
+- **`deferred_files` 口径修正两次**：先前恒报 1（老文件在收集阶段即被丢弃，从未进入计数）；中途一度报 **11043**，因为把「超出 7 天历史地平线」的文件也算成了覆盖缺口——**把范围之外报成「我漏了」同样是虚构**。最终口径只计「索引内但被前台 cutoff 挡下」的文件，实测 2879，与独立统计 2826 吻合。
+- **两处诚实性欠账已还**：(a) 我此前告诉用户「后台历史扫描会补齐」是**错的**，生产路径上根本不存在该扫描（D-014）；(b) 我曾以「trae 会产生错误归属」为由擅自把范围收窄为两家，复核后该理由不成立（D-015）。
+- **性能**：扫描本身热态 0.52s（前 0.55s），无回退；HTTP 刷新端到端 0.79s（前 0.55s），**小幅回退已记录**未优化。
+- **Web dashboard 左下角刷新已补回**：刷新时间戳 + 节拍菜单抽成共享的 `RefreshDock`，popover 与 dashboard 共用一份实现，dashboard 侧同时把原先「盲目循环」的节拍按钮升级为与 popover 一致的选择菜单。
+
 **当前活跃**：
 
 - **M01 地基**（本轮架构与熵审查修复已落地，发布门已复跑）。
@@ -98,6 +107,7 @@ meta:
 | `M02_S03.opencode_adapter_full_evidence.md` | vendor wave 1a：opencode 全证据 adapter |
 | `M02_S04.gemini_adapter_conformance_kit.md` | vendor wave 1b：gemini-cli adapter 与 conformance kit（**前提已被实测推翻，待按 M02_S05 §7 改写**） |
 | `M02_S05.grok_adapter_full_evidence.md` | vendor 实机落地：grok 满证据；cursor/gemini 诚实分级 |
+| `M02_S05.001.FIX.live_session_transcript_resolution.md` | 活跃 session 的 transcript 反解（argv session id → 路径）与 `deferred_files` 口径修正 |
 | `M03_S01.attention_state_engine.md` | 证据化会话 attention states 引擎 |
 | `M03_S02.needs_you_triage_and_tray.md` | needs-you 分诊面、菜单栏 glyph、tray i18n |
 | `M03_S03.one_keystroke_actions.md` | 一次按键动作：跳转/检视/续跑/显式停止 |

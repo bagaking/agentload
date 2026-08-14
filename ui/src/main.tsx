@@ -19,6 +19,7 @@ import type { AgeBucketSnapshot, HostApp, LiveProcess, LiveSession, LiveTokenRat
 import "./styles.css";
 import "./styles/system-view.css";
 import "./styles/popover-footer.css";
+import "./styles/dashboard-footer.css";
 import "./styles/metric-help.css";
 import "./styles/popover-tabs.css";
 import "./styles/system-process.css";
@@ -202,6 +203,7 @@ function App() {
           refreshSnapshot={refreshSnapshot}
           refreshInterval={refreshInterval}
           cycleRefreshInterval={cycleRefreshInterval}
+          chooseRefreshInterval={chooseRefreshInterval}
           selection={selection}
           setSelection={setSelection}
           railTab={railTab}
@@ -382,6 +384,100 @@ function PopoverSurface({
   );
 }
 
+// The refresh timestamp plus its cadence menu. Both surfaces put this in their
+// bottom-left corner, so it lives in one component rather than two that drift.
+function RefreshDock({
+  t,
+  generated,
+  stateLabel,
+  refreshing,
+  refreshSnapshot,
+  refreshInterval,
+  chooseRefreshInterval,
+  surface,
+}: {
+  t: (key: string) => string;
+  generated: string;
+  stateLabel: string;
+  refreshing: boolean;
+  refreshSnapshot: () => void;
+  refreshInterval: number;
+  chooseRefreshInterval: (ms: number) => void;
+  surface: "popover" | "dashboard";
+}) {
+  const [cadenceOpen, setCadenceOpen] = useState(false);
+  const cadenceRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!cadenceOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!cadenceRef.current?.contains(event.target as Node | null)) setCadenceOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setCadenceOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [cadenceOpen]);
+  return (
+    <div className="footer-meta" role="group" aria-label={t("refresh")}>
+      <button
+        className={`footer-refresh ${refreshing ? "is-refreshing" : ""}`}
+        type="button"
+        data-focus-key={focusKey("refresh-dock", surface)}
+        onClick={refreshSnapshot}
+        disabled={refreshing}
+        title={`${refreshing ? t("running") : t("refresh")} · ${stateLabel} · ${generated}`}
+        aria-label={`${refreshing ? t("running") : t("refresh")} · ${generated}`}
+        aria-busy={refreshing}
+      >
+        <RefreshCw size={11} className={refreshing ? "spin" : ""} aria-hidden="true" />
+        <span className="footer-time">{generated}</span>
+      </button>
+      <div className="footer-cadence" ref={cadenceRef}>
+        <button
+          className={`footer-cadence-pill ${refreshInterval ? "" : "is-paused"}`}
+          type="button"
+          data-focus-key={focusKey("refresh-interval", surface)}
+          onClick={() => setCadenceOpen((value) => !value)}
+          aria-haspopup="menu"
+          aria-expanded={cadenceOpen}
+          title={`${t("autoRefresh")}: ${formatRefreshInterval(refreshInterval, t)}`}
+          aria-label={`${t("autoRefresh")}: ${formatRefreshInterval(refreshInterval, t)}`}
+        >
+          {refreshInterval ? <span>{formatRefreshInterval(refreshInterval, t)}</span> : <Pause size={9} aria-hidden="true" />}
+        </button>
+        {cadenceOpen ? (
+          <div className="footer-cadence-menu" role="menu" aria-label={t("autoRefresh")}>
+            {REFRESH_INTERVALS_MS.map((ms) => {
+              const selected = ms === refreshInterval;
+              return (
+                <button
+                  key={ms}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={selected}
+                  className={selected ? "is-selected" : ""}
+                  onClick={() => {
+                    chooseRefreshInterval(ms);
+                    setCadenceOpen(false);
+                  }}
+                >
+                  <span>{formatRefreshInterval(ms, t)}</span>
+                  {selected ? <CheckCircle2 className="cadence-check" size={12} aria-hidden="true" /> : null}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function PopoverFooter({
   t,
   snapshot,
@@ -413,23 +509,6 @@ function PopoverFooter({
   const rangeTab = popoverView === "throughput" || popoverView === "activity";
   const activeRanges = useMemo(() => (snapshot ? activeTrendRanges(snapshot) : []), [snapshot]);
   const effectiveRange = activeRanges.includes(trendRange) ? trendRange : activeRanges[0] ?? trendRange;
-  const [cadenceOpen, setCadenceOpen] = useState(false);
-  const cadenceRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!cadenceOpen) return;
-    const onPointerDown = (event: PointerEvent) => {
-      if (!cadenceRef.current?.contains(event.target as Node | null)) setCadenceOpen(false);
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setCadenceOpen(false);
-    };
-    document.addEventListener("pointerdown", onPointerDown, true);
-    document.addEventListener("keydown", onKeyDown, true);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown, true);
-      document.removeEventListener("keydown", onKeyDown, true);
-    };
-  }, [cadenceOpen]);
   const onTablistKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const index = POPOVER_VIEWS.indexOf(popoverView);
     let next: PopoverView | undefined;
@@ -444,58 +523,16 @@ function PopoverFooter({
   };
   return (
     <footer className="popover-footer">
-      <div className="footer-meta" role="group" aria-label={t("refresh")}>
-        <button
-          className={`footer-refresh ${refreshing ? "is-refreshing" : ""}`}
-          type="button"
-          data-focus-key={focusKey("popover-refresh")}
-          onClick={refreshSnapshot}
-          disabled={refreshing}
-          title={`${refreshing ? t("running") : t("refresh")} · ${stateLabel} · ${generated}`}
-          aria-label={`${refreshing ? t("running") : t("refresh")} · ${generated}`}
-          aria-busy={refreshing}
-        >
-          <RefreshCw size={11} className={refreshing ? "spin" : ""} aria-hidden="true" />
-          <span className="footer-time">{generated}</span>
-        </button>
-        <div className="footer-cadence" ref={cadenceRef}>
-          <button
-            className={`footer-cadence-pill ${refreshInterval ? "" : "is-paused"}`}
-            type="button"
-            data-focus-key={focusKey("refresh-interval", "popover")}
-            onClick={() => setCadenceOpen((value) => !value)}
-            aria-haspopup="menu"
-            aria-expanded={cadenceOpen}
-            title={`${t("autoRefresh")}: ${formatRefreshInterval(refreshInterval, t)}`}
-            aria-label={`${t("autoRefresh")}: ${formatRefreshInterval(refreshInterval, t)}`}
-          >
-            {refreshInterval ? <span>{formatRefreshInterval(refreshInterval, t)}</span> : <Pause size={9} aria-hidden="true" />}
-          </button>
-          {cadenceOpen ? (
-            <div className="footer-cadence-menu" role="menu" aria-label={t("autoRefresh")}>
-              {REFRESH_INTERVALS_MS.map((ms) => {
-                const selected = ms === refreshInterval;
-                return (
-                  <button
-                    key={ms}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={selected}
-                    className={selected ? "is-selected" : ""}
-                    onClick={() => {
-                      chooseRefreshInterval(ms);
-                      setCadenceOpen(false);
-                    }}
-                  >
-                    <span>{formatRefreshInterval(ms, t)}</span>
-                    {selected ? <CheckCircle2 className="cadence-check" size={12} aria-hidden="true" /> : null}
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
-        </div>
-      </div>
+      <RefreshDock
+        t={t}
+        generated={generated}
+        stateLabel={stateLabel}
+        refreshing={refreshing}
+        refreshSnapshot={refreshSnapshot}
+        refreshInterval={refreshInterval}
+        chooseRefreshInterval={chooseRefreshInterval}
+        surface="popover"
+      />
       <div className="popover-footer-controls">
         {rangeTab && activeRanges.length ? (
           <div className="footer-range-float">
@@ -544,6 +581,7 @@ function DashboardSurface({
   refreshSnapshot,
   refreshInterval,
   cycleRefreshInterval,
+  chooseRefreshInterval,
   selection,
   setSelection,
   railTab,
@@ -563,6 +601,7 @@ function DashboardSurface({
   refreshSnapshot: () => void;
   refreshInterval: number;
   cycleRefreshInterval: () => void;
+  chooseRefreshInterval: (ms: number) => void;
   selection: Selection;
   setSelection: (value: Selection) => void;
   railTab: RailTab;
@@ -632,6 +671,20 @@ function DashboardSurface({
         selection={selection}
         setSelection={setSelection}
       />
+
+      <footer className="dashboard-footer">
+        <RefreshDock
+          t={t}
+          generated={snapshot.generated_at ? formatDateTime(snapshot.generated_at) : t("unavailable")}
+          stateLabel={metricState(snapshot, t)}
+          refreshing={running}
+          refreshSnapshot={refreshSnapshot}
+          refreshInterval={refreshInterval}
+          chooseRefreshInterval={chooseRefreshInterval}
+          surface="dashboard"
+        />
+        <span className="dashboard-footer-note">{transcriptScanSummary(t, snapshot.transcript_stats ?? {})}</span>
+      </footer>
     </main>
   );
 }
