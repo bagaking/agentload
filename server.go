@@ -965,13 +965,23 @@ func embeddedAbsolutePathEnd(text string, start int) int {
 		}
 		if slash < 0 {
 			segment := filepath.Base(filepath.Clean(text[start:end]))
-			if strings.ContainsRune(segment, '.') || isClientPathBoundaryWord(word) {
+			if isClientPathFilename(segment) && isClientPathBoundaryWord(word) {
 				return end
 			}
 		}
 		end = next
 	}
 	return end
+}
+
+func isClientPathFilename(segment string) bool {
+	segment = strings.ToLower(strings.TrimSpace(segment))
+	for _, suffix := range []string{".app", ".db", ".go", ".json", ".jsonl", ".log", ".md", ".plist", ".sqlite", ".toml", ".ts", ".tsx", ".txt", ".yaml", ".yml"} {
+		if strings.HasSuffix(segment, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 func isClientPathBoundaryWord(word string) bool {

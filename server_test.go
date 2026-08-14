@@ -1052,11 +1052,15 @@ func TestSanitizeTextForClientRedactsPathsInsideStructuredTokens(t *testing.T) {
 		"diagnostic=" + path + ":42:7",
 		"opened " + spacedPath + ": parse failed",
 		path + " and " + spacedPath + " both failed",
+		filepath.Join(root, "alice and Team", "session.jsonl") + ": parse failed",
+		filepath.Join(root, "alice.smith Work", "session.jsonl") + ": parse failed",
 	}
 	for _, raw := range cases {
 		got := sanitizeTextForClient(raw)
-		if strings.Contains(got, root) || strings.Contains(got, path) || strings.Contains(got, "User") || strings.Contains(got, "Workspace") {
-			t.Fatalf("expected structured path %q to be redacted, got %q", raw, got)
+		for _, leaked := range []string{root, path, "User", "Workspace", "alice and Team", "alice.smith Work"} {
+			if strings.Contains(got, leaked) {
+				t.Fatalf("expected structured path %q to redact %q, got %q", raw, leaked, got)
+			}
 		}
 		if !strings.Contains(got, "session.jsonl") {
 			t.Fatalf("expected basename to remain useful for %q, got %q", raw, got)
