@@ -38,7 +38,7 @@ meta:
 - **矩阵门禁**——vendor 与信号只按其证据诚实支持的档位出货；解析异常自动降档而非输出错数；矩阵单元格由 adapter 代码生成，永不手编。
 - **Sprint 纪律**——量化验收未过不得进入下一 sprint；回归或 >30% 偏差开 FIX/REFACTOR mini-sprint 并更新本文件，不许静默漂移。
 
-## 2. 执行状态（更新于 2026-09-12）
+## 2. 执行状态（更新于 2026-09-19）
 
 **今日已完成**：
 
@@ -76,6 +76,48 @@ meta:
 - **性能**：扫描本身热态 0.52s（前 0.55s），无回退；HTTP 刷新端到端 0.79s（前 0.55s），**小幅回退已记录**未优化。
 - **Web dashboard 左下角刷新已补回**：刷新时间戳 + 节拍菜单抽成共享的 `RefreshDock`，popover 与 dashboard 共用一份实现，dashboard 侧同时把原先「盲目循环」的节拍按钮升级为与 popover 一致的选择菜单。
 
+**2026-09-16 完成**（mini-sprint `M02_S05.002.REDESIGN`，用户要求「并发页面应该重新好好设计下」）：
+
+- **图表右端的 0 是虚构的，已修**：每个历史窗口的最后一个格点恰好落在 `now`，而 live session 的 span 止于它最后一条 transcript 事件、永远严格早于 `now`，于是扫描必然返回 0——不是「没有东西在跑」，而是「这里测不出来」。实机对比：旧二进制五个窗口末点全是 `session_concurrency: 0`（机器上实际 44 个已知 session），新二进制该点字段整体缺省，走既有的 honest-missing 通路渲染成留白。
+- **设计面板四选一的共识方案是错的，靠实测推翻**：三份独立提案都收敛到「窗口边界不要发 `-1` 关闭事件」，实测 `old [19 19 0] → fixed [19 19 0]` 零变化，因为「真正跨越 `now` 的 span：0/19」。它们的测试只在 `End >= now` 的合成数据上过。改采第四份的「末点不采样」，无条件成立。记为 D-016。
+- **三按钮图例换成 live hero**（用户选择）：大字读 `summary.active_sessions`，旁边是已知 session / 可见 PID / 今日峰值，以及常驻的 per-tool PID 拆分（原先藏在图例点击后）。hero 与图表是**两个不同的证据家族**——一个测于快照瞬间、一个扫自 span——这正是图表右端可以诚实留白而 hero 仍能回答「现在多忙」的原因。
+- **两处图表修正**：并发是阶跃函数，曲线插值出的中间值从未被测量（违反 metric-semantics 契约），改 `LineType.WithSteps`；可见 PID 量级远大于两条 session 序列（实测 7D pids 28-106 vs burst 0-10），共用一条价格轴时信息量大的序列被压进底部十分之一，给它 `priceScaleId: "left"` 独立轴。两条轴都不标数值——不同证据家族的高度本就不可比。
+- **删掉了 UI 里掩盖该 bug 的 hack**：readout 原先 `reverse().find(d => d.value > 0)` 跳过末点的假 0，导致图例与图表互相矛盾（metric-semantics 另行禁止）；后端不再虚构后，这段扫描只会藏住真正空闲的桶。
+- **净删代码**：13 文件 +307 / -484。`TrendRuntimeDrilldown` 一族（110 行）与其 126 行 CSS 随图例一并作废，6 个 i18n key × 3 语言清掉。
+- **实机验证**：新二进制跑在 8699（刻意避开用户在用的 8642），五个窗口末点均只剩 `at`，前一个桶正常携带真实计数；hero 读的四个字段全部有值（active 3 / known 44 / pids 45 / 今日峰值 18）。
+
+**2026-09-18 完成**（mini-sprint `M02_S05.003.FIX`，用户「现在的吞吐页面, worktree 好像还没往对应的项目上聚合?」）：
+
+- **worktree 被拆成独立项目行已修**：根因是**同一 session 中途 `cd` 进临时目录**。实读真实 trae transcript，同一文件里两个 cwd——先 `.../farm/.local/workspaces/flowlens/flowlens-v2-analysis-cost`，后 `/tmp/flowlens-audit-bea26d8c.RjqnPR`（agent `mktemp -d` 出的审计沙盒）。两者都以 `transcript_cwd`（rank 4）上报，同 rank 后者按出现顺序胜出，项目名遂变成临时目录名。
+- **不对称是缺陷本体**：`setTraceProjectPath` 里 worktree/branch 只在 `resolveRepoBoundary` 成功时才写，项目名却无条件退到 `filepath.Base`——所以那一行的 worktree 名是对的、只有项目键被污染。修复即补上这个不对称，一处判断，零额外 stat（复用同一次 `resolveRepoBoundary` 结果）。
+- **上一轮三次修复失败的教训**：都改在 `pathProjectName`（5 个调用方共享的纯函数）并用 `os.Stat` 当判据，分别被 8 个 / 2 个既有测试和自己的回归测试推翻。`os.Stat` 无法区分「已删除的临时 checkout」与「本就不该 stat 的路径」（相对 cwd、grok 从存储目录名解码的 cwd、`.benchmark` 工作区）。**边界选错了**：缺陷在「两条同 rank 证据竞争」那层，只有 `setTraceProjectPath` 同时看得见「这条路径解析出仓库了吗」与「trace 已有更强项目名吗」。
+- **活体验证抓到一次自造回归**：第一版只判「无仓库」，把 `~/.agentmux/scratch/topic--launcher--<uuid>`（真实存在的非 git 目录）也挡了，4 行 UUID 尾巴垃圾名回归。加 `isGenericTemporaryPath`（**既有**函数）限定在临时根下后消失，并补进回归测试第三面。
+- **决定性证据**：用生产解析器跑触发本报告的那个真实 transcript，A/B 只差一处——`flowlens-audit-bea26d8c.RjqnPR` → `flowlens`，worktree/branch 保持不变。
+- 五道门全绿；UI 无需改动（`ThroughputRiver.tsx` 早已按 `worktrees[].name` 渲染标签）。
+
+**2026-09-19 完成**（mini-sprint `M02_S05.003.FIX` 续，用户「我打包个最新版本, 安装启动一下」后复查发现残留）：
+
+- **装机复查发现第一轮只修了三分之一**。完整分类：(A) 临时沙盒 cwd 顶掉仓库名——已修；(B) codex 的 cwd 以 `file://` URL 形态出现——本轮修复；(C) 已删除且已 git 注销的 worktree——判定诚实不可解。
+- **根因 B：`file://` scheme 让仓库边界解析全程 miss**。codex 把工具 payload 里的 cwd 写成 `file:///Users/...`，而 cwd 提取是整行字节扫描（取行内第一个 `"cwd"`），URL 形态因此进入归属链路。`walkRepoBoundary` 对该字符串 `os.Stat(…/.git)` 必然失败，worktree rollup 不发生，`filepath.Base` 拿到 worktree 目录名。**只差 7 个字符的 scheme**：同一路径去掉 `file://` 立刻正确解析为 `flowlens` + worktree + branch。本机 codex 语料 **1422 个文件**含此形态，非个例。
+- 修复是 `setTraceProjectPath` 入口一行 `path = localPathFromFileURL(path)`。放这里因为它是**所有 cwd 归属的唯一漏斗**（codex/opencode/grok/extra transcripts 全经此），且必须在 `resolveRepoBoundary` 之前，worktree/branch 才一并恢复。用 `url.Parse` 而非 `TrimPrefix`：要处理 `file://localhost/` 与 percent-encode，并拒绝远端 UNC host 和非 file scheme。
+- **活体验收**：新旧二进制同期对比，那个「既作为 worktree 挂在 flowlens 下、又独立成顶层行」的重复行消失，会话并入 `flowlens`（该 worktree 3→5 个会话），无新增回归行。
+- **子类 C 判定为诚实不可解并有据**：三个名字的目录、`<main>/.git/worktrees/<name>/`、`.git/logs/HEAD` 三处证据**全部为空**（注销即删除，不留痕）。按「绝不虚构」应保持独立成行——反推归属所需证据已被销毁，猜一个就是虚构。这不是没修完，是**证据边界**。上一轮三次失败正是在强修这一类。
+- **本轮方法**：4 路并行探针 + 4 路对抗验证（8 agent）。**四个验证全部推翻了各自的探针**，但价值在于把「一个根因」拆成 A/B/C 三类，并纠正了我看错的字段（`mapping_method` 是会话↔transcript 配对方式，与 `project_attribution_source` 无关——我先前误当成项目名来源）。最终定案由我自己用生产函数实测三行路径完成。
+- **踩到一个门禁污染**：某 subagent 遗留 `zz_wide_test.go`（遍历全部 5000+ codex transcript），使 `go test` 从 8s 变 600s 超时，我一度误判为「修复引入 hang」。删除后恢复 8.8s。
+- 打包安装 `2026.09.19.173452`（dmg 8.5M / zip 7.9M，ad-hoc 签名），已装 `/Applications` 并实机出数。
+
+**2026-09-19 完成**（mini-sprint `M02_S05.004.VENDOR`，补录另一会话的计划外落地）：
+
+- **vendor 注册表 4 家 → 9 家**：新增 gemini / opencode / hermes / openclaw / pi 的 transcript adapter（`agent_extra_transcripts.go`，858 行）。**这批代码不是本会话编写的**，是另一会话（2026-09-19 01:00–01:53，已结束）留在工作树里的；用户指示「如果是别人修改的，你也提交」。`hermes`/`openclaw`/`pi` 补录前出现在**零个** plan 文档里——属计划外 vendor。
+- **机制是一份参数化实现**（`extraTranscriptDiscovery{kind}` 等三个 kind-dispatch 类型）而非五份拷贝，插进与 claude/codex/trae/grok 相同的注册表与接口。新增共享路径：多会话 `ParseSessions() []*SessionTrace`（一个 DB 含多会话）。
+- **关键区分——代码档位 ≠ 本机语料**（详表见 mini-sprint §3）。本机实测：**hermes 真实有数（10287 个 trace、1932 个含 output token）**；gemini 仅 1 个文件且解析为 `trace=nil`；openclaw / pi 各 **0** 个数据文件；opencode 根目录不存在。**四家出不了数是正确行为**——`DecodeUsage` 在 `OutputTokens <= 0` 时 `ok=false`、`nonEmptyTrace` 无事件时间即返回 nil，两道闸门闸死。活体快照交叉验证：五家在 `tool_coverage` 档位是真实观测 0，而 `token_usage` / `output_token_throughput` 两条经济档**一个字节都没出**。
+- **我阻断提交的判断是错的，已记账（D-019）**。我以「违反绝不虚构」为由拒绝提交，四条理由实测塌了三条：(1) 说 gemini token 字段是发明的——实为 **Gemini API 真实字段名** `promptTokenCount`/`candidatesTokenCount`/`thoughtsTokenCount`，我只读了夹具走的那条分支；(2) 说会显示虚构 0——把「进程档的真 0」当成了「token 档的假 0」；(3) 说 SQLite 必须先拷到 /tmp——`AGENTS.md` 零命中，那是**我给审计子代理下的取证卫生指令**，被我当成产品规则来执法。**「绝不虚构」约束的是有没有把未知渲染成数字，不是有没有数字。**
+- **守卫测试反转属实但非放宽**：`TestVendorsWithoutEvidenceDeclareNoTranscriptOrUsageCapability` 名字未变、断言反了（注释已同步）。三条真守卫全在：cursor 仍四槽全 nil、opencode/hermes 仍断言**不得**有 usage decoder、grok 正反两面仍锁。**但测试名已与内容不符**，登记为命名债。
+- **已知天花板（不修，记明）**：`isAgentDatabase` 让 DB 每次扫描都重解析（绕过 mtime 缓存，理由正当——mtime 不反映 WAL 提交），本机 hermes 全解析 **6.84s**；今天不付这个钱（`state.db` 距今 9 天，在 7 天地平线外、发现阶段即 deferred），但**活跃 hermes 用户会每次扫描都付**。另有文档能力矩阵手工维护（仓库内无生成器，归入 M02_S01）。
+- **测试债如实登记**：7 个新测试的夹具**全部合成**，且 gemini 夹具形状与本机唯一真实文件不一致（夹具 `{timestamp,role,cwd,tokens}` vs 真实 `{kind,$set,content,id}`）。本机无语料，**这笔债无法靠本机取证消除**，只能标注「adapter 就绪 / 本机无数据」，待真实语料出现后重验。
+- **审计规模**：8 agent（4 路理解 + 4 路对抗验证），四个 bundle 全部 `refuted: false` / `blockers: []`。SQLite 直开与文档矩阵两条被独立判为 concern 而非 blocker。
+- **计划偏差**：M02_S03（opencode）7 项 checklist 全未勾选而代码已落地；M02_S04（gemini）前提被**第二次**推翻（本批接的 `~/.gemini/tmp/**/chats/*.jsonl` 与 M02_S05 查证的 Antigravity protobuf 是**不同证据源、不互相否证**）。两个 sprint 的验收标准均待按已落地现状重写——**不得反向为用例适配代码**。
+
 **当前活跃**：
 
 - **M01 地基**（本轮架构与熵审查修复已落地，发布门已复跑）。
@@ -104,10 +146,13 @@ meta:
 | `M01_S03.main_tsx_split_popover_fast_path.md` | main.tsx 模块拆分与 popover 快路径 |
 | `M02_S01.evidence_coverage_matrix.md` | Evidence Coverage Matrix（API/UI/docs 同源生成） |
 | `M02_S02.energy_budget_and_module_costs.md` | 自身成本预算：模块开关、成本公示、CI perf gate |
-| `M02_S03.opencode_adapter_full_evidence.md` | vendor wave 1a：opencode 全证据 adapter |
-| `M02_S04.gemini_adapter_conformance_kit.md` | vendor wave 1b：gemini-cli adapter 与 conformance kit（**前提已被实测推翻，待按 M02_S05 §7 改写**） |
+| `M02_S03.opencode_adapter_full_evidence.md` | vendor wave 1a：opencode 全证据 adapter（**代码已由 M02_S05.004 落地，验收标准待按现状重写**） |
+| `M02_S04.gemini_adapter_conformance_kit.md` | vendor wave 1b：gemini-cli adapter 与 conformance kit（**前提已被实测推翻两次，待按 M02_S05 §7 与 M02_S05.004 §9 改写**） |
 | `M02_S05.grok_adapter_full_evidence.md` | vendor 实机落地：grok 满证据；cursor/gemini 诚实分级 |
 | `M02_S05.001.FIX.live_session_transcript_resolution.md` | 活跃 session 的 transcript 反解（argv session id → 路径）与 `deferred_files` 口径修正 |
+| `M02_S05.002.REDESIGN.activity_concurrency_view.md` | 并发视图重设计：末点虚构 0 的修复、live hero 取代三按钮图例、阶跃线与拆分价格轴 |
+| `M02_S05.003.FIX.worktree_project_aggregation.md` | worktree 项目聚合：中途 cd 进临时目录导致同 rank cwd 竞争、项目名被沙盒目录名顶掉；`file://` cwd 让仓库边界解析全程 miss |
+| `M02_S05.004.VENDOR.extra_transcript_adapters.md` | 补录计划外落地的 gemini/opencode/hermes/openclaw/pi adapter；**代码档位与本机语料分开记账** |
 | `M03_S01.attention_state_engine.md` | 证据化会话 attention states 引擎 |
 | `M03_S02.needs_you_triage_and_tray.md` | needs-you 分诊面、菜单栏 glyph、tray i18n |
 | `M03_S03.one_keystroke_actions.md` | 一次按键动作：跳转/检视/续跑/显式停止 |
@@ -146,8 +191,25 @@ meta:
 
 | 2026-09-14 | 两条实机分歧的根因修复（用户截图与质疑触发） | **(1) 归属路径分叉**：`minuteFactLocked` 传原始 session 映射、`publishLocked` 传恢复后的映射，同一批 token 写出两种桶（实时 0% vs 历史 78% 未归属）。已统一，`TestLiveTokenRateMinuteFactsAttributeLikeTheLiveSample` 锁定。**(2) 子代理身份合并**：Claude sidechain 行携带父会话 `sessionId`，被无条件采纳后十份子代理 transcript 塌成一行。已改为记为 `ParentThreadID`，新增 `jsonTrueField` 与两条对称回归测试。`go build`、`go test ./...`、`./build_macos_app.sh` 全绿，已装机实测 | 装机后实测：分钟事实 05:00Z 起未归属 **0.0%** 且带 `coverage: partial`（04:58Z 为 35.2% 且无标记）；claude 会话 21 → **37**，agentmux 1 → **15** 行，新增 subagent 角色 17 个。教训见 OPINIONS D-010（双写入路径必然分叉）与 D-011（父 ID 不是子身份；计数偏少要分发现/解析/聚合三段量）。**遗留数据债**：05:00Z 之前的 20.8MB 历史带错误归属且因单向 hash 无法回算，待用户决策丢弃或标注断点 |
 
-| 2026-09-14 | 两条实机分歧的根因修复（用户截图与质疑触发） | **(1) 归属路径分叉**：`minuteFactLocked` 传原始 session 映射、`publishLocked` 传恢复后的映射，同一批 token 写出两种桶（实时 0% vs 历史 78% 未归属）。已统一，`TestLiveTokenRateMinuteFactsAttributeLikeTheLiveSample` 锁定。**(2) 子代理身份合并**：Claude sidechain 行携带父会话 `sessionId`，被无条件采纳后十份子代理 transcript 塌成一行。已改为记为 `ParentThreadID`，新增 `jsonTrueField` 与两条对称回归测试。`go build`、`go test ./...`、`./build_macos_app.sh` 全绿，已装机实测 | 装机后实测：分钟事实 05:00Z 起未归属 **0.0%** 且带 `coverage: partial`（04:58Z 为 35.2% 且无标记）；claude 会话 21 → **37**，agentmux 1 → **15** 行，新增 subagent 角色 17 个。教训见 OPINIONS D-010（双写入路径必然分叉）与 D-011（父 ID 不是子身份；计数偏少要分发现/解析/聚合三段量）。**遗留数据债**：05:00Z 之前的 20.8MB 历史带错误归属且因单向 hash 无法回算，待用户决策丢弃或标注断点 |
+| 2026-09-16 | mini-sprint `M02_S05.002.REDESIGN`：并发视图重设计（用户「并发页面应该重新好好设计下」） | `go vet ./...`、`go test ./...`（`ok agentload 31.6s`）、`npm --prefix ui run build`、`node scripts/validate_locales.js`（468 keys × 3 locales）、`./build_macos_app.sh` 全绿。**活体对比**：新二进制（8699）五个 range 的末点字段整体缺省，前一 bucket 仍报真实计数（1D 31）；旧二进制（8642）同期五个末点全为 `session_concurrency: 0` 而机器实有 44 个已知 session。hero 四个字段全部有值（active 3 / known 44 / pids 45 / 今日峰值 18） | 净删 13 文件 +307/-484。教训见 OPINIONS **D-016**：四份提案里三份独立收敛到同一个 Go 修复，实测对真实数据形状**零效果**（`old [19 19 0] → fixed [19 19 0]`，真正跨越 `now` 的 span 0/19）——它们共享同一个错误前提（以为 live span 的 `End >= now`），提案间的一致只衡量前提的共享度，不衡量正确性。有意收窄了 `TestBuildTranscriptTrendWindowsUsesEvidenceAtConfiguredSourceStart` 的一条断言（`len(Points)` → `len(Points)-1`），见 mini-sprint §6 |
+
+| 2026-09-18 | mini-sprint `M02_S05.003.FIX`：worktree 项目聚合（用户「现在的吞吐页面, worktree 好像还没往对应的项目上聚合?」） | `go vet ./...`、`go test ./...`（`ok agentload 7.707s`）、`npm --prefix ui run build`、`node scripts/validate_locales.js`、`./build_macos_app.sh` 全绿。**决定性验证**：用生产解析器跑触发本报告的真实 trae transcript，A/B 只差 `transcripts.go` 一处——修复前 `PROJECT="flowlens-audit-bea26d8c.RjqnPR"`、修复后 `PROJECT="flowlens"`，worktree/branch 两边均为 `flowlens-v2-analysis-cost` / `perf/v2-analysis-cost`。新增回归测试三面锁定（顶不掉更强证据 / 唯一证据时仍报出 / 非临时根的无仓库 cwd 正常归属），已验证修复前必红 | 根因是同一 session 中途 `cd` 进 `mktemp -d` 沙盒，两个 cwd 同 rank、后者按出现顺序胜出。**首版自造回归已在活体对比中抓到**：只判「无仓库」会连带挡掉 `~/.agentmux/scratch/topic--launcher--<uuid>`，4 行 UUID 尾巴垃圾名回归；加既有 `isGenericTemporaryPath` 限定临时根后消失。教训见 OPINIONS **D-017**（共享纯函数不是修复边界）与 §质检步骤库归属类三条 |
+
+| 2026-09-19 | mini-sprint `M02_S05.003.FIX` 续：codex `file://` cwd 破坏 worktree rollup（装机复查发现残留） | `go vet ./...`、`go test ./...`（`ok agentload 8.829s`）、`npm --prefix ui run build`、`node scripts/validate_locales.js`、`scripts/package_macos_app.sh` 全绿，产出 `2026.09.19.173452`。**活体对比**：新旧二进制同期快照，`flowlens-v2-budget-roster-release-exact-260918` 那个「既是 flowlens 的 worktree 子项、又是顶层项目行」的重复行消失，会话并入 `flowlens`（该 worktree 3→5），无新增回归行 | 只差 7 字符的 scheme：同一路径去掉 `file://` 即正确解析；本机 codex 语料 1422 文件含此形态。子类 C（已删除且已注销的 worktree）经三处证据核验（目录 / `.git/worktrees/<name>` / `.git/logs/HEAD` 全空）判定**诚实不可解**，按「绝不虚构」保持独立成行。教训见 OPINIONS **D-018**。**门禁污染**：subagent 遗留 `zz_wide_test.go` 遍历 5000+ transcript，使 go test 8s→600s 超时，一度被我误判为修复引入 hang |
+
+| 2026-09-19 | mini-sprint `M02_S05.004.VENDOR`：补录另一会话落地的 gemini/opencode/hermes/openclaw/pi adapter（vendor 4→9） | `go vet ./...`、`go test ./...`、`npm --prefix ui run build`、`node scripts/validate_locales.js` 全绿；`ui/dist` 哈希与工作树产物一致。**8 路审计**（4 理解 + 4 对抗验证）四个 bundle 全部 `refuted: false` / `blockers: []`。**生产解析器实跑本机真实文件**：hermes `state.db` → **10287 个 trace、1932 个含 output token**（真实可用）；gemini 唯一真实文件 → `trace=nil`；openclaw/pi 各 0 个数据文件 | **代码档位 ≠ 本机语料，分两行记账**（mini-sprint §3）。四家出不了数是正确行为——`DecodeUsage` 在 `OutputTokens<=0` 时 `ok=false`、`nonEmptyTrace` 无事件时间即 nil；活体快照证实五家只在 `tool_coverage` 档位报真实观测 0，`token_usage`/`output_token_throughput` 两条经济档零输出。**我阻断提交的判断是错的**，四条理由塌三条，见 OPINIONS **D-019**。已知天花板：hermes 全解析 6.84s 且 DB 有意绕过 mtime 缓存（本机因 9 天未动而 deferred，活跃用户会每次付）；文档矩阵无生成器（归 M02_S01）；7 个新测试夹具全合成且 gemini 夹具形状与真实文件不符（测试债，本机无语料无法消除） |
 
 **质检步骤库（随 sprint 验收累积）**：
 
 - 目前基础步骤 = §1.2 常设门六项。M01_S01 完成后追加：基线性能指标复核（空闲 CPU %、popover 打开 ms、snapshot p95 ms、二进制 MB，测量方法须记录在案）。后续每个 sprint 验收通过时，把其量化验收中可复用的检查项追加到本节并注明来源文件。
+- **趋势/并发类改动追加（来源 `M02_S05.002.REDESIGN`）**：任何触及 trend 序列的改动，验收必须包含一次**新旧二进制同期快照对比**——`go:embed ui/dist` 意味着在跑的进程永远拿不到新产物，只看单元测试会漏掉序列化层。对比时逐点核对「字段缺省 vs 值为 0」，二者在 JSON 里长得不一样但在图上都容易被读成「没有负载」。
+- **归属类改动追加（来源 `M02_S05.003.FIX`）**：
+  1. **活体快照对比前先确认触发样本仍在活跃窗口内**。本次第二轮 A/B 两边行集完全相同，不是修复失效而是触发 session 的 `last_event_at` 已滑出窗口——**「两边一样」既可能是修好了也可能是测空了**。样本已过期时，改用生产解析器直接跑那个真实 transcript 做 A/B。
+  2. **归属逻辑收紧后必须做一次全量项目行 diff**，不只看目标那一行。本次第一版把 `~/.agentmux/scratch/topic--launcher--<uuid>` 一并挡掉，代价是 4 行 UUID 尾巴垃圾名回归——只盯 `flowlens` 一行看不出来。
+  3. 断言「某路径应被拒绝」的测试，**输入必须取自真实布局**（沿用 D-008）；同时补一条「唯一证据时仍须报出」的反向断言，防止把「不许顶掉更强证据」写成「一律无效」而丢信息。
+- **新 vendor / 证据档位类改动追加（来源 `M02_S05.004.VENDOR`）**：
+  1. **区分「代码档位」与「本机语料」，分两行记**。adapter 声明 Usage 槽 = 「能解析这种格式」；本机有没有数由 nil 链路表达为缺省。验收表必须两列并置（声明档位 / 本机实测），否则读者会把「本机没装这个工具」误读成「adapter 坏了」。
+  2. **说「违反绝不虚构」之前走完三步**（D-019）：(a) 找到该数字**实际序列化**的位置（omitempty？指针？`ok=false` 早退？）；(b) 从**活体快照**确认它现在出不出数、出在哪个档位——`tool_coverage` 的 0 是真实观测，`token_usage` 的 0 才是虚构；(c) 确认所引规则**在仓库里**（`AGENTS.md` / docs），不是在此前对话或我给子代理的指令里。三步任一没走就阻断，代价是把正确实现判成违规。
+  3. **新 adapter 必须用生产解析器跑一遍本机真实文件**，而不是只看夹具绿。本轮 hermes 跑出 10287 个 trace（真实可用），gemini 跑出 `trace=nil`（本机语料形状与夹具不符）——**两个结论都只能这样得到**，夹具全绿时两者看起来一样。
+  4. **DB 类证据源要量一次全解析耗时并判断是否落在扫描热路径上**。`isAgentDatabase` 有意绕过 mtime 缓存（mtime 不反映 WAL 提交），代价是每次扫描重解析；本机 hermes 6.84s 但因 9 天未动而 deferred，**活跃用户会每次都付**。记明天花板与升级路径，不要因为「本机不痛」就不记。
+  5. **测试名被反转时必须同步改名**。本轮 `TestVendorsWithoutEvidenceDeclareNoTranscriptOrUsageCapability` 断言反了而名字未改，留下「读名字得到相反预期」的陷阱；注释改了不算够。
