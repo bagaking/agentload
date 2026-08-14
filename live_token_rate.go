@@ -657,25 +657,56 @@ func liveTokenRateRememberMessage(tracked *liveTokenRateTrackedFile, identity st
 	if tracked == nil || identity == "" {
 		return
 	}
-	if tracked.MessageUsage == nil {
-		tracked.MessageUsage = map[string]*liveTokenRateMessageUsage{}
-	}
-	if tracked.MessageOrder == nil {
-		tracked.MessageOrder = list.New()
-	}
+	liveTokenRateEnsureMessageState(tracked)
 	if previous := tracked.MessageUsage[identity]; previous != nil {
 		previous.Output = max(previous.Output, output)
 		previous.LastSeen = now
-		tracked.MessageOrder.MoveToBack(previous.order)
+		if previous.order == nil {
+			previous.order = tracked.MessageOrder.PushBack(identity)
+		} else {
+			tracked.MessageOrder.MoveToBack(previous.order)
+		}
 		return
 	}
 	liveTokenRatePruneMessages(tracked, now)
+	liveTokenRateEnsureMessageState(tracked)
 	for len(tracked.MessageUsage) >= liveTokenRateMaxMessages {
 		liveTokenRateForgetOldestMessage(tracked)
 	}
 	usage := &liveTokenRateMessageUsage{Output: max(int64(0), output), LastSeen: now}
 	usage.order = tracked.MessageOrder.PushBack(identity)
 	tracked.MessageUsage[identity] = usage
+}
+
+func liveTokenRateEnsureMessageState(tracked *liveTokenRateTrackedFile) {
+	if tracked.MessageUsage == nil {
+		tracked.MessageUsage = map[string]*liveTokenRateMessageUsage{}
+	}
+	if tracked.MessageOrder == nil {
+		tracked.MessageOrder = list.New()
+	}
+	if len(tracked.MessageUsage) == 0 {
+		return
+	}
+	if tracked.MessageOrder.Len() == 0 {
+		for identity, usage := range tracked.MessageUsage {
+			if identity == "" || usage == nil {
+				delete(tracked.MessageUsage, identity)
+				continue
+			}
+			usage.order = tracked.MessageOrder.PushBack(identity)
+		}
+		return
+	}
+	for identity, usage := range tracked.MessageUsage {
+		if identity == "" || usage == nil {
+			delete(tracked.MessageUsage, identity)
+			continue
+		}
+		if usage.order == nil {
+			usage.order = tracked.MessageOrder.PushBack(identity)
+		}
+	}
 }
 
 func liveTokenRatePruneMessages(tracked *liveTokenRateTrackedFile, now time.Time) {

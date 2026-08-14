@@ -29,6 +29,7 @@ type trayApp struct {
 	popoverURL    string
 	dashboardURL  string
 	liveTokenRate *liveTokenRateSampler
+	lifecycle     *lifecycleLog
 
 	stopCh    chan struct{}
 	refreshCh chan struct{}
@@ -60,7 +61,10 @@ type trayApp struct {
 	mQuit          *systray.MenuItem
 }
 
-func newTrayApp(cfg Config, observer *Observer, logger *log.Logger, listener net.Listener, url string) *trayApp {
+func newTrayApp(cfg Config, observer *Observer, logger *log.Logger, listener net.Listener, url string, lifecycle *lifecycleLog) *trayApp {
+	if lifecycle == nil {
+		lifecycle = newLifecycleLog(cfg.HistoryFile)
+	}
 	history, err := loadLocalHistoryState(cfg.HistoryFile, time.Now())
 	if err != nil && logger != nil {
 		logger.Printf("local history load failed: %v", err)
@@ -86,6 +90,7 @@ func newTrayApp(cfg Config, observer *Observer, logger *log.Logger, listener net
 		popoverURL:        strings.TrimRight(url, "/") + "/",
 		dashboardURL:      strings.TrimRight(url, "/") + "/dashboard",
 		liveTokenRate:     liveTokenRate,
+		lifecycle:         lifecycle,
 		stopCh:            make(chan struct{}),
 		refreshCh:         make(chan struct{}, 1),
 		history:           history,
@@ -100,6 +105,7 @@ func newTrayApp(cfg Config, observer *Observer, logger *log.Logger, listener net
 func (a *trayApp) run() error {
 	startSystemResourceSampler(systemResourceSampleInterval)
 	a.observer.evidenceIndex.start()
+	a.lifecycle.startHeartbeat(a.stopCh, lifecycleHeartbeatInterval)
 	go func() {
 		if err := a.server.Serve(a.listener); err != nil && err != http.ErrServerClosed {
 			a.logger.Printf("http server failed: %v", err)
@@ -142,6 +148,7 @@ func (a *trayApp) onReady() {
 }
 
 func (a *trayApp) onExit() {
+	a.recordLifecycle(lifecycleEvent{Event: "shutdown_begin"})
 	select {
 	case <-a.stopCh:
 	default:
@@ -155,9 +162,16 @@ func (a *trayApp) onExit() {
 	stopSystemResourceSampler()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	var shutdownErr error
 	if err := a.server.Shutdown(ctx); err != nil && !strings.Contains(strings.ToLower(err.Error()), "closed network connection") {
+		shutdownErr = err
 		a.logger.Printf("server shutdown failed: %v", err)
 	}
+	event := lifecycleEvent{Event: "shutdown_complete"}
+	if shutdownErr != nil {
+		event.Error = shutdownErr.Error()
+	}
+	a.recordLifecycle(event)
 }
 
 func (a *trayApp) handleMenuClicks() {
@@ -168,6 +182,7 @@ func (a *trayApp) handleMenuClicks() {
 		case <-a.mRefreshNow.ClickedCh:
 			a.requestRefresh()
 		case <-a.mQuit.ClickedCh:
+			a.recordLifecycle(lifecycleEvent{Event: "quit_requested", Reason: "menu"})
 			systrayQuit()
 			return
 		case <-a.stopCh:
@@ -298,6 +313,7 @@ func (a *trayApp) refreshOnce(slotID string) {
 		// Show the partial result but keep it out of history/cache so trends
 		// and heatmaps only build from complete samples; the next slot rescans.
 		a.applySnapshot(snapshot)
+		a.recordLifecycle(lifecycleEventFromSnapshot("snapshot_aborted", snapshotAbortReason(ctx, snapshot), snapshot))
 		return
 	}
 	snapshot = a.rememberSnapshot(snapshot)
@@ -317,6 +333,18 @@ func snapshotScanAborted(ctx context.Context, snapshot Snapshot) bool {
 		}
 	}
 	return false
+}
+
+func snapshotAbortReason(ctx context.Context, snapshot Snapshot) string {
+	if ctx.Err() != nil {
+		return ctx.Err().Error()
+	}
+	for _, scanErr := range snapshot.TranscriptStats.Errors {
+		if strings.Contains(scanErr, "transcript scan aborted early") || strings.Contains(scanErr, "transcript scan wait cancelled") {
+			return scanErr
+		}
+	}
+	return ""
 }
 
 func (a *trayApp) setRefreshing(value bool) {
@@ -346,7 +374,21 @@ func (a *trayApp) rememberSnapshot(snapshot Snapshot) Snapshot {
 	a.lastSnapshot = snapshot
 	a.haveSnapshot = true
 	a.lastMu.Unlock()
+	event := lifecycleEventFromSnapshot("snapshot_recorded", "", snapshot)
+	if appendErr != nil {
+		event.Error = appendErr.Error()
+	}
+	a.recordLifecycle(event)
 	return snapshot
+}
+
+func (a *trayApp) recordLifecycle(event lifecycleEvent) {
+	if a == nil || a.lifecycle == nil {
+		return
+	}
+	if err := a.lifecycle.record(event); err != nil && a.logger != nil {
+		a.logger.Printf("lifecycle log record failed: %v", err)
+	}
 }
 
 func (a *trayApp) appendHistorySample(sample HistorySample) error {

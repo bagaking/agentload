@@ -209,6 +209,58 @@ func TestLiveTokenRateMessageDedupeRemainsBoundedDuringIngest(t *testing.T) {
 	}
 }
 
+func TestLiveTokenRateMessageDedupeSurvivesFullyPrunedState(t *testing.T) {
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	tracked := liveTokenRateTrackedFile{}
+	liveTokenRateRememberMessage(&tracked, "session-a\x00old-message", 10, now.Add(-liveTokenRateMessageRetention-time.Second))
+
+	if delta := liveTokenRateMessageDelta(&tracked, "session-a\x00new-message", 7, now); delta != 7 {
+		t.Fatalf("new message delta after full prune = %d, want 7", delta)
+	}
+	if len(tracked.MessageUsage) != 1 || tracked.MessageOrder == nil || tracked.MessageOrder.Len() != 1 {
+		t.Fatalf("unexpected dedupe state after full prune: map=%d order=%v", len(tracked.MessageUsage), tracked.MessageOrder)
+	}
+	if tracked.MessageUsage["session-a\x00new-message"] == nil {
+		t.Fatalf("new message was not retained after full prune: %+v", tracked.MessageUsage)
+	}
+}
+
+func TestLiveTokenRateMessageDedupeRepairsMissingOrderElement(t *testing.T) {
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	tracked := liveTokenRateTrackedFile{
+		MessageUsage: map[string]*liveTokenRateMessageUsage{
+			"session-a\x00message": {Output: 5, LastSeen: now},
+		},
+	}
+
+	if delta := liveTokenRateMessageDelta(&tracked, "session-a\x00message", 8, now); delta != 3 {
+		t.Fatalf("existing message delta with missing order element = %d, want 3", delta)
+	}
+	usage := tracked.MessageUsage["session-a\x00message"]
+	if tracked.MessageOrder == nil || tracked.MessageOrder.Len() != 1 || usage == nil || usage.order == nil {
+		t.Fatalf("missing order element was not repaired: map=%+v order=%v", tracked.MessageUsage, tracked.MessageOrder)
+	}
+}
+
+func TestLiveTokenRateMessageDedupeRepairsFullMapWithMissingOrder(t *testing.T) {
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	tracked := liveTokenRateTrackedFile{MessageUsage: map[string]*liveTokenRateMessageUsage{}}
+	for index := 0; index < liveTokenRateMaxMessages; index++ {
+		identity := fmt.Sprintf("session-a\x00message-%05d", index)
+		tracked.MessageUsage[identity] = &liveTokenRateMessageUsage{Output: 1, LastSeen: now}
+	}
+
+	if delta := liveTokenRateMessageDelta(&tracked, "session-a\x00new-message", 3, now); delta != 3 {
+		t.Fatalf("new message delta with full map and missing order = %d, want 3", delta)
+	}
+	if len(tracked.MessageUsage) > liveTokenRateMaxMessages || tracked.MessageOrder == nil || tracked.MessageOrder.Len() > liveTokenRateMaxMessages {
+		t.Fatalf("dedupe state exceeded bound after order repair: map=%d order=%v", len(tracked.MessageUsage), tracked.MessageOrder)
+	}
+	if tracked.MessageUsage["session-a\x00new-message"] == nil {
+		t.Fatalf("new message was not retained after order repair")
+	}
+}
+
 type blockingAgentUsageDecoder struct {
 	delegate agentOutputUsageDecoder
 	entered  chan struct{}

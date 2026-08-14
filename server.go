@@ -313,6 +313,7 @@ func (a *trayApp) handleQuitAPI(w http.ResponseWriter, r *http.Request) {
 	if rejectCrossOrigin(w, r) {
 		return
 	}
+	a.recordLifecycle(lifecycleEvent{Event: "quit_requested", Reason: "api"})
 	jsonResponse(w, http.StatusOK, map[string]bool{"ok": true})
 	go func() {
 		time.Sleep(150 * time.Millisecond)

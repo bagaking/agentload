@@ -22,6 +22,7 @@ numbers.
                  system_thermal*.go                        history.jsonl
  token JSONL ──> live_token_rate.go ──┬────────────> /api/live-token-rate
                                       └─> throughput.jsonl minute facts
+ app lifecycle ─> lifecycle.go ────────────────────> lifecycle.jsonl
 ```
 
 ## 1. Acquisition
@@ -301,6 +302,25 @@ One snapshot build, in order:
   window, so a crash is resumable. Only after all batches succeed does an atomic
   rewrite remove the old field. Legacy rates are never approximated into minute
   facts, combined with current summaries, or exposed as current evidence.
+- `lifecycle.jsonl`, beside the main history file, is a local diagnostic trace
+  for the Agent Load process itself. It records startup, startup/run failures,
+  heartbeat, explicit quit requests, catchable termination-signal receipt,
+  normal shutdown begin/complete, panic stacks, recorded snapshots, and aborted
+  snapshot scans. Snapshot lifecycle records contain aggregate counts and
+  runtime/host-app summaries only; they do not store process command lines,
+  transcript paths, or transcript contents, and they are not part of metric
+  history semantics.
+- `scripts/run_agentload_watched.sh` is the development launcher for process
+  disappearance investigations. It runs the built app binary as a child process
+  and writes `watcher/watcher.jsonl`, `watcher/stdout.log`,
+  `watcher/stderr.log`, and `watcher/agentload.pid` under the same local
+  support directory. It records one run by default and does not auto-restart;
+  `--replace` first asks an already running local instance to quit through the
+  quit endpoint rather than killing it. When submitted through `launchd`, it must
+  use `--hold-after-exit` so the watcher records the child exit and stays alive
+  instead of letting `launchd` relaunch the app. The watcher evidence is
+  diagnostic only and remains separate from history, throughput, and lifecycle
+  metric semantics.
 - Retained main-history samples feed `buildRealtimeTrendWindows` and
   `buildProjectHeatmapWindows`; retained throughput facts feed only
   `buildThroughputTrendWindows`. Transcript lanes in `trends` come directly from
