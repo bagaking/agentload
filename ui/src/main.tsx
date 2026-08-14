@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
-import { Activity, ArrowUpRight, Bot, ChevronDown, Copy, ExternalLink, Gauge, GitBranch, Info, Languages, Layers, Moon, Radar, RefreshCw, Search, Server, Sun, Terminal, X } from "lucide-react";
+import { Activity, ArrowUpRight, Bot, CheckCircle2, ChevronDown, Copy, ExternalLink, Gauge, GitBranch, Info, Languages, Layers, Moon, PauseCircle, Radar, RefreshCw, Search, Server, Sun, Terminal, X, XCircle } from "lucide-react";
 import { copy, type Lang } from "./i18n";
 import { buildToolSessionGroups, confidenceLabel, freshnessLabel, hiddenToolSessionCount, mappingMethodLabel, normalizedRole, orderedProjects, projectEvidenceItems, roleLabel, sessionEvidenceItems, sessionIdentity, sessionsForProject, tokenUsageProvenanceLabel, toolBadgeLabel, toolDisplayName, toolIconName } from "./lib/activityModel";
 import { activeWindowLabel, buildRailItems, coordinationPostureLabel, currentMeaningLead, currentMeaningPoints, dashboardProjectMeta, deferredScanValue, mappingHealthText, metricState, primaryEvidenceNote, statusTone, transcriptScanNote, transcriptScanSummary } from "./lib/dashboardModel";
@@ -388,7 +388,7 @@ function PopoverFooter({
   return (
     <footer className={`popover-footer ${active ? "is-active" : ""}`}>
       <div className={`footer-meta ${active ? "is-active" : ""}`} role="status" title={stateLabel} aria-label={`${stateLabel} ${generated}`}>
-        <span className={`state-dot footer-state-dot ${snapshot ? "observed" : "idle"} ${active ? "is-active" : ""}`} aria-hidden="true" />
+        <Activity className={`footer-state-icon ${snapshot ? "observed" : "idle"} ${active ? "is-active" : ""}`} size={12} aria-hidden="true" />
         <span className="footer-time">{generated}</span>
         <button className={`refresh-interval footer-interval ${refreshInterval ? "" : "is-paused"}`} type="button" data-focus-key={focusKey("refresh-interval", "popover")} onClick={cycleRefreshInterval} title={t("autoRefresh")} aria-label={t("autoRefresh")}>
           <RefreshCw size={11} aria-hidden="true" />
@@ -1862,7 +1862,7 @@ function Topbar({
           </button>
           {compact && snapshot ? (
             <button className={`topbar-status-attention ${reviewCount ? "has-attention" : ""}`} type="button" data-focus-key={focusKey("topbar-status-attention")} onClick={onOpenStatus} title={reviewTitle} aria-label={reviewTitle}>
-              <span className="attention-dot" aria-hidden="true" />
+              <Info className="attention-icon" size={13} aria-hidden="true" />
               <span className="status-rotator" aria-hidden="true">
                 <span className="status-frame"><em>{t("attentionMainShort")}</em><strong>{reviewCount}</strong></span>
                 <span className="status-frame"><em>{t("activeShort")}</em><strong>{activeCount}</strong></span>
@@ -2006,7 +2006,7 @@ const ProjectTreeRow = React.memo(function ProjectTreeRow({
         </button>
         <button className="project-select" type="button" data-focus-key={focusKey("project", projectId)} onClick={selectProject} aria-current={selected ? "true" : undefined} aria-expanded={expanded} aria-label={title}>
           <span>{title}</span>
-          {reviewCount ? <i className="project-review-chip" title={reviewTitle} aria-label={reviewTitle}><b aria-hidden="true" />{reviewCount}</i> : null}
+          {reviewCount ? <i className="project-review-chip" title={reviewTitle} aria-label={reviewTitle}><Info size={10} aria-hidden="true" />{reviewCount}</i> : null}
           <small>{projectMeta}</small>
         </button>
         {compact ? <ProjectCompactMetrics t={t} counts={counts} processCount={processPressure} cpu={projectResources.cpu} memory={projectResources.memory} tokenRate={tokenRate} /> : <ProjectMetricMatrix t={t} counts={counts} processCount={processPressure} resourceText={resourceText} tokenRate={tokenRate} />}
@@ -2680,9 +2680,10 @@ function tokenUsageDerivedTotalForHover(usage: TokenUsage): number {
 }
 
 function Pill({ tone, children }: { tone: "safe" | "idle" | "running" | "bad"; children: React.ReactNode }) {
+  const icon = tone === "safe" ? <CheckCircle2 size={11} aria-hidden="true" /> : tone === "running" ? <RefreshCw size={11} aria-hidden="true" /> : tone === "bad" ? <XCircle size={11} aria-hidden="true" /> : <PauseCircle size={11} aria-hidden="true" />;
   return (
     <span className={`pill pill-${tone}`}>
-      <span className="dot" />
+      {icon}
       {children}
     </span>
   );
