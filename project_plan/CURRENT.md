@@ -126,6 +126,8 @@ meta:
 
 | 2026-09-14 | 两条实机分歧的根因修复（用户截图与质疑触发） | **(1) 归属路径分叉**：`minuteFactLocked` 传原始 session 映射、`publishLocked` 传恢复后的映射，同一批 token 写出两种桶（实时 0% vs 历史 78% 未归属）。已统一，`TestLiveTokenRateMinuteFactsAttributeLikeTheLiveSample` 锁定。**(2) 子代理身份合并**：Claude sidechain 行携带父会话 `sessionId`，被无条件采纳后十份子代理 transcript 塌成一行。已改为记为 `ParentThreadID`，新增 `jsonTrueField` 与两条对称回归测试。`go build`、`go test ./...`、`./build_macos_app.sh` 全绿，已装机实测 | 装机后实测：分钟事实 05:00Z 起未归属 **0.0%** 且带 `coverage: partial`（04:58Z 为 35.2% 且无标记）；claude 会话 21 → **37**，agentmux 1 → **15** 行，新增 subagent 角色 17 个。教训见 OPINIONS D-010（双写入路径必然分叉）与 D-011（父 ID 不是子身份；计数偏少要分发现/解析/聚合三段量）。**遗留数据债**：05:00Z 之前的 20.8MB 历史带错误归属且因单向 hash 无法回算，待用户决策丢弃或标注断点 |
 
+| 2026-09-14 | 两条实机分歧的根因修复（用户截图与质疑触发） | **(1) 归属路径分叉**：`minuteFactLocked` 传原始 session 映射、`publishLocked` 传恢复后的映射，同一批 token 写出两种桶（实时 0% vs 历史 78% 未归属）。已统一，`TestLiveTokenRateMinuteFactsAttributeLikeTheLiveSample` 锁定。**(2) 子代理身份合并**：Claude sidechain 行携带父会话 `sessionId`，被无条件采纳后十份子代理 transcript 塌成一行。已改为记为 `ParentThreadID`，新增 `jsonTrueField` 与两条对称回归测试。`go build`、`go test ./...`、`./build_macos_app.sh` 全绿，已装机实测 | 装机后实测：分钟事实 05:00Z 起未归属 **0.0%** 且带 `coverage: partial`（04:58Z 为 35.2% 且无标记）；claude 会话 21 → **37**，agentmux 1 → **15** 行，新增 subagent 角色 17 个。教训见 OPINIONS D-010（双写入路径必然分叉）与 D-011（父 ID 不是子身份；计数偏少要分发现/解析/聚合三段量）。**遗留数据债**：05:00Z 之前的 20.8MB 历史带错误归属且因单向 hash 无法回算，待用户决策丢弃或标注断点 |
+
 **质检步骤库（随 sprint 验收累积）**：
 
 - 目前基础步骤 = §1.2 常设门六项。M01_S01 完成后追加：基线性能指标复核（空闲 CPU %、popover 打开 ms、snapshot p95 ms、二进制 MB，测量方法须记录在案）。后续每个 sprint 验收通过时，把其量化验收中可复用的检查项追加到本节并注明来源文件。
