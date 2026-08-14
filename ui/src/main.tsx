@@ -1040,11 +1040,9 @@ function hoverInspectorPlacement(kind: HoverDetailPayload["kind"], x: number, y:
 function PopoverRuntimeInstrument({ t, snapshot, liveTokenRate }: { t: (key: string) => string; snapshot: Snapshot; liveTokenRate: LiveTokenRateSample | undefined }) {
   const current = snapshot.current ?? {};
   const summary = snapshot.summary ?? {};
-  const trustedScale = Math.max(1, currentRecentMovementCount(current), currentKnownSessionCount(current));
   const active = currentHasRecentMovement(current);
   const mapped = summaryMappedProcessCount(summary);
   const unmatched = summaryUnmappedProcessCount(summary);
-  const coverage = clampPct(summaryMappingCoveragePct(summary));
   const rows = [
     {
       key: "burst",
@@ -1052,7 +1050,6 @@ function PopoverRuntimeInstrument({ t, snapshot, liveTokenRate }: { t: (key: str
       tip: t("tipActiveBurst"),
       value: currentRecentMovementCount(current),
       detail: t("activeBurstHint"),
-      pct: pctPart(currentRecentMovementCount(current), trustedScale),
     },
     {
       key: "session",
@@ -1062,7 +1059,6 @@ function PopoverRuntimeInstrument({ t, snapshot, liveTokenRate }: { t: (key: str
       detail: t("liveIdle")
         .replace("{live}", String(summary.active_sessions ?? 0))
         .replace("{idle}", String(summary.idle_sessions ?? 0)),
-      pct: pctPart(currentKnownSessionCount(current), trustedScale),
     },
     {
       key: "mapping",
@@ -1070,29 +1066,22 @@ function PopoverRuntimeInstrument({ t, snapshot, liveTokenRate }: { t: (key: str
       tip: t("tipMappingHealth"),
       value: formatPct(summaryMappingCoveragePct(summary)),
       detail: `${mapped} ${t("mapped")} / ${unmatched} ${t("unmatched")}`,
-      pct: coverage,
     },
   ];
   return (
     <section className={`popover-instrument ${active ? "is-active" : ""}`} aria-label={t("runtimeField")}>
-      <div className="instrument-stat-grid">
+      <dl className="instrument-readout">
         {rows.map((row) => (
-          <article className={`instrument-stat ${row.key}`} key={row.key}>
-            <span><TermLabel label={row.label} tip={row.tip} /></span>
-            <strong>{row.value}</strong>
-            <em>{row.detail}</em>
-          </article>
+          <div className={`instrument-readout-row ${row.key}`} key={row.key}>
+            <dt><TermLabel label={row.label} tip={row.tip} /></dt>
+            <dd>
+              <strong>{row.value}</strong>
+              <em>{row.detail}</em>
+            </dd>
+          </div>
         ))}
-      </div>
+      </dl>
       <LiveTokenRateReadout t={t} sample={liveTokenRate} compact />
-      <div className="instrument-scale-rail" aria-label={t("calibration")}>
-        {rows.map((row) => (
-          <span className={`instrument-scale-row ${row.key}`} key={row.key}>
-            <b><TermLabel label={row.label} tip={row.tip} /></b>
-            <i aria-hidden="true"><em style={{ width: `${clampPct(row.pct, 3)}%` }} /></i>
-          </span>
-        ))}
-      </div>
       <CurrentMeaningStrip t={t} snapshot={snapshot} compact />
     </section>
   );

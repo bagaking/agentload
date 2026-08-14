@@ -5355,72 +5355,6 @@ body[data-view="popover"] .instrument-window strong {
   white-space: nowrap;
 }
 
-body[data-view="popover"] .instrument-stat-grid {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1px;
-  margin-top: 0;
-  overflow: hidden;
-  background: var(--console-line-soft);
-}
-
-body[data-view="popover"] .instrument-stat {
-  display: grid;
-  align-content: start;
-  gap: 7px;
-  min-width: 0;
-  min-height: 88px;
-  padding: 10px 9px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--fg) 2.8%, transparent), transparent 50%),
-    color-mix(in srgb, var(--console-material-2) 74%, transparent);
-}
-
-body[data-view="popover"] .instrument-stat span {
-  color: var(--console-text-faint);
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  font-weight: 780;
-  letter-spacing: .055em;
-  line-height: 1.15;
-  text-transform: uppercase;
-}
-
-body[data-view="popover"] .instrument-stat strong {
-  color: var(--fg);
-  font-family: var(--font-mono);
-  font-size: 31px;
-  line-height: .9;
-}
-
-body[data-view="popover"] .instrument-stat em {
-  display: -webkit-box;
-  overflow: hidden;
-  color: var(--console-text-soft);
-  font-size: 10.5px;
-  font-style: normal;
-  line-height: 1.28;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-body[data-view="popover"] .instrument-stat.burst span,
-body[data-view="popover"] .instrument-stat.burst strong { color: var(--ok); }
-body[data-view="popover"] .instrument-stat.session span,
-body[data-view="popover"] .instrument-stat.session strong { color: var(--accent); }
-body[data-view="popover"] .instrument-stat.pid span,
-body[data-view="popover"] .instrument-stat.pid strong { color: var(--run); }
-
-body[data-view="popover"] .instrument-scale-rail {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  gap: 5px;
-  margin-top: 8px;
-}
-
 body[data-view="popover"] .live-token-rate-readout {
   grid-template-columns: minmax(110px, .9fr) auto minmax(132px, 1.2fr);
   gap: 7px 10px;
@@ -5460,46 +5394,6 @@ body[data-view="popover"] .live-token-rate-readout > em {
     grid-column: 1 / -1;
     text-align: left;
   }
-}
-
-body[data-view="popover"] .instrument-scale-row {
-  display: grid;
-  grid-template-columns: 74px minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  color: var(--ok);
-}
-
-body[data-view="popover"] .instrument-scale-row.session { color: var(--accent); }
-body[data-view="popover"] .instrument-scale-row.pid { color: var(--run); }
-
-body[data-view="popover"] .instrument-scale-row b {
-  overflow: hidden;
-  color: currentColor;
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  font-weight: 760;
-  letter-spacing: .055em;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-body[data-view="popover"] .instrument-scale-row i {
-  display: block;
-  height: 5px;
-  overflow: hidden;
-  background:
-    repeating-linear-gradient(90deg, color-mix(in srgb, var(--fg) 11%, transparent) 0 1px, transparent 1px 9px),
-    var(--console-track);
-}
-
-body[data-view="popover"] .instrument-scale-row i em {
-  display: block;
-  height: 100%;
-  background: currentColor;
-  box-shadow: 0 0 12px color-mix(in srgb, currentColor 16%, transparent);
 }
 
 body[data-view="popover"] .popover-instrument .meaning-strip {
@@ -7192,42 +7086,6 @@ body[data-view="popover"] .instrument-window {
   font-size: 8px;
 }
 
-body[data-view="popover"] .instrument-stat-grid {
-  margin-top: 0;
-}
-
-body[data-view="popover"] .instrument-stat {
-  min-height: 49px;
-  gap: 3px;
-  padding: 5px;
-}
-
-body[data-view="popover"] .instrument-stat span {
-  font-size: 7.8px;
-}
-
-body[data-view="popover"] .instrument-stat strong {
-  font-size: 21px;
-}
-
-body[data-view="popover"] .instrument-stat em {
-  display: none;
-}
-
-body[data-view="popover"] .instrument-scale-rail {
-  gap: 3px;
-  margin-top: 5px;
-}
-
-body[data-view="popover"] .instrument-scale-row {
-  grid-template-columns: 54px minmax(0, 1fr);
-  gap: 5px;
-}
-
-body[data-view="popover"] .instrument-scale-row b {
-  font-size: 8px;
-}
-
 body[data-view="popover"] .popover-instrument .meaning-strip {
   margin-top: 5px;
   padding-top: 4px;
@@ -8697,62 +8555,6 @@ body[data-view="popover"] .field-status.active {
 body[data-view="popover"] .field-status.warn {
   color: var(--run);
   background: color-mix(in srgb, var(--run) 14%, transparent);
-}
-
-body[data-view="popover"] .instrument-stat-grid {
-  gap: 0;
-  background: transparent;
-}
-
-body[data-view="popover"] .instrument-stat {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  border-radius: 0;
-  background:
-    linear-gradient(90deg, color-mix(in srgb, currentColor 18%, transparent) 0 1px, transparent 1px),
-    linear-gradient(180deg, color-mix(in srgb, var(--fg) 5%, transparent), transparent 52%),
-    color-mix(in srgb, var(--console-material-2) 15%, transparent);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--fg) 4%, transparent),
-    inset 0 -1px 0 color-mix(in srgb, var(--bg) 12%, transparent);
-  backdrop-filter: blur(10px) saturate(1.12);
-  -webkit-backdrop-filter: blur(10px) saturate(1.12);
-}
-
-body[data-view="popover"] .instrument-stat::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, currentColor 12%, transparent), transparent 44%),
-    linear-gradient(0deg, color-mix(in srgb, var(--bg) 12%, transparent), transparent 46%);
-  opacity: .74;
-  pointer-events: none;
-}
-
-body[data-view="popover"] .instrument-stat > * {
-  position: relative;
-  z-index: 1;
-}
-
-body[data-view="popover"] .instrument-stat .term-label::after {
-  content: none;
-}
-
-body[data-view="popover"] .instrument-stat.burst { color: var(--ok); }
-body[data-view="popover"] .instrument-stat.session { color: var(--accent); }
-body[data-view="popover"] .instrument-stat.pid { color: var(--run); }
-
-body[data-view="popover"] .instrument-stat + .instrument-stat::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 1px;
-  background: color-mix(in srgb, var(--console-line-soft) 62%, transparent);
 }
 
 body[data-view="popover"] .scan-boundary {
@@ -11426,9 +11228,6 @@ body[data-view="popover"] .trend-suite.compact .trend-inspector-ratio strong {
 /* Strict metric hierarchy: workload first, raw PID pressure as diagnostics. */
 body[data-view="dashboard"] .dash-support-cell.mapping strong,
 body[data-view="dashboard"] .dash-support-cell.mapping > span,
-body[data-view="popover"] .instrument-stat.mapping,
-body[data-view="popover"] .instrument-stat.mapping span,
-body[data-view="popover"] .instrument-stat.mapping strong,
 .calibration-row.mapping .calibration-row-head span,
 .calibration-row.mapping .calibration-row-head strong {
   color: var(--run);
@@ -11555,27 +11354,6 @@ body[data-view="dashboard"] .dash-support-cell strong {
   font-size: 32px;
 }
 
-body[data-view="popover"] .instrument-stat strong {
-  font-size: 28px;
-}
-
-body[data-view="popover"] .instrument-stat.mapping strong {
-  font-size: 23px;
-  letter-spacing: 0;
-}
-
-body[data-view="popover"] .instrument-scale-row.mapping {
-  color: var(--run);
-}
-
-body[data-view="popover"] .instrument-scale-row .term-label {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 body[data-view="popover"] .popover-current-surface,
 body[data-view="popover"] .popover-instrument {
   max-width: 100%;
@@ -11608,7 +11386,6 @@ body[data-view="popover"] .popover-instrument {
     color-mix(in srgb, var(--console-material) 84%, transparent);
 }
 
-:root[data-theme="light"] body[data-view="popover"] .instrument-stat,
 :root[data-theme="light"] body[data-view="dashboard"] .dash-support-cell,
 :root[data-theme="light"] body[data-view="dashboard"] .readout,
 :root[data-theme="light"] body[data-view="dashboard"] .confidence-grid span {
@@ -13369,19 +13146,6 @@ body[data-view="popover"] .popover-instrument.is-active::before {
   animation: none;
 }
 
-body[data-view="popover"] .instrument-stat {
-  background: color-mix(in srgb, var(--console-material-2) 26%, transparent);
-  box-shadow:
-    inset 1px 0 0 color-mix(in srgb, currentColor 28%, transparent),
-    inset 0 -1px 0 color-mix(in srgb, var(--console-line-soft) 58%, transparent);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-body[data-view="popover"] .instrument-stat::after {
-  content: none;
-}
-
 body[data-view="popover"] .popover-project-table .project-tree-list {
   gap: 3px;
 }
@@ -13537,4 +13301,108 @@ body[data-view="popover"] .footer-link {
   height: 26px;
   min-height: 26px;
   padding: 0 5px;
+}
+
+/* Keep compact runtime metrics as one flat observation readout. */
+body[data-view="popover"] .popover-instrument,
+body[data-view="popover"] .popover-instrument.is-active {
+  background: var(--console-material);
+}
+
+body[data-view="popover"] .instrument-readout {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+  margin: 0;
+  background: transparent;
+}
+
+body[data-view="popover"] .instrument-readout-row {
+  display: grid;
+  grid-template-columns: minmax(92px, .66fr) minmax(0, 1.34fr);
+  align-items: baseline;
+  gap: 8px 12px;
+  min-width: 0;
+  min-height: 34px;
+  padding: 6px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--console-line-soft) 72%, transparent);
+}
+
+body[data-view="popover"] .instrument-readout-row:last-child {
+  border-bottom: 0;
+}
+
+body[data-view="popover"] .instrument-readout-row dt,
+body[data-view="popover"] .instrument-readout-row dd {
+  min-width: 0;
+  margin: 0;
+}
+
+body[data-view="popover"] .instrument-readout-row dt {
+  color: var(--console-text-soft);
+  font-family: var(--font-mono);
+  font-size: 8.8px;
+  font-weight: 760;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+
+body[data-view="popover"] .instrument-readout-row dt .term-label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .instrument-readout-row dd {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+}
+
+body[data-view="popover"] .instrument-readout-row dd strong {
+  min-width: 0;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 820;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .instrument-readout-row dd em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--console-text-soft);
+  font-size: 9.4px;
+  font-style: normal;
+  line-height: 1.25;
+}
+
+body[data-view="popover"] .instrument-readout-row.burst dd strong { color: var(--ok); }
+body[data-view="popover"] .instrument-readout-row.session dd strong { color: var(--accent); }
+body[data-view="popover"] .instrument-readout-row.mapping dd strong { color: var(--run); }
+
+@media (max-width: 430px) {
+  body[data-view="popover"] .instrument-readout-row {
+    grid-template-columns: minmax(76px, .58fr) minmax(0, 1.42fr);
+    gap: 6px 8px;
+    min-height: 32px;
+    padding: 5px 0;
+  }
+
+  body[data-view="popover"] .instrument-readout-row dd {
+    gap: 6px;
+  }
+
+  body[data-view="popover"] .instrument-readout-row dd strong {
+    font-size: 15px;
+  }
+
+  body[data-view="popover"] .instrument-readout-row dd em {
+    font-size: 8.5px;
+  }
 }

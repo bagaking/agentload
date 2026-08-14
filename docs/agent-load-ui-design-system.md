@@ -80,6 +80,12 @@ semantic layer before visual polish is accepted.
 - Metric clusters should avoid unexplained decorative spines, dots, or rails.
   If activity needs visual atmosphere, use a faint background motion layer whose
   color follows the active state while leaving the data and labels unobstructed.
+- Ban the narrow horizontal two-strip metric pattern: oversized values in one
+  strip followed by colored calibration bars, repeated rails, or per-number
+  status treatments. In constrained surfaces, use one unframed row-based
+  readout with aligned label, value, and evidence detail columns. A scale is
+  allowed only when it has an explicit unit and a real comparison task; it must
+  not be decorative chrome.
 - Popover primary metrics should not reserve a full line for duplicated ambient
   state. The compact footer status mark owns live/active hover text next to the
   observation timestamp and cadence; foreground scan-window duration belongs

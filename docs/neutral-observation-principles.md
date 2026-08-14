@@ -99,9 +99,11 @@ should state the observation window (`Active` versus `All`) and the column
 header should state the object type (`Main`, `Sub`, `Total`). Each numeric cell
 still needs an accessible explanation such as a native tooltip or `aria-label`
 that names the metric, the value, and the evidence meaning. Visual treatment
-should not make every number look like a separate status badge. This keeps the
-evidence window visible without requiring users to decode abbreviations such as
-`AM` and `AS`.
+should not make every number look like a separate status badge. Do not stack
+oversized numbers above a second strip of colored bars or rails; that narrow
+two-strip treatment reads as decorative instrumentation rather than evidence.
+This keeps the evidence window visible without requiring users to decode
+abbreviations such as `AM` and `AS`.
 
 The default compact online surface must show a concise process-evidence readout
 when visible agent PIDs exist. A PID pressure number alone is insufficient for
