@@ -667,3 +667,65 @@ func TestParseCodexLaneTraceSurfacesSidecarErrors(t *testing.T) {
 		t.Fatalf("expected degraded trace to keep session id, got %q", trace.SessionID)
 	}
 }
+
+// Claude stamps the parent's sessionId on every sidechain line. Adopting it
+// made each subagent transcript key to the parent, so ten concurrent subagents
+// reported one session; the fix keeps the file's own identity and records the
+// borrowed id as the parent link instead.
+func TestParseClaudeTraceKeepsSubagentIdentityWhenSidechainBorrowsParentSessionID(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, ".claude", "projects", "-Users-dev-proj-agentmux", "parent-session", "subagents")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatalf("mkdir subagent dir: %v", err)
+	}
+	path := filepath.Join(projectDir, "agent-a6732a14c39c662.jsonl")
+	line := `{"isSidechain":true,"type":"user","timestamp":"2026-09-14T04:36:29.829Z",` +
+		`"cwd":"/Users/dev/proj/agentmux","sessionId":"parent-session"}` + "\n"
+	if err := os.WriteFile(path, []byte(line), 0o644); err != nil {
+		t.Fatalf("write subagent transcript: %v", err)
+	}
+
+	trace, err := parseClaudeTrace(path)
+	if err != nil {
+		t.Fatalf("parse subagent transcript: %v", err)
+	}
+	if trace == nil {
+		t.Fatalf("subagent transcript with events must produce a trace")
+	}
+	if trace.SessionID != "agent-a6732a14c39c662" {
+		t.Fatalf("subagent must keep its own identity, got %q", trace.SessionID)
+	}
+	if trace.ParentThreadID != "parent-session" {
+		t.Fatalf("borrowed sessionId must become the parent link, got %q", trace.ParentThreadID)
+	}
+	if observed := observeSessionRole(LiveSession{Trace: trace}); observed.Role != "subagent" {
+		t.Fatalf("sidechain transcript must observe as a subagent, got %q", observed.Role)
+	}
+}
+
+// The same parser reads main transcripts, which carry no isSidechain marker.
+// A guard that over-triggered would strip every real session id.
+func TestParseClaudeTraceStillAdoptsSessionIDOnMainTranscripts(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, ".claude", "projects", "-Users-dev-proj-agentmux")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatalf("mkdir project dir: %v", err)
+	}
+	path := filepath.Join(projectDir, "9e0b9996.jsonl")
+	line := `{"type":"user","timestamp":"2026-09-14T04:36:29.829Z",` +
+		`"cwd":"/Users/dev/proj/agentmux","sessionId":"9e0b9996-real-id"}` + "\n"
+	if err := os.WriteFile(path, []byte(line), 0o644); err != nil {
+		t.Fatalf("write main transcript: %v", err)
+	}
+
+	trace, err := parseClaudeTrace(path)
+	if err != nil {
+		t.Fatalf("parse main transcript: %v", err)
+	}
+	if trace == nil || trace.SessionID != "9e0b9996-real-id" {
+		t.Fatalf("main transcript must adopt its own sessionId, got %+v", trace)
+	}
+	if trace.ParentThreadID != "" {
+		t.Fatalf("main transcript must not gain a parent link, got %q", trace.ParentThreadID)
+	}
+}

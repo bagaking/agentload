@@ -643,6 +643,40 @@ func TestBuildThroughputTrendWindowsMarksAbsentMinuteCoverage(t *testing.T) {
 	}
 }
 
+func TestBuildThroughputTrendWindowsCarriesPartialCoverageIntoRollup(t *testing.T) {
+	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
+	// A single floor minute inside the 5-minute window makes the rolled-up rate
+	// a floor: the sum can only be missing tokens, never carrying extra, so the
+	// marker has to survive persistence and aggregation rather than being
+	// laundered into an exact-looking number.
+	minutes := make([]ThroughputMinuteFact, 0, 5)
+	for index := 4; index >= 0; index-- {
+		minute := throughputMinuteFact(now.Add(-time.Duration(index)*time.Minute), 60, "alpha")
+		if index == 2 {
+			minute.Coverage = liveTokenRateCoveragePartial
+		}
+		minutes = append(minutes, minute)
+	}
+
+	fiveMinutes := requireThroughputSeries(t, requireTrendWindow(t, buildThroughputTrendWindows(minutes, nil, now), "1D"), "minute:300")
+	point := fiveMinutes.Points[len(fiveMinutes.Points)-1]
+	if point.OutputTokenThroughputCoverage != liveTokenRateCoveragePartial {
+		t.Fatalf("rolled-up window dropped the floor marker: %+v", point)
+	}
+	if !point.HasOutputTokensPerSecond || point.OutputTokensPerSecond <= 0 {
+		t.Fatalf("floor marker must qualify a real rate, not replace it: %+v", point)
+	}
+
+	// Windows built only from complete minutes stay unqualified.
+	clean := requireThroughputSeries(t, requireTrendWindow(t, buildThroughputTrendWindows([]ThroughputMinuteFact{
+		throughputMinuteFact(now.Add(-time.Minute), 60, "alpha"),
+		throughputMinuteFact(now, 60, "alpha"),
+	}, nil, now), "1D"), "minute:60")
+	if got := clean.Points[len(clean.Points)-1].OutputTokenThroughputCoverage; got != "" {
+		t.Fatalf("complete window was labelled %q", got)
+	}
+}
+
 func TestBuildThroughputTrendWindowsSummarizesBeforeDisplayReduction(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
 	minutes := make([]ThroughputMinuteFact, 0, throughputTrendMaxPoints*2)

@@ -563,6 +563,37 @@ func TestSetTraceProjectPathNormalizesBenchmarkWorkspace(t *testing.T) {
 	}
 }
 
+func TestSetTraceProjectPathNormalizesGitWorktree(t *testing.T) {
+	root := t.TempDir()
+	mainRepo := filepath.Join(root, "flowlens")
+	wtDir := filepath.Join(mainRepo, ".worktrees", "wt-feature-branch")
+	if err := os.MkdirAll(wtDir, 0o755); err != nil {
+		t.Fatalf("mkdir wt: %v", err)
+	}
+	gitdir := filepath.Join(mainRepo, ".git", "worktrees", "wt-feature-branch")
+	if err := os.MkdirAll(gitdir, 0o755); err != nil {
+		t.Fatalf("mkdir gitdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(wtDir, ".git"), []byte("gitdir: "+gitdir+"\n"), 0o644); err != nil {
+		t.Fatalf("write .git: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(gitdir, "HEAD"), []byte("ref: refs/heads/feature/login-v2\n"), 0o644); err != nil {
+		t.Fatalf("write HEAD: %v", err)
+	}
+
+	trace := &SessionTrace{}
+	setTraceProjectPath(trace, wtDir, "transcript_cwd")
+	if trace.Project != "flowlens" {
+		t.Fatalf("expected project %q, got %q", "flowlens", trace.Project)
+	}
+	if trace.Worktree != "wt-feature-branch" {
+		t.Fatalf("expected worktree %q, got %q", "wt-feature-branch", trace.Worktree)
+	}
+	if trace.Branch != "feature/login-v2" {
+		t.Fatalf("expected branch %q, got %q", "feature/login-v2", trace.Branch)
+	}
+}
+
 func TestProjectLiveSessionsExposeFreshnessConfidenceAndProvenance(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
 	root := t.TempDir()

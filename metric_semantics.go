@@ -13,8 +13,11 @@ const (
 	liveTokenRateStateStale                 = "stale"
 	liveTokenRateStateUnavailable           = "unavailable"
 	liveTokenRateUnavailableNotConfigured   = "not_configured"
-	liveTokenRateUnavailableFileCapacity    = "file_capacity"
 	liveTokenRateUnavailableWatchIncomplete = "watch_incomplete"
+
+	// Coverage qualifies a real number rather than replacing it. "partial"
+	// means the rate is a floor measured from a subset of eligible transcripts.
+	liveTokenRateCoveragePartial = "partial"
 
 	liveTokenRateBasis             = "output_tokens"
 	liveTokenRateSource            = "local_transcript_usage"
@@ -31,9 +34,15 @@ type liveTokenRateEvent struct {
 }
 
 type liveTokenRateFacts struct {
-	Configured        bool
-	Initialized       bool
-	Limited           bool
+	Configured  bool
+	Initialized bool
+	Limited     bool
+	// Partial marks a sample measured from a known subset of the eligible
+	// transcripts. Unlike Limited it still carries a number: every token in it
+	// was really observed, so the rate is a floor rather than an unknown.
+	Partial           bool
+	TrackedFileCount  int
+	EligibleFileCount int
 	UnavailableReason string
 	TokensInWindow    int64
 	ActiveSessions    int
@@ -189,7 +198,14 @@ func liveTokenRateSampleFromFacts(facts liveTokenRateFacts) LiveTokenRateSample 
 		sample.UnavailableReason = liveTokenRateUnavailableNotConfigured
 		return sample
 	}
-	if facts.Limited {
+	// Degraded coverage is only unknown when nothing positive was measured
+	// behind it. With real tokens in the window, an incomplete file-event
+	// interval means "there may be more than this", not "this is wrong", so the
+	// reading survives below as a floor. With zero tokens it means exactly the
+	// opposite: a zero floor is trivially true and reads as "nothing is
+	// happening" when the truth is "we may have missed all of it" — so that
+	// case still fails closed.
+	if facts.Limited && facts.TokensInWindow <= 0 {
 		sample.State = liveTokenRateStateUnavailable
 		sample.UnavailableReason = facts.UnavailableReason
 		return sample
@@ -203,6 +219,21 @@ func liveTokenRateSampleFromFacts(facts liveTokenRateFacts) LiveTokenRateSample 
 	}
 	rate := float64(max(int64(0), facts.TokensInWindow)) / window.Seconds()
 	sample.OutputTokensPerSecond = &rate
+	// A partial sample is a floor, not an unknown: the tokens in it were all
+	// really observed, just not from every eligible transcript. Blanking it
+	// would hide throughput exactly when there is the most of it, so the number
+	// ships with the coverage that produced it and the UI labels it a floor.
+	if facts.Partial {
+		sample.Coverage = liveTokenRateCoveragePartial
+		sample.TrackedFileCount = facts.TrackedFileCount
+		sample.EligibleFileCount = facts.EligibleFileCount
+	}
+	// A watcher gap cannot be quantified the way a file cap can, so the floor
+	// ships without counts and names what degraded it instead.
+	if facts.Limited {
+		sample.Coverage = liveTokenRateCoveragePartial
+		sample.CoverageReason = facts.UnavailableReason
+	}
 	if facts.TokensInWindow > 0 {
 		sample.State = liveTokenRateStateLive
 	} else {

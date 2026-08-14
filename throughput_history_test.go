@@ -19,13 +19,13 @@ func TestThroughputHistoryPersistsZeroAndMissingMinuteFacts(t *testing.T) {
 	if err := store.appendMinute(ThroughputMinuteFact{
 		At: now.Add(-time.Minute).Format(time.RFC3339), State: liveTokenRateStateZero,
 		OutputTokens: &zero, Projects: []ThroughputMinuteProjectFact{},
-	}); err != nil {
+	}, now); err != nil {
 		t.Fatalf("append zero minute: %v", err)
 	}
 	if err := store.appendMinute(ThroughputMinuteFact{
 		At: now.Format(time.RFC3339), State: liveTokenRateStateUnavailable,
 		UnavailableReason: liveTokenRateUnavailableWatchIncomplete,
-	}); err != nil {
+	}, now); err != nil {
 		t.Fatalf("append missing minute: %v", err)
 	}
 

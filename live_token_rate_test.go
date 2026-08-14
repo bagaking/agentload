@@ -155,6 +155,21 @@ func TestLiveTokenRateWatchGapFailsClosedAndForcesRecovery(t *testing.T) {
 	if recovered := sampler.evidenceIndex.snapshot(context.Background(), now.Add(-liveTokenRateRecentFileAge), nil); !recovered.Complete {
 		t.Fatalf("watch gap did not restore the evidence index: %+v", recovered)
 	}
+
+	// With real tokens measured, the same gap is a floor rather than an unknown:
+	// missing file events can only mean there was MORE throughput, never less,
+	// so blanking a positive reading would hide throughput that did happen.
+	appendCumulativeTokenLine(t, path, now.Add(60*time.Second), 400)
+	sampler.poll(now.Add(60 * time.Second))
+	sampler.evidenceIndex.recordWatchBatch(evidenceWatchBatch{Complete: false})
+	sampler.poll(now.Add(90 * time.Second))
+	sample := sampler.sample(now.Add(90 * time.Second))
+	if sample.OutputTokensPerSecond == nil || *sample.OutputTokensPerSecond <= 0 {
+		t.Fatalf("watch gap blanked a positive measurement: %+v", sample)
+	}
+	if sample.Coverage != liveTokenRateCoveragePartial || sample.CoverageReason != liveTokenRateUnavailableWatchIncomplete {
+		t.Fatalf("degraded floor did not declare its coverage: %+v", sample)
+	}
 }
 
 func TestLiveTokenRateSamplerDedupesGrowingClaudeMessage(t *testing.T) {
@@ -949,6 +964,71 @@ func TestLiveTokenRateProjectsFromSessionsFailsConflictsToUnassigned(t *testing.
 	}
 }
 
+func TestLiveTokenRateProjectsForBucketsRecoverUnmappedSessions(t *testing.T) {
+	claude := filepath.Join(t.TempDir(), ".claude", "projects", "-Users-me-proj-flowlens--worktrees-wt-f-001", "abc.jsonl")
+	// The real codex layout: a date tree whose leaf ("14") is a plausible-looking
+	// directory name that names no project at all.
+	plain := filepath.Join(t.TempDir(), ".codex", "sessions", "2026", "09", "14", "rollout-abc.jsonl")
+	repoDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repoDir, "checkout", ".git"), 0o755); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+	inRepo := filepath.Join(repoDir, "checkout", "notes.jsonl")
+	claudeKey := liveTokenRateSessionKey("claude", claude)
+	plainKey := liveTokenRateSessionKey("codex", plain)
+	repoKey := liveTokenRateSessionKey("codex", inRepo)
+
+	// No snapshot entry for any session: the process behind the transcript
+	// was never mapped, but the throughput it produced is still real.
+	projects := liveTokenRateProjectsForBuckets([]liveTokenRateEvent{
+		{Session: claudeKey}, {Session: plainKey}, {Session: repoKey},
+	}, map[string]string{})
+
+	if got := projects[claudeKey]; got != "flowlens" {
+		t.Fatalf("claude transcript project = %q, want flowlens", got)
+	}
+	// A codex rollout lives in a transcript store that names no project, so it
+	// stays honestly unassigned rather than inventing one from the date path.
+	if got := projects[plainKey]; got != liveTokenRateUnassignedProject {
+		t.Fatalf("projectless transcript = %q, want %q", got, liveTokenRateUnassignedProject)
+	}
+	// A transcript that really does sit inside a checkout still recovers its name.
+	if got := projects[repoKey]; got != "checkout" {
+		t.Fatalf("in-repo transcript project = %q, want checkout", got)
+	}
+}
+
+func TestLiveTokenRateMinuteFactsAttributeLikeTheLiveSample(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Minute)
+	root := t.TempDir()
+	sessions := filepath.Join(root, ".claude", "projects", "-Users-me-proj-flowlens")
+	if err := os.MkdirAll(sessions, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(sessions, "abc.jsonl")
+	key := liveTokenRateSessionKey("claude", path)
+
+	sampler := newTestLiveTokenRateSampler(Config{ClaudeRoots: []string{filepath.Join(root, ".claude")}})
+	sampler.pollMu.Lock()
+	sampler.buckets = []liveTokenRateEvent{{At: now.Add(-30 * time.Second), Tokens: 600, Session: key}}
+	sampler.initialized = true
+	sampler.latestSignal = now.Add(-30 * time.Second)
+	sampler.latestEvent = now.Add(-30 * time.Second)
+	// No live process mapped this session, exactly like a transcript whose agent
+	// the process scan could not match.
+	sampler.sessionProjects = map[string]string{}
+	fact := sampler.minuteFactLocked(now.Add(-time.Minute), now)
+	sampler.pollMu.Unlock()
+
+	// The persisted minute must bucket the tokens the same way the live readout
+	// does. Passing the raw session map here sent every unmapped session to
+	// "unassigned" in history only, so the trend chart read ~80% unassigned while
+	// the live value showed none — the same tokens, two different answers.
+	if len(fact.Projects) != 1 || fact.Projects[0].Project != "flowlens" {
+		t.Fatalf("persisted minute did not recover the project: %+v", fact.Projects)
+	}
+}
+
 func TestLiveTokenRatePublishedProjectsOnlyRetainEventSessions(t *testing.T) {
 	now := time.Now().UTC()
 	sampler := newTestLiveTokenRateSampler(Config{CodexRoots: []string{t.TempDir()}})
@@ -1004,5 +1084,42 @@ func appendTokenText(t *testing.T, path, text string) {
 	}
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLiveTokenRateOverCapReportsFloorRatherThanCompleteReading(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	root := t.TempDir()
+	sessions := testDatedSessions(root, now)
+	if err := os.MkdirAll(sessions, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// More simultaneously-hot transcripts than the sampler can track. The cap
+	// keeps the hottest subset; what must never happen is the subset shipping as
+	// a complete reading.
+	total := liveTokenRateMaxFiles + 8
+	paths := make([]string, 0, total)
+	for index := 0; index < total; index++ {
+		path := filepath.Join(sessions, "session-"+strconv.Itoa(index)+".jsonl")
+		writeCumulativeTokenFile(t, path, now, 100)
+		paths = append(paths, path)
+	}
+
+	sampler := newTestLiveTokenRateSampler(Config{CodexRoots: []string{root}})
+	sampler.poll(now)
+	for _, path := range paths {
+		appendCumulativeTokenLine(t, path, now.Add(30*time.Second), 400)
+	}
+	sampler.poll(now.Add(30 * time.Second))
+
+	sample := sampler.sample(now.Add(30 * time.Second))
+	if sample.OutputTokensPerSecond == nil || *sample.OutputTokensPerSecond <= 0 {
+		t.Fatalf("over-cap sampling must still produce a rate: %+v", sample)
+	}
+	if sample.Coverage != liveTokenRateCoveragePartial {
+		t.Fatalf("subset reading shipped as complete: coverage=%q tracked=%d eligible=%d", sample.Coverage, sample.TrackedFileCount, sample.EligibleFileCount)
+	}
+	if sample.TrackedFileCount > liveTokenRateMaxFiles || sample.EligibleFileCount <= sample.TrackedFileCount {
+		t.Fatalf("coverage counts do not describe the cap: tracked=%d eligible=%d", sample.TrackedFileCount, sample.EligibleFileCount)
 	}
 }

@@ -651,6 +651,14 @@ func throughputRollupPoint(minutes []throughputTimedMinute, window time.Duration
 	if tokens > 0 {
 		point.OutputTokenThroughputState = liveTokenRateStateLive
 	}
+	// One floor minute makes the whole rolled-up window a floor: the sum can
+	// only be missing tokens, never carrying extra.
+	for _, minute := range minutes {
+		if minute.fact.Coverage == liveTokenRateCoveragePartial {
+			point.OutputTokenThroughputCoverage = liveTokenRateCoveragePartial
+			break
+		}
+	}
 	point.OutputTokenProjects = make([]LiveTokenRateProjectSample, 0, len(projectTokens))
 	for project, projectTokens := range projectTokens {
 		if projectTokens <= 0 {

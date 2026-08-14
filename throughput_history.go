@@ -32,12 +32,16 @@ type ThroughputMinuteProjectFact struct {
 }
 
 type ThroughputMinuteFact struct {
-	At                string                        `json:"at"`
-	State             string                        `json:"state"`
-	UnavailableReason string                        `json:"unavailable_reason,omitempty"`
-	OutputTokens      *int64                        `json:"output_tokens,omitempty"`
-	SessionHashes     []string                      `json:"session_hashes,omitempty"`
-	Projects          []ThroughputMinuteProjectFact `json:"projects"`
+	At                string `json:"at"`
+	State             string `json:"state"`
+	UnavailableReason string `json:"unavailable_reason,omitempty"`
+	// Coverage carries the live sample's floor marker into history: a minute
+	// measured from a subset of eligible transcripts is a lower bound, and
+	// persisting it as an exact number would launder away that qualifier.
+	Coverage      string                        `json:"coverage,omitempty"`
+	OutputTokens  *int64                        `json:"output_tokens,omitempty"`
+	SessionHashes []string                      `json:"session_hashes,omitempty"`
+	Projects      []ThroughputMinuteProjectFact `json:"projects"`
 }
 
 type LegacyThroughputFact struct {
@@ -168,6 +172,10 @@ func normalizeThroughputMinute(raw *ThroughputMinuteFact) (ThroughputMinuteFact,
 	minute := cloneThroughputMinute(*raw)
 	minute.At = at.UTC().Format(time.RFC3339Nano)
 	minute.State = strings.TrimSpace(minute.State)
+	minute.Coverage = strings.TrimSpace(minute.Coverage)
+	if minute.Coverage != "" && minute.Coverage != liveTokenRateCoveragePartial {
+		minute.Coverage = ""
+	}
 	if minute.State == "" || (minute.OutputTokens != nil && *minute.OutputTokens < 0) {
 		return ThroughputMinuteFact{}, time.Time{}, false
 	}
@@ -220,9 +228,12 @@ func normalizeLegacyThroughput(raw *LegacyThroughputFact) (LegacyThroughputFact,
 	return fact, at, true
 }
 
-func (store *throughputHistoryStore) appendMinute(minute ThroughputMinuteFact) error {
+func (store *throughputHistoryStore) appendMinute(minute ThroughputMinuteFact, observedAt time.Time) error {
 	if store == nil {
 		return errors.New("throughput history store is nil")
+	}
+	if observedAt.IsZero() {
+		return errors.New("throughput observation time is required")
 	}
 	normalized, _, ok := normalizeThroughputMinute(&minute)
 	if !ok {
@@ -244,7 +255,7 @@ func (store *throughputHistoryStore) appendMinute(minute ThroughputMinuteFact) e
 	store.minutes[index] = normalized
 	store.loadedRecordCount++
 	store.lastWriteError = ""
-	store.pruneLocked(time.Now().Add(-historyRetentionWindow))
+	store.pruneLocked(observedAt.Add(-historyRetentionWindow))
 	return nil
 }
 

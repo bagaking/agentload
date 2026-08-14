@@ -595,3 +595,77 @@ func installTranscriptParserProbe(t *testing.T, observer *Observer, agentID stri
 		checkOffset: checkOffset,
 	}
 }
+
+// A worktree belongs to the project body; a plain subdirectory resolves to the
+// repo root rather than to whatever directory the agent happened to sit in.
+func TestResolveRepoBoundaryRollsWorktreesIntoTheProject(t *testing.T) {
+	root := t.TempDir()
+	repo := filepath.Join(root, "flowlens")
+	gitDir := filepath.Join(repo, ".git")
+	wtGitDir := filepath.Join(gitDir, "worktrees", "wt-f-001")
+	worktree := filepath.Join(repo, ".worktrees", "wt-f-001")
+	for _, dir := range []string{wtGitDir, filepath.Join(repo, "backend", "cmd"), worktree} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(wtGitDir, "HEAD"), []byte("ref: refs/heads/feat/x\n"), 0o644); err != nil {
+		t.Fatalf("write worktree HEAD: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(worktree, ".git"), []byte("gitdir: "+wtGitDir+"\n"), 0o644); err != nil {
+		t.Fatalf("write worktree link: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name     string
+		path     string
+		wantRoot string
+		wantWT   string
+		wantBr   string
+	}{
+		{"repo root", repo, repo, "", ""},
+		{"monorepo subdir", filepath.Join(repo, "backend", "cmd"), repo, "", ""},
+		{"worktree", worktree, repo, "wt-f-001", "feat/x"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gotRoot, gotWT, gotBr := resolveRepoBoundary(tc.path)
+			if gotRoot != tc.wantRoot || gotWT != tc.wantWT || gotBr != tc.wantBr {
+				t.Fatalf("resolveRepoBoundary(%s) = (%q, %q, %q), want (%q, %q, %q)",
+					tc.path, gotRoot, gotWT, gotBr, tc.wantRoot, tc.wantWT, tc.wantBr)
+			}
+			if name := trustedPathProjectName(tc.path); name != "flowlens" {
+				t.Fatalf("trustedPathProjectName(%s) = %q, want flowlens", tc.path, name)
+			}
+		})
+	}
+}
+
+func TestResolveRepoBoundaryMemoExpiresSoNewReposAreSeen(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "project", "deep", "nested")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// No repo yet: the honest answer is "not in a repo", and it gets memoized.
+	if got, _, _ := resolveRepoBoundary(dir); got != "" {
+		t.Fatalf("unexpected repo root before git init: %q", got)
+	}
+
+	repo := filepath.Join(root, "project")
+	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A memo that never expired would pin the stale "no repo" answer forever,
+	// leaving every session in this tree permanently unattributed. Age the entry
+	// past its TTL the way wall-clock would.
+	repoBoundaryMemo.Lock()
+	for path, entry := range repoBoundaryMemo.entries {
+		entry.at = entry.at.Add(-2 * repoBoundaryMemoTTL)
+		repoBoundaryMemo.entries[path] = entry
+	}
+	repoBoundaryMemo.Unlock()
+
+	if got, _, _ := resolveRepoBoundary(dir); got != repo {
+		t.Fatalf("repo created after the memo was warmed was not picked up: got %q, want %q", got, repo)
+	}
+}

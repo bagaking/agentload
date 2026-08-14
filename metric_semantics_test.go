@@ -33,14 +33,34 @@ func TestLiveTokenRateSampleKeepsMissingStatesDistinctFromZero(t *testing.T) {
 
 	base.Configured = true
 	base.Limited = true
-	base.UnavailableReason = liveTokenRateUnavailableFileCapacity
+	base.UnavailableReason = liveTokenRateUnavailableWatchIncomplete
 	limited := liveTokenRateSampleFromFacts(base)
-	if limited.State != liveTokenRateStateUnavailable || limited.OutputTokensPerSecond != nil || limited.UnavailableReason != liveTokenRateUnavailableFileCapacity {
+	if limited.State != liveTokenRateStateUnavailable || limited.OutputTokensPerSecond != nil || limited.UnavailableReason != liveTokenRateUnavailableWatchIncomplete {
 		t.Fatalf("limited sample = %+v", limited)
 	}
 
+	// A capacity-limited sample is a floor, not an unknown: the number survives
+	// and carries the coverage that produced it.
 	base.Limited = false
 	base.UnavailableReason = ""
+	base.Initialized = true
+	base.LatestSignal = now.Add(-time.Minute)
+	base.TokensInWindow = 360
+	base.Partial = true
+	base.TrackedFileCount = 96
+	base.EligibleFileCount = 120
+	partial := liveTokenRateSampleFromFacts(base)
+	if partial.State != liveTokenRateStateLive || partial.OutputTokensPerSecond == nil {
+		t.Fatalf("partial sample dropped its value = %+v", partial)
+	}
+	if partial.Coverage != liveTokenRateCoveragePartial || partial.TrackedFileCount != 96 || partial.EligibleFileCount != 120 {
+		t.Fatalf("partial coverage = %+v, want partial 96/120", partial)
+	}
+	base.Partial = false
+	base.TrackedFileCount, base.EligibleFileCount = 0, 0
+	base.TokensInWindow = 0
+	base.Initialized = false
+	base.LatestSignal = time.Time{}
 	noData := liveTokenRateSampleFromFacts(base)
 	if noData.State != liveTokenRateStateNoData || noData.OutputTokensPerSecond != nil {
 		t.Fatalf("no-data sample = %+v", noData)

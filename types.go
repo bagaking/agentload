@@ -117,19 +117,28 @@ type MetricRegistryEntry struct {
 }
 
 type LiveTokenRateSample struct {
-	OutputTokensPerSecond *float64                     `json:"output_tokens_per_second"`
-	State                 string                       `json:"state"`
-	Basis                 string                       `json:"basis"`
-	Source                string                       `json:"source"`
-	Method                string                       `json:"method"`
-	WindowSeconds         int                          `json:"window_seconds"`
-	SampleIntervalSeconds int                          `json:"sample_interval_seconds"`
-	ActiveSessions        int                          `json:"active_sessions"`
-	SampledAt             string                       `json:"sampled_at"`
-	LatestSignalAt        string                       `json:"latest_signal_at,omitempty"`
-	LatestEventAt         string                       `json:"latest_event_at,omitempty"`
-	UnavailableReason     string                       `json:"unavailable_reason,omitempty"`
-	Projects              []LiveTokenRateProjectSample `json:"projects"`
+	OutputTokensPerSecond *float64 `json:"output_tokens_per_second"`
+	State                 string   `json:"state"`
+	Basis                 string   `json:"basis"`
+	Source                string   `json:"source"`
+	Method                string   `json:"method"`
+	WindowSeconds         int      `json:"window_seconds"`
+	SampleIntervalSeconds int      `json:"sample_interval_seconds"`
+	ActiveSessions        int      `json:"active_sessions"`
+	SampledAt             string   `json:"sampled_at"`
+	LatestSignalAt        string   `json:"latest_signal_at,omitempty"`
+	LatestEventAt         string   `json:"latest_event_at,omitempty"`
+	UnavailableReason     string   `json:"unavailable_reason,omitempty"`
+	// Coverage is set only when the rate is a floor rather than a full
+	// measurement; the file counts say how much of the eligible set it saw.
+	Coverage string `json:"coverage,omitempty"`
+	// CoverageReason names what degraded the coverage when it cannot be
+	// expressed as a file count (an incomplete watcher interval).
+	CoverageReason    string `json:"coverage_reason,omitempty"`
+	TrackedFileCount  int    `json:"tracked_file_count,omitempty"`
+	EligibleFileCount int    `json:"eligible_file_count,omitempty"`
+
+	Projects []LiveTokenRateProjectSample `json:"projects"`
 }
 
 type LiveTokenRateProjectSample struct {
@@ -329,26 +338,30 @@ type ThroughputTrendSummary struct {
 }
 
 type TrendPoint struct {
-	At                                 string                       `json:"at"`
-	ActiveBurstConcurrency             int                          `json:"active_burst_concurrency"`
-	HasActiveBurst                     bool                         `json:"-"`
-	SessionConcurrency                 int                          `json:"session_concurrency"`
-	HasSessionConcurrency              bool                         `json:"-"`
-	TranscriptSampled                  bool                         `json:"transcript_sampled"`
-	PIDConcurrency                     int                          `json:"pid_concurrency"`
-	HasPIDConcurrency                  bool                         `json:"-"`
-	MappingCoveragePct                 float64                      `json:"mapping_coverage_pct"`
-	HasMappingCoveragePct              bool                         `json:"-"`
-	MappedProcesses                    int                          `json:"mapped_processes"`
-	HasMappedProcesses                 bool                         `json:"-"`
-	UnmappedProcesses                  int                          `json:"unmapped_processes"`
-	HasUnmappedProcesses               bool                         `json:"-"`
-	RuntimeSampled                     bool                         `json:"runtime_sampled"`
-	RuntimeProcesses                   []ProcessRuntimeSummary      `json:"runtime_process_summary,omitempty"`
-	HostAppProcesses                   []HostAppProcessSummary      `json:"host_app_process_summary,omitempty"`
-	OutputTokensPerSecond              float64                      `json:"output_tokens_per_second"`
-	HasOutputTokensPerSecond           bool                         `json:"-"`
-	OutputTokenThroughputState         string                       `json:"output_token_throughput_state"`
+	At                         string                  `json:"at"`
+	ActiveBurstConcurrency     int                     `json:"active_burst_concurrency"`
+	HasActiveBurst             bool                    `json:"-"`
+	SessionConcurrency         int                     `json:"session_concurrency"`
+	HasSessionConcurrency      bool                    `json:"-"`
+	TranscriptSampled          bool                    `json:"transcript_sampled"`
+	PIDConcurrency             int                     `json:"pid_concurrency"`
+	HasPIDConcurrency          bool                    `json:"-"`
+	MappingCoveragePct         float64                 `json:"mapping_coverage_pct"`
+	HasMappingCoveragePct      bool                    `json:"-"`
+	MappedProcesses            int                     `json:"mapped_processes"`
+	HasMappedProcesses         bool                    `json:"-"`
+	UnmappedProcesses          int                     `json:"unmapped_processes"`
+	HasUnmappedProcesses       bool                    `json:"-"`
+	RuntimeSampled             bool                    `json:"runtime_sampled"`
+	RuntimeProcesses           []ProcessRuntimeSummary `json:"runtime_process_summary,omitempty"`
+	HostAppProcesses           []HostAppProcessSummary `json:"host_app_process_summary,omitempty"`
+	OutputTokensPerSecond      float64                 `json:"output_tokens_per_second"`
+	HasOutputTokensPerSecond   bool                    `json:"-"`
+	OutputTokenThroughputState string                  `json:"output_token_throughput_state"`
+	// OutputTokenThroughputCoverage is "partial" when any minute behind this
+	// point was measured from a subset of eligible transcripts: the rate is a
+	// floor, not an exact figure.
+	OutputTokenThroughputCoverage      string                       `json:"output_token_throughput_coverage,omitempty"`
 	OutputTokenThroughputWindowSeconds int                          `json:"output_token_throughput_window_seconds"`
 	OutputTokenActiveSessions          int                          `json:"output_token_active_sessions"`
 	HasOutputTokenActiveSessions       bool                         `json:"-"`
@@ -370,6 +383,7 @@ type trendPointJSON struct {
 	RuntimeSampled                     *bool                         `json:"runtime_sampled,omitempty"`
 	OutputTokensPerSecond              *float64                      `json:"output_tokens_per_second,omitempty"`
 	OutputTokenThroughputState         string                        `json:"output_token_throughput_state,omitempty"`
+	OutputTokenThroughputCoverage      string                        `json:"output_token_throughput_coverage,omitempty"`
 	OutputTokenThroughputWindowSeconds int                           `json:"output_token_throughput_window_seconds,omitempty"`
 	OutputTokenActiveSessions          *int                          `json:"output_token_active_sessions,omitempty"`
 	OutputTokenProjects                *[]LiveTokenRateProjectSample `json:"output_token_projects,omitempty"`
@@ -418,6 +432,7 @@ func (p TrendPoint) MarshalJSON() ([]byte, error) {
 			payload.OutputTokenProjects = &projects
 		}
 		payload.OutputTokenThroughputState = p.OutputTokenThroughputState
+		payload.OutputTokenThroughputCoverage = p.OutputTokenThroughputCoverage
 		payload.OutputTokenThroughputWindowSeconds = p.OutputTokenThroughputWindowSeconds
 		payload.ThroughputSampled = jsonValue(true)
 	}
@@ -443,6 +458,8 @@ type TranscriptStats struct {
 
 type ProjectSnapshot struct {
 	Project                         string                           `json:"project"`
+	Worktrees                       []ProjectWorktreeSnapshot        `json:"worktrees,omitempty"`
+	Branches                        []string                         `json:"branches,omitempty"`
 	SessionCount                    int                              `json:"session_count"`
 	ActiveBurstCount                int                              `json:"active_burst_count"`
 	MainAgentSessions               int                              `json:"main_agent_sessions"`
@@ -466,6 +483,18 @@ type ProjectSnapshot struct {
 	TokenUsageSource                string                           `json:"token_usage_source,omitempty"`
 	TokenUsageConfidence            string                           `json:"token_usage_confidence,omitempty"`
 	Tools                           []ProjectToolSnapshot            `json:"tools,omitempty"`
+}
+
+// ProjectWorktreeSnapshot is one checkout inside a project. A worktree is part
+// of the project body, so it is stored as a child of the project rather than as
+// its own project. Name "" is the main checkout.
+type ProjectWorktreeSnapshot struct {
+	Name             string `json:"name,omitempty"`
+	Branch           string `json:"branch,omitempty"`
+	SessionCount     int    `json:"session_count"`
+	ActiveBurstCount int    `json:"active_burst_count"`
+	ProcessCount     int    `json:"process_count"`
+	LastEventAt      string `json:"last_event_at,omitempty"`
 }
 
 type ProjectToolSnapshot struct {
@@ -616,6 +645,8 @@ type LiveSessionSnapshot struct {
 	RoleHintSource               string      `json:"role_hint_source,omitempty"`
 	IndependentlyRun             bool        `json:"independently_run,omitempty"`
 	Project                      string      `json:"project"`
+	Worktree                     string      `json:"worktree,omitempty"`
+	Branch                       string      `json:"branch,omitempty"`
 	Path                         string      `json:"path"`
 	ProcessCount                 int         `json:"process_count"`
 	SharedProcessCount           int         `json:"shared_process_count"`
@@ -674,6 +705,8 @@ type SessionTrace struct {
 	Path             string
 	SessionID        string
 	Project          string
+	Worktree         string
+	Branch           string
 	ProjectSource    string
 	ThreadSource     string
 	ParentThreadID   string
@@ -747,6 +780,10 @@ type LiveProcess struct {
 	HostApp              *HostApp
 	SessionFiles         []TranscriptFile
 	SessionHints         []string
+	// Cwd is the process's working directory. For a session discovered from a
+	// command-line hint with no transcript on disk, it is the only project
+	// evidence there is.
+	Cwd string
 }
 
 type LiveSession struct {
@@ -757,6 +794,10 @@ type LiveSession struct {
 	HostApps  map[int]HostApp
 	Trace     *SessionTrace
 	Mapping   LiveSessionMapping
+	// ProcessCwd is the working directory of a process running this session.
+	// It is the weakest project evidence and is only consulted when no
+	// transcript evidence exists.
+	ProcessCwd string
 }
 
 type LiveSessionMapping struct {

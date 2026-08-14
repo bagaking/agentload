@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -170,11 +171,7 @@ func (o *Observer) lastKnownProcesses() []LiveProcess {
 }
 
 func (o *Observer) snapshotConfig(roots map[string][]string) SnapshotConfig {
-	snapshotConfig := o.cfg.snapshotConfig()
-	snapshotConfig.ClaudeRoots = append([]string(nil), roots["claude"]...)
-	snapshotConfig.CodexRoots = append([]string(nil), roots["codex"]...)
-	snapshotConfig.TraeRoots = append([]string(nil), roots["trae"]...)
-	return snapshotConfig
+	return o.adapters.snapshotConfig(o.cfg.snapshotConfig(), roots)
 }
 
 func rootsFromLiveProcesses(processes []LiveProcess, adapters *codingAgentRegistry) (map[string][]string, []TranscriptFile) {
@@ -547,6 +544,14 @@ func buildLiveSessionsAt(processes []LiveProcess, data *TranscriptData, idleGap 
 				session.Path = session.Trace.Path
 			}
 			session.Processes[process.PID] = struct{}{}
+			// A session discovered only from a command-line hint has no
+			// transcript to read a cwd from, so the process's own working
+			// directory is the last project evidence available. It is weaker
+			// than transcript evidence, so it never overwrites a cwd already
+			// recorded.
+			if session.ProcessCwd == "" {
+				session.ProcessCwd = strings.TrimSpace(process.Cwd)
+			}
 			if process.HostApp != nil && process.HostApp.PID > 0 && strings.TrimSpace(process.HostApp.Name) != "" {
 				if session.HostApps == nil {
 					session.HostApps = map[int]HostApp{}
@@ -1153,6 +1158,18 @@ func projectLiveSessions(sessions []LiveSession, idleGap time.Duration, now time
 			item.AgentNickname = strings.TrimSpace(session.Trace.AgentNickname)
 			item.RoleHintSource = strings.TrimSpace(session.Trace.RoleHintSource)
 			item.IndependentlyRun = session.Trace.IndependentlyRun
+			item.Worktree = strings.TrimSpace(session.Trace.Worktree)
+			item.Branch = strings.TrimSpace(session.Trace.Branch)
+			if item.Worktree == "" && session.Path != "" {
+				if _, wt, br := resolveRepoBoundary(session.Path); wt != "" {
+					item.Worktree = wt
+					if item.Branch == "" && br != "" {
+						item.Branch = br
+					}
+				} else if _, wt := resolvePathWorktree(session.Path); wt != "" {
+					item.Worktree = wt
+				}
+			}
 			if duration, ok := buildSessionDurationMetrics(session.Trace, idleGap, 0); ok {
 				item.FirstEventAt = duration.FirstEventAt.Format(time.RFC3339)
 				item.ObservedDurationSeconds = duration.ObservedDurationSeconds
@@ -1397,6 +1414,18 @@ func observeProjectAttribution(session LiveSession) projectAttributionObservatio
 	if session.Trace == nil || trustedTraceProjectName(session.Trace.Project) == "" {
 		reasons = append(reasons, "no parsed transcript cwd/project evidence")
 	}
+	// Last resort: the running process's own working directory. Weaker than any
+	// transcript evidence — the process may have been started anywhere — so it
+	// is only reached once every transcript source above has come up empty, and
+	// it reports itself as low confidence.
+	if project := trustedPathProjectName(session.ProcessCwd); project != "" {
+		return projectAttributionObservation{
+			Project:    project,
+			Source:     "process_cwd",
+			Confidence: projectAttributionConfidence("process_cwd"),
+			Reasons:    append(reasons, "no transcript evidence; fell back to the running process working directory"),
+		}
+	}
 	if len(reasons) == 0 {
 		reasons = append(reasons, "no trusted local project evidence")
 	}
@@ -1583,8 +1612,18 @@ func buildProjectFocus(sessions []LiveSession, idleGap time.Duration, now time.T
 		processes        map[int]struct{}
 		tokenUsage       TokenUsage
 	}
+	type worktreeAggregate struct {
+		name             string
+		branch           string
+		sessionCount     int
+		activeBurstCount int
+		processes        map[int]struct{}
+		lastEvent        time.Time
+	}
 	type aggregate struct {
 		project                            string
+		worktrees                          map[string]*worktreeAggregate
+		branches                           map[string]struct{}
 		sessionCount                       int
 		activeBurstCount                   int
 		mainAgentSessions                  int
@@ -1617,6 +1656,8 @@ func buildProjectFocus(sessions []LiveSession, idleGap time.Duration, now time.T
 		if item == nil {
 			item = &aggregate{
 				project:                            projectName,
+				worktrees:                          map[string]*worktreeAggregate{},
+				branches:                           map[string]struct{}{},
 				processes:                          map[int]struct{}{},
 				tools:                              map[string]*toolAggregate{},
 				confidenceCounts:                   map[string]int{},
@@ -1625,6 +1666,45 @@ func buildProjectFocus(sessions []LiveSession, idleGap time.Duration, now time.T
 				projectAttributionSourceCounts:     map[string]int{},
 			}
 			projects[projectName] = item
+		}
+		// Resolve which checkout of the project this session sits in. Every
+		// session lands in exactly one bucket — the main checkout when it has no
+		// worktree — so the per-worktree counts sum to the project totals.
+		worktreeName, worktreeBranch := "", ""
+		if session.Trace != nil {
+			worktreeName = strings.TrimSpace(session.Trace.Worktree)
+			worktreeBranch = strings.TrimSpace(session.Trace.Branch)
+		}
+		if worktreeName == "" && session.Path != "" {
+			if _, wt, br := resolveRepoBoundary(session.Path); wt != "" {
+				worktreeName = wt
+				if worktreeBranch == "" {
+					worktreeBranch = br
+				}
+			} else if _, wt := resolvePathWorktree(session.Path); wt != "" {
+				worktreeName = wt
+			}
+		}
+		if worktreeBranch != "" {
+			item.branches[worktreeBranch] = struct{}{}
+		}
+		worktree := item.worktrees[worktreeName]
+		if worktree == nil {
+			worktree = &worktreeAggregate{name: worktreeName, processes: map[int]struct{}{}}
+			item.worktrees[worktreeName] = worktree
+		}
+		if worktree.branch == "" {
+			worktree.branch = worktreeBranch
+		}
+		worktree.sessionCount++
+		if facts.RecentMovement {
+			worktree.activeBurstCount++
+		}
+		if session.Trace != nil && session.Trace.LastEvent.After(worktree.lastEvent) {
+			worktree.lastEvent = session.Trace.LastEvent
+		}
+		for _, pid := range facts.ProcessIDs {
+			worktree.processes[pid] = struct{}{}
 		}
 		item.sessionCount++
 		switch facts.Role {
@@ -1693,10 +1773,41 @@ func buildProjectFocus(sessions []LiveSession, idleGap time.Duration, now time.T
 		}
 	}
 
+	// Main checkout first, then worktrees by name, so a project's tree order is
+	// stable across refreshes.
+	buildWorktrees := func(items map[string]*worktreeAggregate) []ProjectWorktreeSnapshot {
+		if len(items) == 0 {
+			return nil
+		}
+		out := make([]ProjectWorktreeSnapshot, 0, len(items))
+		for _, wt := range items {
+			snapshot := ProjectWorktreeSnapshot{
+				Name:             wt.name,
+				Branch:           wt.branch,
+				SessionCount:     wt.sessionCount,
+				ActiveBurstCount: wt.activeBurstCount,
+				ProcessCount:     len(wt.processes),
+			}
+			if !wt.lastEvent.IsZero() {
+				snapshot.LastEventAt = wt.lastEvent.Format(time.RFC3339)
+			}
+			out = append(out, snapshot)
+		}
+		sort.Slice(out, func(i, j int) bool {
+			if (out[i].Name == "") != (out[j].Name == "") {
+				return out[i].Name == ""
+			}
+			return out[i].Name < out[j].Name
+		})
+		return out
+	}
+
 	out := make([]ProjectSnapshot, 0, len(projects))
 	for _, item := range projects {
 		project := ProjectSnapshot{
 			Project:                         item.project,
+			Worktrees:                       buildWorktrees(item.worktrees),
+			Branches:                        uniqueSortedStrings(mapKeys(item.branches)),
 			SessionCount:                    item.sessionCount,
 			ActiveBurstCount:                item.activeBurstCount,
 			MainAgentSessions:               item.mainAgentSessions,
@@ -2511,6 +2622,12 @@ func pathProjectName(path string) (string, string) {
 }
 
 func normalizeProjectAttributionPath(path string) string {
+	if mainRepo, _, _ := resolveRepoBoundary(path); mainRepo != "" {
+		return mainRepo
+	}
+	if mainRepo, _ := resolvePathWorktree(path); mainRepo != "" {
+		return mainRepo
+	}
 	parts := strings.Split(filepath.Clean(path), string(filepath.Separator))
 	for i, part := range parts {
 		if part != ".benchmark" || i == 0 {
@@ -2523,6 +2640,137 @@ func normalizeProjectAttributionPath(path string) string {
 		return prefix
 	}
 	return path
+}
+
+// resolveRepoBoundary walks up from path to the repository that owns it and
+// reports that repository's root. A worktree is owned by its main repo (the
+// gitdir points into <main>/.git/worktrees/<name>), so worktrees roll up to the
+// project body and carry their own name/branch for display. A plain
+// subdirectory (a monorepo's packages/core, a flowlens/backend) resolves to the
+// repo root with no worktree name, so attribution no longer lands on whatever
+// directory the agent happened to cd into.
+// repoBoundaryMemo caches resolveRepoBoundary by directory. The walk is pure
+// filesystem inspection of a path's ancestors, and a refresh resolves the same
+// handful of cwds once per parsed transcript line — tens of thousands of
+// identical walks, which profiled as 54% of total CPU in one snapshot refresh.
+//
+// The TTL is what keeps this honest: the answer changes when a user runs
+// `git init` in an ancestor, so the memo must expire rather than pin the
+// attribution for the life of the process. It is short enough that a new repo
+// is picked up within one refresh cycle.
+var repoBoundaryMemo = struct {
+	sync.Mutex
+	entries map[string]repoBoundaryResult
+}{entries: map[string]repoBoundaryResult{}}
+
+type repoBoundaryResult struct {
+	root, worktree, branch string
+	at                     time.Time
+}
+
+const (
+	repoBoundaryMemoTTL     = 30 * time.Second
+	repoBoundaryMemoMaxSize = 4096
+)
+
+func resolveRepoBoundary(path string) (repoRoot, worktreeName, branchName string) {
+	current := filepath.Clean(strings.TrimSpace(path))
+	if current == "" || current == "." {
+		return "", "", ""
+	}
+	now := time.Now()
+	repoBoundaryMemo.Lock()
+	if hit, ok := repoBoundaryMemo.entries[current]; ok && now.Sub(hit.at) < repoBoundaryMemoTTL {
+		repoBoundaryMemo.Unlock()
+		return hit.root, hit.worktree, hit.branch
+	}
+	repoBoundaryMemo.Unlock()
+
+	root, worktree, branch := walkRepoBoundary(current)
+
+	repoBoundaryMemo.Lock()
+	// Distinct cwds are few, so this only grows under something pathological.
+	// Dropping everything is fine: the memo is an accelerator, not state.
+	if len(repoBoundaryMemo.entries) >= repoBoundaryMemoMaxSize {
+		repoBoundaryMemo.entries = map[string]repoBoundaryResult{}
+	}
+	repoBoundaryMemo.entries[current] = repoBoundaryResult{root: root, worktree: worktree, branch: branch, at: now}
+	repoBoundaryMemo.Unlock()
+	return root, worktree, branch
+}
+
+func walkRepoBoundary(current string) (repoRoot, worktreeName, branchName string) {
+	// A repo nested more than this deep under its own root is not a case worth
+	// paying stat() calls for on every session.
+	for depth := 0; depth < 24; depth++ {
+		if current == string(filepath.Separator) || current == filepath.Dir(current) {
+			return "", "", ""
+		}
+		gitPath := filepath.Join(current, ".git")
+		stat, err := os.Stat(gitPath)
+		if err == nil && stat.IsDir() {
+			return current, "", ""
+		}
+		if err == nil && !stat.IsDir() {
+			if main, name, branch := readGitWorktreeLink(current, gitPath); main != "" {
+				return main, name, branch
+			}
+			// A .git file that is not a worktree link still marks a repo root.
+			return current, "", ""
+		}
+		current = filepath.Dir(current)
+	}
+	return "", "", ""
+}
+
+// readGitWorktreeLink reads a worktree's `.git` link file and resolves the main
+// repository, the worktree's name and its checked-out branch.
+func readGitWorktreeLink(worktreePath, gitFilePath string) (mainRepoPath, worktreeName, branchName string) {
+	data, err := os.ReadFile(gitFilePath)
+	if err != nil {
+		return "", "", ""
+	}
+	content := strings.TrimSpace(string(data))
+	if !strings.HasPrefix(content, "gitdir:") {
+		return "", "", ""
+	}
+	gitdir := strings.TrimSpace(strings.TrimPrefix(content, "gitdir:"))
+	if !filepath.IsAbs(gitdir) {
+		gitdir = filepath.Clean(filepath.Join(worktreePath, gitdir))
+	}
+	const wtMarker = "/.git/worktrees/"
+	idx := strings.Index(gitdir, wtMarker)
+	if idx == -1 {
+		return "", "", ""
+	}
+	mainRepoPath = gitdir[:idx]
+	worktreeName = filepath.Base(gitdir)
+	if headData, err := os.ReadFile(filepath.Join(gitdir, "HEAD")); err == nil {
+		headContent := strings.TrimSpace(string(headData))
+		branchName = strings.TrimPrefix(headContent, "ref: refs/heads/")
+	}
+	return mainRepoPath, worktreeName, branchName
+}
+
+func resolvePathWorktree(path string) (mainRepoPath, worktreeName string) {
+	parts := strings.Split(filepath.Clean(path), string(filepath.Separator))
+	for i, part := range parts {
+		if (part == ".worktrees" || part == "worktrees") && i > 0 && i+1 < len(parts) {
+			mainRepo := strings.Join(parts[:i], string(filepath.Separator))
+			if filepath.IsAbs(path) && !strings.HasPrefix(mainRepo, string(filepath.Separator)) {
+				mainRepo = string(filepath.Separator) + mainRepo
+			}
+			return mainRepo, parts[i+1]
+		}
+		if part == ".claude" && i+2 < len(parts) && parts[i+1] == "worktrees" && i > 0 {
+			mainRepo := strings.Join(parts[:i], string(filepath.Separator))
+			if filepath.IsAbs(path) && !strings.HasPrefix(mainRepo, string(filepath.Separator)) {
+				mainRepo = string(filepath.Separator) + mainRepo
+			}
+			return mainRepo, parts[i+2]
+		}
+	}
+	return "", ""
 }
 
 func configRootUnassignedReason(marker, parent string) string {
@@ -2560,6 +2808,8 @@ func projectAttributionSourceRank(source string) int {
 		return 3
 	case "config_root_parent":
 		return 2
+	case "process_cwd":
+		return 2
 	case "unassigned":
 		return 1
 	default:
@@ -2573,7 +2823,7 @@ func projectAttributionConfidence(source string) string {
 		return "high"
 	case "transcript_path":
 		return "medium"
-	case "config_root_parent", "unassigned":
+	case "config_root_parent", "process_cwd", "unassigned":
 		return "low"
 	default:
 		return "low"
@@ -2594,7 +2844,7 @@ func projectAttributionSourceForProject(project string) string {
 }
 
 func buildProjectAttributionSourceSummary(counts map[string]int) []AttributionSourceCountSnapshot {
-	order := []string{"transcript_project", "transcript_cwd", "transcript_path", "config_root_parent", "unassigned"}
+	order := []string{"transcript_project", "transcript_cwd", "transcript_path", "config_root_parent", "process_cwd", "unassigned"}
 	out := make([]AttributionSourceCountSnapshot, 0, len(order))
 	for _, source := range order {
 		if count := counts[source]; count > 0 {
@@ -2668,6 +2918,17 @@ func uniqueSortedStrings(items []string) []string {
 		out = append(out, item)
 	}
 	sort.Strings(out)
+	return out
+}
+
+func mapKeys(m map[string]struct{}) []string {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
 	return out
 }
 

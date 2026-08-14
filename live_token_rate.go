@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -25,7 +26,7 @@ const (
 	liveTokenRateBaselineReadLimit = 512 * 1024
 	liveTokenRateMaxJSONLineBytes  = 16 * 1024 * 1024
 	liveTokenRateBucketWidth       = time.Second
-	liveTokenRateMaxFiles          = 96
+	liveTokenRateMaxFiles          = 256
 	liveTokenRateMaxMessages       = 2048
 	liveTokenRateFutureSkew        = 5 * time.Second
 	liveTokenRateFingerprintBytes  = 128
@@ -75,6 +76,9 @@ type liveTokenRatePublished struct {
 	LatestEvent   time.Time
 	Buckets       []liveTokenRateEvent
 	Projects      map[string]string
+
+	TrackedFiles  int
+	EligibleFiles int
 }
 
 // liveTokenRateSampler keeps collection baselines private to one background
@@ -94,9 +98,12 @@ type liveTokenRateSampler struct {
 	limitedUntil    time.Time
 	limitedReason   string
 	sessionProjects map[string]string
-	throughputStore *throughputHistoryStore
-	coverageStart   time.Time
-	lastMinuteEnd   time.Time
+	// eligibleFileCount is how many recent transcripts the cap had to choose
+	// from. Tracking fewer than this makes the rate a floor, not an unknown.
+	eligibleFileCount int
+	throughputStore   *throughputHistoryStore
+	coverageStart     time.Time
+	lastMinuteEnd     time.Time
 
 	publishedMu sync.RWMutex
 	published   liveTokenRatePublished
@@ -198,13 +205,49 @@ func liveTokenRateProjectsForBuckets(buckets []liveTokenRateEvent, projects map[
 		if session == "" {
 			continue
 		}
+		if _, done := relevant[session]; done {
+			// One session owns many buckets in a window, and recovery below walks
+			// the filesystem. Resolve each session once.
+			continue
+		}
 		project := strings.TrimSpace(projects[session])
+		if project == "" {
+			// Only sessions with a live process reach the snapshot's project
+			// map. A transcript that is still being written by a process we
+			// could not map is real throughput, so derive its project from the
+			// transcript path rather than bucketing it as unassigned.
+			project = liveTokenRateProjectFromSessionKey(session)
+		}
 		if project == "" {
 			project = liveTokenRateUnassignedProject
 		}
 		relevant[session] = project
 	}
 	return relevant
+}
+
+// liveTokenRateProjectFromSessionKey recovers a project name from a session key
+// (tool\x00path). Claude stores transcripts under an encoded project directory,
+// which already names the project; anything else is attributed the same way a
+// session path is.
+func liveTokenRateProjectFromSessionKey(session string) string {
+	_, path, found := strings.Cut(session, "\x00")
+	if !found || strings.TrimSpace(path) == "" {
+		return ""
+	}
+	if project := extractClaudeProjectFromPath(path); project != "" && project != "unknown" {
+		return project
+	}
+	// Anything else is a transcript store, not a checkout: codex writes
+	// sessions/2026/09/14/rollout-<uuid>.jsonl, whose leaf is a day number that
+	// passes every generic-name check and would fabricate a project called "14"
+	// shared by every unrelated session of that day. Only claim a name when the
+	// path actually sits inside a repository.
+	dir := filepath.Dir(path)
+	if repoRoot, _, _ := resolveRepoBoundary(dir); repoRoot == "" {
+		return ""
+	}
+	return trustedPathProjectName(dir)
 }
 
 func (sampler *liveTokenRateSampler) start(interval time.Duration) {
@@ -418,7 +461,7 @@ func (sampler *liveTokenRateSampler) flushCompletedMinutesLocked(now time.Time) 
 			continue
 		}
 		fact := sampler.minuteFactLocked(minuteStart, minuteEnd)
-		if err := sampler.throughputStore.appendMinute(fact); err != nil {
+		if err := sampler.throughputStore.appendMinute(fact, now); err != nil {
 			return
 		}
 		sampler.lastMinuteEnd = minuteEnd
@@ -428,7 +471,12 @@ func (sampler *liveTokenRateSampler) flushCompletedMinutesLocked(now time.Time) 
 func (sampler *liveTokenRateSampler) minuteFactLocked(minuteStart, minuteEnd time.Time) ThroughputMinuteFact {
 	tokens, _, projects := liveTokenRateWindowBreakdown(
 		sampler.buckets,
-		sampler.sessionProjects,
+		// Recover project names the same way the live sample does. Passing the
+		// raw map here attributed every session without a mapped process to
+		// "unassigned" *in the persisted history*, so the trend chart showed ~80%
+		// unassigned while the live readout showed none — the same tokens, bucketed
+		// two different ways depending on which path wrote them.
+		liveTokenRateProjectsForBuckets(sampler.buckets, sampler.sessionProjects),
 		minuteEnd,
 		throughputMinuteResolution,
 		0,
@@ -454,6 +502,9 @@ func (sampler *liveTokenRateSampler) minuteFactLocked(minuteStart, minuteEnd tim
 		Initialized:       sampler.initialized && !latestSignal.IsZero(),
 		Limited:           limited,
 		UnavailableReason: sampler.limitedReason,
+		Partial:           sampler.eligibleFileCount > len(sampler.files),
+		TrackedFileCount:  len(sampler.files),
+		EligibleFileCount: sampler.eligibleFileCount,
 		TokensInWindow:    tokens,
 		LatestSignal:      latestSignal,
 		LatestEvent:       latestEvent,
@@ -466,6 +517,7 @@ func (sampler *liveTokenRateSampler) minuteFactLocked(minuteStart, minuteEnd tim
 		At:                minuteEnd.Format(time.RFC3339),
 		State:             sample.State,
 		UnavailableReason: sample.UnavailableReason,
+		Coverage:          sample.Coverage,
 	}
 	if sample.OutputTokensPerSecond == nil {
 		return fact
@@ -507,6 +559,9 @@ func (sampler *liveTokenRateSampler) syncEvidenceFilesLocked(ctx context.Context
 	if !indexed.Complete {
 		sampler.markLimitedLocked(now, liveTokenRateUnavailableWatchIncomplete)
 	}
+	// The index is already sorted newest-modified first, so the files that walk
+	// in first are the ones most likely to still be producing tokens.
+	eligible := 0
 	for _, candidate := range indexed.Files {
 		path := candidate.File.Path
 		if candidate.Info == nil || candidate.Info.Size() <= 0 || now.Sub(candidate.Info.ModTime()) > liveTokenRateRecentFileAge {
@@ -515,15 +570,45 @@ func (sampler *liveTokenRateSampler) syncEvidenceFilesLocked(ctx context.Context
 		if _, ok := sampler.adapters.usageDecoder(candidate.File.Tool); !ok {
 			continue
 		}
+		eligible++
 		if _, tracked := sampler.files[path]; tracked {
 			continue
 		}
-		if len(sampler.files) >= liveTokenRateMaxFiles {
-			sampler.markLimitedLocked(now, liveTokenRateUnavailableFileCapacity)
-			break
+		if len(sampler.files) >= liveTokenRateMaxFiles && !sampler.evictColdestFileLocked(candidate.Info.ModTime()) {
+			// Every tracked file is hotter than this candidate, so the cap is
+			// holding the best subset available. Keep sampling and report the
+			// coverage rather than dropping the metric.
+			continue
 		}
 		sampler.files[path] = sampler.rebaselineFile(path, candidate.File.Tool, candidate.Info, now)
 	}
+	sampler.eligibleFileCount = eligible
+}
+
+// evictColdestFileLocked drops the least recently modified tracked file to make
+// room for a hotter one, and reports whether it freed a slot. A file colder than
+// everything already tracked frees nothing — the cap is then already holding the
+// hottest set, so the caller keeps what it has.
+func (sampler *liveTokenRateSampler) evictColdestFileLocked(hotterThan time.Time) bool {
+	coldestPath := ""
+	var coldest time.Time
+	for path, tracked := range sampler.files {
+		if tracked.Info == nil {
+			return sampler.dropTrackedFileLocked(path)
+		}
+		if coldestPath == "" || tracked.Info.ModTime().Before(coldest) {
+			coldestPath, coldest = path, tracked.Info.ModTime()
+		}
+	}
+	if coldestPath == "" || !coldest.Before(hotterThan) {
+		return false
+	}
+	return sampler.dropTrackedFileLocked(coldestPath)
+}
+
+func (sampler *liveTokenRateSampler) dropTrackedFileLocked(path string) bool {
+	delete(sampler.files, path)
+	return true
 }
 
 func (sampler *liveTokenRateSampler) rebaselineFile(path, tool string, info os.FileInfo, now time.Time) liveTokenRateTrackedFile {
@@ -1035,6 +1120,8 @@ func (sampler *liveTokenRateSampler) publishLocked(now time.Time) {
 		LatestEvent:   sampler.latestEvent,
 		Buckets:       append([]liveTokenRateEvent(nil), sampler.buckets...),
 		Projects:      liveTokenRateProjectsForBuckets(sampler.buckets, sampler.sessionProjects),
+		TrackedFiles:  len(sampler.files),
+		EligibleFiles: sampler.eligibleFileCount,
 	}
 	sampler.publishedMu.Lock()
 	sampler.published = published
@@ -1059,6 +1146,9 @@ func (sampler *liveTokenRateSampler) sample(now time.Time) LiveTokenRateSample {
 		Configured:        published.Configured,
 		Initialized:       published.Initialized,
 		Limited:           published.LimitedUntil.After(now),
+		Partial:           published.EligibleFiles > published.TrackedFiles,
+		TrackedFileCount:  published.TrackedFiles,
+		EligibleFileCount: published.EligibleFiles,
 		UnavailableReason: published.LimitedReason,
 		TokensInWindow:    tokens,
 		ActiveSessions:    activeSessions,

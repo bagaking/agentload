@@ -396,7 +396,11 @@ func (o *Observer) scanTranscriptsWithOptions(ctx context.Context, priority []Tr
 		}
 		endsWithNewline := fileEndsWithNewline(candidate.File.Path, candidate.Size)
 		if result.Err != nil {
-			data.CoverageIncomplete = true
+			// One file failing to parse is degraded evidence for that file, not a
+			// gap in the scan's coverage. Raising CoverageIncomplete here would
+			// mark the whole snapshot untrustworthy — and downstream that
+			// suppresses the live sampler — because a single transcript is
+			// malformed. The error is disclosed per file just below.
 			data.Errors = append(data.Errors, fmt.Sprintf("%s: %v", candidate.File.Path, result.Err))
 			// A parse may return a degraded trace alongside its error (for
 			// example codex lane sidecar failures); keep both so the session
@@ -795,6 +799,17 @@ func collectTranscriptCandidatesWithCoverage(ctx context.Context, evidenceIndex 
 	}
 }
 
+// transcriptScanErrorIsGlobal tells a scan-wide abort apart from a single bad
+// file. Only the two markers produced when the scan itself is cut short — an
+// early abort and a cancelled wait — mean the snapshot is incomplete as a whole;
+// a parse failure on one transcript is degraded evidence for that file, and
+// treating it as a global abort would suppress a snapshot that is otherwise
+// entirely valid.
+func transcriptScanErrorIsGlobal(err string) bool {
+	return strings.HasPrefix(err, "transcript scan aborted early") ||
+		strings.HasPrefix(err, "transcript scan wait cancelled")
+}
+
 func fileMayContainEventsAfterCutoff(path string, info os.FileInfo, cutoff time.Time) bool {
 	if cutoff.IsZero() {
 		return true
@@ -1176,7 +1191,19 @@ func processClaudeTraceLine(trace *SessionTrace, line []byte) {
 		jsonStringField(line, "sessionId"),
 		jsonStringField(line, "session_id"),
 	); sid != "" {
-		trace.SessionID = sid
+		if jsonTrueField(line, "isSidechain") {
+			// Claude stamps the PARENT's sessionId on every sidechain line, so
+			// adopting it here collapses every subagent transcript of a session
+			// into the parent's row — a session running ten subagents reported
+			// one. The file name is this thread's only identity; the borrowed id
+			// is the parent link.
+			trace.ParentThreadID = sid
+			trace.ThreadSource = "subagent"
+			trace.RoleHintSource = firstNonEmptyString(trace.RoleHintSource, "claude_sidechain")
+			trace.IndependentlyRun = false
+		} else {
+			trace.SessionID = sid
+		}
 	}
 	if project := firstNonEmptyString(
 		jsonStringField(line, "project"),
@@ -1733,6 +1760,20 @@ func setTraceProjectPath(trace *SessionTrace, path, source string) {
 	if project := trustedPathProjectName(path); project != "" {
 		setTraceProjectName(trace, project, source)
 	}
+	if trace != nil {
+		if _, wt, br := resolveRepoBoundary(path); wt != "" {
+			if trace.Worktree == "" {
+				trace.Worktree = wt
+			}
+			if trace.Branch == "" && br != "" {
+				trace.Branch = br
+			}
+		} else if _, wt := resolvePathWorktree(path); wt != "" {
+			if trace.Worktree == "" {
+				trace.Worktree = wt
+			}
+		}
+	}
 }
 
 func isClaudeActiveType(kind string) bool {
@@ -1880,6 +1921,25 @@ func jsonStringField(line []byte, key string) string {
 	return ""
 }
 
+// jsonTrueField reports whether key is present with the literal value true.
+// The transcript scanners stay on byte scans rather than full unmarshalling,
+// and an absent or false key must read the same: not true.
+func jsonTrueField(line []byte, key string) bool {
+	if len(line) == 0 || key == "" {
+		return false
+	}
+	pattern := []byte(`"` + key + `":`)
+	index := bytes.Index(line, pattern)
+	if index < 0 {
+		return false
+	}
+	value := index + len(pattern)
+	for value < len(line) && isJSONSpace(line[value]) {
+		value++
+	}
+	return bytes.HasPrefix(line[value:], []byte("true"))
+}
+
 func jsonNestedStringField(line []byte, parent, key string) string {
 	if len(line) == 0 || parent == "" || key == "" {
 		return ""
@@ -2013,6 +2073,15 @@ func extractClaudeProjectFromPath(path string) string {
 	for i := 0; i < len(parts)-2; i++ {
 		if parts[i] == ".claude" && i+2 < len(parts) && parts[i+1] == "projects" {
 			encoded := parts[i+2]
+			// A worktree's encoded directory carries the main repo, then the
+			// worktree suffix. The project is the part before that suffix, so a
+			// worktree rolls up to the project body rather than becoming its own.
+			for _, marker := range []string{"--worktrees-", "--claude-worktrees-", "-worktrees-"} {
+				if idx := strings.Index(encoded, marker); idx != -1 {
+					encoded = encoded[:idx]
+					break
+				}
+			}
 			chunks := strings.FieldsFunc(encoded, func(r rune) bool { return r == '-' })
 			if len(chunks) == 0 {
 				return "unknown"

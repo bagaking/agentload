@@ -441,8 +441,8 @@ func TestScanTranscriptsRetriesCachedParseErrorAfterBackoff(t *testing.T) {
 	priority := []TranscriptFile{{Tool: "fault", Path: path}}
 
 	first := observer.scanTranscriptsWithOptions(context.Background(), priority, transcriptScanOptions{})
-	if !first.CoverageIncomplete || calls.Load() != 1 {
-		t.Fatalf("first transient failure was not recorded: calls=%d data=%+v", calls.Load(), first)
+	if first.CoverageIncomplete || len(first.Errors) != 1 || calls.Load() != 1 {
+		t.Fatalf("first transient failure was not retained as degraded evidence: calls=%d data=%+v", calls.Load(), first)
 	}
 
 	observer.mu.Lock()

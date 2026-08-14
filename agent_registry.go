@@ -51,6 +51,25 @@ type codingAgentRegistry struct {
 	byID     map[string]int
 }
 
+// snapshotConfig applies registry-owned roots to the public snapshot shape.
+// Keeping this projection beside the adapter registry prevents every caller
+// that builds a snapshot from growing another vendor switch.
+func (r *codingAgentRegistry) snapshotConfig(base SnapshotConfig, observedRoots map[string][]string) SnapshotConfig {
+	if r == nil {
+		return base
+	}
+	roots := r.roots()
+	for agentID, agentRoots := range observedRoots {
+		if len(agentRoots) > 0 {
+			roots[agentID] = mergeStringSets(nil, agentRoots)
+		}
+	}
+	base.ClaudeRoots = append([]string(nil), roots["claude"]...)
+	base.CodexRoots = append([]string(nil), roots["codex"]...)
+	base.TraeRoots = append([]string(nil), roots["trae"]...)
+	return base
+}
+
 func newCodingAgentRegistry(adapters ...codingAgentAdapter) *codingAgentRegistry {
 	registry := &codingAgentRegistry{byID: make(map[string]int, len(adapters))}
 	for _, adapter := range adapters {
