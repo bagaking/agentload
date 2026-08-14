@@ -69,6 +69,11 @@ func (r *codingAgentRegistry) snapshotConfig(base SnapshotConfig, observedRoots 
 	base.CodexRoots = append([]string(nil), roots["codex"]...)
 	base.TraeRoots = append([]string(nil), roots["trae"]...)
 	base.GrokRoots = append([]string(nil), roots["grok"]...)
+	base.GeminiRoots = append([]string(nil), roots["gemini"]...)
+	base.OpenCodeRoots = append([]string(nil), roots["opencode"]...)
+	base.HermesRoots = append([]string(nil), roots["hermes"]...)
+	base.OpenClawRoots = append([]string(nil), roots["openclaw"]...)
+	base.PiRoots = append([]string(nil), roots["pi"]...)
 	return base
 }
 
@@ -132,26 +137,54 @@ func defaultCodingAgentRegistry(cfg Config) *codingAgentRegistry {
 			},
 		},
 		codingAgentAdapter{
-			ID: "gemini",
+			ID:    "gemini",
+			Roots: cfg.GeminiRoots,
 			Capabilities: agentCapabilities{
-				Process: newGeminiProcessIdentity(),
+				Process:    newGeminiProcessIdentity(),
+				Discovery:  extraTranscriptDiscovery{kind: "gemini"},
+				Transcript: extraTranscriptParser{kind: "gemini"},
+				Usage:      extraOutputUsageDecoder{kind: "gemini"},
 			},
 		},
 		codingAgentAdapter{
-			ID: "opencode",
+			ID:    "opencode",
+			Roots: cfg.OpenCodeRoots,
 			Capabilities: agentCapabilities{
-				Process: newOpenCodeProcessIdentity(),
+				Process:    newOpenCodeProcessIdentity(),
+				Discovery:  extraTranscriptDiscovery{kind: "opencode"},
+				Transcript: extraTranscriptParser{kind: "opencode"},
 			},
 		},
 		codingAgentAdapter{ID: "cursor"},
 		codingAgentAdapter{
-			ID: "hermes",
+			ID:    "hermes",
+			Roots: cfg.HermesRoots,
 			Capabilities: agentCapabilities{
-				Process: newHermesProcessIdentity(),
+				Process:    newHermesProcessIdentity(),
+				Discovery:  extraTranscriptDiscovery{kind: "hermes"},
+				Transcript: extraTranscriptParser{kind: "hermes"},
 			},
 		},
-		codingAgentAdapter{ID: "openclaw"},
-		codingAgentAdapter{ID: "pi"},
+		codingAgentAdapter{
+			ID:    "openclaw",
+			Roots: cfg.OpenClawRoots,
+			Capabilities: agentCapabilities{
+				Process:    newOpenClawProcessIdentity(),
+				Discovery:  extraTranscriptDiscovery{kind: "openclaw"},
+				Transcript: extraTranscriptParser{kind: "openclaw"},
+				Usage:      extraOutputUsageDecoder{kind: "openclaw"},
+			},
+		},
+		codingAgentAdapter{
+			ID:    "pi",
+			Roots: cfg.PiRoots,
+			Capabilities: agentCapabilities{
+				Process:    newPiProcessIdentity(),
+				Discovery:  extraTranscriptDiscovery{kind: "pi"},
+				Transcript: extraTranscriptParser{kind: "pi"},
+				Usage:      extraOutputUsageDecoder{kind: "pi"},
+			},
+		},
 	)
 }
 

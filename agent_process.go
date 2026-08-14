@@ -345,7 +345,9 @@ func newGeminiProcessIdentity() agentProcessIdentity {
 				isGeminiExecutable(command.Script) ||
 				knownPackagePathAgent(command.Script) == "gemini"
 		},
-		display: func(processCommand) string { return "gemini" },
+		display:            func(processCommand) string { return "gemini" },
+		transcriptPath:     func(path string) bool { return isGeminiTranscriptPath(path) },
+		rootFromTranscript: func(path string) string { return configRootFromPath(path, ".gemini") },
 	}
 }
 
@@ -368,6 +370,32 @@ func newHermesProcessIdentity() agentProcessIdentity {
 			return isHermesExecutable(command.ExecutableBase) || command.Module == "hermes_cli.main"
 		},
 		display: func(processCommand) string { return "hermes" },
+	}
+}
+
+func newOpenClawProcessIdentity() agentProcessIdentity {
+	return builtinProcessIdentity{
+		agentID: "openclaw",
+		match: func(command processCommand) bool {
+			base := normalizedExecutableBase(command.ExecutableBase)
+			return base == "openclaw" || base == "open-claw" || base == "penclaw" || normalizedExecutableBase(command.Script) == "openclaw.mjs" || strings.Contains(command.Script, "/node_modules/openclaw/")
+		},
+		display:            func(processCommand) string { return "openclaw" },
+		transcriptPath:     func(path string) bool { return isOpenClawTranscriptPath(path) },
+		rootFromTranscript: func(path string) string { return configRootFromPath(path, ".openclaw") },
+	}
+}
+
+func newPiProcessIdentity() agentProcessIdentity {
+	return builtinProcessIdentity{
+		agentID: "pi",
+		match: func(command processCommand) bool {
+			base := normalizedExecutableBase(command.ExecutableBase)
+			return base == "pi" || strings.Contains(command.Script, "/node_modules/@mariozechner/pi-coding-agent/")
+		},
+		display:            func(processCommand) string { return "pi" },
+		transcriptPath:     func(path string) bool { return isPiTranscriptPath(path) },
+		rootFromTranscript: func(path string) string { return configRootFromPath(path, ".pi") },
 	}
 }
 

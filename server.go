@@ -504,6 +504,11 @@ func sanitizeSnapshotForClient(snapshot Snapshot) Snapshot {
 	snapshot.Config.CodexRoots = []string{}
 	snapshot.Config.TraeRoots = []string{}
 	snapshot.Config.GrokRoots = []string{}
+	snapshot.Config.GeminiRoots = nil
+	snapshot.Config.OpenCodeRoots = nil
+	snapshot.Config.HermesRoots = nil
+	snapshot.Config.OpenClawRoots = nil
+	snapshot.Config.PiRoots = nil
 	snapshot.Config.HistoryFile = ""
 	snapshot.History.StorePath = ""
 	snapshot.History.LastWriteError = sanitizeTextForClient(snapshot.History.LastWriteError)

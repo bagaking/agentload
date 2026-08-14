@@ -46,6 +46,11 @@ type SnapshotConfig struct {
 	CodexRoots           []string `json:"codex_roots"`
 	TraeRoots            []string `json:"trae_roots"`
 	GrokRoots            []string `json:"grok_roots"`
+	GeminiRoots          []string `json:"gemini_roots,omitempty"`
+	OpenCodeRoots        []string `json:"opencode_roots,omitempty"`
+	HermesRoots          []string `json:"hermes_roots,omitempty"`
+	OpenClawRoots        []string `json:"openclaw_roots,omitempty"`
+	PiRoots              []string `json:"pi_roots,omitempty"`
 	ProcessRefreshTarget int      `json:"process_refresh_target_seconds"`
 	HistoryFile          string   `json:"history_file"`
 }

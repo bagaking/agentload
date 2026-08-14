@@ -21,6 +21,11 @@ type Config struct {
 	CodexRoots         []string
 	TraeRoots          []string
 	GrokRoots          []string
+	GeminiRoots        []string
+	OpenCodeRoots      []string
+	HermesRoots        []string
+	OpenClawRoots      []string
+	PiRoots            []string
 }
 
 var selectableRefreshIntervals = []time.Duration{
@@ -44,6 +49,11 @@ func defaultConfig() Config {
 		CodexRoots:         defaultCodexRoots(),
 		TraeRoots:          defaultTraeRoots(),
 		GrokRoots:          defaultGrokRoots(),
+		GeminiRoots:        defaultGeminiRoots(),
+		OpenCodeRoots:      defaultOpenCodeRoots(),
+		HermesRoots:        defaultHermesRoots(),
+		OpenClawRoots:      defaultOpenClawRoots(),
+		PiRoots:            defaultPiRoots(),
 	}
 }
 
@@ -79,6 +89,11 @@ func (c Config) snapshotConfig() SnapshotConfig {
 		CodexRoots:           append([]string(nil), c.CodexRoots...),
 		TraeRoots:            append([]string(nil), c.TraeRoots...),
 		GrokRoots:            append([]string(nil), c.GrokRoots...),
+		GeminiRoots:          append([]string(nil), c.GeminiRoots...),
+		OpenCodeRoots:        append([]string(nil), c.OpenCodeRoots...),
+		HermesRoots:          append([]string(nil), c.HermesRoots...),
+		OpenClawRoots:        append([]string(nil), c.OpenClawRoots...),
+		PiRoots:              append([]string(nil), c.PiRoots...),
 		ProcessRefreshTarget: int(c.RefreshInterval / time.Second),
 		HistoryFile:          c.HistoryFile,
 	}
@@ -122,6 +137,26 @@ func defaultGrokRoots() []string {
 		),
 		defaultHomePath(".grok"),
 	)
+}
+
+func defaultGeminiRoots() []string {
+	return parseRoots(os.Getenv("AGENTLOAD_GEMINI_DIRS"), defaultHomePath(".gemini"))
+}
+
+func defaultOpenCodeRoots() []string {
+	return parseRoots(os.Getenv("AGENTLOAD_OPENCODE_DIRS"), defaultHomePath(filepath.Join(".local", "share", "opencode")))
+}
+
+func defaultHermesRoots() []string {
+	return parseRoots(os.Getenv("AGENTLOAD_HERMES_DIRS"), defaultHomePath(".hermes"))
+}
+
+func defaultOpenClawRoots() []string {
+	return parseRoots(os.Getenv("AGENTLOAD_OPENCLAW_DIRS"), defaultHomePath(".openclaw"))
+}
+
+func defaultPiRoots() []string {
+	return parseRoots(os.Getenv("AGENTLOAD_PI_DIRS"), defaultHomePath(".pi"))
 }
 
 func defaultHistoryFile() string {

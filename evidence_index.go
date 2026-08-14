@@ -586,7 +586,8 @@ func (index *transcriptEvidenceIndex) recordWatchBatch(batch evidenceWatchBatch)
 		if !ok {
 			continue
 		}
-		info, err := os.Stat(path)
+		path = canonicalEvidencePath(file.Path)
+		info, err := agentEvidenceStat(file)
 		mutation := transcriptEvidenceMutation{Deleted: os.IsNotExist(err)}
 		if err == nil && !info.IsDir() {
 			mutation.File = discoveredTranscriptFile{File: file, Info: info}

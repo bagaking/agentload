@@ -67,8 +67,10 @@ func TestCodingAgentUsageDecodersExtractVerifiedOutputShapes(t *testing.T) {
 	if observation, ok := claude.DecodeUsage(inputOnly); ok {
 		t.Fatalf("input-only usage became output throughput: %+v", observation)
 	}
-	if _, ok := registry.usageDecoder("gemini"); ok {
-		t.Fatal("process-only Gemini exposed output usage")
+	if decoder, ok := registry.usageDecoder("gemini"); !ok {
+		t.Fatal("Gemini output usage decoder is unavailable")
+	} else if observation, ok := decoder.DecodeUsage([]byte(`{"id":"gemini-1","timestamp":"2026-08-02T12:00:00Z","role":"assistant","usage":{"output":4}}`)); !ok || observation.OutputTokens != 4 {
+		t.Fatalf("Gemini output usage was not decoded: %+v ok=%t", observation, ok)
 	}
 }
 

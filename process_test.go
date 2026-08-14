@@ -141,8 +141,8 @@ func TestDetectedTool(t *testing.T) {
 		{command: `/usr/bin/python3 local-runner.py --agent hermes`, want: ""},
 		{command: `/usr/bin/python3 -m hermes_cli.helper`, want: ""},
 		{command: `/Applications/Cursor.app/Contents/MacOS/Cursor`, want: ""},
-		{command: `/usr/local/bin/openclaw`, want: ""},
-		{command: `/usr/local/bin/pi`, want: ""},
+		{command: `/usr/local/bin/openclaw`, want: "openclaw"},
+		{command: `/usr/local/bin/pi`, want: "pi"},
 		{command: `/Applications/Codex.app/Contents/MacOS/Codex`, want: "codex"},
 		{command: `codex --prompt codex helper`, want: "codex"},
 		{command: `codex --plugin fixture/Codex.app/Contents/Frameworks/Codex Helper.app/Contents/MacOS/Codex Helper`, want: "codex"},
@@ -207,19 +207,16 @@ func TestRegistryReturnsAdapterOwnedProcessDisplayIdentity(t *testing.T) {
 
 func TestLimitedAdaptersExposeOnlyVerifiedCapabilities(t *testing.T) {
 	registry := defaultCodingAgentRegistry(Config{})
-	for _, agentID := range []string{"gemini", "opencode", "hermes"} {
+	for _, agentID := range []string{"gemini", "opencode", "hermes", "openclaw", "pi"} {
 		index, registered := registry.byID[agentID]
 		if !registered || registry.adapters[index].Capabilities.Process == nil {
 			t.Fatalf("process-verified adapter %s is not registered with process identity", agentID)
 		}
-		if registry.hasDiscovery(agentID) {
-			t.Fatalf("limited adapter %s unexpectedly exposes discovery", agentID)
-		}
-		if registry.hasTranscript(agentID) {
-			t.Fatalf("limited adapter %s unexpectedly exposes transcript parsing", agentID)
+		if !registry.hasDiscovery(agentID) || !registry.hasTranscript(agentID) {
+			t.Fatalf("adapter %s must expose discovery and transcript parsing", agentID)
 		}
 	}
-	for _, agentID := range []string{"cursor", "openclaw", "pi"} {
+	for _, agentID := range []string{"cursor"} {
 		index, registered := registry.byID[agentID]
 		if !registered {
 			t.Fatalf("identity-only adapter %s is not registered", agentID)

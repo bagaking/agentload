@@ -36,12 +36,12 @@ structure while controlling system entropy.
 | Codex / CodexL | verified | verified | verified | full existing parity |
 | Trae / TraeX | verified | verified | verified | full existing parity |
 | Grok | verified | verified | verified | full parity; usage is per-turn, not cumulative |
-| Gemini | verified | unsupported (protobuf-in-SQLite) | unsupported (no token field on disk) | process-only |
-| OpenCode | verified | unsupported | unsupported | process-only |
+| Gemini | verified | verified (JSON/JSONL session files) | verified (per-message output) | transcript + live usage |
+| OpenCode | verified | verified (SQLite or legacy message JSON) | unsupported (database-backed) | all session traces; transcript-only |
 | Cursor | generic host-app evidence only | unsupported (no per-line timestamps) | unsupported (recorded counters are all zero) | identity-only adapter; do not classify the app host as an agent |
-| Hermes | verified | unsupported | unsupported | process-only |
-| OpenClaw | unsupported | unsupported | unsupported | identity-only adapter |
-| Pi | unsupported | unsupported | unsupported | identity-only adapter |
+| Hermes | verified | verified (read-only `state.db`) | unsupported (database-backed) | all session rows from SQLite |
+| OpenClaw | verified | verified (agent session JSONL) | verified (per-message output) | transcript + live usage |
+| Pi | verified | verified (sessions and session-artifacts JSONL) | verified (per-message output) | transcript + live usage |
 
 Registering an agent name is not evidence support. New capabilities require
 real fixtures or an installed-source contract and focused parser/discovery
@@ -54,11 +54,9 @@ tests.
   entry-point and service contract: `hermes`, `hermes-agent`, `hermes-acp`,
   and `python -m hermes_cli.main`. Exact executable or Python module tokens
   match; incidental command arguments and the generic `run_agent` module do not.
-- Hermes transcript support remains off. The verified source persists several
-  semantic families across SQLite, JSON session logs, and gateway JSONL. No
-  single file family currently has an in-repo golden fixture and complete
-  session/project/token mapping, so scanning those stores would overstate
-  evidence coverage.
+- Hermes support reads session rows from `~/.hermes/state.db` in read-only mode.
+  It preserves parent-session role metadata and stored token totals, emitting
+  one `SessionTrace` per database session.
 - Cursor is preserved as generic `.app` ancestry on an already verified coding
   agent process. The Cursor host process itself does not create an agent session
   or throughput source.
@@ -73,12 +71,10 @@ tests.
   conversations. The only populated number, `promptTokenBreakdown.totalUsedTokens`,
   measures current context occupancy rather than consumption; rendering it as
   throughput would be fabrication.
-- Gemini's shipping surface is the Antigravity CLI (`agy`), which stores one
-  SQLite database per conversation with the message body as a protobuf blob
-  (`steps.step_payload`), and whose `steps` schema declares no token column at
-  all. The legacy JSONL path still exists but held a single file on the survey
-  machine. Transcript support therefore requires a protobuf decoder — tracked
-  as a spike, not assumed — and token support is not available at any effort.
+- Gemini CLI support reads the `~/.gemini/tmp/**/chats/session-*` JSON/JSONL
+  files. It derives project paths from message `cwd` and subtracts cached input
+  before publishing input/output/reasoning totals. Its per-message output
+  decoder feeds the existing live sampler.
 - Grok is the one vendor whose on-disk record exceeds the existing parity bar:
   `~/.grok/sessions/<percent-encoded-cwd>/<session-id>/updates.jsonl` timestamps
   every line and records per-turn `inputTokens`/`outputTokens`/`cachedReadTokens`/
@@ -86,10 +82,14 @@ tests.
   counts are per-turn (the output series falls between turns, so reading them as
   cumulative inflates the rate), and every counter is repeated under
   `usage.modelUsage.<model>`, which must not be summed twice.
-- No installed executable or source contract was available for OpenClaw or Pi.
-  Their registry entries therefore carry no process, discovery, transcript, or
-  usage capability. In particular, the generic executable name `pi` must not be
-  matched without stronger provenance.
+- OpenClaw support reads `~/.openclaw/agents/*/sessions/*.jsonl`, with indexed
+  and fallback layouts handled by the same bounded evidence walk. `openclaw`,
+  `open-claw`, and the historical `penclaw` executable spellings normalize to
+  the `openclaw` adapter.
+- Pi support reads both `~/.pi/agent/sessions` and nested
+  `~/.pi/agent/session-artifacts` JSONL. The generic `pi` executable is now an
+  explicit adapter identity because its session layout is verified by parser
+  fixtures; it is not inferred from unrelated command arguments.
 
 ## Discovery Contract
 
@@ -102,6 +102,9 @@ tests.
   cutoff before visiting files.
 - Trae adapters own the dated `sessions` layout and must prune `*.artifacts`
   subtrees before traversal.
+- Gemini, OpenCode, Hermes, OpenClaw, and Pi own their configured local roots;
+  database-backed sources are opened read-only and JSONL sources reuse the
+  Observer's file cache and cutoff coverage.
 - Directory traversal uses standard-library structured APIs and returns exact
   file metadata and surfaced errors. External `fd`, `find`, or shell pipelines
   are performance probes, not production dependencies.
@@ -133,6 +136,9 @@ tests.
 - Claude message dedupe is bounded during insertion with a 2,048-entry LRU;
   repeated updates move one existing entry and do not grow the ordering
   structure.
+- Gemini, OpenClaw, and Pi expose per-message output decoders keyed by the
+  upstream message id. OpenCode and Hermes remain transcript-only for live
+  throughput because their current evidence is SQLite-backed.
 - The live sampler requests the maximum six-hour foreground index coverage on
   startup, then locally selects files modified in its 15-minute live window.
   The watcher starts before the first snapshot, while live polling starts only

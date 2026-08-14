@@ -264,15 +264,23 @@ func TestGrokDiscoveryTakesUpdatesJSONLAndPrunesNonTranscripts(t *testing.T) {
 	}
 }
 
-// cursor and gemini stay registered without evidence capabilities: their
-// on-disk records carry no per-line timestamps (cursor CLI) or no token fields
-// at all (gemini), so claiming transcript or usage support would imply evidence
-// that does not exist. This guards the registry comment's invariant.
+// Cursor remains process-only; the local transcript-backed adapters must expose
+// transcript support even before they gain a live output decoder.
 func TestVendorsWithoutEvidenceDeclareNoTranscriptOrUsageCapability(t *testing.T) {
 	registry := defaultCodingAgentRegistry(defaultConfig())
-	for _, id := range []string{"cursor", "gemini", "opencode", "hermes"} {
+	for _, id := range []string{"gemini", "opencode", "hermes", "openclaw", "pi"} {
+		if !registry.hasTranscript(id) {
+			t.Fatalf("%s must declare transcript support", id)
+		}
+	}
+	for _, id := range []string{"opencode", "hermes"} {
+		if _, ok := registry.usageDecoder(id); ok {
+			t.Fatalf("%s must not declare live usage support for a database-only source", id)
+		}
+	}
+	for _, id := range []string{"cursor"} {
 		if registry.hasTranscript(id) {
-			t.Fatalf("%s must not declare transcript support without timestamped evidence", id)
+			t.Fatalf("%s must not declare transcript support without an adapter", id)
 		}
 		if _, ok := registry.usageDecoder(id); ok {
 			t.Fatalf("%s must not declare usage support without token evidence on disk", id)
