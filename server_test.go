@@ -1051,6 +1051,7 @@ func TestSanitizeTextForClientRedactsPathsInsideStructuredTokens(t *testing.T) {
 		`{"path":"` + path + `"}`,
 		"diagnostic=" + path + ":42:7",
 		"opened " + spacedPath + ": parse failed",
+		path + " and " + spacedPath + " both failed",
 	}
 	for _, raw := range cases {
 		got := sanitizeTextForClient(raw)
@@ -1060,6 +1061,10 @@ func TestSanitizeTextForClientRedactsPathsInsideStructuredTokens(t *testing.T) {
 		if !strings.Contains(got, "session.jsonl") {
 			t.Fatalf("expected basename to remain useful for %q, got %q", raw, got)
 		}
+	}
+	context := sanitizeTextForClient(path + " and " + spacedPath + " both failed")
+	if !strings.Contains(context, " and ") || !strings.Contains(context, " both failed") {
+		t.Fatalf("path sanitization swallowed diagnostic context: %q", context)
 	}
 }
 

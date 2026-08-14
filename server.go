@@ -963,9 +963,25 @@ func embeddedAbsolutePathEnd(text string, start int) int {
 			(colon >= 0 && (slash < 0 || colon < slash)) {
 			return end
 		}
+		if slash < 0 {
+			segment := filepath.Base(filepath.Clean(text[start:end]))
+			if strings.ContainsRune(segment, '.') || isClientPathBoundaryWord(word) {
+				return end
+			}
+		}
 		end = next
 	}
 	return end
+}
+
+func isClientPathBoundaryWord(word string) bool {
+	word = strings.Trim(word, "\"'([{<,;:!?&|])}>")
+	switch strings.ToLower(word) {
+	case "after", "and", "at", "before", "because", "both", "context", "deadline", "denied", "during", "error", "exceeded", "failed", "failure", "for", "from", "in", "is", "not", "now", "open", "opened", "or", "parse", "parsing", "permission", "readable", "scan", "scanning", "then", "to", "while", "with":
+		return true
+	default:
+		return false
+	}
 }
 
 func splitTokenPunctuation(token string) (string, string, string) {
