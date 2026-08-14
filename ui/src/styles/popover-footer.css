@@ -38,6 +38,19 @@ body[data-view="popover"] .footer-refresh {
   cursor: pointer;
 }
 
+/* The refresh glyph reads at rest, not only on hover. Borderless-until-hover
+   made the whole footer look like a status line, and the manual refresh —
+   which used to be the icon+interval pill users aimed at — became invisible
+   to anyone not already hovering it. */
+body[data-view="popover"] .footer-refresh svg {
+  color: var(--fg-muted);
+}
+
+body[data-view="popover"] .footer-refresh:hover svg,
+body[data-view="popover"] .footer-refresh:focus-visible svg {
+  color: var(--accent-hi);
+}
+
 body[data-view="popover"] .footer-refresh .footer-time {
   font: 600 11px/1 var(--font-mono);
   color: var(--console-text-faint);
