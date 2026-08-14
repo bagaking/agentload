@@ -228,3 +228,60 @@ func discoveredPaths(files []discoveredTranscriptFile) map[string]bool {
 func fileName(index int) string {
 	return "irrelevant-" + strconv.Itoa(index) + ".jsonl"
 }
+
+func TestGrokDiscoveryTakesUpdatesJSONLAndPrunesNonTranscripts(t *testing.T) {
+	root := filepath.Join(t.TempDir(), ".grok")
+	session := filepath.Join(root, "sessions", "%2FUsers%2Fdev%2Fproj%2Fagentload", "01a058b6-f632-7102-abc9-6767c9ed332d")
+	recent := time.Now().Add(-time.Hour)
+	transcript := filepath.Join(session, "updates.jsonl")
+	writeDiscoveryFixture(t, transcript, recent)
+	// chat_history.jsonl has no timestamps at all, so it is not evidence; the
+	// pruned subdirectories hold request payloads and terminal logs.
+	writeDiscoveryFixture(t, filepath.Join(session, "chat_history.jsonl"), recent)
+	writeDiscoveryFixture(t, filepath.Join(session, "recap_requests", "updates.jsonl"), recent)
+	writeDiscoveryFixture(t, filepath.Join(session, "terminal", "updates.jsonl"), recent)
+
+	registry := defaultCodingAgentRegistry(Config{GrokRoots: []string{root}})
+	result := registry.discoverTranscripts(context.Background(), recent.Add(-24*time.Hour))
+
+	var found []string
+	for _, file := range result.Files {
+		if file.File.Tool == "grok" {
+			found = append(found, file.File.Path)
+		}
+	}
+	if len(found) != 1 || found[0] != transcript {
+		t.Fatalf("expected only the session updates.jsonl, got %#v", found)
+	}
+
+	if file, ok := registry.transcriptFileForEvidencePath(transcript); !ok || file.Tool != "grok" {
+		t.Fatalf("expected the transcript to classify as grok, got %#v ok=%t", file, ok)
+	}
+	// A nested updates.jsonl is not a session transcript: the layout is exactly
+	// <encoded-cwd>/<session-id>/updates.jsonl.
+	if file, ok := registry.transcriptFileForEvidencePath(filepath.Join(session, "recap_requests", "updates.jsonl")); ok {
+		t.Fatalf("expected nested updates.jsonl to be rejected, got %#v", file)
+	}
+}
+
+// cursor and gemini stay registered without evidence capabilities: their
+// on-disk records carry no per-line timestamps (cursor CLI) or no token fields
+// at all (gemini), so claiming transcript or usage support would imply evidence
+// that does not exist. This guards the registry comment's invariant.
+func TestVendorsWithoutEvidenceDeclareNoTranscriptOrUsageCapability(t *testing.T) {
+	registry := defaultCodingAgentRegistry(defaultConfig())
+	for _, id := range []string{"cursor", "gemini", "opencode", "hermes"} {
+		if registry.hasTranscript(id) {
+			t.Fatalf("%s must not declare transcript support without timestamped evidence", id)
+		}
+		if _, ok := registry.usageDecoder(id); ok {
+			t.Fatalf("%s must not declare usage support without token evidence on disk", id)
+		}
+	}
+	if !registry.hasTranscript("grok") {
+		t.Fatal("grok has timestamped transcripts and must declare transcript support")
+	}
+	if _, ok := registry.usageDecoder("grok"); !ok {
+		t.Fatal("grok records per-turn token usage and must declare usage support")
+	}
+}

@@ -142,6 +142,48 @@ func (traeTranscriptDiscovery) Classify(agentID string, roots []string, path str
 	return TranscriptFile{}, false
 }
 
+// grokTranscriptDiscovery walks ~/.grok/sessions/<percent-encoded-cwd>/<session-id>/.
+// Only updates.jsonl is evidence: it is the sole file carrying a timestamp on
+// every line plus the per-turn usage record. The sibling chat_history.jsonl has
+// no timestamps at all, so adopting it would produce traces the pipeline drops.
+type grokTranscriptDiscovery struct{}
+
+func (grokTranscriptDiscovery) Discover(ctx context.Context, agentID string, roots []string, cutoff time.Time) transcriptDiscoveryResult {
+	result := transcriptDiscoveryResult{}
+	for _, root := range roots {
+		result.merge(walkEvidenceTree(ctx, filepath.Join(root, "sessions"), agentID, cutoff,
+			func(_ string, entry fs.DirEntry) directoryDecision {
+				// recap_requests/ and terminal/ hold per-request payloads and raw
+				// terminal logs, neither of which is a transcript.
+				switch strings.ToLower(entry.Name()) {
+				case "recap_requests", "terminal", "compaction_checkpoints":
+					return pruneDirectory
+				default:
+					return descendDirectory
+				}
+			},
+			func(_ string, entry fs.DirEntry) bool { return entry.Name() == grokTranscriptFileName },
+		))
+	}
+	return result
+}
+
+func (grokTranscriptDiscovery) Classify(agentID string, roots []string, path string) (TranscriptFile, bool) {
+	for _, root := range roots {
+		base := filepath.Join(root, "sessions")
+		relative, ok := relativeEvidencePath(base, path)
+		if !ok || filepath.Base(relative) != grokTranscriptFileName {
+			continue
+		}
+		// <encoded-cwd>/<session-id>/updates.jsonl — exactly two parent segments.
+		if len(strings.Split(relative, string(filepath.Separator))) != 3 {
+			continue
+		}
+		return TranscriptFile{Tool: agentID, Path: filepath.Clean(filepath.Join(base, relative))}, true
+	}
+	return TranscriptFile{}, false
+}
+
 func (r *transcriptDiscoveryResult) merge(other transcriptDiscoveryResult) {
 	r.Files = append(r.Files, other.Files...)
 	r.Errors = append(r.Errors, other.Errors...)

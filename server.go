@@ -503,6 +503,7 @@ func sanitizeSnapshotForClient(snapshot Snapshot) Snapshot {
 	snapshot.Config.ClaudeRoots = []string{}
 	snapshot.Config.CodexRoots = []string{}
 	snapshot.Config.TraeRoots = []string{}
+	snapshot.Config.GrokRoots = []string{}
 	snapshot.Config.HistoryFile = ""
 	snapshot.History.StorePath = ""
 	snapshot.History.LastWriteError = sanitizeTextForClient(snapshot.History.LastWriteError)
@@ -1136,6 +1137,8 @@ func normalizeToolIconName(raw string) string {
 		return "claude"
 	case "opencode", "opencode-ai":
 		return "opencode"
+	case "grok", "grok-cli":
+		return "grok"
 	case "gemini", "gemini-cli", "@google/gemini-cli":
 		return "gemini"
 	default:
@@ -1163,6 +1166,7 @@ var embeddedToolIconFiles = map[string][]string{
 	"claude":   {"ui/tool-icons/claude.svg"},
 	"opencode": {"ui/tool-icons/opencode.svg"},
 	"gemini":   {"ui/tool-icons/gemini.svg"},
+	"grok":     {"ui/tool-icons/grok.svg"},
 }
 
 func resolveToolIconFile(tool string) (string, string, bool) {

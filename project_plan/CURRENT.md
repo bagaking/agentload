@@ -58,6 +58,15 @@ meta:
 - 面性设计铺开至 diagnostics / online-processes / system-resource-inspector / activity-process-trend / system-process；周期选择组件化为 `TrendRangeRail`（居中悬浮 + 滑动高亮）。
 - 修正本文件 §1.2 两处失真表述：本仓库无 CI，相关门禁实为 `go test` + 人工复审。
 
+**2026-09-15 完成**（sprint `M02_S05`，新开）：
+
+- **用户要求接 gemini / cursor / grok**（原话见 PLAN.md §1）。落地前做了三方实机取证，结论是三家证据水平不在一个量级，**按同一档位发布会直接违反「绝不虚构」**，因此范围收敛为「grok 满证据 + cursor/gemini 维持诚实空壳」，已与用户确认。
+- **grok 接成满证据 adapter**：Process / Discovery / Transcript / Usage 四槽全填。实机验证 48/48 transcript 解析成功、0 错误、19 个项目正确归属。
+- **两个语义陷阱由测试锁死**：(1) grok 的 usage 是**逐轮增量而非累计**（实测 output 序列非单调），误判会重演 ccusage #950 的 91x 虚报；蓄意改成 cumulative 的夹具已验证会让测试失败。(2) 每个计数在 `usage.modelUsage.<model>` 下重复出现，不得二次累加——实测单会话 3 轮合计 28393，解析结果精确等于 28393。
+- **cursor / gemini 的不支持是测出来的，不是没看**：cursor CLI transcript 每行只有 `role`/`message` 两键，33 个文件含时间戳或 token 的数量为 **0**；IDE 侧 13990 条消息的 `tokenCount` 全为 0、92 个会话 `usageData` 全空。gemini 实际在用 Antigravity（`agy`），90 个会话是 **protobuf-in-SQLite**，`steps` 表无任何 token 字段。二者 capability 槽保持 nil，并由 `TestVendorsWithoutEvidenceDeclareNoTranscriptOrUsageCapability` 守住。
+- **顺带验证一条安全边界**：grok 的 `-- <prompt>` 形态会把整段用户输入（实测含真实 OAuth token / API key）放进 argv。现有 `sanitizeCommandForClient` 已挡住，未泄漏；已补回归测试锁死。
+- **M02_S04 需改写**：其前提「gemini-cli 是 JSONL」被实测推翻，验收标准须按 protobuf-in-SQLite 现状重写，conformance kit 的第二样本改用 grok。详见 M02_S05 §7。
+
 **当前活跃**：
 
 - **M01 地基**（本轮架构与熵审查修复已落地，发布门已复跑）。
@@ -87,7 +96,8 @@ meta:
 | `M02_S01.evidence_coverage_matrix.md` | Evidence Coverage Matrix（API/UI/docs 同源生成） |
 | `M02_S02.energy_budget_and_module_costs.md` | 自身成本预算：模块开关、成本公示、CI perf gate |
 | `M02_S03.opencode_adapter_full_evidence.md` | vendor wave 1a：opencode 全证据 adapter |
-| `M02_S04.gemini_adapter_conformance_kit.md` | vendor wave 1b：gemini-cli adapter 与 conformance kit |
+| `M02_S04.gemini_adapter_conformance_kit.md` | vendor wave 1b：gemini-cli adapter 与 conformance kit（**前提已被实测推翻，待按 M02_S05 §7 改写**） |
+| `M02_S05.grok_adapter_full_evidence.md` | vendor 实机落地：grok 满证据；cursor/gemini 诚实分级 |
 | `M03_S01.attention_state_engine.md` | 证据化会话 attention states 引擎 |
 | `M03_S02.needs_you_triage_and_tray.md` | needs-you 分诊面、菜单栏 glyph、tray i18n |
 | `M03_S03.one_keystroke_actions.md` | 一次按键动作：跳转/检视/续跑/显式停止 |

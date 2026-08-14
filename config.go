@@ -20,6 +20,7 @@ type Config struct {
 	ClaudeRoots        []string
 	CodexRoots         []string
 	TraeRoots          []string
+	GrokRoots          []string
 }
 
 var selectableRefreshIntervals = []time.Duration{
@@ -42,6 +43,7 @@ func defaultConfig() Config {
 		ClaudeRoots:        defaultClaudeRoots(),
 		CodexRoots:         defaultCodexRoots(),
 		TraeRoots:          defaultTraeRoots(),
+		GrokRoots:          defaultGrokRoots(),
 	}
 }
 
@@ -76,6 +78,7 @@ func (c Config) snapshotConfig() SnapshotConfig {
 		ClaudeRoots:          append([]string(nil), c.ClaudeRoots...),
 		CodexRoots:           append([]string(nil), c.CodexRoots...),
 		TraeRoots:            append([]string(nil), c.TraeRoots...),
+		GrokRoots:            append([]string(nil), c.GrokRoots...),
 		ProcessRefreshTarget: int(c.RefreshInterval / time.Second),
 		HistoryFile:          c.HistoryFile,
 	}
@@ -108,6 +111,16 @@ func defaultTraeRoots() []string {
 			os.Getenv("TRAE_CLI_HOME"),
 		),
 		defaultHomePath(filepath.Join(".trae", "cli")),
+	)
+}
+
+func defaultGrokRoots() []string {
+	return parseRoots(
+		firstNonEmptyString(
+			os.Getenv("AGENTLOAD_GROK_DIRS"),
+			os.Getenv("GROK_HOME"),
+		),
+		defaultHomePath(".grok"),
 	)
 }
 

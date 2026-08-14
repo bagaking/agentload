@@ -67,6 +67,7 @@ func (r *codingAgentRegistry) snapshotConfig(base SnapshotConfig, observedRoots 
 	base.ClaudeRoots = append([]string(nil), roots["claude"]...)
 	base.CodexRoots = append([]string(nil), roots["codex"]...)
 	base.TraeRoots = append([]string(nil), roots["trae"]...)
+	base.GrokRoots = append([]string(nil), roots["grok"]...)
 	return base
 }
 
@@ -117,6 +118,16 @@ func defaultCodingAgentRegistry(cfg Config) *codingAgentRegistry {
 				Discovery:  traeTranscriptDiscovery{},
 				Transcript: newTraeTranscriptParser(),
 				Usage:      newTraeOutputUsageDecoder(),
+			},
+		},
+		codingAgentAdapter{
+			ID:    "grok",
+			Roots: cfg.GrokRoots,
+			Capabilities: agentCapabilities{
+				Process:    newGrokProcessIdentity(),
+				Discovery:  grokTranscriptDiscovery{},
+				Transcript: newGrokTranscriptParser(),
+				Usage:      newGrokOutputUsageDecoder(),
 			},
 		},
 		codingAgentAdapter{

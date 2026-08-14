@@ -35,9 +35,10 @@ structure while controlling system entropy.
 | Claude | verified | verified | verified | full existing parity |
 | Codex / CodexL | verified | verified | verified | full existing parity |
 | Trae / TraeX | verified | verified | verified | full existing parity |
-| Gemini | verified | unsupported | unsupported | process-only |
+| Grok | verified | verified | verified | full parity; usage is per-turn, not cumulative |
+| Gemini | verified | unsupported (protobuf-in-SQLite) | unsupported (no token field on disk) | process-only |
 | OpenCode | verified | unsupported | unsupported | process-only |
-| Cursor | generic host-app evidence only | unsupported | unsupported | identity-only adapter; do not classify the app host as an agent |
+| Cursor | generic host-app evidence only | unsupported (no per-line timestamps) | unsupported (recorded counters are all zero) | identity-only adapter; do not classify the app host as an agent |
 | Hermes | verified | unsupported | unsupported | process-only |
 | OpenClaw | unsupported | unsupported | unsupported | identity-only adapter |
 | Pi | unsupported | unsupported | unsupported | identity-only adapter |
@@ -61,6 +62,30 @@ tests.
 - Cursor is preserved as generic `.app` ancestry on an already verified coding
   agent process. The Cursor host process itself does not create an agent session
   or throughput source.
+- Cursor transcript and usage support stay off for a measured reason, not an
+  unexamined one. Its CLI transcripts
+  (`~/.cursor/projects/<path-encoded>/agent-transcripts/<uuid>/<uuid>.jsonl`)
+  carry exactly two keys per line, `role` and `message`: across all 33 files on
+  the survey machine, zero contained a timestamp or token field. `nonEmptyTrace`
+  drops any trace without event times, so there is nothing to parse. On the IDE
+  side the schema has the fields but not the values — per-message `tokenCount`
+  is zero across all 13990 stored messages and `usageData` is empty for all 92
+  conversations. The only populated number, `promptTokenBreakdown.totalUsedTokens`,
+  measures current context occupancy rather than consumption; rendering it as
+  throughput would be fabrication.
+- Gemini's shipping surface is the Antigravity CLI (`agy`), which stores one
+  SQLite database per conversation with the message body as a protobuf blob
+  (`steps.step_payload`), and whose `steps` schema declares no token column at
+  all. The legacy JSONL path still exists but held a single file on the survey
+  machine. Transcript support therefore requires a protobuf decoder — tracked
+  as a spike, not assumed — and token support is not available at any effort.
+- Grok is the one vendor whose on-disk record exceeds the existing parity bar:
+  `~/.grok/sessions/<percent-encoded-cwd>/<session-id>/updates.jsonl` timestamps
+  every line and records per-turn `inputTokens`/`outputTokens`/`cachedReadTokens`/
+  `reasoningTokens` plus `costUsdTicks`. Two traps are locked by tests: the
+  counts are per-turn (the output series falls between turns, so reading them as
+  cumulative inflates the rate), and every counter is repeated under
+  `usage.modelUsage.<model>`, which must not be summed twice.
 - No installed executable or source contract was available for OpenClaw or Pi.
   Their registry entries therefore carry no process, discovery, transcript, or
   usage capability. In particular, the generic executable name `pi` must not be

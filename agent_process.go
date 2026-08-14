@@ -278,6 +278,24 @@ func newTraeProcessIdentity() agentProcessIdentity {
 	}
 }
 
+func newGrokProcessIdentity() agentProcessIdentity {
+	return builtinProcessIdentity{
+		agentID: "grok",
+		match: func(command processCommand) bool {
+			return isGrokExecutable(command.ExecutableBase) ||
+				isGrokExecutable(command.Script)
+		},
+		display: func(processCommand) string { return "grok" },
+		transcriptPath: func(path string) bool {
+			relative, ok := relativeAfterMarker(path, []string{".grok", "sessions"})
+			return ok && filepath.Base(relative) == grokTranscriptFileName
+		},
+		rootFromTranscript: func(path string) string { return configRootFromPath(path, ".grok") },
+		sessionIDHint:      grokTranscriptSessionID,
+		commandRootPattern: commandRootPattern(".grok"),
+	}
+}
+
 func newGeminiProcessIdentity() agentProcessIdentity {
 	return builtinProcessIdentity{
 		agentID: "gemini",
@@ -332,6 +350,15 @@ func isTraeExecutable(executableBase string) bool {
 func isOpenCodeExecutable(executableBase string) bool {
 	switch normalizedExecutableBase(executableBase) {
 	case "opencode", "opencode-ai":
+		return true
+	default:
+		return false
+	}
+}
+
+func isGrokExecutable(executableBase string) bool {
+	switch normalizedExecutableBase(executableBase) {
+	case "grok", "grok-cli":
 		return true
 	default:
 		return false

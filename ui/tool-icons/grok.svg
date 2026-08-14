@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Grok CLI">
+  <rect x="3" y="3" width="26" height="26" rx="8" fill="#0B0B0D"/>
+  <path d="M11.2 21.6l9.1-9.1" stroke="#F7F7F8" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M13.9 24.3V18.2l6.4-6.4v6.1l-6.4 6.4z" fill="#F7F7F8"/>
+  <path d="M20.6 8.1l-9.4 9.4" stroke="#8B8B93" stroke-width="2.4" stroke-linecap="round"/>
+</svg>

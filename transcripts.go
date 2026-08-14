@@ -1407,6 +1407,78 @@ func processTraeTraceLine(trace *SessionTrace, line []byte) {
 	trace.EventTimes = append(trace.EventTimes, ts)
 }
 
+// newGrokTrace seeds the identity grok encodes into the transcript path: the
+// session directory is the id, and its parent is the percent-encoded working
+// directory. Both are known before a single line is read.
+func newGrokTrace(path string) *SessionTrace {
+	trace := &SessionTrace{
+		Tool:             "grok",
+		Path:             path,
+		SessionID:        grokTranscriptSessionID(path),
+		IndependentlyRun: true,
+	}
+	if workdir := grokWorkdirFromTranscriptPath(path); workdir != "" {
+		setTraceProjectPath(trace, workdir, "transcript_path")
+	}
+	return trace
+}
+
+func parseGrokTrace(path string) (*SessionTrace, error) {
+	trace := newGrokTrace(path)
+	if err := forEachJSONLLine(path, func(line []byte) bool {
+		processGrokTraceLine(trace, line)
+		return true
+	}); err != nil {
+		return nil, err
+	}
+	finalizeTrace(trace)
+	return nonEmptyTrace(trace), nil
+}
+
+func parseGrokTraceTail(file TranscriptFile) (*SessionTrace, error) {
+	trace := newGrokTrace(file.Path)
+	if err := forEachRecentJSONLTailLine(file.Path, func(line []byte) bool {
+		processGrokTraceLine(trace, line)
+		return true
+	}); err != nil {
+		return nil, err
+	}
+	finalizeTrace(trace)
+	return nonEmptyTrace(trace), nil
+}
+
+func parseGrokTraceAppend(file TranscriptFile, base *SessionTrace, offset int64) (*SessionTrace, error) {
+	if err := validateTranscriptAppend(base, offset); err != nil {
+		return nil, err
+	}
+	trace := cloneSessionTrace(base)
+	trace.Tool = "grok"
+	trace.Path = file.Path
+	if err := forEachJSONLLineFromOffset(file.Path, offset, func(line []byte) bool {
+		processGrokTraceLine(trace, line)
+		return true
+	}); err != nil {
+		return nil, err
+	}
+	finalizeTrace(trace)
+	return nonEmptyTrace(trace), nil
+}
+
+// processGrokTraceLine reads one ACP session-update record. The timestamp is an
+// unquoted epoch-second number rather than the RFC3339 string every other
+// vendor writes, and the session id lives under params.
+func processGrokTraceLine(trace *SessionTrace, line []byte) {
+	ts := jsonEpochSecondsField(line, "timestamp")
+	if ts.IsZero() {
+		return
+	}
+	captureTokenUsage(trace, line)
+	if sid := jsonNestedStringField(line, "params", "sessionId"); sid != "" {
+		trace.SessionID = sid
+	}
+	trace.EventTimes = append(trace.EventTimes, ts)
+}
+
 func captureTraceRoleMetadata(trace *SessionTrace, line []byte) {
 	if trace == nil || len(line) == 0 {
 		return
@@ -1563,7 +1635,8 @@ func shouldInspectTokenUsageChild(key string) bool {
 		return true
 	}
 	switch key {
-	case "payload", "message", "response", "result", "metadata", "data", "output", "info":
+	// "params"/"update" reach grok's params.update.usage record.
+	case "payload", "message", "response", "result", "metadata", "data", "output", "info", "params", "update":
 		return true
 	default:
 		return false
@@ -1938,6 +2011,37 @@ func jsonTrueField(line []byte, key string) bool {
 		value++
 	}
 	return bytes.HasPrefix(line[value:], []byte("true"))
+}
+
+// jsonEpochSecondsField reads an unquoted integer field as epoch seconds. Grok
+// stamps every update line with one, where the other vendors write RFC3339
+// strings; a value outside a sane range is treated as absent rather than
+// projected onto 1970 or the far future.
+func jsonEpochSecondsField(line []byte, key string) time.Time {
+	if len(line) == 0 || key == "" {
+		return time.Time{}
+	}
+	pattern := []byte(`"` + key + `":`)
+	index := bytes.Index(line, pattern)
+	if index < 0 {
+		return time.Time{}
+	}
+	value := index + len(pattern)
+	for value < len(line) && isJSONSpace(line[value]) {
+		value++
+	}
+	end := value
+	for end < len(line) && line[end] >= '0' && line[end] <= '9' {
+		end++
+	}
+	if end == value {
+		return time.Time{}
+	}
+	seconds, err := strconv.ParseInt(string(line[value:end]), 10, 64)
+	if err != nil || seconds < 1_000_000_000 || seconds > 100_000_000_000 {
+		return time.Time{}
+	}
+	return time.Unix(seconds, 0).UTC()
 }
 
 func jsonNestedStringField(line []byte, parent, key string) string {

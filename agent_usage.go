@@ -73,6 +73,63 @@ func (codexOutputUsageDecoder) DecodeUsage(line []byte) (liveTokenRateObservatio
 	return liveTokenRateObservation{At: envelope.timestamp(), OutputTokens: output}, true
 }
 
+// grokOutputUsageDecoder reads the usage record grok attaches to each
+// turn_completed update.
+//
+// The counts are PER-TURN, not cumulative: replaying real sessions shows the
+// output series rising and falling (917563 -> 282982 -> 146484) and numTurns
+// differing line to line. Treating them as cumulative — the shape codex uses —
+// would make every turn look like a fresh total and inflate the rate, which is
+// exactly how ccusage shipped its 91x token overcount (#950).
+//
+// A turn_completed carrying no usage object is skipped rather than recorded as
+// zero; 8 of 130 such lines in one sampled session have none, and a zero there
+// would read as a real measurement of no output.
+type grokOutputUsageDecoder struct{}
+
+func newGrokOutputUsageDecoder() agentOutputUsageDecoder {
+	return grokOutputUsageDecoder{}
+}
+
+type grokUsageEnvelope struct {
+	Timestamp int64 `json:"timestamp"`
+	Params    struct {
+		Update struct {
+			PromptID string `json:"prompt_id"`
+			Usage    *struct {
+				OutputTokens optionalTokenCount `json:"outputTokens"`
+			} `json:"usage"`
+		} `json:"update"`
+		SessionID string `json:"sessionId"`
+	} `json:"params"`
+}
+
+func (grokOutputUsageDecoder) DecodeUsage(line []byte) (liveTokenRateObservation, bool) {
+	if !bytes.Contains(line, []byte(`"outputTokens"`)) {
+		return liveTokenRateObservation{}, false
+	}
+	var envelope grokUsageEnvelope
+	if err := json.Unmarshal(line, &envelope); err != nil {
+		return liveTokenRateObservation{}, false
+	}
+	usage := envelope.Params.Update.Usage
+	if usage == nil || !usage.OutputTokens.Set {
+		return liveTokenRateObservation{}, false
+	}
+	observation := liveTokenRateObservation{
+		OutputTokens: usage.OutputTokens.Value,
+	}
+	if envelope.Timestamp > 0 {
+		observation.At = time.Unix(envelope.Timestamp, 0).UTC()
+	}
+	// Each turn reports once, so the prompt id de-duplicates a re-read tail the
+	// same way the claude message id does.
+	if promptID := strings.TrimSpace(envelope.Params.Update.PromptID); promptID != "" {
+		observation.MessageIdentity = strings.TrimSpace(envelope.Params.SessionID) + "\x00" + promptID
+	}
+	return observation, true
+}
+
 type optionalTokenCount struct {
 	Value int64
 	Set   bool

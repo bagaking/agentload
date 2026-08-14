@@ -314,6 +314,7 @@ export function toolDisplayName(toolName?: string): string {
   if (key === "trae" || key === "traex") return "Trae";
   if (key === "opencode" || key === "opencode-ai") return "OpenCode";
   if (key === "gemini" || key === "gemini-cli") return "Gemini";
+  if (key === "grok" || key === "grok-cli") return "Grok";
   return raw;
 }
 
@@ -324,6 +325,7 @@ export function toolIconName(toolName?: string): string {
   if (key === "trae" || key === "traex") return "trae";
   if (key === "opencode" || key === "opencode-ai") return "opencode";
   if (key === "gemini" || key === "gemini-cli") return "gemini";
+  if (key === "grok" || key === "grok-cli") return "grok";
   return "";
 }
 

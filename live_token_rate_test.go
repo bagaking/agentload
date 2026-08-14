@@ -38,6 +38,13 @@ func TestCodingAgentUsageDecodersExtractVerifiedOutputShapes(t *testing.T) {
 			name: "trae cumulative", agent: "trae", output: 31, cumulative: true,
 			line: `{"timestamp":"2026-08-02T12:00:30Z","payload":{"info":{"total_token_usage":{"input_tokens":120,"output_tokens":31}}}}`,
 		},
+		{
+			// Per-turn, NOT cumulative: real sessions show the output series
+			// falling between turns. Flipping this to cumulative would make the
+			// sampler read each turn as a fresh total and inflate the rate.
+			name: "grok per turn", agent: "grok", output: 8007, identity: "01a058b6\x00p1",
+			line: `{"timestamp":1788194990,"method":"_x.ai/session/update","params":{"sessionId":"01a058b6","update":{"sessionUpdate":"turn_completed","prompt_id":"p1","usage":{"inputTokens":442440,"outputTokens":8007,"totalTokens":450447,"costUsdTicks":946549800}}}}`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

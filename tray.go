@@ -1068,6 +1068,8 @@ func capitalizeTool(tool string) string {
 		return "Claude"
 	case "trae":
 		return "Trae"
+	case "grok":
+		return "Grok"
 	default:
 		return tool
 	}
@@ -1120,7 +1122,7 @@ func formatTooltip(snapshot Snapshot, sysRes SystemResourceSnapshot, tps float64
 	var metaLines []string
 
 	var toolParts []string
-	for _, tool := range []string{"codex", "claude", "trae"} {
+	for _, tool := range []string{"codex", "claude", "trae", "grok"} {
 		if m, ok := snapshot.CurrentByTool[tool]; ok && (m.ActiveBurstConcurrency > 0 || m.SessionConcurrency > 0) {
 			toolParts = append(toolParts, fmt.Sprintf("%s (%dA/%dS)", capitalizeTool(tool), m.ActiveBurstConcurrency, m.SessionConcurrency))
 		}

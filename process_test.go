@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -476,5 +477,36 @@ func TestRootsFromLiveProcessesCollectsFileAndCommandRoots(t *testing.T) {
 	}
 	if !slices.Equal(priority, wantPriority) {
 		t.Fatalf("unexpected priority files: %#v", priority)
+	}
+}
+
+func TestGrokProcessIdentityMatchesRealCommandShapes(t *testing.T) {
+	registry := defaultCodingAgentRegistry(defaultConfig())
+	for _, test := range []struct{ name, command, wantID string }{
+		{"resumed session", "grok --resume 01a09abd-a207-7951-b8d2-37fa38e850a1 --permission-mode bypassPermissions", "grok"},
+		{"inline prompt", "grok --permission-mode bypassPermissions -- write me a test", "grok"},
+		// A claude harness pointed at a gemini model is still claude. Bucketing
+		// it by the --model value would be a confident wrong attribution.
+		{"claude running a gemini model", "/Users/dev/.local/bin/claude --model gemini-3.8-flash-high --effort max", "claude"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if id, _ := registry.detectProcess(test.command); id != test.wantID {
+				t.Fatalf("expected %q, got %q", test.wantID, id)
+			}
+		})
+	}
+}
+
+// Grok puts the whole user prompt after "--" in argv, and real prompts have
+// been observed carrying API keys and OAuth tokens. The snapshot must never
+// carry them.
+func TestGrokInlinePromptArgvIsRedactedBeforeReachingClients(t *testing.T) {
+	const secret = "sk-ant-SECRET123"
+	sanitized := sanitizeCommandForClient("grok --permission-mode bypassPermissions -- here is my key " + secret + " use it")
+	if strings.Contains(sanitized, secret) {
+		t.Fatalf("argv secret survived sanitization: %q", sanitized)
+	}
+	if !strings.HasPrefix(sanitized, "grok") {
+		t.Fatalf("expected the agent to stay identifiable, got %q", sanitized)
 	}
 }

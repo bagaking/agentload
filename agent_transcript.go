@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -82,8 +83,46 @@ func newTraeTranscriptParser() agentTranscriptParser {
 	}
 }
 
+func newGrokTranscriptParser() agentTranscriptParser {
+	return builtinTranscriptParser{
+		parse: func(file TranscriptFile) (*SessionTrace, error) {
+			return parseGrokTrace(file.Path)
+		},
+		parseTail: parseGrokTraceTail,
+		append:    parseGrokTraceAppend,
+		canAppend: func(TranscriptFile) bool { return true },
+	}
+}
+
 func isCodexLaneTranscript(path string) bool {
 	return strings.Contains(filepath.Clean(path), string(filepath.Separator)+".codexl"+string(filepath.Separator))
+}
+
+// grokTranscriptFileName is the only grok session file with a timestamp on
+// every line; see grokTranscriptDiscovery.
+const grokTranscriptFileName = "updates.jsonl"
+
+// grokTranscriptSessionID reads the session from the directory holding
+// updates.jsonl. Unlike the other vendors the file stem is a constant, so the
+// parent directory is this session's only identity.
+func grokTranscriptSessionID(path string) string {
+	if filepath.Base(path) != grokTranscriptFileName {
+		return genericTranscriptSessionID(path)
+	}
+	return filepath.Base(filepath.Dir(path))
+}
+
+// grokWorkdirFromTranscriptPath recovers the working directory grok encoded
+// into the session's grandparent directory name ("%2FUsers%2Ffoo" -> "/Users/foo").
+// A name that does not decode is not guessed at — the caller then leaves the
+// project unassigned rather than inventing one from a partial path.
+func grokWorkdirFromTranscriptPath(path string) string {
+	encoded := filepath.Base(filepath.Dir(filepath.Dir(path)))
+	decoded, err := url.PathUnescape(encoded)
+	if err != nil || !strings.HasPrefix(decoded, "/") {
+		return ""
+	}
+	return filepath.Clean(decoded)
 }
 
 func genericTranscriptSessionID(path string) string {

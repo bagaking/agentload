@@ -729,3 +729,79 @@ func TestParseClaudeTraceStillAdoptsSessionIDOnMainTranscripts(t *testing.T) {
 		t.Fatalf("main transcript must not gain a parent link, got %q", trace.ParentThreadID)
 	}
 }
+
+// grokSessionFixture lays out the real on-disk shape: the working directory is
+// percent-encoded as the grandparent directory and the session id is the parent.
+func grokSessionFixture(t *testing.T, encodedCwd, sessionID, body string) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), ".grok", "sessions", encodedCwd, sessionID)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir grok session: %v", err)
+	}
+	path := filepath.Join(dir, "updates.jsonl")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+	return path
+}
+
+func TestParseGrokTraceReadsEpochSecondsAndPathEncodedProject(t *testing.T) {
+	body := `{"timestamp":1788194984,"method":"_x.ai/session/update","params":{"sessionId":"01a058b6-f632-7102-abc9-6767c9ed332d","update":{"sessionUpdate":"agent_message_chunk"}}}` + "\n" +
+		`{"timestamp":1788194990,"method":"_x.ai/session/update","params":{"sessionId":"01a058b6-f632-7102-abc9-6767c9ed332d","update":{"sessionUpdate":"turn_completed","prompt_id":"p1","usage":{"outputTokens":8007}}}}` + "\n"
+	path := grokSessionFixture(t, "%2FUsers%2Fdev%2Fproj%2Fagentload", "01a058b6-f632-7102-abc9-6767c9ed332d", body)
+
+	trace, err := parseGrokTrace(path)
+	if err != nil {
+		t.Fatalf("parseGrokTrace: %v", err)
+	}
+	if trace == nil {
+		t.Fatalf("expected trace")
+	}
+	if trace.SessionID != "01a058b6-f632-7102-abc9-6767c9ed332d" {
+		t.Fatalf("expected session id from params, got %q", trace.SessionID)
+	}
+	if trace.Project != "agentload" {
+		t.Fatalf("expected project decoded from the path-encoded cwd, got %q", trace.Project)
+	}
+	if len(trace.EventTimes) != 2 {
+		t.Fatalf("expected both epoch-second lines to count as events, got %d", len(trace.EventTimes))
+	}
+	if got := trace.FirstEvent.UTC().Format(time.RFC3339); got != "2026-08-31T16:49:44Z" {
+		t.Fatalf("expected epoch seconds decoded to UTC, got %s", got)
+	}
+}
+
+// A line without a usable epoch timestamp must not become an event; the
+// pipeline drops traces with no EventTimes, so a bogus zero time would invent
+// activity at 1970 instead.
+func TestParseGrokTraceSkipsLinesWithoutEpochTimestamp(t *testing.T) {
+	body := `{"method":"_x.ai/session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"agent_message_chunk"}}}` + "\n" +
+		`{"timestamp":0,"params":{"sessionId":"s1","update":{"sessionUpdate":"agent_message_chunk"}}}` + "\n"
+	path := grokSessionFixture(t, "%2FUsers%2Fdev%2Fproj%2Fagentload", "s1", body)
+
+	trace, err := parseGrokTrace(path)
+	if err != nil {
+		t.Fatalf("parseGrokTrace: %v", err)
+	}
+	if trace != nil {
+		t.Fatalf("expected no trace from timestamp-less lines, got %#v", trace)
+	}
+}
+
+// An un-decodable directory name must leave the project unassigned rather than
+// guessing one out of the raw encoded string (OPINIONS D-008).
+func TestParseGrokTraceLeavesProjectUnassignedWhenPathIsNotEncodedCwd(t *testing.T) {
+	body := `{"timestamp":1788194984,"params":{"sessionId":"s1","update":{"sessionUpdate":"agent_message_chunk"}}}` + "\n"
+	path := grokSessionFixture(t, "not-an-encoded-path", "s1", body)
+
+	trace, err := parseGrokTrace(path)
+	if err != nil {
+		t.Fatalf("parseGrokTrace: %v", err)
+	}
+	if trace == nil {
+		t.Fatalf("expected trace")
+	}
+	if trace.Project != "" {
+		t.Fatalf("expected unassigned project for an undecodable directory, got %q", trace.Project)
+	}
+}
