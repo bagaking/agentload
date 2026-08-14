@@ -14,7 +14,7 @@ import {
   type ThroughputTrendSeries,
   type TrendWindow,
 } from "./types";
-import { toolDisplayName, toolIconName } from "../lib/activityModel";
+import { toolDisplayName } from "../lib/activityModel";
 import { ActivityProcessTrend } from "./ActivityProcessTrend";
 import { ThroughputRiver } from "./ThroughputRiver";
 import { TrendRangeRail, activeTrendRanges, trendWindowForRange } from "./TrendRangeRail";
@@ -25,7 +25,21 @@ export type TrendSnapshot = {
   throughput_trends?: TrendSet;
   project_heatmaps?: ProjectHeatmapSet;
   project_focus?: ProjectHeatmapActivity[];
+  current?: TrendCurrentMetrics;
+  historic_peaks?: { today?: { active_burst_concurrency?: TrendPeakPoint } };
 };
+
+// The live counts the activity hero reads. These are a different evidence
+// family from the trend windows -- measured at the snapshot instant rather than
+// swept from spans -- which is exactly why the hero can answer "right now"
+// while the chart's right edge honestly stops at the last measurable bucket.
+type TrendCurrentMetrics = {
+  pid_concurrency?: number;
+  session_concurrency?: number;
+  active_burst_concurrency?: number;
+};
+
+type TrendPeakPoint = { value?: number; at?: string };
 
 type ProjectHeatmapActivity = {
   project?: string;
@@ -183,7 +197,8 @@ export function TrendSuite({
                     runtime={runtimeSummary}
                     focusedLane={focusedLane}
                     compact={compact}
-                    setFocusedLane={setFocusedLane}
+                    live={snapshot.current}
+                    peakToday={snapshot.historic_peaks?.today?.active_burst_concurrency}
                     setTrendSelection={setTrendSelection}
                   />
                   <ProjectHeatmap t={t} window={projectHeatmap} projectActivity={projectActivity} compact={compact} />
@@ -215,7 +230,8 @@ export function TrendSuite({
                     runtime={runtimeSummary}
                     focusedLane={focusedLane}
                     compact={compact}
-                    setFocusedLane={setFocusedLane}
+                    live={snapshot.current}
+                    peakToday={snapshot.historic_peaks?.today?.active_burst_concurrency}
                     setTrendSelection={setTrendSelection}
                   />
                 ) : null}
@@ -405,7 +421,8 @@ function ActivityProcessLane({
   runtime,
   focusedLane,
   compact,
-  setFocusedLane,
+  live,
+  peakToday,
   setTrendSelection,
 }: {
   t: Translate;
@@ -413,7 +430,8 @@ function ActivityProcessLane({
   runtime?: TrendLaneSummary;
   focusedLane: TrendLane;
   compact: boolean;
-  setFocusedLane: (lane: TrendLane) => void;
+  live?: TrendCurrentMetrics;
+  peakToday?: TrendPeakPoint;
   setTrendSelection: React.Dispatch<React.SetStateAction<Record<TrendLane, string | undefined>>>;
 }) {
   const historySelected = history?.selected;
@@ -425,14 +443,6 @@ function ActivityProcessLane({
     sessions: history?.data.length ?? 0,
     processes: runtime?.data.length ?? 0,
   });
-  const selectHistory = useCallback(() => {
-    setFocusedLane("history");
-    if (historySelected?.at) setTrendSelection((current) => ({ ...current, history: historySelected.at }));
-  }, [historySelected?.at, setFocusedLane, setTrendSelection]);
-  const selectRuntime = useCallback(() => {
-    setFocusedLane("runtime");
-    if (runtimeSelected?.at) setTrendSelection((current) => ({ ...current, runtime: runtimeSelected.at }));
-  }, [runtimeSelected?.at, setFocusedLane, setTrendSelection]);
   const selectChartPoints = useCallback(({ historyAt, runtimeAt }: { historyAt?: string; runtimeAt?: string }) => {
     setTrendSelection((current) => ({
       ...current,
@@ -442,49 +452,7 @@ function ActivityProcessLane({
   }, [setTrendSelection]);
   return (
     <article className={`trend-lane activity-process ${focusedLane !== "throughput" ? "is-focused" : ""}`}>
-      <div className="trend-lane-head activity-process-head">
-        {!compact ? (
-          <div className="trend-lane-title">
-            <span className="trend-kicker" tabIndex={0} title={`${range} · ${sampleMeta}`}>{t("activityProcessLane")}</span>
-          </div>
-        ) : null}
-        <div className="activity-process-legend" role="group" aria-label={t("selectedValues")}>
-          <button
-            aria-pressed={focusedLane === "history"}
-            className="active"
-            data-focus-key={focusKey("trend-legend", "active", historySelected?.at || "")}
-            disabled={!historySelected}
-            title={historySelected?.at ? formatDateTime(historySelected.at) : t("unavailable")}
-            type="button"
-            onClick={selectHistory}
-          >
-            <i aria-hidden="true" /><span>{t("trendActiveSessions")}</span><strong>{trendMetricValue(t, historySelected?.value)}</strong>
-          </button>
-          <button
-            aria-pressed={focusedLane === "history"}
-            className="sessions"
-            data-focus-key={focusKey("trend-legend", "sessions", historySelected?.at || "")}
-            disabled={!historySelected}
-            title={historySelected?.at ? formatDateTime(historySelected.at) : t("unavailable")}
-            type="button"
-            onClick={selectHistory}
-          >
-            <i aria-hidden="true" /><span>{t("metricKnownSessions")}</span><strong>{trendMetricValue(t, historySelected ? trendContextSessionValue(historySelected.point) ?? undefined : undefined)}</strong>
-          </button>
-          <button
-            aria-pressed={focusedLane === "runtime"}
-            className="processes"
-            data-focus-key={focusKey("trend-legend", "processes", runtimeSelected?.at || "")}
-            disabled={!runtimeSelected}
-            title={runtimeSelected?.at ? formatDateTime(runtimeSelected.at) : t("unavailable")}
-            type="button"
-            onClick={selectRuntime}
-          >
-            <i aria-hidden="true" /><span>{t("trendVisiblePids")}</span><strong>{trendMetricValue(t, runtimeSelected?.value)}</strong>
-          </button>
-        </div>
-      </div>
-      {compact && focusedLane === "runtime" ? <TrendRuntimeDrilldown t={t} summary={runtime} /> : null}
+      <ActivityLiveHero t={t} live={live} peakToday={peakToday} runtime={runtime} compact={compact} meta={compact ? undefined : `${range} · ${sampleMeta}`} />
       {(history?.data.length ?? 0) + (runtime?.data.length ?? 0) > 0 ? (
         <ActivityProcessTrend
           t={t}
@@ -502,6 +470,80 @@ function ActivityProcessLane({
         <section className="empty-inline"><Gauge size={18} /><span>{t("noTrend")}</span></section>
       )}
     </article>
+  );
+}
+
+// The hero answers "how loaded am I right now" from snapshot.current, which is
+// measured at the observation instant. That is a different evidence family from
+// the chart below it -- the chart sweeps spans onto a grid and honestly stops
+// one bucket short of now -- so the two are labelled separately and never
+// reconciled into one number.
+function ActivityLiveHero({
+  t,
+  live,
+  peakToday,
+  runtime,
+  compact,
+  meta,
+}: {
+  t: Translate;
+  live?: TrendCurrentMetrics;
+  peakToday?: TrendPeakPoint;
+  runtime?: TrendLaneSummary;
+  compact: boolean;
+  meta?: string;
+}) {
+  const activeNow = typeof live?.active_burst_concurrency === "number" && Number.isFinite(live.active_burst_concurrency)
+    ? live.active_burst_concurrency
+    : undefined;
+  const knownNow = typeof live?.session_concurrency === "number" && Number.isFinite(live.session_concurrency)
+    ? live.session_concurrency
+    : undefined;
+  const pidsNow = typeof live?.pid_concurrency === "number" && Number.isFinite(live.pid_concurrency)
+    ? live.pid_concurrency
+    : undefined;
+  const peak = typeof peakToday?.value === "number" && Number.isFinite(peakToday.value) ? peakToday.value : undefined;
+  // The newest runtime sample already carries a per-tool split. Showing it here
+  // keeps it visible instead of hiding it behind a legend click.
+  const latestRuntime = runtime?.points[runtime.points.length - 1];
+  const tools = [...(latestRuntime?.runtime_process_summary ?? [])]
+    .filter((item) => (item.pid_count ?? 0) > 0)
+    .sort((a, b) => (b.pid_count ?? 0) - (a.pid_count ?? 0))
+    .slice(0, compact ? 4 : 6);
+  return (
+    <header className="activity-hero">
+      <div className="activity-hero-head">
+        <div className="activity-hero-figure">
+          <strong>{trendMetricValue(t, activeNow)}</strong>
+          <span>{t("trendActiveSessions")}</span>
+        </div>
+        <dl className="activity-hero-rail" aria-label={t("selectedValues")}>
+          <div>
+            <dt>{t("metricKnownSessions")}</dt>
+            <dd>{trendMetricValue(t, knownNow)}</dd>
+          </div>
+          <div>
+            <dt>{t("trendVisiblePids")}</dt>
+            <dd>{trendMetricValue(t, pidsNow)}</dd>
+          </div>
+          <div>
+            <dt>{t("activityPeakToday")}</dt>
+            <dd title={peakToday?.at ? formatDateTime(peakToday.at) : undefined}>{trendMetricValue(t, peak)}</dd>
+          </div>
+        </dl>
+      </div>
+      {tools.length ? (
+        <div className="activity-hero-tools" aria-label={t("codingAgents")}>
+          {tools.map((item, index) => (
+            <span className={`tool-${index % 4}`} key={item.key || item.tool || `tool-${index}`}>
+              <b>{toolDisplayName(item.display_name || item.tool || item.key)}</b>
+              <strong>{trendMetricValue(t, item.pid_count)}</strong>
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {meta ? <p className="activity-hero-meta">{meta}</p> : null}
+    </header>
   );
 }
 
@@ -638,116 +680,6 @@ function ThroughputLaneView({
   );
 }
 
-function TrendRuntimeDrilldown({ t, summary }: { t: Translate; summary?: TrendLaneSummary }) {
-  const datum = summary?.selected;
-  if (!summary || summary.lane !== "runtime" || !datum) return null;
-  const point = datum.point;
-  const total = Math.max(0, datum.value);
-  const { mode, parts } = runtimeDrilldownParts(t, point, total);
-  return (
-    <aside className="trend-runtime-drilldown" aria-label={t("processPressure")}>
-      <div className="trend-runtime-drilldown-head">
-        <span>{mode}</span>
-      </div>
-      <div className="trend-runtime-drilldown-meter" aria-hidden="true">
-        {parts.map((part) => (
-          <i className={part.tone} key={part.key} style={{ width: `${clampNumber(part.pct, 0, 100)}%` }} />
-        ))}
-      </div>
-      <div className="trend-runtime-drilldown-parts">
-        {parts.map((part) => (
-          <span className={part.tone} key={part.key}>
-            <TrendDrilldownMark part={part} />
-            <b>{part.label}</b>
-            <strong>{trendMetricValue(t, part.value)}</strong>
-          </span>
-        ))}
-      </div>
-    </aside>
-  );
-}
-
-type TrendDrilldownPart = {
-  key: string;
-  tone: string;
-  label: string;
-  value: number;
-  pct: number;
-  tool?: string;
-};
-
-function runtimeDrilldownParts(t: Translate, point: TrendPoint, total: number): { mode: string; parts: TrendDrilldownPart[] } {
-  const scale = Math.max(total, 1);
-  const toolItems = [...(point.runtime_process_summary ?? [])]
-    .filter((item) => (item.pid_count ?? 0) > 0)
-    .sort((a, b) => (b.pid_count ?? 0) - (a.pid_count ?? 0));
-  if (toolItems.length) {
-    return {
-      mode: t("codingAgents"),
-      parts: compactTrendParts(toolItems.map((item, index) => ({
-        key: item.key || item.tool || `tool-${index}`,
-        tone: `tool-${index % 4}`,
-        label: toolDisplayName(item.display_name || item.tool || item.key),
-        value: item.pid_count ?? 0,
-        pct: ((item.pid_count ?? 0) / scale) * 100,
-        tool: item.tool || item.key,
-      })), scale),
-    };
-  }
-  const hostItems = [...(point.host_app_process_summary ?? [])]
-    .filter((item) => (item.pid_count ?? 0) > 0)
-    .sort((a, b) => (b.pid_count ?? 0) - (a.pid_count ?? 0));
-  if (hostItems.length) {
-    return {
-      mode: t("hostProcesses"),
-      parts: compactTrendParts(hostItems.map((item, index) => ({
-        key: item.key || item.name || `host-${index}`,
-        tone: `host-${index % 4}`,
-        label: item.name || t("hostUnknown"),
-        value: item.pid_count ?? 0,
-        pct: ((item.pid_count ?? 0) / scale) * 100,
-      })), scale),
-    };
-  }
-  const mapped = trendMappedProcessCount(point);
-  const unmatched = trendUnmappedProcessCount(point);
-  const explained = Math.max(0, (mapped ?? 0) + (unmatched ?? 0));
-  const unknown = Math.max(0, total - explained);
-  return {
-    mode: t("processComposition"),
-    parts: [
-      { key: "mapped", tone: "mapped", label: t("mapped"), value: mapped ?? 0, pct: mapped !== null ? (mapped / scale) * 100 : 0 },
-      { key: "unmatched", tone: "unmatched", label: t("unmatched"), value: unmatched ?? 0, pct: unmatched !== null ? (unmatched / scale) * 100 : 0 },
-      ...(unknown > 0 ? [{ key: "unknown", tone: "unknown", label: t("unknown"), value: unknown, pct: (unknown / scale) * 100 }] : []),
-    ],
-  };
-}
-
-function compactTrendParts(parts: TrendDrilldownPart[], scale: number): TrendDrilldownPart[] {
-  if (parts.length <= 3) return parts;
-  const visible = parts.slice(0, 2);
-  const rest = parts.slice(2);
-  const restValue = rest.reduce((sum, item) => sum + item.value, 0);
-  return [
-    ...visible,
-    {
-      key: "other",
-      tone: "other",
-      label: `+${rest.length}`,
-      value: restValue,
-      pct: (restValue / Math.max(scale, 1)) * 100,
-    },
-  ];
-}
-
-function TrendDrilldownMark({ part }: { part: TrendDrilldownPart }) {
-  const icon = toolIconName(part.tool);
-  if (icon) {
-    return <img alt="" aria-hidden="true" src={`/api/tool-icon/${icon}`} />;
-  }
-  return <i aria-hidden="true">{part.label.slice(0, 1).toUpperCase()}</i>;
-}
-
 function TrendSelectionInspector({ t, summary, compact }: { t: Translate; summary?: TrendLaneSummary; compact: boolean }) {
   const detailsId = React.useId();
   const [expanded, setExpanded] = useState(false);
@@ -853,7 +785,7 @@ function trendLaneSummary(lane: TrendLane, title: string, trendWindow: TrendWind
     trendWindow,
     points,
     data,
-    selected: selectedTrendDatum(data, selectedAt, lane),
+    selected: selectedTrendDatum(data, selectedAt),
     throughputSeries,
   };
 }
@@ -877,11 +809,16 @@ function throughputSeriesWindow(window: TrendWindow | undefined, series: Through
   };
 }
 
-function selectedTrendDatum(data: TrendSignalDatum[], selectedAt: string | undefined, lane: TrendLane): TrendSignalDatum | undefined {
+function selectedTrendDatum(data: TrendSignalDatum[], selectedAt: string | undefined): TrendSignalDatum | undefined {
   const selected = data.find((datum) => datum.at === selectedAt);
   if (selected) return selected;
-  if (lane === "throughput") return data[data.length - 1];
-  return [...data].reverse().find((datum) => datum.value > 0) ?? data[data.length - 1];
+  // Every lane defaults to the last sampled datum -- the same one the chart
+  // draws at its right edge. The history lane used to scan backwards for the
+  // last value > 0, which existed only to skip the fabricated zero the backend
+  // reported at the observation instant; with that instant now left unsampled,
+  // the scan would just hide genuinely idle buckets and make the readout
+  // disagree with the chart.
+  return data[data.length - 1];
 }
 
 function sampledPoints(window: TrendWindow | undefined, sampledKey: "transcript_sampled" | "runtime_sampled" | "throughput_sampled"): TrendPoint[] {
@@ -992,25 +929,6 @@ function trendSelectedReadout(t: Translate, lane: TrendLane, datum: TrendSignalD
   return `${trendMetricValue(t, datum.value)} / ${trendMappingCoverageValue(point) !== null ? formatPct(trendMappingCoverageValue(point) ?? undefined) : t("unavailable")}`;
 }
 
-function trendSelectedReadoutParts(t: Translate, lane: TrendLane, datum: TrendSignalDatum): Array<{ label: string; value: string; role: "primary" | "context" }> {
-  const point = datum.point;
-  if (lane === "history") {
-    return [
-      { label: t("trendReadoutFresh"), value: trendMetricValue(t, datum.value), role: "primary" },
-      { label: t("trendReadoutSessions"), value: trendMetricValue(t, trendContextSessionValue(point) ?? undefined), role: "context" },
-    ];
-  }
-  if (lane === "throughput") {
-    return [
-      { label: t("tokenRateUnit"), value: formatTokenRate(trendOutputThroughputValue(point)), role: "primary" },
-      { label: t("trendReadoutContributors"), value: trendMetricValue(t, trendOutputThroughputActiveSessions(point) ?? undefined), role: "context" },
-    ];
-  }
-  return [
-    { label: t("trendReadoutProcesses"), value: trendMetricValue(t, datum.value), role: "primary" },
-    { label: t("trendReadoutMatched"), value: trendMappingCoverageValue(point) !== null ? formatPct(trendMappingCoverageValue(point) ?? undefined) : t("unavailable"), role: "context" },
-  ];
-}
 
 function trendContextMetrics(t: Translate, window?: TrendWindow): Array<{ label: string; value: string }> {
   const granularity = typeof window?.granularity_seconds === "number" && window.granularity_seconds > 0 ? formatAge(window.granularity_seconds, t) : t("unavailable");

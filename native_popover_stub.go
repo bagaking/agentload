@@ -9,4 +9,3 @@ func nativePopoverHide()                             {}
 func nativePopoverSupported() bool                   { return false }
 func nativeStatusBoxUpdate(statusBoxPayload)         {}
 func nativeStatusBoxSupported() bool                 { return false }
-

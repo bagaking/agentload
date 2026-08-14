@@ -130,7 +130,11 @@ export function ActivityProcessTrend({
         borderVisible: false,
         scaleMargins: { top: 0.12, bottom: 0.12 },
       },
-      leftPriceScale: { visible: false, borderVisible: false },
+      leftPriceScale: {
+        visible: false,
+        borderVisible: false,
+        scaleMargins: { top: 0.12, bottom: 0.12 },
+      },
       timeScale: {
         borderVisible: false,
         timeVisible: true,
@@ -150,9 +154,12 @@ export function ActivityProcessTrend({
       handleScroll: false,
       handleScale: false,
     });
+    // Concurrency is a step function: a count holds until the next sample
+    // changes it. A curve drew smooth intermediate values that were never
+    // measured, which is the interpolation the metric-semantics contract bans.
     const active = chart.addSeries(AreaSeries, {
       lineColor: colorWithAlpha(activeColor, 0.96),
-      lineType: LineType.Curved,
+      lineType: LineType.WithSteps,
       lineWidth: 2,
       topColor: colorWithAlpha(activeColor, 0.22),
       bottomColor: colorWithAlpha(bg, 0),
@@ -164,7 +171,7 @@ export function ActivityProcessTrend({
     const sessions = chart.addSeries(LineSeries, {
       color: colorWithAlpha(sessionColor, 0.92),
       lineStyle: LineStyle.Dashed,
-      lineType: LineType.Curved,
+      lineType: LineType.WithSteps,
       lineWidth: 2,
       priceLineVisible: false,
       lastValueVisible: false,
@@ -174,12 +181,19 @@ export function ActivityProcessTrend({
     const processes = chart.addSeries(LineSeries, {
       color: colorWithAlpha(processColor, 0.9),
       lineStyle: LineStyle.Solid,
-      lineType: LineType.Curved,
+      lineType: LineType.WithSteps,
       lineWidth: 2,
       priceLineVisible: false,
       lastValueVisible: false,
       crosshairMarkerVisible: true,
       crosshairMarkerRadius: 3,
+      // Visible PIDs run far larger and far flatter than the two session
+      // series (measured: 7D pids 28-106 against burst 0-10), so on a shared
+      // scale the flattest series owned the axis and the informative ones were
+      // squashed into the bottom tenth. Its own scale lets each family use the
+      // full height. Both scales stay unlabelled: these are different evidence
+      // families and their heights were never comparable anyway.
+      priceScaleId: "left",
     });
     const refs = { active, sessions, processes };
 

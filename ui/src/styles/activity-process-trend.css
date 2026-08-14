@@ -2,95 +2,135 @@
   grid-column: span 2;
 }
 
-.activity-process-head {
-  align-items: start;
-}
+/* The lane opens with a live hero instead of three legend buttons. The buttons
+   restated the three numbers the chart already plotted; the hero instead answers
+   "how loaded am I right now" from snapshot.current -- a measured instant, a
+   different evidence family from the swept-span chart below it, which is why it
+   carries its own labels and is never reconciled with the chart's right edge. */
 
-.activity-process-head .trend-lane-title {
-  flex: 0 1 auto;
-}
-
-.activity-process-legend {
+.activity-hero {
   display: flex;
-  align-items: stretch;
-  justify-content: flex-end;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 0 8px;
+}
+
+.activity-hero-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
   min-width: 0;
-  gap: 4px;
-  overflow: hidden;
-  border-left: 0;
 }
 
-.activity-process-legend button {
-  display: grid;
-  grid-template-columns: 7px auto auto;
-  align-items: center;
-  gap: 4px;
+.activity-hero-figure {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
   min-width: 0;
-  min-height: 28px;
-  padding: 3px 8px;
-  border: 0;
-  border-radius: 0;
-  color: var(--fg-faint);
-  background: transparent;
-  cursor: pointer;
 }
 
-/* Legend chips read as their own plates, so the dividing rail between them is
-   gone — the gap does that work. */
-.activity-process-legend button + button {
-  border-left: 0;
+.activity-hero-figure strong {
+  color: var(--ok);
+  font-family: var(--font-mono);
+  font-size: 30px;
+  font-weight: 880;
+  font-variant-numeric: tabular-nums;
+  line-height: .9;
 }
 
-.activity-process-legend button:disabled {
-  cursor: default;
-  opacity: .42;
-}
-
-.activity-process-legend button:focus-visible,
-.activity-process-legend button:hover:not(:disabled),
-.activity-process-legend button[aria-pressed="true"] {
-  outline: none;
-  background: color-mix(in srgb, currentColor 5%, transparent);
-}
-
-.activity-process-legend i {
-  width: 7px;
-  height: 7px;
-  border: 1px solid currentColor;
-  border-radius: 50%;
-  background: currentColor;
-  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 10%, transparent);
-}
-
-.activity-process-legend span {
+.activity-hero-figure span {
   overflow: hidden;
-  color: color-mix(in srgb, currentColor 74%, var(--fg-faint));
-  font-size: 11px;
+  color: var(--fg-muted);
+  font-size: 11.5px;
   font-weight: 760;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-hero-rail {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin: 0;
+  min-width: 0;
+}
+
+.activity-hero-rail div {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 0;
+}
+
+.activity-hero-rail dt {
+  overflow: hidden;
+  color: var(--fg-faint);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .02em;
   line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.activity-process-legend strong {
-  color: currentColor;
+.activity-hero-rail dd {
+  margin: 0;
+  color: var(--fg);
   font-family: var(--font-mono);
-  font-size: 13px;
-  font-weight: 880;
+  font-size: 14px;
+  font-weight: 820;
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 
-.activity-process-legend .active {
-  color: var(--ok);
+/* The per-tool split already rides on every runtime sample; it used to be
+   hidden behind a legend click, so it is simply shown. */
+.activity-hero-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
 }
 
-.activity-process-legend .sessions {
-  color: var(--accent-hi);
+.activity-hero-tools span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 3px 7px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--console-line-soft) 46%, transparent);
 }
 
-.activity-process-legend .processes {
-  color: var(--run);
+.activity-hero-tools b {
+  color: var(--fg-muted);
+  font-size: 10.5px;
+  font-weight: 760;
+  line-height: 1;
+}
+
+.activity-hero-tools strong {
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 860;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.activity-hero-tools .tool-0 { color: var(--ok); }
+.activity-hero-tools .tool-1 { color: var(--accent-hi); }
+.activity-hero-tools .tool-2 { color: var(--run); }
+.activity-hero-tools .tool-3 { color: var(--warn); }
+
+.activity-hero-meta {
+  margin: 0;
+  color: var(--console-text-faint);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1;
 }
 
 .activity-process-chart {
@@ -288,39 +328,12 @@ body[data-view="popover"] .trend-suite.compact .trend-lane.activity-process {
   padding: 0;
 }
 
-body[data-view="popover"] .trend-suite.compact .trend-lane.activity-process .activity-process-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+body[data-view="popover"] .trend-suite.compact .activity-hero {
   padding: 2px 0 6px 0;
-  border: 0;
 }
 
-body[data-view="popover"] .trend-suite.compact .activity-process-legend {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: 0;
-  padding: 0;
-  background: transparent;
-}
-
-body[data-view="popover"] .trend-suite.compact .activity-process-legend button {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 5px;
-  padding: 3px 8px;
-  background: color-mix(in srgb, var(--console-material-2) 52%, transparent);
-  border: 0;
-  border-radius: 7px;
-}
-
-body[data-view="popover"] .activity-process-legend span {
-  font-size: 11px;
-}
-
-body[data-view="popover"] .activity-process-legend strong {
-  font-size: 14px;
+body[data-view="popover"] .trend-suite.compact .activity-hero-figure strong {
+  font-size: 26px;
 }
 
 body[data-view="popover"] .trend-suite.compact .activity-process-chart {
@@ -350,19 +363,9 @@ body[data-view="popover"] .trend-suite.compact .project-heatmap-map {
     grid-column: auto;
   }
 
-  .activity-process-head {
-    display: grid;
-  }
-
-  .activity-process-legend {
-    justify-content: stretch;
-    border-top: 0;
-    border-left: 0;
-  }
-
-  .activity-process-legend button {
-    flex: 1 1 0;
-    justify-content: center;
+  /* Narrow: the hero's figure and rail stack rather than fight for one line. */
+  .activity-hero-head {
+    flex-wrap: wrap;
   }
 }
 
@@ -371,19 +374,6 @@ body[data-view="popover"] .trend-suite.compact .project-heatmap-map {
   body[data-view="dashboard"] .trend-lane.throughput .trend-chart {
     height: 140px;
     min-height: 140px;
-  }
-
-  .activity-process-legend button {
-    grid-template-columns: 6px minmax(0, 1fr) auto;
-    padding-inline: 5px;
-  }
-
-  .activity-process-legend span {
-    font-size: 10px;
-  }
-
-  .activity-process-tooltip small {
-    display: none;
   }
 
   .activity-process-tooltip span {

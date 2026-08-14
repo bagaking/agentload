@@ -77,4 +77,3 @@ func nativeStatusBoxUpdate(payload statusBoxPayload) {
 func nativeStatusBoxSupported() bool {
 	return C.agentLoadStatusBoxIsAvailable() != 0
 }
-

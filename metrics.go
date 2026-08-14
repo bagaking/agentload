@@ -247,6 +247,16 @@ func buildTranscriptTrendWindows(data *TranscriptData, now time.Time, sourceLook
 			point := TrendPoint{
 				At: at.Format(time.RFC3339),
 			}
+			// The terminal grid point sits exactly at `now`, and a span ends at
+			// its last transcript event, which is always strictly earlier. So no
+			// span can overlap that instant and the sweep reports 0 -- not
+			// "nothing was running" but "nothing is measurable here". Leaving it
+			// unsampled omits the fields on the wire, which is what the UI
+			// already renders as a gap; claiming 0 was the fabrication.
+			if index == len(pointsAt)-1 {
+				window.Points = append(window.Points, point)
+				continue
+			}
 			if hasTranscriptEvidence && !at.Before(actualSourceFrom) {
 				point.ActiveBurstConcurrency = activeBurst[index]
 				point.HasActiveBurst = true

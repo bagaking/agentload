@@ -177,6 +177,48 @@ func TestBuildTranscriptTrendWindowsUsesActualEvidenceStart(t *testing.T) {
 	}
 }
 
+func TestBuildTranscriptTrendWindowsLeavesObservationInstantUnsampled(t *testing.T) {
+	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
+	// Nineteen sessions that are all still running. On disk a live session's
+	// span ends at its last transcript event, so every end is strictly before
+	// now -- which is exactly why the instant `now` cannot be measured.
+	spans := make([]Interval, 0, 19)
+	for i := 0; i < 19; i++ {
+		spans = append(spans, Interval{
+			Start: now.Add(-3 * time.Hour),
+			End:   now.Add(-time.Duration(5+i*25) * time.Second),
+		})
+	}
+	data := &TranscriptData{SessionSpans: spans, BurstSpans: spans}
+
+	for _, window := range buildTranscriptTrendWindows(data, now, 7*24*time.Hour).Windows {
+		points := window.Points
+		last := points[len(points)-1]
+		if last.At != now.Format(time.RFC3339) {
+			t.Fatalf("%s: expected the final point to sit at the observation instant, got %q", window.Range, last.At)
+		}
+		// Claiming a number here would report "nothing was running" for a
+		// machine with nineteen live sessions. Report nothing instead.
+		if last.TranscriptSampled || last.HasActiveBurst || last.HasSessionConcurrency {
+			t.Fatalf("%s: expected the observation instant to stay unsampled, got %+v", window.Range, last)
+		}
+		if last.SessionConcurrency != 0 || last.ActiveBurstConcurrency != 0 {
+			t.Fatalf("%s: expected no concurrency values at the observation instant, got %+v", window.Range, last)
+		}
+	}
+
+	// The bucket before it still has to carry the real count, otherwise the
+	// chart would end on a gap with nothing behind it.
+	oneDay := requireTrendWindow(t, buildTranscriptTrendWindows(data, now, 7*24*time.Hour), "1D")
+	previous := oneDay.Points[len(oneDay.Points)-2]
+	if !previous.TranscriptSampled {
+		t.Fatalf("expected the bucket before the observation instant to be sampled, got %+v", previous)
+	}
+	if previous.SessionConcurrency != 19 {
+		t.Fatalf("expected the bucket before the observation instant to report 19 open sessions, got %d", previous.SessionConcurrency)
+	}
+}
+
 func TestBuildTranscriptTrendWindowsMarksSampledMetricPresence(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
 	evidenceStart := now.Add(-24 * time.Hour)
@@ -419,8 +461,12 @@ func TestBuildTranscriptTrendWindowsUsesEvidenceAtConfiguredSourceStart(t *testi
 	if !sevenDay.HistoryComplete {
 		t.Fatalf("expected 7D window to be complete when evidence starts at configured source start")
 	}
-	if countTrendPoints(sevenDay.Points, func(point TrendPoint) bool { return point.TranscriptSampled }) != len(sevenDay.Points) {
-		t.Fatalf("expected every 7D bucket to be transcript-sampled")
+	// Every bucket is covered by evidence except the terminal one: that point
+	// sits at the observation instant, which no span can overlap, so
+	// buildTranscriptTrendWindows leaves it unsampled rather than reporting 0.
+	// See TestBuildTranscriptTrendWindowsLeavesObservationInstantUnsampled.
+	if countTrendPoints(sevenDay.Points, func(point TrendPoint) bool { return point.TranscriptSampled }) != len(sevenDay.Points)-1 {
+		t.Fatalf("expected every 7D bucket before the observation instant to be transcript-sampled")
 	}
 
 	if fifteenDay.HistoryComplete {
