@@ -78,6 +78,7 @@ func (watcher *darwinEvidenceWatcher) Stop() {
 }
 
 func (watcher *darwinEvidenceWatcher) run(stream *fsevents.EventStream, paths []string) {
+	defer recoverBackgroundPanic("darwin evidence watcher")
 	defer close(watcher.done)
 	defer close(watcher.events)
 	defer func() { stream.Stop() }()

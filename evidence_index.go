@@ -104,6 +104,7 @@ func (index *transcriptEvidenceIndex) start() {
 		return
 	}
 	go func() {
+		defer recoverBackgroundPanic("transcript evidence index watcher")
 		defer close(done)
 		for {
 			select {

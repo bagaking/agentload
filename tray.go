@@ -107,6 +107,7 @@ func (a *trayApp) run() error {
 	a.observer.evidenceIndex.start()
 	a.lifecycle.startHeartbeat(a.stopCh, lifecycleHeartbeatInterval)
 	go func() {
+		defer recoverBackgroundPanic("http server")
 		if err := a.server.Serve(a.listener); err != nil && err != http.ErrServerClosed {
 			a.logger.Printf("http server failed: %v", err)
 		}
@@ -143,8 +144,14 @@ func (a *trayApp) onReady() {
 		systray.SetTooltip("Agent Load: native popover unavailable, click opens dashboard")
 	}
 
-	go a.handleMenuClicks()
-	go a.refreshLoop()
+	go func() {
+		defer recoverBackgroundPanic("tray menu clicks")
+		a.handleMenuClicks()
+	}()
+	go func() {
+		defer recoverBackgroundPanic("tray refresh loop")
+		a.refreshLoop()
+	}()
 }
 
 func (a *trayApp) onExit() {

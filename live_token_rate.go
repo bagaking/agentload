@@ -214,6 +214,7 @@ func (sampler *liveTokenRateSampler) start(interval time.Duration) {
 
 	go func() {
 		defer close(done)
+		defer recoverBackgroundPanic("live token rate sampler")
 		sampler.poll(time.Now())
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
@@ -682,30 +683,73 @@ func liveTokenRateEnsureMessageState(tracked *liveTokenRateTrackedFile) {
 	if tracked.MessageUsage == nil {
 		tracked.MessageUsage = map[string]*liveTokenRateMessageUsage{}
 	}
-	if tracked.MessageOrder == nil {
-		tracked.MessageOrder = list.New()
-	}
 	if len(tracked.MessageUsage) == 0 {
+		tracked.MessageOrder = list.New()
 		return
 	}
-	if tracked.MessageOrder.Len() == 0 {
-		for identity, usage := range tracked.MessageUsage {
-			if identity == "" || usage == nil {
-				delete(tracked.MessageUsage, identity)
-				continue
-			}
-			usage.order = tracked.MessageOrder.PushBack(identity)
+	if tracked.MessageOrder == nil {
+		liveTokenRateRebuildMessageOrder(tracked)
+		return
+	}
+	if liveTokenRateRepairMessageOrder(tracked) {
+		return
+	}
+	liveTokenRateRebuildMessageOrder(tracked)
+}
+
+func liveTokenRateRepairMessageOrder(tracked *liveTokenRateTrackedFile) bool {
+	if tracked == nil || tracked.MessageOrder == nil {
+		return false
+	}
+	seen := make(map[string]struct{}, len(tracked.MessageUsage))
+	count := 0
+	for element := tracked.MessageOrder.Front(); element != nil; element = element.Next() {
+		identity, _ := element.Value.(string)
+		usage := tracked.MessageUsage[identity]
+		if identity == "" || usage == nil {
+			return false
 		}
+		if _, ok := seen[identity]; ok {
+			return false
+		}
+		seen[identity] = struct{}{}
+		usage.order = element
+		count++
+	}
+	return count == len(tracked.MessageUsage)
+}
+
+func liveTokenRateRebuildMessageOrder(tracked *liveTokenRateTrackedFile) {
+	if tracked == nil {
 		return
 	}
+	type entry struct {
+		identity string
+		usage    *liveTokenRateMessageUsage
+	}
+	entries := make([]entry, 0, len(tracked.MessageUsage))
 	for identity, usage := range tracked.MessageUsage {
 		if identity == "" || usage == nil {
 			delete(tracked.MessageUsage, identity)
 			continue
 		}
-		if usage.order == nil {
-			usage.order = tracked.MessageOrder.PushBack(identity)
+		usage.order = nil
+		entries = append(entries, entry{identity: identity, usage: usage})
+	}
+	sort.SliceStable(entries, func(i, j int) bool {
+		left := entries[i].usage.LastSeen
+		right := entries[j].usage.LastSeen
+		if left.IsZero() != right.IsZero() {
+			return left.IsZero()
 		}
+		if left.Equal(right) {
+			return entries[i].identity < entries[j].identity
+		}
+		return left.Before(right)
+	})
+	tracked.MessageOrder = list.New()
+	for _, entry := range entries {
+		entry.usage.order = tracked.MessageOrder.PushBack(entry.identity)
 	}
 }
 
@@ -740,6 +784,9 @@ func liveTokenRateForgetOldestMessage(tracked *liveTokenRateTrackedFile) {
 	}
 	identity, _ := element.Value.(string)
 	tracked.MessageOrder.Remove(element)
+	if usage := tracked.MessageUsage[identity]; usage != nil {
+		usage.order = nil
+	}
 	delete(tracked.MessageUsage, identity)
 }
 

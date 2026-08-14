@@ -239,6 +239,7 @@ func (l *lifecycleLog) startHeartbeat(stop <-chan struct{}, interval time.Durati
 		interval = lifecycleHeartbeatInterval
 	}
 	go func() {
+		defer recoverBackgroundPanic("lifecycle heartbeat")
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {

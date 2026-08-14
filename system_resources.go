@@ -67,6 +67,7 @@ func startSystemResourceSampler(interval time.Duration) {
 	generation := s.generation
 	s.Unlock()
 	go func() {
+		defer recoverBackgroundPanic("system resource sampler")
 		storeBackgroundSystemResourceSample(generation, sampleSystemResourcesNow())
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()

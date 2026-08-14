@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"container/list"
 	"context"
 	"fmt"
 	"math"
@@ -258,6 +259,35 @@ func TestLiveTokenRateMessageDedupeRepairsFullMapWithMissingOrder(t *testing.T) 
 	}
 	if tracked.MessageUsage["session-a\x00new-message"] == nil {
 		t.Fatalf("new message was not retained after order repair")
+	}
+}
+
+func TestLiveTokenRateMessageDedupeRebuildsInconsistentOrder(t *testing.T) {
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	tracked := liveTokenRateTrackedFile{
+		MessageUsage: map[string]*liveTokenRateMessageUsage{
+			"session-a\x00old-message": {Output: 5, LastSeen: now.Add(-time.Minute)},
+			"session-a\x00new-message": {Output: 8, LastSeen: now},
+		},
+		MessageOrder: list.New(),
+	}
+	tracked.MessageOrder.PushBack("stale-message")
+	tracked.MessageOrder.PushBack("session-a\x00new-message")
+
+	if delta := liveTokenRateMessageDelta(&tracked, "session-a\x00new-message", 11, now); delta != 3 {
+		t.Fatalf("new message delta with inconsistent order = %d, want 3", delta)
+	}
+	if tracked.MessageOrder == nil || tracked.MessageOrder.Len() != 2 {
+		t.Fatalf("unexpected rebuilt order length: %v", tracked.MessageOrder)
+	}
+	if front := tracked.MessageOrder.Front(); front == nil || front.Value != "session-a\x00old-message" {
+		t.Fatalf("expected oldest message first after rebuild, got %v", front)
+	}
+	if back := tracked.MessageOrder.Back(); back == nil || back.Value != "session-a\x00new-message" {
+		t.Fatalf("expected newest message last after rebuild, got %v", back)
+	}
+	if tracked.MessageUsage["session-a\x00old-message"].order == nil || tracked.MessageUsage["session-a\x00new-message"].order == nil {
+		t.Fatalf("rebuilt order did not restore usage pointers: %+v", tracked.MessageUsage)
 	}
 }
 

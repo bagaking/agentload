@@ -419,6 +419,7 @@ func parseTranscriptCandidates(ctx context.Context, adapters *codingAgentRegistr
 	for i := 0; i < workerCount; i++ {
 		wg.Add(1)
 		go func() {
+			defer recoverBackgroundPanic("transcript parser worker")
 			defer wg.Done()
 			for item := range jobs {
 				if err := ctx.Err(); err != nil {
@@ -481,6 +482,7 @@ func parseAppendTranscriptCandidates(ctx context.Context, adapters *codingAgentR
 	for i := 0; i < workerCount; i++ {
 		wg.Add(1)
 		go func() {
+			defer recoverBackgroundPanic("transcript append worker")
 			defer wg.Done()
 			for item := range jobs {
 				if err := ctx.Err(); err != nil {
