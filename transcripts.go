@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -70,6 +71,7 @@ type fileTraceCache struct {
 	Size            int64
 	EndsWithNewline bool
 	Trace           *SessionTrace
+	Traces          []*SessionTrace
 	Err             string
 	RetryAt         time.Time
 }
@@ -354,7 +356,7 @@ func (o *Observer) scanTranscriptsWithOptions(ctx context.Context, priority []Tr
 			}
 			cached, ok := o.fileCache[candidate.File.Path]
 			switch {
-			case !ok:
+			case !ok || isAgentDatabase(candidate.File):
 				toParse = append(toParse, candidate)
 				continue
 			case cached.Size == candidate.Size && cached.ModTime.Equal(candidate.ModTime):
@@ -365,6 +367,11 @@ func (o *Observer) scanTranscriptsWithOptions(ctx context.Context, priority []Tr
 					}
 					data.CoverageIncomplete = true
 					data.Errors = append(data.Errors, fmt.Sprintf("%s: %s", candidate.File.Path, cached.Err))
+				}
+				if len(cached.Traces) > 0 {
+					insertSessionTraces(data, cached.Traces)
+					data.ParsedFiles++
+					continue
 				}
 				if cached.Trace == nil || len(cached.Trace.EventTimes) == 0 {
 					continue
@@ -422,6 +429,7 @@ func (o *Observer) scanTranscriptsWithOptions(ctx context.Context, priority []Tr
 				Size:            candidate.Size,
 				EndsWithNewline: endsWithNewline,
 				Trace:           cloneSessionTrace(result.Trace),
+				Traces:          cloneSessionTraces(result.Traces),
 				Err:             result.Err.Error(),
 				RetryAt:         time.Now().Add(transcriptParseErrorRetryInterval),
 			}
@@ -431,7 +439,13 @@ func (o *Observer) scanTranscriptsWithOptions(ctx context.Context, priority []Tr
 				Size:            candidate.Size,
 				EndsWithNewline: endsWithNewline,
 				Trace:           cloneSessionTrace(result.Trace),
+				Traces:          cloneSessionTraces(result.Traces),
 			}
+		}
+		if len(result.Traces) > 0 {
+			insertSessionTraces(data, result.Traces)
+			data.ParsedFiles++
+			continue
 		}
 		if result.Trace == nil || len(result.Trace.EventTimes) == 0 {
 			continue
@@ -546,6 +560,7 @@ func durationSinceCutoff(cutoff time.Time) time.Duration {
 type transcriptParseResult struct {
 	Candidate transcriptCandidate
 	Trace     *SessionTrace
+	Traces    []*SessionTrace
 	Err       error
 }
 
@@ -598,6 +613,12 @@ func parseTranscriptCandidate(ctx context.Context, adapters *codingAgentRegistry
 	parser, ok := adapters.transcriptParser(candidate.File.Tool)
 	if !ok {
 		result.Err = fmt.Errorf("%s transcript parser is unavailable", candidate.File.Tool)
+		return result
+	}
+	if multi, ok := parser.(interface {
+		ParseSessions(context.Context, TranscriptFile) ([]*SessionTrace, error)
+	}); ok {
+		result.Traces, result.Err = multi.ParseSessions(ctx, candidate.File)
 		return result
 	}
 	if candidate.TailParse {
@@ -769,7 +790,7 @@ func collectTranscriptCandidatesWithCoverage(ctx context.Context, evidenceIndex 
 				tailParse = info.ModTime().Before(foregroundCutoff)
 			case info.ModTime().Before(foregroundCutoff):
 				deferred = true
-			case !fileMayContainEventsAfterCutoff(file.Path, info, foregroundCutoff):
+			case !isAgentDatabase(file) && !fileMayContainEventsAfterCutoff(file.Path, info, foregroundCutoff):
 				deferred = true
 			default:
 				tailParse = true
@@ -1864,17 +1885,51 @@ func setTraceProjectName(trace *SessionTrace, project, source string) {
 	trace.ProjectSource = source
 }
 
+// localPathFromFileURL turns a file:// cwd into the plain path the rest of
+// attribution expects. Codex emits tool-payload cwds as file:// URLs, and the
+// whole-line cwd scan picks those up alongside the plain session_meta one. Left
+// as-is, the scheme makes every os.Stat in the repo-boundary walk miss, so a
+// git worktree never rolls up to its main repo and the worktree directory name
+// becomes a project of its own. Anything that is not a file URL is returned
+// untouched — relative fixtures and percent-encoded vendor paths must keep
+// flowing through unchanged.
+func localPathFromFileURL(path string) string {
+	trimmed := strings.TrimSpace(path)
+	if !strings.HasPrefix(strings.ToLower(trimmed), "file:") {
+		return path
+	}
+	parsed, err := url.Parse(trimmed)
+	// A file URL names a local path only with an empty or localhost host;
+	// file://server/share is a remote UNC path this process cannot resolve.
+	if err != nil || parsed.Path == "" || (parsed.Host != "" && !strings.EqualFold(parsed.Host, "localhost")) {
+		return path
+	}
+	return parsed.Path
+}
+
 func setTraceProjectPath(trace *SessionTrace, path, source string) {
-	if project := trustedPathProjectName(path); project != "" {
-		setTraceProjectName(trace, project, source)
+	path = localPathFromFileURL(path)
+	repoRoot, worktree, branch := resolveRepoBoundary(path)
+	// An agent that mktemp'd a sandbox mid-session (audit checkout, extracted
+	// archive) and cd'd into it reports that scratch path as another cwd. Both
+	// cwds arrive at the same rank, so the scratch one wins by recency and
+	// renames the project after the temp directory. It may still name a project
+	// when nothing else does; it must not displace one already attributed.
+	// A repo living under /tmp resolves normally and is unaffected.
+	scratchOverwrite := repoRoot == "" && isGenericTemporaryPath(path) &&
+		trace != nil && trustedTraceProjectName(trace.Project) != ""
+	if !scratchOverwrite {
+		if project := trustedPathProjectName(path); project != "" {
+			setTraceProjectName(trace, project, source)
+		}
 	}
 	if trace != nil {
-		if _, wt, br := resolveRepoBoundary(path); wt != "" {
+		if worktree != "" {
 			if trace.Worktree == "" {
-				trace.Worktree = wt
+				trace.Worktree = worktree
 			}
-			if trace.Branch == "" && br != "" {
-				trace.Branch = br
+			if trace.Branch == "" && branch != "" {
+				trace.Branch = branch
 			}
 		} else if _, wt := resolvePathWorktree(path); wt != "" {
 			if trace.Worktree == "" {

@@ -594,6 +594,104 @@ func TestSetTraceProjectPathNormalizesGitWorktree(t *testing.T) {
 	}
 }
 
+// A real trae session cd'd from its worktree into an mktemp'd audit sandbox
+// (/tmp/flowlens-audit-<sha>.RjqnPR) and back. Both cwds arrive as
+// transcript_cwd, so the scratch one won by recency and split the worktree's
+// traffic onto a project named after the temp directory.
+func TestSetTraceProjectPathKeepsRepoProjectOverLaterScratchCWD(t *testing.T) {
+	root := t.TempDir()
+	mainRepo := filepath.Join(root, "flowlens")
+	wtDir := filepath.Join(mainRepo, ".worktrees", "flowlens-v2-analysis-cost")
+	gitdir := filepath.Join(mainRepo, ".git", "worktrees", "flowlens-v2-analysis-cost")
+	if err := os.MkdirAll(wtDir, 0o755); err != nil {
+		t.Fatalf("mkdir wt: %v", err)
+	}
+	if err := os.MkdirAll(gitdir, 0o755); err != nil {
+		t.Fatalf("mkdir gitdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(wtDir, ".git"), []byte("gitdir: "+gitdir+"\n"), 0o644); err != nil {
+		t.Fatalf("write .git: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(gitdir, "HEAD"), []byte("ref: refs/heads/perf/v2-analysis-cost\n"), 0o644); err != nil {
+		t.Fatalf("write HEAD: %v", err)
+	}
+	scratch := filepath.Join(os.TempDir(), "flowlens-audit-bea26d8c.RjqnPR")
+
+	trace := &SessionTrace{}
+	setTraceProjectPath(trace, wtDir, "transcript_cwd")
+	setTraceProjectPath(trace, scratch, "transcript_cwd")
+
+	if trace.Project != "flowlens" {
+		t.Fatalf("expected scratch cwd to leave project %q intact, got %q", "flowlens", trace.Project)
+	}
+	if trace.Worktree != "flowlens-v2-analysis-cost" {
+		t.Fatalf("expected worktree %q, got %q", "flowlens-v2-analysis-cost", trace.Worktree)
+	}
+	if trace.Branch != "perf/v2-analysis-cost" {
+		t.Fatalf("expected branch %q, got %q", "perf/v2-analysis-cost", trace.Branch)
+	}
+
+	// With nothing else known, a scratch cwd is still the only evidence there is.
+	bare := &SessionTrace{}
+	setTraceProjectPath(bare, scratch, "transcript_cwd")
+	if bare.Project != "flowlens-audit-bea26d8c.RjqnPR" {
+		t.Fatalf("expected scratch cwd to name the project when nothing else does, got %q", bare.Project)
+	}
+
+	// A repo-less cwd outside the temp roots is a real working directory
+	// (agentmux scratch topics), and still corrects a weaker storage-path guess.
+	plain := &SessionTrace{}
+	setTraceProjectPath(plain, filepath.Join(root, "topic--launcher--abc"), "transcript_path")
+	setTraceProjectPath(plain, filepath.Join(root, "agentmux", "scratch", "topic--launcher--abc"), "transcript_cwd")
+	if plain.Project != "topic--launcher--abc" {
+		t.Fatalf("expected repo-less non-temp cwd to attribute normally, got %q", plain.Project)
+	}
+}
+
+// Codex emits tool-payload cwds as file:// URLs (1422 files in the local corpus
+// carry one). The scheme made every os.Stat in the repo-boundary walk miss, so a
+// worktree stopped rolling up to its main repo and its directory name became a
+// project row of its own, alongside the same name as a worktree under the repo.
+func TestSetTraceProjectPathResolvesFileURLWorktreeToItsRepo(t *testing.T) {
+	root := t.TempDir()
+	mainRepo := filepath.Join(root, "flowlens")
+	wtDir := filepath.Join(root, "farm", "workspaces", "flowlens-v2-budget-roster")
+	gitdir := filepath.Join(mainRepo, ".git", "worktrees", "flowlens-v2-budget-roster")
+	if err := os.MkdirAll(wtDir, 0o755); err != nil {
+		t.Fatalf("mkdir wt: %v", err)
+	}
+	if err := os.MkdirAll(gitdir, 0o755); err != nil {
+		t.Fatalf("mkdir gitdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(wtDir, ".git"), []byte("gitdir: "+gitdir+"\n"), 0o644); err != nil {
+		t.Fatalf("write .git: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(gitdir, "HEAD"), []byte("ref: refs/heads/integration/v2-budget\n"), 0o644); err != nil {
+		t.Fatalf("write HEAD: %v", err)
+	}
+
+	for _, cwd := range []string{wtDir, "file://" + wtDir, "file://localhost" + wtDir} {
+		trace := &SessionTrace{}
+		setTraceProjectPath(trace, cwd, "transcript_cwd")
+		if trace.Project != "flowlens" {
+			t.Fatalf("cwd %q: expected project %q, got %q", cwd, "flowlens", trace.Project)
+		}
+		if trace.Worktree != "flowlens-v2-budget-roster" {
+			t.Fatalf("cwd %q: expected worktree %q, got %q", cwd, "flowlens-v2-budget-roster", trace.Worktree)
+		}
+		if trace.Branch != "integration/v2-budget" {
+			t.Fatalf("cwd %q: expected branch %q, got %q", cwd, "integration/v2-budget", trace.Branch)
+		}
+	}
+
+	// A non-file scheme is not a local path and must not be mangled into one.
+	remote := &SessionTrace{}
+	setTraceProjectPath(remote, "https://example.com/flowlens/deploy", "transcript_cwd")
+	if remote.Project != "deploy" {
+		t.Fatalf("expected non-file URL to keep its existing basename handling, got %q", remote.Project)
+	}
+}
+
 func TestProjectLiveSessionsExposeFreshnessConfidenceAndProvenance(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
 	root := t.TempDir()
