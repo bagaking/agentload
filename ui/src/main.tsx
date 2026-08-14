@@ -78,7 +78,7 @@ function App() {
   const [trendSelection, setTrendSelection] = useState<Record<TrendLane, string | undefined>>({ history: undefined, runtime: undefined, throughput: undefined });
   const shellRef = useRef<HTMLDivElement | null>(null);
   const popoverResizeRequestRef = useRef<(() => void) | null>(null);
-  const { snapshot, error, refreshing, refreshInterval, refreshSnapshot, cycleRefreshInterval, chooseRefreshInterval, isSurfaceVisible, surfaceVisible } = useSnapshotController({ view, popoverView, shellRef });
+  const { snapshot, error, refreshing, refreshInterval, refreshSnapshot, chooseRefreshInterval, isSurfaceVisible, surfaceVisible } = useSnapshotController({ view, popoverView, shellRef });
   const liveTokenRate = useLiveTokenRate(surfaceVisible);
 
   const t = useCallback((key: string) => copy[lang][key] || copy.en[key] || key, [lang]);
@@ -160,9 +160,6 @@ function App() {
         compact={compact}
         running={running}
         error={error}
-        refreshSnapshot={refreshSnapshot}
-        refreshInterval={refreshInterval}
-        cycleRefreshInterval={cycleRefreshInterval}
       />
       {view === "popover" ? (
         <>
@@ -202,7 +199,6 @@ function App() {
           running={running}
           refreshSnapshot={refreshSnapshot}
           refreshInterval={refreshInterval}
-          cycleRefreshInterval={cycleRefreshInterval}
           chooseRefreshInterval={chooseRefreshInterval}
           selection={selection}
           setSelection={setSelection}
@@ -580,7 +576,6 @@ function DashboardSurface({
   running,
   refreshSnapshot,
   refreshInterval,
-  cycleRefreshInterval,
   chooseRefreshInterval,
   selection,
   setSelection,
@@ -600,7 +595,6 @@ function DashboardSurface({
   running: boolean;
   refreshSnapshot: () => void;
   refreshInterval: number;
-  cycleRefreshInterval: () => void;
   chooseRefreshInterval: (ms: number) => void;
   selection: Selection;
   setSelection: (value: Selection) => void;
@@ -618,14 +612,7 @@ function DashboardSurface({
   return (
     <main className="dashboard-surface">
       <ErrorBanner t={t} error={error} />
-      <DashboardMasthead
-        t={t}
-        snapshot={snapshot}
-        running={running}
-        refreshSnapshot={refreshSnapshot}
-        refreshInterval={refreshInterval}
-        cycleRefreshInterval={cycleRefreshInterval}
-      />
+      <DashboardMasthead t={t} snapshot={snapshot} refreshInterval={refreshInterval} />
       <section className="dash-front-band">
         <section className="dash-field-index">
           <DashboardBandHead kicker={t("runtimeField")} title={t("activityCounts")} meta={dashboardProjectMeta(t, snapshot)} />
@@ -689,20 +676,16 @@ function DashboardSurface({
   );
 }
 
+// The masthead is a report header: state, identity, and the meta line. Its
+// refresh controls moved to the footer dock, where both surfaces keep them.
 function DashboardMasthead({
   t,
   snapshot,
-  running,
-  refreshSnapshot,
   refreshInterval,
-  cycleRefreshInterval,
 }: {
   t: (key: string) => string;
   snapshot: Snapshot;
-  running: boolean;
-  refreshSnapshot: () => void;
   refreshInterval: number;
-  cycleRefreshInterval: () => void;
 }) {
   const stats = snapshot.transcript_stats ?? {};
   const generated = snapshot.generated_at ? formatDateTime(snapshot.generated_at) : t("unavailable");
@@ -719,15 +702,6 @@ function DashboardMasthead({
         <p>{subtitle}</p>
       </div>
       <div className="dashboard-masthead-side">
-        <div className="dashboard-masthead-actions">
-          <button className="ghost-btn dashboard-refresh-action" type="button" data-focus-key={focusKey("refresh", "dashboard")} onClick={refreshSnapshot} disabled={running} aria-label={t("refresh")}>
-            <RefreshCw size={14} className={running ? "spin" : ""} />
-            <span>{running ? t("running") : t("refresh")}</span>
-          </button>
-          <button className={`refresh-interval dashboard-refresh-interval ${refreshInterval ? "" : "is-paused"}`} type="button" data-focus-key={focusKey("refresh-interval", "dashboard")} onClick={cycleRefreshInterval} title={t("autoRefresh")} aria-label={t("autoRefresh")}>
-            <span>{formatRefreshInterval(refreshInterval, t)}</span>
-          </button>
-        </div>
         <div className="dashboard-masthead-meta">
           <span>
             <b>{t("observed")}</b>
@@ -2025,9 +1999,6 @@ function Topbar({
   compact,
   running,
   error,
-  refreshSnapshot,
-  refreshInterval,
-  cycleRefreshInterval,
 }: {
   t: (key: string) => string;
   lang: Lang;
@@ -2037,9 +2008,6 @@ function Topbar({
   compact: boolean;
   running: boolean;
   error: string | null;
-  refreshSnapshot: () => void;
-  refreshInterval: number;
-  cycleRefreshInterval: () => void;
 }) {
   const topbarStatusTone = error ? "bad" : running ? "running" : "idle";
   const showTopbarStatus = !!error || (!compact && running);
@@ -2062,18 +2030,10 @@ function Topbar({
         </div>
         <div className="brand-actions">
           {compact ? null : <Pill tone="safe">{t("loopback")}</Pill>}
-          {compact ? null : <button className={`icon-btn topbar-refresh-action ${running ? "is-refreshing" : ""}`} type="button" data-focus-key={focusKey("topbar-refresh")} onClick={refreshSnapshot} title={running ? t("running") : t("refresh")} aria-label={running ? t("running") : t("refresh")} aria-busy={running}>
-            <RefreshCw size={16} className={running ? "spin" : ""} />
-          </button>}
           {showTopbarStatus ? <Pill tone={topbarStatusTone}>{error ? t("failed") : running ? t("running") : t("idle")}</Pill> : null}
         </div>
       </div>
       <div className="topbar-meta">
-        {!compact ? (
-          <button className="kbd-hint" type="button" data-focus-key={focusKey("topbar-refresh-interval")} onClick={cycleRefreshInterval} title={t("autoRefresh")}>
-            <kbd>{formatRefreshInterval(refreshInterval, t)}</kbd> {t("auto")}
-          </button>
-        ) : null}
         <LanguageControl t={t} lang={lang} setLang={setLang} compact={compact} />
         <button className="icon-btn" type="button" data-focus-key={focusKey("topbar-theme")} onClick={() => setTheme(theme === "light" ? "dark" : "light")} title={t("toggleTheme")} aria-label={t("toggleTheme")}>
           {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}

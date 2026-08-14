@@ -1,16 +1,32 @@
 /* Dashboard footer: the bottom-left refresh dock plus the scan line.
    RefreshDock is shared with the popover, but every rule styling it over there
-   is scoped to body[data-view="popover"], so the dashboard states its own. */
+   is scoped to body[data-view="popover"], so the dashboard states its own.
+
+   Fixed rather than in flow: the dashboard scrolls as one long page, so a
+   footer at the end of the document would sit wherever the content stops
+   instead of in the corner where the control is expected. */
 
 .dashboard-footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 25;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  flex-wrap: wrap;
-  margin-top: 2px;
-  padding: 9px 4px 2px;
-  border-top: 1px solid color-mix(in srgb, var(--console-line-soft) 62%, transparent);
+  padding: 7px 18px calc(7px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  box-shadow: 0 -1px 0 color-mix(in srgb, #fff 4%, transparent) inset, var(--sh-sm);
+}
+
+/* Room for the fixed dock so the last band is never hidden behind it. */
+.app-dashboard .dashboard-surface {
+  padding-bottom: 76px;
 }
 
 .dashboard-footer .footer-meta {
