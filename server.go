@@ -488,6 +488,7 @@ func (a *trayApp) snapshotForInternalUse(ctx context.Context) (Snapshot, bool) {
 	if snapshotScanAborted(ctx, snapshot) {
 		// Serve the partial result to this caller only; committing it would
 		// record undercounted history samples and cache incomplete state.
+		a.recordLifecycle(lifecycleEventFromSnapshot("snapshot_aborted", snapshotAbortReason(ctx, snapshot), snapshot))
 		return snapshot, true
 	}
 	return a.rememberSnapshot(snapshot), true
@@ -512,6 +513,7 @@ func sanitizeSnapshotForClient(snapshot Snapshot) Snapshot {
 		snapshot.History.Throughput = &throughput
 	}
 	snapshot.TranscriptStats.Errors = sanitizeTextListForClient(snapshot.TranscriptStats.Errors)
+	snapshot.ProcessStats.Error = sanitizeTextForClient(snapshot.ProcessStats.Error)
 	snapshot.CoordinationRisk = sanitizeCoordinationRiskForClient(snapshot.CoordinationRisk)
 	snapshot.ProjectFocus = sanitizeProjectFocusForClient(snapshot.ProjectFocus)
 	snapshot.ProjectHeatmaps = sanitizeProjectHeatmapsForClient(snapshot.ProjectHeatmaps)
@@ -719,9 +721,7 @@ func sanitizeLiveProcessesForClient(processes []LiveProcessSnapshot) []LiveProce
 			out[i].MappedSessionEvidence = evidence
 		}
 		if out[i].HostApp != nil {
-			host := *out[i].HostApp
-			host.BundlePath = ""
-			out[i].HostApp = &host
+			out[i].HostApp = sanitizedHostApp(out[i].HostApp)
 		}
 	}
 	return out
@@ -754,7 +754,11 @@ func sanitizeHostAppProcessSummaryForClient(items []HostAppProcessSummary) []Hos
 	if len(items) == 0 {
 		return items
 	}
-	return append([]HostAppProcessSummary(nil), items...)
+	out := append([]HostAppProcessSummary(nil), items...)
+	for i := range out {
+		out[i].Name = sanitizeTextForClient(out[i].Name)
+	}
+	return out
 }
 
 func sanitizeLiveSessionsForClient(sessions []LiveSessionSnapshot) []LiveSessionSnapshot {
@@ -772,6 +776,7 @@ func sanitizeLiveSessionsForClient(sessions []LiveSessionSnapshot) []LiveSession
 		if len(out[i].HostApps) > 0 {
 			hosts := append([]HostApp(nil), out[i].HostApps...)
 			for j := range hosts {
+				hosts[j].Name = sanitizeTextForClient(hosts[j].Name)
 				hosts[j].BundlePath = ""
 			}
 			out[i].HostApps = hosts
@@ -878,8 +883,16 @@ func sanitizePathLikeValue(value string) string {
 	if !filepath.IsAbs(value) {
 		return value
 	}
-	base := filepath.Base(filepath.Clean(value))
+	cleaned := filepath.Clean(value)
+	base := filepath.Base(cleaned)
 	if base == "." || base == string(filepath.Separator) || base == "" {
+		return "local-path"
+	}
+	// A shallow absolute path is ambiguous: on macOS it can be a home directory,
+	// and the final component may be a username rather than a
+	// useful filename. Keep basenames only when the path has enough structure
+	// to make that distinction reasonably safe.
+	if strings.Count(strings.TrimPrefix(cleaned, string(filepath.Separator)), string(filepath.Separator)) < 2 {
 		return "local-path"
 	}
 	if strings.ContainsAny(base, " \t\r\n") {
@@ -963,25 +976,24 @@ func embeddedAbsolutePathEnd(text string, start int) int {
 			(colon >= 0 && (slash < 0 || colon < slash)) {
 			return end
 		}
-		if slash < 0 {
-			segment := filepath.Base(filepath.Clean(text[start:end]))
-			if isClientPathFilename(segment) && isClientPathBoundaryWord(word) {
-				return end
-			}
+		if slash < 0 && isClientPathBoundaryWord(word) && !nextWordContinuesPath(text, wordEnd) {
+			return end
 		}
 		end = next
 	}
 	return end
 }
 
-func isClientPathFilename(segment string) bool {
-	segment = strings.ToLower(strings.TrimSpace(segment))
-	for _, suffix := range []string{".app", ".db", ".go", ".json", ".jsonl", ".log", ".md", ".plist", ".sqlite", ".toml", ".ts", ".tsx", ".txt", ".yaml", ".yml"} {
-		if strings.HasSuffix(segment, suffix) {
-			return true
-		}
+func nextWordContinuesPath(text string, start int) bool {
+	for start < len(text) && strings.ContainsRune(" \t\r\n", rune(text[start])) {
+		start++
 	}
-	return false
+	end := start
+	for end < len(text) && !strings.ContainsRune(" \t\r\n", rune(text[end])) {
+		end++
+	}
+	word := text[start:end]
+	return word != "" && !strings.HasPrefix(word, "/") && strings.ContainsRune(word, '/')
 }
 
 func isClientPathBoundaryWord(word string) bool {

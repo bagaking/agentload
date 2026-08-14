@@ -12,21 +12,26 @@ import (
 	"time"
 )
 
+const processDiscoveryFailurePrefix = "process discovery failed: "
+
 var sessionHintPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)thread-id["=: ]+"?([0-9a-f-]{8,})`),
 	regexp.MustCompile(`(?i)sessionid["=: ]+"?([0-9a-f-]{8,})`),
 	regexp.MustCompile(`(?i)session_id["=: ]+"?([0-9a-f-]{8,})`),
-	regexp.MustCompile(`(?i)(?:--thread-id|--session-id)[= ]([0-9a-f-]{8,})`),
+	regexp.MustCompile(`(?i)(?:--resume|--thread-id|--session-id)[= ]([0-9a-f-]{8,})`),
 	regexp.MustCompile(`(?i)CODEX_THREAD_ID=([0-9a-f-]{8,})`),
 }
 
 func discoverLiveProcesses(ctx context.Context, adapters *codingAgentRegistry) ([]LiveProcess, []string) {
 	out, err := exec.CommandContext(ctx, "ps", "-axo", "uid=,pid=,ppid=,pcpu=,rss=,etime=,command=").Output()
 	if err != nil {
-		return nil, []string{"ps failed: " + strings.TrimSpace(err.Error())}
+		return nil, []string{processDiscoveryFailurePrefix + strings.TrimSpace(err.Error())}
 	}
 
 	processTable := parseProcessTable(string(out))
+	if len(processTable) == 0 {
+		return nil, []string{processDiscoveryFailurePrefix + "no parseable process rows"}
+	}
 	now := time.Now()
 	processes := []LiveProcess{}
 	pids := []int{}
@@ -71,6 +76,32 @@ func discoverLiveProcesses(ctx context.Context, adapters *codingAgentRegistry) (
 	return processes, lsofNotes
 }
 
+func processDiscoveryFailure(notes []string) (string, bool) {
+	for _, note := range notes {
+		if strings.HasPrefix(note, processDiscoveryFailurePrefix) {
+			return strings.TrimSpace(strings.TrimPrefix(note, processDiscoveryFailurePrefix)), true
+		}
+	}
+	return "", false
+}
+
+func cloneLiveProcesses(processes []LiveProcess) []LiveProcess {
+	if len(processes) == 0 {
+		return nil
+	}
+	out := make([]LiveProcess, len(processes))
+	for i, process := range processes {
+		out[i] = process
+		out[i].SessionFiles = append([]TranscriptFile(nil), process.SessionFiles...)
+		out[i].SessionHints = append([]string(nil), process.SessionHints...)
+		if process.HostApp != nil {
+			host := *process.HostApp
+			out[i].HostApp = &host
+		}
+	}
+	return out
+}
+
 var discoverLiveProcessesFunc = discoverLiveProcesses
 
 type processRow struct {
@@ -113,7 +144,7 @@ func parseProcessTableLine(line string) (processRow, bool) {
 		return processRow{}, false
 	}
 	if len(fields) >= 7 {
-		if cpuPercent, cpuErr := strconv.ParseFloat(fields[3], 64); cpuErr == nil {
+		if cpuPercent, cpuErr := strconv.ParseFloat(strings.ReplaceAll(fields[3], ",", "."), 64); cpuErr == nil {
 			if rssKB, rssErr := strconv.ParseInt(fields[4], 10, 64); rssErr == nil && rssKB >= 0 {
 				return processRow{
 					UID:         uid,

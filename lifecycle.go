@@ -38,6 +38,7 @@ type lifecycleEvent struct {
 	Stack                  string                    `json:"stack,omitempty"`
 	Metrics                *lifecycleSnapshotMetrics `json:"metrics,omitempty"`
 	TranscriptStats        *lifecycleTranscriptStats `json:"transcript_stats,omitempty"`
+	ProcessStats           *lifecycleProcessStats    `json:"process_stats,omitempty"`
 	RuntimeProcesses       []lifecycleRuntimeProcess `json:"runtime_processes,omitempty"`
 	HostAppProcesses       []lifecycleHostAppProcess `json:"host_app_processes,omitempty"`
 	Extra                  map[string]string         `json:"extra,omitempty"`
@@ -66,6 +67,12 @@ type lifecycleTranscriptStats struct {
 	CoverageIncomplete     bool `json:"coverage_incomplete,omitempty"`
 	Cached                 bool `json:"cached"`
 	ErrorCount             int  `json:"error_count,omitempty"`
+}
+
+type lifecycleProcessStats struct {
+	Incomplete bool   `json:"incomplete"`
+	LastKnown  bool   `json:"last_known,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 type lifecycleRuntimeProcess struct {
@@ -119,6 +126,7 @@ func (l *lifecycleLog) record(event lifecycleEvent) error {
 	if event.PPID == 0 {
 		event.PPID = os.Getppid()
 	}
+	event = sanitizeLifecycleEvent(event)
 	raw, err := json.Marshal(event)
 	if err != nil {
 		return err
@@ -147,6 +155,49 @@ func (l *lifecycleLog) record(event lifecycleEvent) error {
 	return file.Close()
 }
 
+func sanitizeLifecycleEvent(event lifecycleEvent) lifecycleEvent {
+	event.ListenAddr = sanitizeTextForClient(event.ListenAddr)
+	event.URL = sanitizeTextForClient(event.URL)
+	event.RefreshSlotID = sanitizeTokenForClient(event.RefreshSlotID)
+	event.Signal = sanitizeTokenForClient(event.Signal)
+	event.Reason = sanitizeTextForClient(event.Reason)
+	event.Error = sanitizeTextForClient(event.Error)
+	event.Stack = sanitizeTextForClient(event.Stack)
+	if event.Metrics != nil {
+		metrics := *event.Metrics
+		metrics.TopProject = sanitizeProjectNameForClient(metrics.TopProject)
+		event.Metrics = &metrics
+	}
+	if event.ProcessStats != nil {
+		stats := *event.ProcessStats
+		stats.Error = sanitizeTextForClient(stats.Error)
+		event.ProcessStats = &stats
+	}
+	if len(event.RuntimeProcesses) > 0 {
+		processes := append([]lifecycleRuntimeProcess(nil), event.RuntimeProcesses...)
+		for i := range processes {
+			processes[i].Tool = sanitizeTokenForClient(processes[i].Tool)
+			processes[i].DisplayName = sanitizeTextForClient(processes[i].DisplayName)
+		}
+		event.RuntimeProcesses = processes
+	}
+	if len(event.HostAppProcesses) > 0 {
+		processes := append([]lifecycleHostAppProcess(nil), event.HostAppProcesses...)
+		for i := range processes {
+			processes[i].Name = sanitizeTextForClient(processes[i].Name)
+		}
+		event.HostAppProcesses = processes
+	}
+	if len(event.Extra) > 0 {
+		extra := make(map[string]string, len(event.Extra))
+		for key, value := range event.Extra {
+			extra[sanitizeTokenForClient(key)] = sanitizeTextForClient(value)
+		}
+		event.Extra = extra
+	}
+	return event
+}
+
 func (l *lifecycleLog) recordPanic() {
 	if recovered := recover(); recovered != nil {
 		_ = l.record(lifecycleEvent{
@@ -165,8 +216,20 @@ func lifecycleEventFromSnapshot(event, reason string, snapshot Snapshot) lifecyc
 		Reason:           reason,
 		Metrics:          lifecycleMetricsFromSnapshot(snapshot),
 		TranscriptStats:  lifecycleTranscriptStatsFromSnapshot(snapshot.TranscriptStats),
+		ProcessStats:     lifecycleProcessStatsFromSnapshot(snapshot.ProcessStats),
 		RuntimeProcesses: lifecycleRuntimeProcesses(snapshot.RuntimeProcesses),
 		HostAppProcesses: lifecycleHostAppProcesses(snapshot.HostAppProcesses),
+	}
+}
+
+func lifecycleProcessStatsFromSnapshot(stats ProcessObservationStats) *lifecycleProcessStats {
+	if !stats.Incomplete && !stats.LastKnown && strings.TrimSpace(stats.Error) == "" {
+		return nil
+	}
+	return &lifecycleProcessStats{
+		Incomplete: stats.Incomplete,
+		LastKnown:  stats.LastKnown,
+		Error:      sanitizeTextForClient(stats.Error),
 	}
 }
 
@@ -182,7 +245,7 @@ func lifecycleMetricsFromSnapshot(snapshot Snapshot) *lifecycleSnapshotMetrics {
 		ProjectCount:           snapshot.Summary.ProjectCount,
 		HotProjectCount:        snapshot.Summary.HotProjectCount,
 		MappingCoveragePct:     snapshot.Summary.MappingCoveragePct,
-		TopProject:             snapshot.CoordinationRisk.TopProject,
+		TopProject:             sanitizeProjectNameForClient(snapshot.CoordinationRisk.TopProject),
 	}
 }
 

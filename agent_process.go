@@ -120,6 +120,9 @@ func newCodexProcessIdentity() agentProcessIdentity {
 	return builtinProcessIdentity{
 		agentID: "codex",
 		match: func(command processCommand) bool {
+			if isCodexInternalProcess(command) {
+				return false
+			}
 			return strings.Contains(command.ExecutableBase, "codexl") ||
 				strings.Contains(command.ExecutableBase, "codex") ||
 				strings.Contains(command.Lower, "/applications/codex.app") ||
@@ -154,6 +157,63 @@ func newCodexProcessIdentity() agentProcessIdentity {
 		sessionIDHint:      codexTranscriptSessionID,
 		commandRootPattern: commandRootPattern(".codex"),
 	}
+}
+
+func isCodexInternalProcess(command processCommand) bool {
+	raw := strings.TrimSpace(command.Raw)
+	lowerRaw := strings.ToLower(raw)
+	if marker := strings.Index(lowerRaw, "/contents/macos/"); marker >= 0 && !strings.Contains(raw[:marker], " --") {
+		executable := strings.TrimSpace(lowerRaw[marker+len("/contents/macos/"):])
+		for _, name := range []string{"codex helper", "codex helper (renderer)", "codex helper (gpu)", "codex (renderer)", "codex (gpu)"} {
+			if strings.HasPrefix(executable, name) && (len(executable) == len(name) || executable[len(name)] == ' ' || executable[len(name)] == '\t') {
+				return true
+			}
+		}
+	}
+	executablePath := commandExecutablePath(command.Raw)
+	base := normalizedExecutableBase(executablePath)
+	if base == "codex-code-mode-host" || base == "crashpad_handler" {
+		return true
+	}
+	lowerPath := strings.ToLower(executablePath)
+	if !strings.Contains(lowerPath, "/contents/frameworks/") {
+		return false
+	}
+	switch base {
+	case "codex helper", "codex helper (renderer)", "codex helper (gpu)",
+		"codex helper (utility)", "codex (renderer)", "codex (gpu)":
+		return true
+	default:
+		return false
+	}
+}
+
+func commandExecutablePath(command string) string {
+	raw := strings.TrimSpace(command)
+	if raw == "" {
+		return ""
+	}
+	if quote := raw[0]; quote == '\'' || quote == '"' {
+		if end := strings.IndexByte(raw[1:], quote); end >= 0 {
+			return raw[1 : end+1]
+		}
+	}
+	// macOS may print an unquoted bundle executable containing spaces. Use the
+	// stable Contents/MacOS boundary only when it belongs to the command prefix;
+	// an option value later in the command must not become the executable.
+	lower := strings.ToLower(raw)
+	if marker := strings.Index(lower, "/contents/macos/"); marker > 0 && !strings.Contains(raw[:marker], " --") {
+		end := marker + len("/contents/macos/")
+		if option := strings.Index(raw[end:], " --"); option >= 0 {
+			end += option
+		}
+		return strings.TrimSpace(raw[:end])
+	}
+	fields := strings.Fields(raw)
+	if len(fields) == 0 {
+		return ""
+	}
+	return strings.Trim(fields[0], `"'`)
 }
 
 func newTraeProcessIdentity() agentProcessIdentity {

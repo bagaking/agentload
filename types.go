@@ -27,6 +27,7 @@ type Snapshot struct {
 	CandidateWorkitems []CandidateWorkitemSnapshot `json:"candidate_workitems"`
 	AgeBuckets         []AgeBucketSnapshot         `json:"age_buckets"`
 	SystemResources    SystemResourceSnapshot      `json:"system_resources"`
+	ProcessStats       ProcessObservationStats     `json:"process_stats"`
 	LiveProcesses      []LiveProcessSnapshot       `json:"live_processes"`
 	LiveSessions       []LiveSessionSnapshot       `json:"live_sessions"`
 	RuntimeProcesses   []ProcessRuntimeSummary     `json:"runtime_process_summary,omitempty"`
@@ -73,6 +74,15 @@ type CurrentMetrics struct {
 	PIDConcurrency         int `json:"pid_concurrency"`
 	SessionConcurrency     int `json:"session_concurrency"`
 	ActiveBurstConcurrency int `json:"active_burst_concurrency"`
+}
+
+// ProcessObservationStats distinguishes a clean process sample from a
+// last-known snapshot retained while the OS process query is unavailable.
+// Incomplete process evidence must never be committed to runtime history.
+type ProcessObservationStats struct {
+	Incomplete bool   `json:"incomplete,omitempty"`
+	LastKnown  bool   `json:"last_known,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 type ToolMetrics struct {

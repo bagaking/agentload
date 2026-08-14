@@ -28,6 +28,7 @@ import "./styles/process-summary.css";
 import "./styles/system-resource-inspector.css";
 import "./styles/activity-process-trend.css";
 import "./styles/throughput-trend.css";
+import "./styles/online-processes.css";
 
 const TrendSuite = React.lazy(async () => {
   const module = await import("./trend/TrendSuite");
@@ -805,6 +806,7 @@ const PopoverAuditShell = React.memo(function PopoverAuditShell({
   return (
     <section className="popover-panel audit-shell">
       <PopoverRuntimeInstrument t={t} snapshot={snapshot} liveTokenRate={liveTokenRate} />
+      <PopoverProcessPanel t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} context="online" />
       <ScanBoundary t={t} snapshot={snapshot} compact />
       <section className="popover-project-table">
         <div className="popover-project-head">
@@ -843,15 +845,31 @@ function PopoverSystemPanel({ t, snapshot, selection, setSelection, active }: { 
         processMemory={processTotals.memory}
         mappedProcesses={summaryMappedProcessCount(snapshot.summary)}
         unmappedProcesses={summaryUnmappedProcessCount(snapshot.summary)}
+        processEvidenceComplete={!snapshot.process_stats?.incomplete}
       />
       <ProcessSummaryStrip t={t} snapshot={snapshot} />
-      <PopoverProcessPanel t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} />
+      <PopoverProcessPanel t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} context="system" />
     </section>
   );
 }
 
-function PopoverProcessPanel({ t, snapshot, selection, setSelection }: { t: (key: string) => string; snapshot: Snapshot; selection: Selection; setSelection: (value: Selection) => void }) {
+function PopoverProcessPanel({
+  t,
+  snapshot,
+  selection,
+  setSelection,
+  context,
+}: {
+  t: (key: string) => string;
+  snapshot: Snapshot;
+  selection: Selection;
+  setSelection: (value: Selection) => void;
+  context: "online" | "system";
+}) {
   const [expandedPID, setExpandedPID] = useState<string | null>(null);
+  const [showOverflow, setShowOverflow] = useState(false);
+  const headingID = useId();
+  const listID = useId();
   const processes = useMemo(() => [...(snapshot.live_processes ?? [])]
     .sort((a, b) => {
       if ((b.mapped_active_sessions ?? 0) !== (a.mapped_active_sessions ?? 0)) return (b.mapped_active_sessions ?? 0) - (a.mapped_active_sessions ?? 0);
@@ -859,35 +877,61 @@ function PopoverProcessPanel({ t, snapshot, selection, setSelection }: { t: (key
       const resourceDelta = (b.cpu_percent ?? 0) - (a.cpu_percent ?? 0);
       if (resourceDelta) return resourceDelta;
       return (a.pid ?? 0) - (b.pid ?? 0);
-    })
-    .slice(0, 8), [snapshot.live_processes]);
-  if (!processes.length) return null;
+    }), [snapshot.live_processes]);
+  const initialLimit = context === "online" ? 3 : 8;
+  const visibleProcesses = showOverflow ? processes : processes.slice(0, initialLimit);
+  const hiddenCount = Math.max(0, processes.length - initialLimit);
+  const overflowLabel = countLabel(t, showOverflow ? "lessCount" : "moreCount", hiddenCount);
+  const heading = context === "online" ? t("currentAgentProcesses") : t("processDiagnostics");
+  const processStats = snapshot.process_stats;
+  const processState = processStats?.incomplete
+    ? (processStats.last_known ? t("processEvidenceIncomplete") : t("processEvidenceUnavailable"))
+    : null;
   return (
-    <section className="popover-process-panel">
+    <section className={`popover-process-panel ${context}-process-panel`} aria-labelledby={headingID}>
       <div className="popover-project-head">
         <div>
           <span className="note-kicker">{t("processLedger")}</span>
-          <h2>{t("processDiagnostics")}</h2>
+          <h2 id={headingID}>{heading}</h2>
         </div>
-        <span>{processes.length}/{snapshot.live_processes?.length ?? 0} {t("processes")}</span>
+        <span className={processState ? "process-evidence-state" : undefined}>{processState || `${processes.length} ${t("processes")}`}</span>
       </div>
-      <div className="popover-process-list">
-        {processes.map((process) => {
+      {processes.length ? (
+        <div className="popover-process-list" id={listID} role="list">
+        {visibleProcesses.map((process) => {
           const processID = String(process.pid ?? "");
           const expanded = expandedPID === processID;
           const selected = selection.type === "process" && selection.id === processID;
           const projectText = processProjectSummary(t, process, " / ");
           const hostText = process.host_app?.name || t("hostAppUnknown");
-          const resourceText = `${t("pid")} ${process.pid ?? t("unavailable")} · ${t("processCPU")} ${formatCompactCPU(process.cpu_percent)} · ${t("processMemory")} ${formatMemory(process.memory_bytes, t)} · ${t("diskIO")} ${processDiskIORateSummary(t, process)}`;
-          const metrics = [
+          const metrics = context === "online" ? [
+            { label: t("pid"), value: String(process.pid ?? t("unavailable")) },
+            { label: t("mappedSessions"), value: String(process.mapped_sessions ?? 0) },
+            { label: t("cpu"), value: formatCompactCPU(process.cpu_percent) },
+            { label: t("memoryShort"), value: formatMemory(process.memory_bytes, t) },
+          ] : [
             { label: t("pid"), value: String(process.pid ?? t("unavailable")) },
             { label: t("cpu"), value: formatCompactCPU(process.cpu_percent) },
             { label: t("memoryShort"), value: formatMemory(process.memory_bytes, t) },
             { label: t("diskIO"), value: processDiskIORatePair(t, process) },
           ];
+          const metricsText = metrics.map((metric) => `${metric.label} ${metric.value}`).join(" · ");
+          const processLabel = `${processIdentity(process, t)} · ${t("pid")} ${process.pid ?? t("unavailable")} · ${projectText} · ${process.mapped_sessions ?? 0} ${t("mappedSessions")} · ${hostText} · ${metricsText}`;
+          const detailsID = `${listID}-details-${processID || "unknown"}`;
           return (
-            <article className={`popover-process-card ${expanded ? "is-expanded" : ""} ${selected ? "is-selected" : ""}`} key={processID || process.command}>
-              <button className="popover-process-head" type="button" onClick={() => setExpandedPID(expanded ? null : processID)} aria-expanded={expanded}>
+            <article className={`popover-process-card ${expanded ? "is-expanded" : ""} ${selected ? "is-selected" : ""}`} key={processID || process.command} role="listitem">
+              <button
+                className="popover-process-head"
+                type="button"
+                onClick={() => {
+                  setExpandedPID(expanded ? null : processID);
+                  if (processID) setSelection({ type: "process", id: processID });
+                }}
+                aria-pressed={selected}
+                aria-expanded={expanded}
+                aria-controls={expanded ? detailsID : undefined}
+                aria-label={processLabel}
+              >
                 <ChevronDown size={12} aria-hidden="true" />
                 <ToolIcon t={t} tool={process.tool || "unknown"} />
                 <span className="popover-process-mainline">
@@ -895,7 +939,7 @@ function PopoverProcessPanel({ t, snapshot, selection, setSelection }: { t: (key
                   <b title={processProjectSummary(t, process, "\n")}>{projectText}</b>
                 </span>
                 <ProcessHostInline t={t} host={process.host_app} fallback={hostText} />
-                <span className="popover-process-metrics" aria-label={resourceText}>
+                <span className="popover-process-metrics" aria-label={metricsText}>
                   {metrics.map((metric) => (
                     <span key={metric.label}>
                       <b>{metric.label}</b>
@@ -904,11 +948,32 @@ function PopoverProcessPanel({ t, snapshot, selection, setSelection }: { t: (key
                   ))}
                 </span>
               </button>
-              {expanded ? <ProcessDiagnosticDetails t={t} process={process} setSelection={setSelection} /> : null}
+              {expanded ? <ProcessDiagnosticDetails id={detailsID} t={t} process={process} setSelection={setSelection} /> : null}
             </article>
           );
         })}
-      </div>
+        </div>
+      ) : (
+        <div className="popover-process-empty" role="status">
+          <Server size={17} aria-hidden="true" />
+          <span>
+            <strong>{t("noVisibleAgentProcesses")}</strong>
+            <em>{t("noVisibleAgentProcessesDetail")}</em>
+          </span>
+        </div>
+      )}
+      {processes.length > 0 && hiddenCount > 0 ? (
+        <button
+          className={`session-tree-more online-process-more ${showOverflow ? "is-expanded" : ""}`}
+          type="button"
+          onClick={() => setShowOverflow((value) => !value)}
+          aria-controls={listID}
+          aria-expanded={showOverflow}
+        >
+          <ChevronDown size={11} aria-hidden="true" />
+          <span>{overflowLabel}</span>
+        </button>
+      ) : null}
     </section>
   );
 }
@@ -1548,7 +1613,7 @@ const ProcessLedgerRow = React.memo(function ProcessLedgerRow({ t, process, sele
   );
 });
 
-function ProcessDiagnosticDetails({ t, process, setSelection }: { t: (key: string) => string; process: LiveProcess; setSelection: (value: Selection) => void }) {
+function ProcessDiagnosticDetails({ id, t, process, setSelection }: { id?: string; t: (key: string) => string; process: LiveProcess; setSelection: (value: Selection) => void }) {
   const processID = String(process.pid ?? "");
   const sessions = process.session_ids ?? [];
   const evidence = process.mapped_session_evidence ?? [];
@@ -1573,7 +1638,7 @@ function ProcessDiagnosticDetails({ t, process, setSelection }: { t: (key: strin
   const routeItems = processRouteItems(t, process, diagnostic);
   const mappedProjects = processMappedProjects(process);
   return (
-    <div className="process-row-details" role="cell">
+    <div id={id} className="process-row-details" role="cell">
       <div className="process-route-detail">
         <span>{t("route")}</span>
         <div className="process-route-stack">

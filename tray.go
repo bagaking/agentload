@@ -611,6 +611,9 @@ func snapshotScanAborted(ctx context.Context, snapshot Snapshot) bool {
 	if snapshot.TranscriptStats.CoverageIncomplete {
 		return true
 	}
+	if snapshot.ProcessStats.Incomplete {
+		return true
+	}
 	if len(snapshot.TranscriptStats.Errors) > 0 {
 		return true
 	}
@@ -623,6 +626,12 @@ func snapshotAbortReason(ctx context.Context, snapshot Snapshot) string {
 	}
 	if snapshot.TranscriptStats.CoverageIncomplete {
 		return "transcript evidence coverage incomplete"
+	}
+	if snapshot.ProcessStats.Incomplete {
+		if strings.TrimSpace(snapshot.ProcessStats.Error) != "" {
+			return "process evidence incomplete: " + snapshot.ProcessStats.Error
+		}
+		return "process evidence incomplete"
 	}
 	if len(snapshot.TranscriptStats.Errors) > 0 {
 		return snapshot.TranscriptStats.Errors[0]
@@ -643,7 +652,7 @@ func (a *trayApp) isRefreshing() bool {
 }
 
 func (a *trayApp) rememberSnapshot(snapshot Snapshot) Snapshot {
-	if snapshot.TranscriptStats.CoverageIncomplete {
+	if snapshot.TranscriptStats.CoverageIncomplete || snapshot.ProcessStats.Incomplete {
 		// Incomplete evidence may be displayed for this refresh, but it must not
 		// become the durable in-memory or JSONL history source of truth.
 		return snapshot

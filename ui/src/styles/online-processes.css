@@ -1,0 +1,248 @@
+/* Current process evidence belongs in Online; whole-machine diagnostics remain in System. */
+
+body[data-view="popover"] .online-process-panel {
+  min-width: 0;
+  padding: 6px 9px;
+  overflow: hidden;
+  border-top: 1px solid color-mix(in srgb, var(--run) 22%, var(--console-line));
+  border-bottom: 1px solid var(--console-line-soft);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--run) 5%, transparent), transparent 38%),
+    var(--console-material);
+}
+
+body[data-view="popover"] .online-process-panel .popover-project-head {
+  min-height: 27px;
+  padding-bottom: 4px;
+}
+
+body[data-view="popover"] .online-process-panel .popover-project-head h2 {
+  font-size: var(--popover-tab-title);
+}
+
+body[data-view="popover"] .online-process-panel .popover-process-list {
+  border-top-color: color-mix(in srgb, var(--run) 16%, var(--console-line-soft));
+}
+
+body[data-view="popover"] .online-process-panel .popover-process-card {
+  position: relative;
+  border-bottom-color: color-mix(in srgb, var(--console-line-soft) 86%, transparent);
+}
+
+body[data-view="popover"] .online-process-panel .popover-process-card.is-selected::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: 0 auto 0 -4px;
+  width: 1px;
+  background: color-mix(in srgb, var(--run) 72%, transparent);
+}
+
+body[data-view="popover"] .online-process-panel .popover-process-head {
+  display: grid;
+  grid-template-columns: 14px 18px minmax(0, 1fr) minmax(74px, .48fr);
+  grid-template-rows: minmax(18px, auto) minmax(21px, auto);
+  gap: 2px 7px;
+  min-height: 43px;
+  padding: 4px 0;
+}
+
+body[data-view="popover"] .online-process-panel .popover-process-head:hover,
+body[data-view="popover"] .online-process-panel .popover-process-head:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--run) 5%, transparent);
+}
+
+body[data-view="popover"] .online-process-panel .popover-process-head:focus-visible {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--run) 48%, transparent);
+}
+
+body[data-view="popover"] .online-process-panel .popover-process-head > svg:first-child {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  align-self: center;
+  transition: transform .12s ease;
+}
+
+body[data-view="popover"] .online-process-panel .popover-process-head > .tool-icon,
+body[data-view="popover"] .online-process-panel .popover-process-head > .tool-fallback {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+}
+
+body[data-view="popover"] .online-process-panel .popover-process-mainline {
+  display: grid;
+  grid-column: 3;
+  grid-row: 1;
+  grid-template-columns: minmax(68px, .42fr) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+
+body[data-view="popover"] .online-process-panel .popover-process-mainline strong,
+body[data-view="popover"] .online-process-panel .popover-process-mainline b,
+body[data-view="popover"] .online-process-panel .popover-process-host em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .online-process-panel .popover-process-mainline strong {
+  font-size: 10.6px;
+}
+
+body[data-view="popover"] .online-process-panel .popover-process-mainline b {
+  color: color-mix(in srgb, var(--accent-hi) 66%, var(--fg));
+  font-family: var(--font-sans);
+  font-size: 9.4px;
+  font-weight: 700;
+}
+
+body[data-view="popover"] .online-process-panel .popover-process-host {
+  display: inline-flex;
+  grid-column: 4;
+  grid-row: 1;
+  align-items: center;
+  justify-self: end;
+  max-width: 100%;
+  min-width: 0;
+  gap: 4px;
+}
+
+body[data-view="popover"] .online-process-panel .popover-process-host .host-icon {
+  width: 15px;
+  height: 15px;
+}
+
+body[data-view="popover"] .online-process-panel .popover-process-host em {
+  color: var(--console-text-soft);
+  font-family: var(--font-sans);
+  font-size: 8.6px;
+  font-style: normal;
+  font-weight: 680;
+}
+
+body[data-view="popover"] .online-process-panel .popover-process-metrics {
+  display: grid;
+  grid-column: 3 / 5;
+  grid-row: 2;
+  grid-template-columns: 45px 60px 61px minmax(72px, 1fr);
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+}
+
+body[data-view="popover"] .online-process-panel .popover-process-metrics > span {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 3px;
+  min-width: 0;
+  padding: 3px 5px 2px 0;
+  border-top: 1px solid color-mix(in srgb, var(--run) 10%, transparent);
+}
+
+body[data-view="popover"] .online-process-panel .popover-process-metrics > span + span {
+  padding-left: 6px;
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--console-line-soft) 48%, transparent);
+}
+
+body[data-view="popover"] .online-process-panel .popover-process-metrics b,
+body[data-view="popover"] .online-process-panel .popover-process-metrics strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .online-process-panel .popover-process-metrics b {
+  color: var(--console-text-faint);
+  font-size: 7px;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+body[data-view="popover"] .online-process-panel .popover-process-metrics strong {
+  color: color-mix(in srgb, var(--run) 58%, var(--fg));
+  font-size: 8.8px;
+  font-weight: 760;
+}
+
+body[data-view="popover"] .online-process-panel .process-row-details {
+  padding-left: 39px;
+}
+
+body[data-view="popover"] .online-process-more {
+  min-height: 22px;
+  padding: 4px 0 0 39px;
+}
+
+body[data-view="popover"] .popover-process-empty {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  min-height: 45px;
+  border-top: 1px solid var(--console-line-soft);
+  color: var(--console-text-faint);
+}
+
+body[data-view="popover"] .popover-process-empty > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+body[data-view="popover"] .popover-process-empty strong,
+body[data-view="popover"] .popover-process-empty em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+body[data-view="popover"] .popover-process-empty strong {
+  color: var(--fg-muted);
+  font-size: 9.8px;
+}
+
+body[data-view="popover"] .popover-process-empty em {
+  color: var(--console-text-faint);
+  font-size: 8.5px;
+  font-style: normal;
+  line-height: 1.2;
+}
+
+@media (max-width: 430px) {
+  body[data-view="popover"] .online-process-panel {
+    padding-inline: 7px;
+  }
+
+  body[data-view="popover"] .online-process-panel .popover-process-head {
+    grid-template-columns: 12px 16px minmax(0, 1fr) minmax(54px, .4fr);
+    column-gap: 5px;
+  }
+
+  body[data-view="popover"] .online-process-panel .popover-process-mainline {
+    grid-template-columns: minmax(55px, .42fr) minmax(0, 1fr);
+    gap: 5px;
+  }
+
+  body[data-view="popover"] .online-process-panel .popover-process-host .host-icon {
+    display: none;
+  }
+
+  body[data-view="popover"] .online-process-panel .popover-process-host em {
+    font-size: 7.8px;
+  }
+
+  body[data-view="popover"] .online-process-panel .popover-process-metrics {
+    grid-template-columns: 38px 48px 51px minmax(58px, 1fr);
+  }
+
+  body[data-view="popover"] .online-process-panel .popover-process-metrics > span {
+    gap: 2px;
+    padding-right: 3px;
+  }
+}

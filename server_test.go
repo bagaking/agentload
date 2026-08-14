@@ -770,6 +770,7 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 		TranscriptStats: TranscriptStats{
 			Errors: []string{sessionPath + ": parse failed", "opened " + sessionFileURI},
 		},
+		ProcessStats: ProcessObservationStats{Incomplete: true, LastKnown: true, Error: "ps failed near " + sessionPath},
 		LiveProcesses: []LiveProcessSnapshot{
 			{
 				PID:            42,
@@ -859,6 +860,9 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 	}
 	if len(got.LiveProcesses) != 1 || got.LiveProcesses[0].Command == "" || !strings.Contains(got.LiveProcesses[0].Command, "codex") {
 		t.Fatalf("expected sanitized command to keep executable identity, got %+v", got.LiveProcesses)
+	}
+	if !got.ProcessStats.Incomplete || !got.ProcessStats.LastKnown || !strings.Contains(got.ProcessStats.Error, "session.jsonl") {
+		t.Fatalf("expected sanitized process coverage state, got %+v", got.ProcessStats)
 	}
 	if len(got.LiveProcesses[0].SessionPaths) != 0 {
 		t.Fatalf("expected client session paths to be removed, got %+v", got.LiveProcesses[0].SessionPaths)
@@ -1069,6 +1073,34 @@ func TestSanitizeTextForClientRedactsPathsInsideStructuredTokens(t *testing.T) {
 	context := sanitizeTextForClient(path + " and " + spacedPath + " both failed")
 	if !strings.Contains(context, " and ") || !strings.Contains(context, " both failed") {
 		t.Fatalf("path sanitization swallowed diagnostic context: %q", context)
+	}
+}
+
+func TestSanitizeTextForClientKeepsUnknownFileContextWithoutLeakingDottedDirectories(t *testing.T) {
+	root := t.TempDir()
+	cases := []struct {
+		name string
+		path string
+		want []string
+	}{
+		{name: "unknown extension", path: filepath.Join(root, "Profile Name", "session.py"), want: []string{"session.py", "parse failed"}},
+		{name: "dotted directory with connector", path: filepath.Join(root, "cache.log and Team", "session.py"), want: []string{"session.py", "parse failed"}},
+		{name: "directory without extension", path: filepath.Join(root, "workspace", "agentload"), want: []string{"agentload", "parse failed"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := sanitizeTextForClient("opened " + tc.path + " parse failed")
+			for _, leaked := range []string{root, "Profile Name", "cache.log", "Team"} {
+				if strings.Contains(got, leaked) {
+					t.Fatalf("expected path component %q to be redacted, got %q", leaked, got)
+				}
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(got, want) {
+					t.Fatalf("expected sanitized context %q to contain %q", got, want)
+				}
+			}
+		})
 	}
 }
 

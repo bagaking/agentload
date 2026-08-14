@@ -146,6 +146,37 @@ func TestObserverSnapshotKeepsDetectedToolPIDMetricsWithoutSessions(t *testing.T
 	}
 }
 
+func TestObserverSnapshotRetainsLastKnownProcessesWhenDiscoveryFails(t *testing.T) {
+	originalDiscover := discoverLiveProcessesFunc
+	defer func() { discoverLiveProcessesFunc = originalDiscover }()
+	processes := []LiveProcess{{PID: 11, Tool: "codex", Command: "codex run"}}
+	discoverLiveProcessesFunc = func(context.Context, *codingAgentRegistry) ([]LiveProcess, []string) {
+		return processes, nil
+	}
+	observer := newObserver(Config{IdleGap: 90 * time.Second, MinInterval: 15 * time.Second, Lookback: time.Hour})
+	first := observer.Snapshot(context.Background())
+	if first.ProcessStats.Incomplete || len(first.LiveProcesses) != 1 {
+		t.Fatalf("expected clean initial process sample, got stats=%+v processes=%+v", first.ProcessStats, first.LiveProcesses)
+	}
+
+	discoverLiveProcessesFunc = func(context.Context, *codingAgentRegistry) ([]LiveProcess, []string) {
+		return nil, []string{processDiscoveryFailurePrefix + "signal: killed"}
+	}
+	second := observer.Snapshot(context.Background())
+	if !second.ProcessStats.Incomplete || !second.ProcessStats.LastKnown || second.ProcessStats.Error != "signal: killed" {
+		t.Fatalf("expected incomplete last-known process stats, got %+v", second.ProcessStats)
+	}
+	if len(second.LiveProcesses) != 1 || second.LiveProcesses[0].PID != 11 {
+		t.Fatalf("expected last-known process row, got %+v", second.LiveProcesses)
+	}
+	if !snapshotScanAborted(context.Background(), second) {
+		t.Fatal("incomplete process evidence must not be committed")
+	}
+	if !slices.Contains(second.Notes, "Process evidence is incomplete; the current process query failed, so last observed process rows are shown.") {
+		t.Fatalf("missing process coverage note: %#v", second.Notes)
+	}
+}
+
 func TestTranscriptScanSkipsUnchangedFileContent(t *testing.T) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "session.jsonl")

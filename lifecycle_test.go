@@ -53,6 +53,45 @@ func TestLifecycleLogRecordWritesJSONL(t *testing.T) {
 	}
 }
 
+func TestLifecycleSnapshotRecordsIncompleteProcessEvidence(t *testing.T) {
+	event := lifecycleEventFromSnapshot("snapshot_aborted", "", Snapshot{
+		ProcessStats: ProcessObservationStats{Incomplete: true, LastKnown: true, Error: "ps failed"},
+	})
+	if event.ProcessStats == nil || !event.ProcessStats.Incomplete || !event.ProcessStats.LastKnown || event.ProcessStats.Error != "ps failed" {
+		t.Fatalf("expected process coverage in lifecycle event, got %+v", event.ProcessStats)
+	}
+}
+
+func TestLifecycleLogRecordRedactsSnapshotAndErrorPaths(t *testing.T) {
+	root := t.TempDir()
+	projectPath := filepath.Join(root, "workspace", "agentload")
+	log := newLifecycleLog(filepath.Join(root, "history", "history.jsonl"))
+	event := lifecycleEvent{
+		Event:            "snapshot_aborted",
+		Reason:           "opened " + projectPath + " parse failed",
+		Error:            "read " + projectPath + ": permission denied",
+		Metrics:          &lifecycleSnapshotMetrics{TopProject: projectPath},
+		HostAppProcesses: []lifecycleHostAppProcess{{Name: projectPath}},
+	}
+	if err := log.record(event); err != nil {
+		t.Fatalf("record lifecycle event: %v", err)
+	}
+	raw, err := os.ReadFile(log.path)
+	if err != nil {
+		t.Fatalf("read lifecycle log: %v", err)
+	}
+	if strings.Contains(string(raw), root) {
+		t.Fatalf("lifecycle log leaked local path %q: %s", root, raw)
+	}
+	var got lifecycleEvent
+	if err := json.Unmarshal(raw[:len(raw)-1], &got); err != nil {
+		t.Fatalf("decode lifecycle event: %v", err)
+	}
+	if got.Metrics == nil || got.Metrics.TopProject != "agentload" || got.HostAppProcesses[0].Name != "agentload" || !strings.Contains(got.Reason, "parse failed") {
+		t.Fatalf("unexpected sanitized lifecycle event: %+v", got)
+	}
+}
+
 func TestLifecycleLogRecordAppendsQuitAndHeartbeatEvents(t *testing.T) {
 	historyPath := filepath.Join(t.TempDir(), "AgentLoad", "history.jsonl")
 	log := newLifecycleLog(historyPath)

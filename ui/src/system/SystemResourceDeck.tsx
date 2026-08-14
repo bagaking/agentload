@@ -33,6 +33,7 @@ type Props = {
   processMemory: number;
   mappedProcesses: number;
   unmappedProcesses: number;
+  processEvidenceComplete: boolean;
 };
 
 export function SystemResourceDeck({
@@ -44,6 +45,7 @@ export function SystemResourceDeck({
   processMemory,
   mappedProcesses,
   unmappedProcesses,
+  processEvidenceComplete,
 }: Props) {
   const [selectedMetric, setSelectedMetric] = useState<SystemMetricKey>("network");
   const [detailExpanded, setDetailExpanded] = useState(false);
@@ -55,7 +57,8 @@ export function SystemResourceDeck({
     processMemory,
     mappedProcesses,
     unmappedProcesses,
-  }), [mappedProcesses, processCPU, processCount, processMemory, resources, t, unmappedProcesses]);
+    processEvidenceComplete,
+  }), [mappedProcesses, processCPU, processCount, processEvidenceComplete, processMemory, resources, t, unmappedProcesses]);
   const selected = metrics.find((metric) => metric.key === selectedMetric) ?? metrics[0];
   const headlineMetrics = metrics.filter((metric) => metric.key === "cpu" || metric.key === "memory" || metric.key === "disk");
   const diskMetric = metrics.find((metric) => metric.key === "disk");
@@ -108,6 +111,7 @@ function buildMetrics({
   processMemory,
   mappedProcesses,
   unmappedProcesses,
+  processEvidenceComplete,
 }: Omit<Props, "history">): SystemMetric[] {
   const cpu = resources?.cpu_percent ?? 0;
   const memoryPct = resources?.memory_used_pct ?? 0;
@@ -121,6 +125,7 @@ function buildMetrics({
   const hasRateSample = typeof resources?.sample_interval_seconds === "number" && resources.sample_interval_seconds > 0;
   const hasMemory = (resources?.memory_total_bytes ?? 0) > 0;
   const hasDisk = (resources?.disk_total_bytes ?? 0) > 0;
+  const processAvailable = processEvidenceComplete;
 
   return [
     {
@@ -224,17 +229,17 @@ function buildMetrics({
       key: "agent",
       label: t("agentProcessLoad"),
       icon: <Server size={14} />,
-      value: String(processCount),
-      detail: `${formatCompactCPU(processCPU)} · ${formatMemory(processMemory, t)}`,
-      score: Math.min(100, processCPU),
-      available: true,
+      value: processAvailable ? String(processCount) : t("unavailable"),
+      detail: processAvailable ? `${formatCompactCPU(processCPU)} · ${formatMemory(processMemory, t)}` : t("processEvidenceIncomplete"),
+      score: processAvailable ? Math.min(100, processCPU) : 0,
+      available: processAvailable,
       tone: "agent",
       facts: [
-        { label: t("processes"), value: String(processCount) },
-        { label: t("mapped"), value: String(mappedProcesses) },
-        { label: t("unmapped"), value: String(unmappedProcesses) },
-        { label: t("processCPU"), value: formatCompactCPU(processCPU) },
-        { label: t("processMemory"), value: formatMemory(processMemory, t) },
+        { label: t("processes"), value: processAvailable ? String(processCount) : t("unavailable") },
+        { label: t("mapped"), value: processAvailable ? String(mappedProcesses) : t("unavailable") },
+        { label: t("unmapped"), value: processAvailable ? String(unmappedProcesses) : t("unavailable") },
+        { label: t("processCPU"), value: processAvailable ? formatCompactCPU(processCPU) : t("unavailable") },
+        { label: t("processMemory"), value: processAvailable ? formatMemory(processMemory, t) : t("unavailable") },
       ],
       source: t("systemSourceObservedProcesses"),
       scope: t("resourceScopeVisibleProcesses"),

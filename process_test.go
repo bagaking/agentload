@@ -86,6 +86,30 @@ func TestParseProcessTableLineIncludesResourceUsage(t *testing.T) {
 	}
 }
 
+func TestParseProcessTableLineAcceptsLocaleDecimalCPU(t *testing.T) {
+	row, ok := parseProcessTableLine(`  501  4242  101  12,5  131072  01:02:03 codex --thread-id 123e4567-e89b-12d3-a456-426614174000`)
+	if !ok {
+		t.Fatalf("expected locale-formatted process table line to parse")
+	}
+	if row.CPUPercent != 12.5 {
+		t.Fatalf("unexpected locale cpu percent: %v", row.CPUPercent)
+	}
+	if row.Command != `codex --thread-id 123e4567-e89b-12d3-a456-426614174000` {
+		t.Fatalf("locale-formatted row lost command: %q", row.Command)
+	}
+	if tool, _ := defaultCodingAgentRegistry(Config{}).detectProcess(row.Command); tool != "codex" {
+		t.Fatalf("locale-formatted Codex row was not detected: %q", tool)
+	}
+}
+
+func TestParseProcessTableDoesNotTreatEmptyOrUnparseableOutputAsAValidSample(t *testing.T) {
+	for _, output := range []string{"", "not a process row\n", "uid pid ppid pcpu rss etime command\n"} {
+		if rows := parseProcessTable(output); len(rows) != 0 {
+			t.Fatalf("parseProcessTable(%q) returned rows: %#v", output, rows)
+		}
+	}
+}
+
 func TestDetectedTool(t *testing.T) {
 	registry := defaultCodingAgentRegistry(Config{})
 	cases := []struct {
@@ -119,9 +143,20 @@ func TestDetectedTool(t *testing.T) {
 		{command: `/usr/local/bin/openclaw`, want: ""},
 		{command: `/usr/local/bin/pi`, want: ""},
 		{command: `/Applications/Codex.app/Contents/MacOS/Codex`, want: "codex"},
+		{command: `codex --prompt codex helper`, want: "codex"},
+		{command: `codex --plugin fixture/Codex.app/Contents/Frameworks/Codex Helper.app/Contents/MacOS/Codex Helper`, want: "codex"},
 		{command: `Codex Computer Use.app/Contents/MacOS/Codex Computer Use`, want: "codex"},
+		{command: `fixtures/Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient event-stream mcp`, want: "codex"},
 		{command: `/Applications/Claude.app/Contents/MacOS/Claude`, want: "claude"},
-		{command: `/Applications/Codex.app/Contents/MacOS/Updater.app --sparkle`, want: ""},
+		{command: `fixture/Codex.app/Contents/Frameworks/Codex Helper (Renderer).app/Contents/MacOS/Codex Helper (Renderer) --type=renderer`, want: ""},
+		{command: `fixture/Codex.app/Contents/Frameworks/Codex Helper.app/Contents/MacOS/Codex Helper`, want: ""},
+		{command: `fixture/Codex.app/Contents/Frameworks/Codex Helper.app/Contents/MacOS/Codex Helper event-stream`, want: ""},
+		{command: `fixture/Codex.app/Contents/Frameworks/Codex Helper (GPU).app/Contents/MacOS/Codex Helper (GPU) --type=gpu-process`, want: ""},
+		{command: `fixture/Codex.app/Contents/Frameworks/Codex Helper.app/Contents/MacOS/Codex Helper --type=utility`, want: ""},
+		{command: `fixture/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/1.0/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer) --type=renderer`, want: ""},
+		{command: `fixture/Codex.app/Contents/Frameworks/crashpad_handler --annotation=_productName=Codex`, want: ""},
+		{command: `codex-code-mode-host`, want: ""},
+		{command: `fixture/Codex.app/Contents/MacOS/Updater.app --sparkle`, want: ""},
 		{command: ``, want: ""},
 	}
 	for _, tc := range cases {
@@ -129,6 +164,15 @@ func TestDetectedTool(t *testing.T) {
 		if got != tc.want {
 			t.Fatalf("detectedTool(%q) = %q, want %q", tc.command, got, tc.want)
 		}
+	}
+}
+
+func TestProcessDiscoveryFailureNoteIsStructured(t *testing.T) {
+	if reason, ok := processDiscoveryFailure([]string{"lsof failed: permission denied"}); ok || reason != "" {
+		t.Fatalf("lsof-only note must not invalidate process rows: (%q, %v)", reason, ok)
+	}
+	if reason, ok := processDiscoveryFailure([]string{processDiscoveryFailurePrefix + "signal: killed"}); !ok || reason != "signal: killed" {
+		t.Fatalf("unexpected process discovery failure: (%q, %v)", reason, ok)
 	}
 }
 
@@ -307,6 +351,39 @@ func TestExtractSessionHints(t *testing.T) {
 	}
 	if got := extractSessionHints(command); !slices.Equal(got, want) {
 		t.Fatalf("unexpected session hints: %#v", got)
+	}
+}
+
+func TestExtractSessionHintsIncludesResumeSessionIDs(t *testing.T) {
+	command := `claude --resume abcdef12`
+	want := []string{"abcdef12"}
+	if got := extractSessionHints(command); !slices.Equal(got, want) {
+		t.Fatalf("unexpected resume session hints: %#v", got)
+	}
+}
+
+func TestResumeSessionHintReachesLiveSessionMapping(t *testing.T) {
+	const sessionID = "abcdef12"
+	now := time.Unix(0, 0).UTC()
+	processes := []LiveProcess{{
+		PID:          701,
+		Tool:         "claude",
+		Command:      `claude --resume ` + sessionID,
+		SessionHints: extractSessionHints(`claude --resume ` + sessionID),
+	}}
+
+	sessions, notes := buildLiveSessionsAt(processes, &TranscriptData{Traces: map[string]*SessionTrace{}}, 90*time.Second, now)
+	if len(notes) != 1 || !slices.Contains(notes, "1 live sessions lack transcript timing, so active burst concurrency is conservative.") {
+		t.Fatalf("expected only the untraced-session note, got %#v", notes)
+	}
+	if len(sessions) != 1 || sessions[0].Tool != "claude" || sessions[0].SessionID != sessionID {
+		t.Fatalf("unexpected live session mapping: %#v", sessions)
+	}
+	if len(sessions[0].Processes) != 1 {
+		t.Fatalf("expected one process in resume session mapping, got %#v", sessions[0].Processes)
+	}
+	if !sessions[0].Mapping.CommandHint || sessions[0].Mapping.ParsedTranscriptID || sessions[0].Mapping.FallbackSessionID {
+		t.Fatalf("unexpected resume session mapping provenance: %#v", sessions[0].Mapping)
 	}
 }
 

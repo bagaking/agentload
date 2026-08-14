@@ -103,6 +103,17 @@ func buildDiagnosticAnomalySignals(snapshot Snapshot) []DiagnosticSignalSnapshot
 
 func buildDiagnosticEvidenceGaps(snapshot Snapshot) []DiagnosticSignalSnapshot {
 	gaps := []DiagnosticSignalSnapshot{}
+	if snapshot.ProcessStats.Incomplete {
+		gaps = append(gaps, DiagnosticSignalSnapshot{
+			Kind:      "process_observation_incomplete",
+			Severity:  "warn",
+			Title:     "Process observation incomplete",
+			Detail:    "The operating-system process query failed; process rows are last known evidence when available.",
+			Evidence:  "current process sample unavailable",
+			MetricKey: "process_pressure",
+			Source:    "process_observer",
+		})
+	}
 	if snapshot.Summary.UnmappedProcesses > 0 {
 		gaps = append(gaps, DiagnosticSignalSnapshot{
 			Kind:      "unmapped_processes",

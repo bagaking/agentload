@@ -132,10 +132,12 @@ semantic layer before visual polish is accepted.
   share of visible PIDs matched back to sessions. Raw process totals belong in
   a diagnostic pressure strip or process ledger using a formula such as
   `PID = matched to sessions + unmatched`.
-- Compact popover online and trend views should not carry process ledgers or
-  whole-machine resource dashboards. Put process diagnostics, system CPU,
-  memory, and network fluctuation into the system view so workload evidence and
-  machine pressure stay visually and semantically separate.
+- Compact popover online and trend views should not carry a full process ledger
+  or whole-machine resource dashboard. Online may show a short, directly
+  visible process-evidence list when current PID presence is part of the user's
+  question, while detailed process diagnostics and system CPU, memory, and
+  network fluctuation remain in the system view. Keep workload evidence and
+  machine pressure visually and semantically separate.
 - Diagnostics is the only compact page for anomaly/forecast signals and export.
   Do not duplicate these controls into Trend or System. Trend may link runtime
   drilldowns to persisted samples; System may show current process evidence; the

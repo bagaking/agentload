@@ -80,6 +80,10 @@ cold first poll can block noticeably.
   so at most one sanitize and one compression pass run per refresh slot.
 - **Empty state**: if the app has no observer and no cached snapshot the body
   is an empty `Snapshot` JSON (`{}`-equivalent with zero values).
+- **Process coverage**: `process_stats.incomplete` marks a failed OS process
+  query. When `last_known` is true, `live_processes` contains the last clean
+  rows for visibility and `notes` states that they are stale evidence. Such a
+  snapshot is served to the caller but is excluded from the cache and history.
 - **Throughput trends**: each range exposes
   `throughput_trends.windows[].throughput_series[]`. Current series keys are
   `minute:60`, `minute:300`, and `minute:900`; their `kind` is `minute_rollup`.

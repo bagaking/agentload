@@ -14,6 +14,15 @@ import (
 func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 	scanStart := time.Now()
 	processes, processNotes := discoverLiveProcessesFunc(ctx, o.adapters)
+	processStats := ProcessObservationStats{}
+	if processError, failed := processDiscoveryFailure(processNotes); failed {
+		processStats.Incomplete = true
+		processStats.Error = processError
+		processes = o.lastKnownProcesses()
+		processStats.LastKnown = len(processes) > 0
+	} else {
+		o.rememberProcesses(processes)
+	}
 	now := time.Now()
 	extraRoots, priority := rootsFromLiveProcesses(processes, o.adapters)
 	o.adapters.mergeRoots(extraRoots)
@@ -88,6 +97,7 @@ func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 		CandidateWorkitems: candidateWorkitems,
 		AgeBuckets:         buildAgeBuckets(liveSessions, o.cfg.IdleGap, now),
 		SystemResources:    sampleSystemResources(),
+		ProcessStats:       processStats,
 		LiveProcesses:      liveProcessSnapshots,
 		LiveSessions:       liveSessionSnapshots,
 		RuntimeProcesses:   buildRuntimeProcessSummary(liveProcessSnapshots),
@@ -129,7 +139,34 @@ func buildSnapshotNotes(snapshot Snapshot, processNotes, sessionNotes []string) 
 	if snapshot.TranscriptStats.HistoricalScanDeferred {
 		notes = append(notes, "Full historical transcript parsing was deferred from the foreground snapshot; live process files and foreground-window transcripts are still included.")
 	}
+	if snapshot.ProcessStats.Incomplete {
+		note := "Process evidence is incomplete; the current process query failed"
+		if snapshot.ProcessStats.LastKnown {
+			note += ", so last observed process rows are shown"
+		} else {
+			note += ", so no process rows are available"
+		}
+		notes = append(notes, note+".")
+	}
 	return uniqueSortedStrings(notes)
+}
+
+func (o *Observer) rememberProcesses(processes []LiveProcess) {
+	if o == nil {
+		return
+	}
+	o.processMu.Lock()
+	o.lastProcesses = cloneLiveProcesses(processes)
+	o.processMu.Unlock()
+}
+
+func (o *Observer) lastKnownProcesses() []LiveProcess {
+	if o == nil {
+		return nil
+	}
+	o.processMu.RLock()
+	defer o.processMu.RUnlock()
+	return cloneLiveProcesses(o.lastProcesses)
 }
 
 func (o *Observer) snapshotConfig(roots map[string][]string) SnapshotConfig {

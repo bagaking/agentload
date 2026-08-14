@@ -33,6 +33,7 @@ export type Snapshot = {
   candidate_workitems?: CandidateWorkitem[];
   age_buckets?: AgeBucketSnapshot[];
   system_resources?: SystemResourceSnapshot;
+  process_stats?: ProcessObservationStats;
   live_processes?: LiveProcess[];
   live_sessions?: LiveSession[];
   runtime_process_summary?: ProcessRuntimeSummary[];
@@ -136,6 +137,12 @@ export type CurrentMetrics = {
   active_burst_concurrency?: number;
   session_concurrency?: number;
   pid_concurrency?: number;
+};
+
+export type ProcessObservationStats = {
+  incomplete?: boolean;
+  last_known?: boolean;
+  error?: string;
 };
 
 export type SnapshotSummary = {

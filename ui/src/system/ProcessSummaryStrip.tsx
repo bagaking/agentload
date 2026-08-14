@@ -5,6 +5,7 @@ import { formatCPU, formatMemory, type Translate } from "../lib/format";
 import type { HostAppProcessSummary, ProcessRuntimeSummary, Snapshot } from "../types/snapshot";
 
 export function ProcessSummaryStrip({ t, snapshot }: { t: Translate; snapshot: Snapshot }) {
+  if (snapshot.process_stats?.incomplete) return null;
   const runtimeAll = [...(snapshot.runtime_process_summary ?? [])].sort((a, b) => (b.pid_count ?? 0) - (a.pid_count ?? 0));
   const hostsAll = [...(snapshot.host_app_process_summary ?? [])].sort((a, b) => (b.pid_count ?? 0) - (a.pid_count ?? 0));
   const runtime = runtimeAll.slice(0, 4);

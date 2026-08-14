@@ -35,6 +35,8 @@ type Observer struct {
 	cache         transcriptCacheState
 	inflight      map[string]*transcriptScanFlight
 	fileCache     map[string]fileTraceCache
+	processMu     sync.RWMutex
+	lastProcesses []LiveProcess
 }
 
 func newObserver(cfg Config) *Observer {

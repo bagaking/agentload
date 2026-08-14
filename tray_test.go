@@ -436,6 +436,23 @@ func TestSnapshotScanAborted(t *testing.T) {
 	}
 }
 
+func TestRememberSnapshotRejectsIncompleteProcessEvidence(t *testing.T) {
+	app := &trayApp{}
+	got := app.rememberSnapshot(Snapshot{
+		GeneratedAt:  "current",
+		ProcessStats: ProcessObservationStats{Incomplete: true, LastKnown: true},
+		LiveProcesses: []LiveProcessSnapshot{{
+			PID: 42,
+		}},
+	})
+	if !got.ProcessStats.Incomplete || len(got.LiveProcesses) != 1 {
+		t.Fatalf("expected incomplete snapshot to remain available to the caller, got %+v", got)
+	}
+	if _, ok := app.cachedSnapshot(); ok {
+		t.Fatal("incomplete process evidence entered the snapshot cache")
+	}
+}
+
 func TestStartLiveTokenRateStartsForIncompleteSnapshotWithoutReplacingMapping(t *testing.T) {
 	sampler := newTestLiveTokenRateSampler(Config{})
 	t.Cleanup(sampler.stopSampler)

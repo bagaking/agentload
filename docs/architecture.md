@@ -34,7 +34,9 @@ numbers.
   injected coding-agent registry owns executable aliases, interpreter script
   evidence, and process display identity for Claude, Codex/CodexL, Trae/TraeX,
   Gemini, OpenCode, and Hermes. Updater/Sparkle processes are excluded before
-  adapter matching; JavaScript interpreters expose only their executable script
+  adapter matching. Codex helper, renderer, crashpad, and code-mode-host
+  support processes are also excluded from agent PID pressure. JavaScript
+  interpreters expose only their executable script
   token, and Python exposes only an explicit `-m` module before any script, so
   incidental argument text cannot identify an agent. Cursor remains generic
   host-app evidence rather than an agent identity; OpenClaw and Pi remain
@@ -218,7 +220,10 @@ One snapshot build, in order:
 1. **Process discovery** (above), then `rootsFromLiveProcesses` derives extra
    config roots and priority transcript files from open file handles and
    command lines; registry `mergeRoots` accumulates them across runs so sessions
-   from non-default homes stay visible.
+   from non-default homes stay visible. If the OS process query fails, the
+   snapshot is marked incomplete, retains last-known process rows when
+   available, and is excluded from cache and history rather than recording a
+   false zero-process sample.
 2. **Transcript data** via the cached scan described above.
 3. **PID-to-session mapping** (`buildLiveSessionsAt`,
    `normalizeProcessSessionMappings`) with strict evidence precedence per

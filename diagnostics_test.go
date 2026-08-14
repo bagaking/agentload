@@ -51,6 +51,7 @@ func TestBuildDiagnosticsSnapshotSeparatesAnomaliesAndEvidenceGaps(t *testing.T)
 			},
 		},
 		TranscriptStats: TranscriptStats{DeferredFiles: 3, Errors: []string{"bad trace"}},
+		ProcessStats:    ProcessObservationStats{Incomplete: true, LastKnown: true, Error: "signal: killed"},
 		SystemResources: SystemResourceSnapshot{Supported: true, CPUPercent: 91, MemoryUsedPct: 72, Notes: []string{"Network counters are unavailable."}},
 		LiveSessions: []LiveSessionSnapshot{
 			{SessionID: "s1"},
@@ -66,7 +67,7 @@ func TestBuildDiagnosticsSnapshotSeparatesAnomaliesAndEvidenceGaps(t *testing.T)
 	if !hasDiagnosticSignal(diagnostics.AnomalySignals, "duplicate_overlap") || !hasDiagnosticSignal(diagnostics.AnomalySignals, "system_cpu_pressure") {
 		t.Fatalf("expected risk and system anomaly signals, got %+v", diagnostics.AnomalySignals)
 	}
-	for _, kind := range []string{"unmapped_processes", "low_confidence_sessions", "deferred_transcript_scan", "transcript_parse_errors", "system_resource_sampling_notes", "system_resource_rates_pending"} {
+	for _, kind := range []string{"process_observation_incomplete", "unmapped_processes", "low_confidence_sessions", "deferred_transcript_scan", "transcript_parse_errors", "system_resource_sampling_notes", "system_resource_rates_pending"} {
 		if !hasDiagnosticSignal(diagnostics.EvidenceGaps, kind) {
 			t.Fatalf("expected evidence gap %q, got %+v", kind, diagnostics.EvidenceGaps)
 		}

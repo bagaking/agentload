@@ -103,6 +103,14 @@ should not make every number look like a separate status badge. This keeps the
 evidence window visible without requiring users to decode abbreviations such as
 `AM` and `AS`.
 
+The default compact online surface must show a concise process-evidence readout
+when visible agent PIDs exist. A PID pressure number alone is insufficient for
+an operator who needs to verify which local processes are present. Keep the
+readout bounded and diagnostic: show tool/identity, PID, and mapping state;
+leave full process resources, command details, and overflow rows to the system
+view or dashboard ledger. When no process is observed, show an explicit empty
+state rather than omitting the section.
+
 Tool coverage is a contextual cue, not a separate analysis paragraph. In compact
 project lists, show it as a small badge strip beside the row controls. The badge
 should use the observed tool application's local icon when an allowlisted local
