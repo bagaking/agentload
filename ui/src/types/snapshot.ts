@@ -67,6 +67,13 @@ export type LiveTokenRateSample = {
   latest_signal_at?: string;
   latest_event_at?: string;
   unavailable_reason?: string;
+  // Set only when the rate is a floor measured from a subset of the eligible
+  // transcripts; the counts say how much of that set it saw.
+  coverage?: "partial";
+  // Set when the degradation cannot be expressed as a file count.
+  coverage_reason?: string;
+  tracked_file_count?: number;
+  eligible_file_count?: number;
   projects?: LiveTokenRateProjectSample[] | null;
 };
 
@@ -193,8 +200,20 @@ export type TranscriptStats = {
   errors?: string[];
 };
 
+// One checkout of a project. `name: ""`/absent is the main checkout.
+export type ProjectWorktreeSnapshot = {
+  name?: string;
+  branch?: string;
+  session_count?: number;
+  active_burst_count?: number;
+  process_count?: number;
+  last_event_at?: string;
+};
+
 export type ProjectSnapshot = {
   project?: string;
+  worktrees?: ProjectWorktreeSnapshot[];
+  branches?: string[];
   session_count?: number;
   active_burst_count?: number;
   main_agent_sessions?: number;
@@ -379,6 +398,8 @@ export type LiveSession = {
   role_hint_source?: string;
   independently_run?: boolean;
   project?: string;
+  worktree?: string;
+  branch?: string;
   process_count?: number;
   process_cpu_percent?: number;
   process_memory_bytes?: number;

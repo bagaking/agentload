@@ -1,16 +1,16 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
-import { Activity, ArrowUpRight, Bot, CheckCircle2, ChevronDown, Copy, ExternalLink, Gauge, GitBranch, Info, Languages, Layers, Moon, PauseCircle, Radar, RefreshCw, Search, Server, Sun, Terminal, X, XCircle } from "lucide-react";
+import { Activity, ArrowUpRight, Bot, CheckCircle2, ChevronDown, Copy, ExternalLink, FolderGit2, Gauge, GitBranch, Info, Languages, Layers, Moon, Pause, PauseCircle, Radar, RefreshCw, Search, Server, Sun, Terminal, TrendingUp, X, XCircle } from "lucide-react";
 import { copy, type Lang } from "./i18n";
-import { buildToolSessionGroups, confidenceLabel, freshnessLabel, hiddenToolSessionCount, mappingMethodLabel, normalizedRole, orderedProjects, projectEvidenceItems, roleLabel, sessionEvidenceItems, sessionIdentity, sessionsForProject, tokenUsageProvenanceLabel, toolBadgeLabel, toolDisplayName, toolIconName } from "./lib/activityModel";
+import { buildToolSessionGroups, confidenceLabel, freshnessLabel, groupSessionsByWorktree, hiddenToolSessionCount, mappingMethodLabel, normalizedRole, orderedProjects, projectEvidenceItems, roleLabel, sessionEvidenceItems, sessionIdentity, sessionsForProject, tokenUsageProvenanceLabel, toolBadgeLabel, toolDisplayName, toolIconName } from "./lib/activityModel";
 import { activeWindowLabel, buildRailItems, coordinationPostureLabel, currentMeaningLead, currentMeaningPoints, dashboardProjectMeta, deferredScanValue, mappingHealthText, metricState, primaryEvidenceNote, statusTone, transcriptScanNote, transcriptScanSummary } from "./lib/dashboardModel";
 import { clampPct, countLabel, formatAge, formatBytesPerSecond, formatCompactCPU, formatCPU, formatCopy, formatDateTime, formatMemory, formatPct, formatRefreshInterval, formatTokenCount, formatTokenRate, formatTokenUsageSummary, pctPart, safeID, shortID, tokenUsageHasValue } from "./lib/format";
 import { currentHasRecentMovement, currentKnownSessionCount, currentProcessPressureCount, currentRecentMovementCount, liveTokenRateValue, normalizedLiveTokenRateState, projectLiveTokenRateValue, projectProcessPressureCount, projectProcessResources, projectRoleCounts, sessionHasRecentMovement, sessionHumanReviewCount, sessionNeedsHumanReview, sessionProcessPressure, snapshotHumanReviewSessions, summaryMappedProcessCount, summaryMappingCoveragePct, summaryUnmappedProcessCount, toolKnownSessionCount, toolRecentMovementCount } from "./lib/metricSemantics";
 import { LineageSummary } from "./lineage/LineageSummary";
 import { useLiveTokenRate } from "./live/useLiveTokenRate";
-import { useSnapshotController } from "./snapshot/useSnapshotController";
-import { ProcessSummaryStrip } from "./system/ProcessSummaryStrip";
+import { TrendRangeRail, activeTrendRanges } from "./trend/TrendRangeRail";
+import { REFRESH_INTERVALS_MS, useSnapshotController } from "./snapshot/useSnapshotController";
 import { SystemResourceDeck } from "./system/SystemResourceDeck";
 import { useLiveSystemResources } from "./system/useLiveSystemResources";
 import type { TrendLane, TrendRange } from "./trend/types";
@@ -24,7 +24,6 @@ import "./styles/popover-tabs.css";
 import "./styles/system-process.css";
 import "./styles/diagnostics.css";
 import "./styles/lineage.css";
-import "./styles/process-summary.css";
 import "./styles/system-resource-inspector.css";
 import "./styles/activity-process-trend.css";
 import "./styles/throughput-trend.css";
@@ -41,7 +40,7 @@ const DiagnosticsPanel = React.lazy(async () => {
 
 const BRAND_NAME = "Agent Load";
 const INSPECTOR_INITIAL_LIMIT = 12;
-const POPOVER_VIEWS: readonly PopoverView[] = ["online", "trend", "system", "diagnostics"];
+const POPOVER_VIEWS: readonly PopoverView[] = ["throughput", "activity", "online", "system", "diagnostics"];
 const PROCESS_LEDGER_INITIAL_LIMIT = 40;
 type ProcessFilter =
   | { kind: "all"; id: "all" }
@@ -73,12 +72,12 @@ function App() {
   const [railTab, setRailTab] = useState<RailTab>("projects");
   const [query, setQuery] = useState("");
   const [selection, setSelection] = useState<Selection>({ type: "overview", id: "overview" });
-  const [popoverView, setPopoverView] = useState<PopoverView>("online");
+  const [popoverView, setPopoverView] = useState<PopoverView>("throughput");
   const [trendRange, setTrendRange] = useState<TrendRange>("1D");
   const [trendSelection, setTrendSelection] = useState<Record<TrendLane, string | undefined>>({ history: undefined, runtime: undefined, throughput: undefined });
   const shellRef = useRef<HTMLDivElement | null>(null);
   const popoverResizeRequestRef = useRef<(() => void) | null>(null);
-  const { snapshot, error, refreshing, refreshInterval, refreshSnapshot, cycleRefreshInterval, isSurfaceVisible, surfaceVisible } = useSnapshotController({ view, popoverView, shellRef });
+  const { snapshot, error, refreshing, refreshInterval, refreshSnapshot, cycleRefreshInterval, chooseRefreshInterval, isSurfaceVisible, surfaceVisible } = useSnapshotController({ view, popoverView, shellRef });
   const liveTokenRate = useLiveTokenRate(surfaceVisible);
 
   const t = useCallback((key: string) => copy[lang][key] || copy.en[key] || key, [lang]);
@@ -148,7 +147,9 @@ function App() {
   const running = refreshing;
 
   return (
-    <div className={`app app-${view}`} ref={shellRef}>
+    <div className={`app app-${view}`} ref={shellRef} onContextMenu={(event) => {
+      if (compact && window.webkit?.messageHandlers?.agentLoadAction && !window.getSelection()?.toString() && !(event.target instanceof Element && event.target.closest("input, textarea, a, [contenteditable]"))) event.preventDefault();
+    }}>
       <Topbar
         t={t}
         lang={lang}
@@ -156,13 +157,11 @@ function App() {
         theme={theme}
         setTheme={setTheme}
         compact={compact}
-        snapshot={snapshot}
         running={running}
         error={error}
         refreshSnapshot={refreshSnapshot}
         refreshInterval={refreshInterval}
         cycleRefreshInterval={cycleRefreshInterval}
-        onOpenStatus={compact ? () => setPopoverView("online") : undefined}
       />
       {view === "popover" ? (
         <>
@@ -184,9 +183,13 @@ function App() {
             t={t}
             snapshot={snapshot}
             popoverView={popoverView}
+            refreshing={running}
+            refreshSnapshot={refreshSnapshot}
             setPopoverView={setPopoverView}
             refreshInterval={refreshInterval}
-            cycleRefreshInterval={cycleRefreshInterval}
+            chooseRefreshInterval={chooseRefreshInterval}
+            trendRange={trendRange}
+            setTrendRange={setTrendRange}
           />
         </>
       ) : (
@@ -305,22 +308,46 @@ function PopoverSurface({
               <PopoverAuditShell t={t} snapshot={snapshot} liveTokenRate={liveTokenRate} selection={selection} setSelection={setSelection} setHoverDetail={setHoverDetail} />
             </section>
             <section
-              className="popover-view-panel trend"
-              id="popover-panel-trend"
+              className="popover-view-panel throughput"
+              id="popover-panel-throughput"
               role="tabpanel"
-              aria-labelledby="popover-view-trend"
-              hidden={popoverView !== "trend"}
+              aria-labelledby="popover-view-throughput"
+              hidden={popoverView !== "throughput"}
             >
-              {popoverView === "trend" ? (
+              {popoverView === "throughput" ? (
                 <React.Suspense fallback={<PanelLoading t={t} icon={<Gauge size={15} />} />}>
                   <TrendSuite
-                    t={t}
-                    snapshot={snapshot}
-                    compact
-                    range={trendRange}
-                    setRange={setTrendRange}
-                    trendSelection={trendSelection}
-                    setTrendSelection={setTrendSelection}
+                      t={t}
+                      snapshot={snapshot}
+                      liveReadout={<LiveTokenRateReadout t={t} sample={liveTokenRate} compact showLabel={false} />}
+                      compact
+                      lane="throughput"
+                      range={trendRange}
+                      setRange={setTrendRange}
+                      trendSelection={trendSelection}
+                      setTrendSelection={setTrendSelection}
+                  />
+                </React.Suspense>
+              ) : null}
+            </section>
+            <section
+              className="popover-view-panel activity"
+              id="popover-panel-activity"
+              role="tabpanel"
+              aria-labelledby="popover-view-activity"
+              hidden={popoverView !== "activity"}
+            >
+              {popoverView === "activity" ? (
+                <React.Suspense fallback={<PanelLoading t={t} icon={<TrendingUp size={15} />} />}>
+                  <TrendSuite
+                      t={t}
+                      snapshot={snapshot}
+                      compact
+                      lane="activity"
+                      range={trendRange}
+                      setRange={setTrendRange}
+                      trendSelection={trendSelection}
+                      setTrendSelection={setTrendSelection}
                   />
                 </React.Suspense>
               ) : null}
@@ -359,21 +386,50 @@ function PopoverFooter({
   t,
   snapshot,
   popoverView,
+  refreshing,
+  refreshSnapshot,
   setPopoverView,
   refreshInterval,
-  cycleRefreshInterval,
+  chooseRefreshInterval,
+  trendRange,
+  setTrendRange,
 }: {
   t: (key: string) => string;
   snapshot: Snapshot | null;
   popoverView: PopoverView;
+  refreshing: boolean;
+  refreshSnapshot: () => void;
   setPopoverView: (value: PopoverView) => void;
   refreshInterval: number;
-  cycleRefreshInterval: () => void;
+  chooseRefreshInterval: (ms: number) => void;
+  trendRange: TrendRange;
+  setTrendRange: (value: TrendRange) => void;
 }) {
   const generated = snapshot?.generated_at ? formatDateTime(snapshot.generated_at) : t("noData");
-  const active = currentHasRecentMovement(snapshot?.current);
   const stateLabel = snapshot ? metricState(snapshot, t) : t("noData");
   const reviewCount = snapshotHumanReviewSessions(snapshot).length;
+  // Only the two trend tabs read the history span, so the rail floats above the
+  // tab rail on those and leaves the footer alone everywhere else.
+  const rangeTab = popoverView === "throughput" || popoverView === "activity";
+  const activeRanges = useMemo(() => (snapshot ? activeTrendRanges(snapshot) : []), [snapshot]);
+  const effectiveRange = activeRanges.includes(trendRange) ? trendRange : activeRanges[0] ?? trendRange;
+  const [cadenceOpen, setCadenceOpen] = useState(false);
+  const cadenceRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!cadenceOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!cadenceRef.current?.contains(event.target as Node | null)) setCadenceOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setCadenceOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [cadenceOpen]);
   const onTablistKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const index = POPOVER_VIEWS.indexOf(popoverView);
     let next: PopoverView | undefined;
@@ -387,16 +443,65 @@ function PopoverFooter({
     document.getElementById(`popover-view-${next}`)?.focus();
   };
   return (
-    <footer className={`popover-footer ${active ? "is-active" : ""}`}>
-      <div className={`footer-meta ${active ? "is-active" : ""}`} role="status" title={stateLabel} aria-label={`${stateLabel} ${generated}`}>
-        <Activity className={`footer-state-icon ${snapshot ? "observed" : "idle"} ${active ? "is-active" : ""}`} size={12} aria-hidden="true" />
-        <span className="footer-time">{generated}</span>
-        <button className={`refresh-interval footer-interval ${refreshInterval ? "" : "is-paused"}`} type="button" data-focus-key={focusKey("refresh-interval", "popover")} onClick={cycleRefreshInterval} title={t("autoRefresh")} aria-label={t("autoRefresh")}>
-          <RefreshCw size={11} aria-hidden="true" />
-          <span>{formatRefreshInterval(refreshInterval, t)}</span>
+    <footer className="popover-footer">
+      <div className="footer-meta" role="group" aria-label={t("refresh")}>
+        <button
+          className={`footer-refresh ${refreshing ? "is-refreshing" : ""}`}
+          type="button"
+          data-focus-key={focusKey("popover-refresh")}
+          onClick={refreshSnapshot}
+          disabled={refreshing}
+          title={`${refreshing ? t("running") : t("refresh")} · ${stateLabel} · ${generated}`}
+          aria-label={`${refreshing ? t("running") : t("refresh")} · ${generated}`}
+          aria-busy={refreshing}
+        >
+          <RefreshCw size={11} className={refreshing ? "spin" : ""} aria-hidden="true" />
+          <span className="footer-time">{generated}</span>
         </button>
+        <div className="footer-cadence" ref={cadenceRef}>
+          <button
+            className={`footer-cadence-pill ${refreshInterval ? "" : "is-paused"}`}
+            type="button"
+            data-focus-key={focusKey("refresh-interval", "popover")}
+            onClick={() => setCadenceOpen((value) => !value)}
+            aria-haspopup="menu"
+            aria-expanded={cadenceOpen}
+            title={`${t("autoRefresh")}: ${formatRefreshInterval(refreshInterval, t)}`}
+            aria-label={`${t("autoRefresh")}: ${formatRefreshInterval(refreshInterval, t)}`}
+          >
+            {refreshInterval ? <span>{formatRefreshInterval(refreshInterval, t)}</span> : <Pause size={9} aria-hidden="true" />}
+          </button>
+          {cadenceOpen ? (
+            <div className="footer-cadence-menu" role="menu" aria-label={t("autoRefresh")}>
+              {REFRESH_INTERVALS_MS.map((ms) => {
+                const selected = ms === refreshInterval;
+                return (
+                  <button
+                    key={ms}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={selected}
+                    className={selected ? "is-selected" : ""}
+                    onClick={() => {
+                      chooseRefreshInterval(ms);
+                      setCadenceOpen(false);
+                    }}
+                  >
+                    <span>{formatRefreshInterval(ms, t)}</span>
+                    {selected ? <CheckCircle2 className="cadence-check" size={12} aria-hidden="true" /> : null}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
       </div>
       <div className="popover-footer-controls">
+        {rangeTab && activeRanges.length ? (
+          <div className="footer-range-float">
+            <TrendRangeRail label={t("throughputHistorySpan")} range={effectiveRange} setRange={setTrendRange} activeRanges={activeRanges} focusKey={focusKey} />
+          </div>
+        ) : null}
         <div className="popover-view-switch" role="tablist" aria-label={t("view")} onKeyDown={onTablistKeyDown}>
           {POPOVER_VIEWS.map((view) => {
             const showReviewBadge = view === "online" && reviewCount > 0;
@@ -413,9 +518,9 @@ function PopoverFooter({
               tabIndex={popoverView === view ? 0 : -1}
               data-focus-key={focusKey("popover-view", view)}
               onClick={() => setPopoverView(view)}
-              title={reviewTitle}
+              title={reviewTitle || t(view)}
             >
-              {view === "online" ? <Activity size={13} /> : view === "trend" ? <Gauge size={13} /> : view === "system" ? <Server size={13} /> : <Radar size={13} />}
+              {view === "throughput" ? <Gauge size={13} /> : view === "activity" ? <TrendingUp size={13} /> : view === "online" ? <Activity size={13} /> : view === "system" ? <Server size={13} /> : <Radar size={13} />}
               <span>{t(view)}</span>
               {showReviewBadge ? <strong className="view-attention-count" aria-label={reviewTitle}>{reviewCount}</strong> : null}
             </button>
@@ -715,7 +820,7 @@ function DashboardFieldGrid({ t, snapshot, liveTokenRate }: { t: (key: string) =
   );
 }
 
-function LiveTokenRateReadout({ t, sample, compact = false }: { t: (key: string) => string; sample: LiveTokenRateSample | undefined; compact?: boolean }) {
+function LiveTokenRateReadout({ t, sample, compact = false, showLabel = true }: { t: (key: string) => string; sample: LiveTokenRateSample | undefined; compact?: boolean; showLabel?: boolean }) {
   const state = normalizedLiveTokenRateState(sample);
   const rate = liveTokenRateValue(sample);
   const window = formatAge(sample?.window_seconds || 300, t);
@@ -725,12 +830,27 @@ function LiveTokenRateReadout({ t, sample, compact = false }: { t: (key: string)
   else if (state === "zero") detail = formatCopy(t("outputThroughputZeroDetail"), { window });
   else if (state === "stale") detail = t("outputThroughputStale");
   else if (state === "unavailable") detail = outputThroughputUnavailableDetail(t, sample?.unavailable_reason);
+  // A partial sample is a real measurement of a known subset, so the number
+  // stays and the detail line says what it covers — blanking it would hide
+  // throughput exactly when there is the most of it.
+  const partial = sample?.coverage === "partial" && rate !== null;
+  if (partial) {
+    // Two shapes of partial: a countable file cap, and a watcher gap whose
+    // missing volume cannot be counted at all. Both are floors; only the first
+    // can say how much of the set it saw.
+    detail = sample?.coverage_reason
+      ? t("outputThroughputPartialWatch")
+      : formatCopy(t("outputThroughputPartialCoverage"), {
+          tracked: sample?.tracked_file_count ?? 0,
+          eligible: sample?.eligible_file_count ?? 0,
+        });
+  }
   const value = rate === null ? "—" : formatTokenRate(rate);
-  const accessible = `${t("outputThroughput")}: ${value}${rate === null ? "" : ` ${t("tokenRateUnit")}`}. ${detail}`;
+  const accessible = `${t("outputThroughput")}: ${partial ? "\u2265 " : ""}${value}${rate === null ? "" : ` ${t("tokenRateUnit")}`}. ${detail}`;
   return (
-    <div className={`live-token-rate-readout ${compact ? "compact" : ""} is-${state}`} role="group" aria-label={accessible}>
-      <span><Gauge size={12} aria-hidden="true" /><TermLabel label={t("outputThroughput")} tip={t("tipOutputThroughput")} /></span>
-      <strong>{value}{rate === null ? null : <small>{t("tokenRateUnit")}</small>}</strong>
+    <div className={`live-token-rate-readout ${compact ? "compact" : ""} is-${state} ${partial ? "is-partial" : ""}`} role="group" aria-label={accessible} title={detail} tabIndex={0}>
+      {showLabel ? <span><Gauge size={12} aria-hidden="true" /><TermLabel label={t("outputThroughput")} tip={t("tipOutputThroughput")} /></span> : null}
+      <strong>{partial ? <span className="rate-floor-mark" aria-hidden="true">≥</span> : null}{value}{rate === null ? null : <small>{t("tokenRateUnit")}</small>}</strong>
       <em>{detail}</em>
     </div>
   );
@@ -738,7 +858,6 @@ function LiveTokenRateReadout({ t, sample, compact = false }: { t: (key: string)
 
 function outputThroughputUnavailableDetail(t: (key: string) => string, reason?: string): string {
   if (reason === "not_configured") return t("outputThroughputUnavailableNotConfigured");
-  if (reason === "file_capacity") return t("outputThroughputUnavailableFileCapacity");
   if (reason === "watch_incomplete") return t("outputThroughputUnavailableWatchIncomplete");
   return t("outputThroughputUnavailable");
 }
@@ -847,7 +966,6 @@ function PopoverSystemPanel({ t, snapshot, selection, setSelection, active }: { 
         unmappedProcesses={summaryUnmappedProcessCount(snapshot.summary)}
         processEvidenceComplete={!snapshot.process_stats?.incomplete}
       />
-      <ProcessSummaryStrip t={t} snapshot={snapshot} />
       <PopoverProcessPanel t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} context="system" />
     </section>
   );
@@ -1081,7 +1199,6 @@ function PopoverRuntimeInstrument({ t, snapshot, liveTokenRate }: { t: (key: str
           </div>
         ))}
       </dl>
-      <LiveTokenRateReadout t={t} sample={liveTokenRate} compact />
       <CurrentMeaningStrip t={t} snapshot={snapshot} compact />
     </section>
   );
@@ -1092,7 +1209,6 @@ function CurrentMeaningStrip({ t, snapshot, compact = false }: { t: (key: string
   const [expanded, setExpanded] = useState(!compact);
   const lead = currentMeaningLead(t, snapshot);
   const points = currentMeaningPoints(t, snapshot).slice(0, compact ? 2 : 3);
-  const stats = snapshot.transcript_stats ?? {};
   const activeWindow = activeWindowLabel(t, snapshot);
   return (
     <section className={`meaning-strip ${compact ? "compact" : ""} ${expanded ? "is-expanded" : ""}`}>
@@ -1122,10 +1238,6 @@ function CurrentMeaningStrip({ t, snapshot, compact = false }: { t: (key: string
         <span>
           <b>{t("evidenceNote")}</b>
           <em>{primaryEvidenceNote(t, snapshot)}</em>
-        </span>
-        <span>
-          <b><TermLabel label={t("scanState")} tip={t("tipScanner")} /></b>
-          <em>{`${transcriptScanSummary(t, stats)} · ${transcriptScanNote(t, stats)}`}</em>
         </span>
       </div>
       {points.length ? (
@@ -1224,7 +1336,7 @@ const ProjectAtlas = React.memo(function ProjectAtlas({
   showHead?: boolean;
   setHoverDetail?: HoverDetailSink;
 }) {
-  const allProjects = useMemo(() => orderedProjects(snapshot), [snapshot]);
+  const allProjects = useMemo(() => orderedProjects(snapshot, liveTokenRate), [snapshot, liveTokenRate]);
   const clippedProjects = allProjects.slice(0, limit ?? Number.POSITIVE_INFINITY);
   const hiddenProjectCount = Math.max(0, allProjects.length - clippedProjects.length);
   const [showOverflow, setShowOverflow] = useState(false);
@@ -1858,13 +1970,11 @@ function Topbar({
   theme,
   setTheme,
   compact,
-  snapshot,
   running,
   error,
   refreshSnapshot,
   refreshInterval,
   cycleRefreshInterval,
-  onOpenStatus,
 }: {
   t: (key: string) => string;
   lang: Lang;
@@ -1872,26 +1982,14 @@ function Topbar({
   theme: Theme;
   setTheme: (theme: Theme) => void;
   compact: boolean;
-  snapshot: Snapshot | null;
   running: boolean;
   error: string | null;
   refreshSnapshot: () => void;
   refreshInterval: number;
   cycleRefreshInterval: () => void;
-  onOpenStatus?: () => void;
 }) {
   const topbarStatusTone = error ? "bad" : running ? "running" : "idle";
-  const showTopbarStatus = !!error || running;
-  const reviewCount = snapshotHumanReviewSessions(snapshot).length;
-  const activeCount = currentRecentMovementCount(snapshot?.current);
-  const mainCount = snapshot?.summary?.main_agent_sessions ?? 0;
-  const subagentCount = snapshot?.summary?.subagent_sessions ?? 0;
-  const reviewTitle = formatCopy(t("topbarStatusTooltip"), {
-    review: reviewCount,
-    active: activeCount,
-    main: mainCount,
-    subagent: subagentCount,
-  });
+  const showTopbarStatus = !!error || (!compact && running);
   return (
     <header className="topbar">
       <div className="brand">
@@ -1911,19 +2009,9 @@ function Topbar({
         </div>
         <div className="brand-actions">
           {compact ? null : <Pill tone="safe">{t("loopback")}</Pill>}
-          <button className={`icon-btn topbar-refresh-action ${running ? "is-refreshing" : ""}`} type="button" data-focus-key={focusKey("topbar-refresh")} onClick={refreshSnapshot} title={running ? t("running") : t("refresh")} aria-label={running ? t("running") : t("refresh")} aria-busy={running}>
+          {compact ? null : <button className={`icon-btn topbar-refresh-action ${running ? "is-refreshing" : ""}`} type="button" data-focus-key={focusKey("topbar-refresh")} onClick={refreshSnapshot} title={running ? t("running") : t("refresh")} aria-label={running ? t("running") : t("refresh")} aria-busy={running}>
             <RefreshCw size={16} className={running ? "spin" : ""} />
-          </button>
-          {compact && snapshot ? (
-            <button className={`topbar-status-attention ${reviewCount ? "has-attention" : ""}`} type="button" data-focus-key={focusKey("topbar-status-attention")} onClick={onOpenStatus} title={reviewTitle} aria-label={reviewTitle}>
-              <Info className="attention-icon" size={13} aria-hidden="true" />
-              <span className="status-rotator" aria-hidden="true">
-                <span className="status-frame"><em>{t("attentionMainShort")}</em><strong>{reviewCount}</strong></span>
-                <span className="status-frame"><em>{t("activeShort")}</em><strong>{activeCount}</strong></span>
-                <span className="status-frame"><em>{t("mainSubSplit")}</em><strong>{mainCount}/{subagentCount}</strong></span>
-              </span>
-            </button>
-          ) : null}
+          </button>}
           {showTopbarStatus ? <Pill tone={topbarStatusTone}>{error ? t("failed") : running ? t("running") : t("idle")}</Pill> : null}
         </div>
       </div>
@@ -1933,19 +2021,14 @@ function Topbar({
             <kbd>{formatRefreshInterval(refreshInterval, t)}</kbd> {t("auto")}
           </button>
         ) : null}
-        <LanguageControl t={t} lang={lang} setLang={setLang} />
+        <LanguageControl t={t} lang={lang} setLang={setLang} compact={compact} />
         <button className="icon-btn" type="button" data-focus-key={focusKey("topbar-theme")} onClick={() => setTheme(theme === "light" ? "dark" : "light")} title={t("toggleTheme")} aria-label={t("toggleTheme")}>
           {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
         </button>
         {compact ? (
-          <>
-            <button className="icon-btn" type="button" data-focus-key={focusKey("topbar-dashboard")} onClick={() => postHostAction("open_dashboard")} title={t("dashboard")} aria-label={t("dashboard")}>
-              <ArrowUpRight size={16} />
-            </button>
-            <button className="icon-btn" type="button" data-focus-key={focusKey("topbar-close")} onClick={() => postHostAction("close")} title={t("close")} aria-label={t("close")}>
-              <X size={16} />
-            </button>
-          </>
+          <button className="icon-btn" type="button" data-focus-key={focusKey("topbar-close")} onClick={() => postHostAction("close")} title={t("close")} aria-label={t("close")}>
+            <X size={16} />
+          </button>
         ) : null}
       </div>
     </header>
@@ -2027,6 +2110,9 @@ const ProjectTreeRow = React.memo(function ProjectTreeRow({
   const projectHoverMeta = `${t("lastEvent")} ${projectAge} · ${t("tools")}: ${toolSummary}`;
   const projectHoverPayload: HoverDetailPayload = { kind: "project", id: projectId, title, detail: projectHoverDetail, meta: projectHoverMeta };
   const selected = selection.type === "project" && selection.id === projectId;
+  // The main checkout is stored as a worktree with an empty name; only the
+  // named ones are worth badging on the collapsed row.
+  const namedWorktrees = (project.worktrees ?? []).filter((w): w is typeof w & { name: string } => !!w.name);
   const rowClassName = [
     "project-tree-row",
     expanded ? "expanded" : "",
@@ -2060,6 +2146,19 @@ const ProjectTreeRow = React.memo(function ProjectTreeRow({
         </button>
         <button className="project-select" type="button" data-focus-key={focusKey("project", projectId)} onClick={selectProject} aria-current={selected ? "true" : undefined} aria-expanded={expanded} aria-label={title}>
           <span>{title}</span>
+          {project.branches?.length ? (
+            <span className="project-branch-badge" title={project.branches.join(", ")}>
+              <GitBranch size={9} aria-hidden="true" />
+              {project.branches[0]}
+              {project.branches.length > 1 ? ` +${project.branches.length - 1}` : ""}
+            </span>
+          ) : namedWorktrees.length ? (
+            <span className="project-branch-badge" title={namedWorktrees.map((w) => w.name).join(", ")}>
+              <GitBranch size={9} aria-hidden="true" />
+              {namedWorktrees[0].name}
+              {namedWorktrees.length > 1 ? ` +${namedWorktrees.length - 1}` : ""}
+            </span>
+          ) : null}
           {reviewCount ? <i className="project-review-chip" title={reviewTitle} aria-label={reviewTitle}><Info size={10} aria-hidden="true" />{reviewCount}</i> : null}
           <small>{projectMeta}</small>
         </button>
@@ -2206,6 +2305,52 @@ const SessionTree = React.memo(function SessionTree({
   compact: boolean;
   setHoverDetail?: HoverDetailSink;
 }) {
+  // Worktrees belong to the project body but are still separate checkouts, so
+  // they nest one level under it instead of splitting into their own projects.
+  const worktreeGroups = useMemo(() => groupSessionsByWorktree(sessions), [sessions]);
+  if (!sessions.length) {
+    return <div className="session-tree empty">{t("empty")}</div>;
+  }
+  if (worktreeGroups.length > 1) {
+    return (
+      <div className="session-tree">
+        {worktreeGroups.map((group) => (
+          <section className={`session-worktree-block${group.worktree ? "" : " is-main"}`} key={group.worktree || "__main__"}>
+            <div className="session-worktree-head">
+              <span>
+                {group.worktree ? <GitBranch size={11} aria-hidden="true" /> : <FolderGit2 size={11} aria-hidden="true" />}
+                {group.worktree || t("mainCheckout")}
+              </span>
+              <strong>{group.activeCount}/{group.sessions.length}</strong>
+            </div>
+            <SessionToolTree t={t} sessions={group.sessions} selection={selection} setSelection={setSelection} compact={compact} setHoverDetail={setHoverDetail} />
+          </section>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div className="session-tree">
+      <SessionToolTree t={t} sessions={sessions} selection={selection} setSelection={setSelection} compact={compact} setHoverDetail={setHoverDetail} />
+    </div>
+  );
+});
+
+const SessionToolTree = React.memo(function SessionToolTree({
+  t,
+  sessions,
+  selection,
+  setSelection,
+  compact,
+  setHoverDetail,
+}: {
+  t: (key: string) => string;
+  sessions: LiveSession[];
+  selection: Selection;
+  setSelection: (value: Selection) => void;
+  compact: boolean;
+  setHoverDetail?: HoverDetailSink;
+}) {
   const groups = useMemo(() => buildToolSessionGroups(sessions), [sessions]);
   const groupLimit = compact ? 2 : 4;
   const linkedLimit = compact ? 2 : 3;
@@ -2217,11 +2362,8 @@ const SessionTree = React.memo(function SessionTree({
   const hiddenTotal = hiddenGroups + collapsedGroups.reduce((total, group) => total + hiddenToolSessionCount(group, linkedLimit, childLimit, unlinkedLimit), 0);
   const visibleGroups = showOverflow ? groups : collapsedGroups;
   const overflowLabel = countLabel(t, showOverflow ? "lessCount" : "moreCount", hiddenTotal);
-  if (!sessions.length) {
-    return <div className="session-tree empty">{t("empty")}</div>;
-  }
   return (
-    <div className="session-tree">
+    <>
       <LineageSummary t={t} groups={groups} sessions={sessions} />
       {visibleGroups.map((group) => {
         const visibleLinked = showOverflow ? group.linked : group.linked.slice(0, linkedLimit);
@@ -2278,7 +2420,7 @@ const SessionTree = React.memo(function SessionTree({
           <span>{overflowLabel}</span>
         </button>
       ) : null}
-    </div>
+    </>
   );
 });
 
@@ -2350,6 +2492,17 @@ const SessionLine = React.memo(function SessionLine({
         </span>
         <span className="session-title">
           <SessionIdControl t={t} sid={sid} title={title} selected={selected} setSelection={setSelection} />
+          {session.branch ? (
+            <span className="session-branch-tag" title={session.branch}>
+              <GitBranch size={9} aria-hidden="true" />
+              {session.branch}
+            </span>
+          ) : session.worktree ? (
+            <span className="session-branch-tag" title={session.worktree}>
+              <GitBranch size={9} aria-hidden="true" />
+              {session.worktree}
+            </span>
+          ) : null}
           <button className="session-meta-button" type="button" data-focus-key={focusKey("session-meta", sid || title)} onClick={() => setSelection({ type: "session", id: safeID(sid) })}>
             <small>{confidenceLabel(t, session.confidence)}</small>
           </button>
@@ -2539,7 +2692,22 @@ function projectMetricObjectHelp(t: (key: string) => string, metric: ProjectMetr
   return t("projectMetricTotalHelp");
 }
 
-function LanguageControl({ t, lang, setLang }: { t: (key: string) => string; lang: Lang; setLang: (lang: Lang) => void }) {
+function LanguageControl({ t, lang, setLang, compact = false }: { t: (key: string) => string; lang: Lang; setLang: (lang: Lang) => void; compact?: boolean }) {
+  const nextLang: Record<Lang, Lang> = { en: "zh", zh: "ja", ja: "en" };
+  if (compact) {
+    return (
+      <button
+        className="icon-btn lang-cycle-btn"
+        type="button"
+        data-focus-key={focusKey("language", "cycle")}
+        onClick={() => setLang(nextLang[lang])}
+        title={`${t("language")}: ${languageDisplayName(lang)}`}
+        aria-label={`${t("language")}: ${languageDisplayName(lang)}`}
+      >
+        <span style={{ fontSize: "11px", fontWeight: 750, letterSpacing: "0.02em" }}>{lang.toUpperCase()}</span>
+      </button>
+    );
+  }
   return (
     <div className="lang-control" aria-label={t("language")}>
       <Languages size={14} />

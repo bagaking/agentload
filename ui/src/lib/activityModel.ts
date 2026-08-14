@@ -1,13 +1,20 @@
 import { formatAge, formatPct, formatTokenUsageSummary, shortID, tokenUsageHasValue, type Translate } from "./format";
-import { normalizedRole, projectRecentMovementCount, sessionHasRecentMovement, sessionNeedsHumanReview, type SessionRole } from "./metricSemantics";
-import type { ToolSessionGroup } from "../types/app";
-import type { LiveSession, ProjectSnapshot, Snapshot } from "../types/snapshot";
+import { normalizedRole, projectLiveTokenRateValue, projectRecentMovementCount, sessionHasRecentMovement, sessionNeedsHumanReview, type SessionRole } from "./metricSemantics";
+import type { ToolSessionGroup, SessionWorktreeGroup } from "../types/app";
+import type { LiveSession, LiveTokenRateSample, ProjectSnapshot, Snapshot } from "../types/snapshot";
 
 export type EvidenceItem = { label: string; value: string; tone?: string };
 export { normalizedRole, type SessionRole } from "./metricSemantics";
 
-export function orderedProjects(snapshot: Snapshot): ProjectSnapshot[] {
+// Throughput is what the ranking is actually about, so a project producing
+// tokens right now outranks one that is merely open. The rate is only a
+// tiebreaker input when it is measured — when the sampler has no value the
+// order falls back to activity, exactly as before.
+export function orderedProjects(snapshot: Snapshot, liveTokenRate?: LiveTokenRateSample): ProjectSnapshot[] {
   return [...(snapshot.project_focus ?? [])].sort((a, b) => {
+    const rateA = projectLiveTokenRateValue(liveTokenRate, a.project);
+    const rateB = projectLiveTokenRateValue(liveTokenRate, b.project);
+    if (rateA !== null && rateB !== null && rateA !== rateB) return rateB - rateA;
     const activeDelta = projectRecentMovementCount(b) - projectRecentMovementCount(a);
     if (activeDelta) return activeDelta;
     const attentionDelta = (b.attention_share_pct ?? 0) - (a.attention_share_pct ?? 0);
@@ -25,6 +32,30 @@ export function sessionsForProject(snapshot: Snapshot, project: ProjectSnapshot)
   return [...(snapshot.live_sessions ?? [])]
     .filter((session) => projectKey(session.project).toLowerCase() === key)
     .sort(compareSessionsByFreshness);
+}
+
+// Worktrees roll up to the project body (the backend attributes them there),
+// so within a project the sessions still split by worktree. The main checkout
+// always sorts first; worktrees follow by name so the row order is stable
+// across refreshes.
+export function groupSessionsByWorktree(sessions: LiveSession[]): SessionWorktreeGroup[] {
+  const groups = new Map<string, LiveSession[]>();
+  sessions.forEach((session) => {
+    const key = String(session.worktree || "").trim();
+    const existing = groups.get(key);
+    if (existing) existing.push(session);
+    else groups.set(key, [session]);
+  });
+  return [...groups.entries()]
+    .map(([worktree, members]) => ({
+      worktree,
+      sessions: members,
+      activeCount: members.filter(sessionHasRecentMovement).length,
+    }))
+    .sort((a, b) => {
+      if (!a.worktree !== !b.worktree) return a.worktree ? 1 : -1;
+      return a.worktree.localeCompare(b.worktree);
+    });
 }
 
 export function projectEvidenceItems(t: Translate, project: ProjectSnapshot, compact: boolean): EvidenceItem[] {

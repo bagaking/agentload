@@ -2,7 +2,7 @@ import type { LiveSession } from "./snapshot";
 
 export type Theme = "dark" | "light";
 export type RailTab = "projects" | "sessions" | "processes";
-export type PopoverView = "online" | "trend" | "system" | "diagnostics";
+export type PopoverView = "throughput" | "activity" | "online" | "system" | "diagnostics";
 
 export type Selection =
   | { type: "overview"; id: "overview" }
@@ -37,6 +37,13 @@ export type RailItem = {
 };
 
 export type SessionBranch = { parent: LiveSession; children: LiveSession[] };
+
+// A project's sessions split by worktree. `worktree: ""` is the main checkout.
+export type SessionWorktreeGroup = {
+  worktree: string;
+  sessions: LiveSession[];
+  activeCount: number;
+};
 
 export type ToolSessionGroup = {
   tool: string;

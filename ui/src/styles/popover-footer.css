@@ -3,43 +3,218 @@
    timestamp/cadence cluster keeps enough width in every locale. */
 
 body[data-view="popover"] .popover-footer {
-  grid-template-columns: minmax(118px, 1fr) auto;
-  gap: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 36px;
+  padding: 4px 8px;
+  /* The cadence menu opens upward out of the footer. Every ancestor up to .app
+     clips with overflow:hidden, which silently swallowed it — the button worked,
+     the menu was just invisible. */
+  overflow: visible;
 }
 
 body[data-view="popover"] .footer-meta {
-  grid-template-columns: auto minmax(64px, max-content) auto;
-  min-width: 136px;
-  padding-right: 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  padding: 0;
+  overflow: visible;
+  border-right: 0;
 }
 
-body[data-view="popover"] .footer-time,
-body[data-view="popover"] .footer-meta > span.footer-time {
-  min-width: 64px;
-  max-width: 82px;
-  overflow: hidden;
-  text-overflow: clip;
+body[data-view="popover"] .footer-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 4px;
+  color: var(--console-text-faint);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+body[data-view="popover"] .footer-refresh .footer-time {
+  font: 600 11px/1 var(--font-mono);
+  color: var(--console-text-faint);
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .footer-refresh:hover,
+body[data-view="popover"] .footer-refresh:focus-visible {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--console-line-soft) 48%, transparent);
+}
+
+body[data-view="popover"] .footer-refresh.is-refreshing {
+  color: var(--accent-hi);
+}
+
+body[data-view="popover"] .footer-cadence {
+  position: relative;
+  display: inline-flex;
+}
+
+/* Borderless at rest, like the timestamp button beside it — the chrome only
+   appears on hover/open, so the resting footer reads as one quiet row. */
+body[data-view="popover"] .footer-cadence-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 22px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--console-text-faint);
+  font: 700 11px/1 var(--font-mono);
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+
+body[data-view="popover"] .footer-cadence-pill:focus-visible,
+body[data-view="popover"] .footer-cadence-pill:hover,
+body[data-view="popover"] .footer-cadence-pill[aria-expanded="true"] {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--console-line-soft) 48%, transparent);
+}
+
+body[data-view="popover"] .footer-cadence-pill.is-paused {
+  color: var(--console-text-faint);
+  opacity: 0.65;
+}
+
+body[data-view="popover"] .footer-cadence-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 4px);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 116px;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--console-material-2);
+  box-shadow: 0 8px 24px color-mix(in srgb, #000 42%, transparent);
+}
+
+body[data-view="popover"] .footer-cadence-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--console-text-soft);
+  font: 600 11px/1 var(--font-mono);
+  text-align: left;
+  cursor: pointer;
+}
+
+body[data-view="popover"] .footer-cadence-menu button:hover,
+body[data-view="popover"] .footer-cadence-menu button:focus-visible {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--console-line-soft) 48%, transparent);
+  outline: none;
+}
+
+body[data-view="popover"] .footer-cadence-menu button.is-selected {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 22%, var(--console-material-2));
+}
+
+body[data-view="popover"] .footer-cadence-menu button .cadence-check {
+  color: var(--accent-hi);
 }
 
 body[data-view="popover"] .popover-footer-controls {
-  grid-template-columns: auto 27px;
-  gap: 4px;
+  /* Anchors the floating history-span rail to the tab cluster. */
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  justify-content: flex-end;
 }
 
+/* Surface, not outline — the tab rail reads as a tinted plate like the other
+   control clusters, with no hairline border of its own. */
 body[data-view="popover"] .popover-view-switch {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  width: 218px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  flex: 1 1 auto;
+  max-width: 250px;
+  padding: 2px;
+  border: 0;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--console-material-2) 52%, transparent);
 }
 
 body[data-view="popover"] .popover-view-switch button {
-  gap: 3px;
-  padding: 0 4px;
-  font-size: 8.6px;
+  flex: 0 1 auto;
+  gap: 0;
+  height: 24px;
+  padding: 0 7px;
+  font-size: 11px;
+  border-radius: 5px;
+  white-space: nowrap;
+  transition: background .18s ease, color .18s ease, padding .18s ease;
+}
+
+/* The selected tab reveals its label; the others keep only the icon. The label
+   is collapsed by width rather than removed, so it stays in the accessibility
+   tree and the reveal animates instead of snapping the row. */
+body[data-view="popover"] .popover-view-switch button span {
+  display: inline-block;
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  text-overflow: ellipsis;
+  transition: max-width .18s ease, opacity .18s ease, margin-left .18s ease;
+}
+
+body[data-view="popover"] .popover-view-switch button.is-active span {
+  max-width: 72px;
+  margin-left: 4px;
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body[data-view="popover"] .popover-view-switch button,
+  body[data-view="popover"] .popover-view-switch button span {
+    transition: none;
+  }
+}
+
+body[data-view="popover"] .popover-view-switch button.is-active {
+  background: color-mix(in srgb, var(--accent) 22%, var(--console-material-2));
+  color: var(--fg);
+}
+
+body[data-view="popover"] .popover-view-switch button svg {
+  opacity: .68;
+}
+
+body[data-view="popover"] .popover-view-switch button.is-active svg {
+  opacity: 1;
 }
 
 body[data-view="popover"] .footer-link {
-  width: 27px;
-  min-width: 27px;
+  width: 26px;
+  min-width: 26px;
+  height: 22px;
   padding: 0;
   border-left-color: color-mix(in srgb, var(--console-line-soft) 62%, transparent);
 }
@@ -55,21 +230,104 @@ body[data-view="popover"] .footer-link svg {
 
 @media (max-width: 760px) {
   body[data-view="popover"] .popover-view-switch {
-    width: 206px;
+    width: auto;
+    min-width: 170px;
   }
 
   body[data-view="popover"] .popover-view-switch button {
     gap: 3px;
-    padding: 0 4px;
   }
 }
 
-@media (max-width: 430px) {
-  body[data-view="popover"] .popover-view-switch {
-    width: 176px;
-  }
+/* History span. It belongs to the trend tabs rather than the footer, so it
+   floats just above the tab rail it qualifies — present only on those tabs,
+   centered over the row, and taking no height when absent. */
+body[data-view="popover"] .footer-range-float {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 5px);
+  z-index: 30;
+  display: flex;
+  padding: 3px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--console-material-2) 92%, transparent);
+  box-shadow: 0 4px 16px color-mix(in srgb, #000 26%, transparent);
+  transform: translateX(-50%);
+  animation: footer-range-rise .18s ease;
+}
 
-  body[data-view="popover"] .popover-view-switch button span {
-    display: none;
-  }
+@keyframes footer-range-rise {
+  from { opacity: 0; transform: translateX(-50%) translateY(3px); }
+  to { opacity: 1; transform: translateX(-50%); }
+}
+
+/* One highlight slides between the items instead of each growing its own
+   background — the cursor appears to carry the plate with it, and it settles on
+   the selected item when the pointer leaves. --slot is the item width, so the
+   rules below only have to say which index to sit on. */
+body[data-view="popover"] .footer-range-float .trend-range-switch {
+  --slot: 34px;
+  position: relative;
+  gap: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+body[data-view="popover"] .footer-range-float .trend-range-switch::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  width: var(--slot);
+  height: 100%;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 24%, var(--console-material-2));
+  transition: transform .22s cubic-bezier(.22, .61, .36, 1), background .18s ease;
+}
+
+body[data-view="popover"] .footer-range-float .trend-range-switch button {
+  position: relative;
+  z-index: 1;
+  width: var(--slot);
+  min-width: 0;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--console-text-faint);
+  font: 700 10.5px/1 var(--font-mono);
+  transition: color .16s ease;
+}
+
+body[data-view="popover"] .footer-range-float .trend-range-switch button[aria-pressed="true"],
+body[data-view="popover"] .footer-range-float .trend-range-switch button:hover:not(:disabled) {
+  color: var(--fg);
+}
+
+body[data-view="popover"] .footer-range-float .trend-range-switch button:disabled {
+  opacity: .3;
+  cursor: default;
+}
+
+/* Resting position: the selected item. */
+body[data-view="popover"] .footer-range-float .trend-range-switch:has(button:nth-child(1)[aria-pressed="true"])::before { transform: translateX(0); }
+body[data-view="popover"] .footer-range-float .trend-range-switch:has(button:nth-child(2)[aria-pressed="true"])::before { transform: translateX(var(--slot)); }
+body[data-view="popover"] .footer-range-float .trend-range-switch:has(button:nth-child(3)[aria-pressed="true"])::before { transform: translateX(calc(var(--slot) * 2)); }
+body[data-view="popover"] .footer-range-float .trend-range-switch:has(button:nth-child(4)[aria-pressed="true"])::before { transform: translateX(calc(var(--slot) * 3)); }
+body[data-view="popover"] .footer-range-float .trend-range-switch:has(button:nth-child(5)[aria-pressed="true"])::before { transform: translateX(calc(var(--slot) * 4)); }
+
+/* Hover wins over the resting position, so the plate follows the cursor. */
+body[data-view="popover"] .footer-range-float .trend-range-switch:has(button:nth-child(1):hover:not(:disabled))::before { transform: translateX(0); }
+body[data-view="popover"] .footer-range-float .trend-range-switch:has(button:nth-child(2):hover:not(:disabled))::before { transform: translateX(var(--slot)); }
+body[data-view="popover"] .footer-range-float .trend-range-switch:has(button:nth-child(3):hover:not(:disabled))::before { transform: translateX(calc(var(--slot) * 2)); }
+body[data-view="popover"] .footer-range-float .trend-range-switch:has(button:nth-child(4):hover:not(:disabled))::before { transform: translateX(calc(var(--slot) * 3)); }
+body[data-view="popover"] .footer-range-float .trend-range-switch:has(button:nth-child(5):hover:not(:disabled))::before { transform: translateX(calc(var(--slot) * 4)); }
+
+@media (prefers-reduced-motion: reduce) {
+  body[data-view="popover"] .footer-range-float { animation: none; }
+  body[data-view="popover"] .footer-range-float .trend-range-switch::before { transition: none; }
 }

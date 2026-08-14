@@ -15,8 +15,9 @@
   align-items: stretch;
   justify-content: flex-end;
   min-width: 0;
+  gap: 4px;
   overflow: hidden;
-  border-left: 1px solid var(--console-line-soft);
+  border-left: 0;
 }
 
 .activity-process-legend button {
@@ -34,8 +35,10 @@
   cursor: pointer;
 }
 
+/* Legend chips read as their own plates, so the dividing rail between them is
+   gone — the gap does that work. */
 .activity-process-legend button + button {
-  border-left: 1px solid color-mix(in srgb, var(--console-line-soft) 72%, transparent);
+  border-left: 0;
 }
 
 .activity-process-legend button:disabled {
@@ -62,7 +65,7 @@
 .activity-process-legend span {
   overflow: hidden;
   color: color-mix(in srgb, currentColor 74%, var(--fg-faint));
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 760;
   line-height: 1;
   text-overflow: ellipsis;
@@ -180,8 +183,8 @@
   top: var(--tip-y);
   width: min(220px, calc(100% - 18px));
   padding: 7px 8px 8px;
-  border: 1px solid color-mix(in srgb, var(--fg) 9%, transparent);
-  border-radius: 7px;
+  border: 0;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--console-material) 94%, var(--bg));
   box-shadow: 0 14px 32px color-mix(in srgb, var(--bg) 42%, transparent);
   pointer-events: none;
@@ -249,7 +252,7 @@
 .activity-process-tooltip b {
   overflow: hidden;
   color: color-mix(in srgb, currentColor 72%, var(--fg-faint));
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 760;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -267,7 +270,7 @@
 .activity-process-tooltip small {
   color: var(--fg-faint);
   font-family: var(--font-mono);
-  font-size: 7.5px;
+  font-size: 10px;
   white-space: nowrap;
 }
 
@@ -279,15 +282,67 @@ body[data-view="dashboard"] .trend-lane.throughput .trend-chart {
 
 body[data-view="popover"] .trend-suite.compact .trend-lane.activity-process {
   grid-column: auto;
-  padding-bottom: 8px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-lane.activity-process .activity-process-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 0 6px 0;
+  border: 0;
+}
+
+body[data-view="popover"] .trend-suite.compact .activity-process-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+body[data-view="popover"] .trend-suite.compact .activity-process-legend button {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 3px 8px;
+  background: color-mix(in srgb, var(--console-material-2) 52%, transparent);
+  border: 0;
+  border-radius: 7px;
 }
 
 body[data-view="popover"] .activity-process-legend span {
-  font-size: 8.4px;
+  font-size: 11px;
 }
 
 body[data-view="popover"] .activity-process-legend strong {
   font-size: 14px;
+}
+
+body[data-view="popover"] .trend-suite.compact .activity-process-chart {
+  height: 160px;
+  min-height: 160px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 4px 0 0 0;
+  margin-top: 6px;
+}
+
+body[data-view="popover"] .trend-suite.compact .project-heatmap-map {
+  height: 140px;
+  min-height: 140px;
+  border-radius: 6px;
 }
 
 @media (max-width: 720px) {
@@ -301,7 +356,7 @@ body[data-view="popover"] .activity-process-legend strong {
 
   .activity-process-legend {
     justify-content: stretch;
-    border-top: 1px solid var(--console-line-soft);
+    border-top: 0;
     border-left: 0;
   }
 
@@ -324,7 +379,7 @@ body[data-view="popover"] .activity-process-legend strong {
   }
 
   .activity-process-legend span {
-    font-size: 7.6px;
+    font-size: 10px;
   }
 
   .activity-process-tooltip small {

@@ -6,7 +6,7 @@ const DEFAULT_REFRESH_INTERVAL_MS = 300_000;
 const REFRESH_POLL_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000] as const;
 const READER_CONTEXT_TTL_MS = 20_000;
 const READER_REFRESH_FLOOR_MS = 60_000;
-const REFRESH_INTERVALS_MS = [30_000, 60_000, 120_000, 300_000, 0] as const;
+export const REFRESH_INTERVALS_MS = [30_000, 60_000, 120_000, 300_000, 0] as const;
 const REFRESH_INTERVAL_STORAGE_KEY = "agentload.refreshIntervalMs.v5";
 
 type SurfaceView = "popover" | "dashboard";
@@ -121,12 +121,16 @@ export function useSnapshotController({
     if (targetSlot === null) return;
     await awaitRefreshedSnapshot("auto", targetSlot);
   }, [awaitRefreshedSnapshot, requestRefreshSlot]);
+  const chooseRefreshInterval = useCallback((next: number) => {
+    if (!REFRESH_INTERVALS_MS.includes(next as (typeof REFRESH_INTERVALS_MS)[number])) return;
+    window.localStorage.setItem(REFRESH_INTERVAL_STORAGE_KEY, String(next));
+    setRefreshInterval(next);
+  }, []);
   const cycleRefreshInterval = useCallback(() => {
     const index = REFRESH_INTERVALS_MS.indexOf(refreshInterval as (typeof REFRESH_INTERVALS_MS)[number]);
     const next = REFRESH_INTERVALS_MS[(index + 1) % REFRESH_INTERVALS_MS.length];
-    window.localStorage.setItem(REFRESH_INTERVAL_STORAGE_KEY, String(next));
-    setRefreshInterval(next);
-  }, [refreshInterval]);
+    chooseRefreshInterval(next);
+  }, [refreshInterval, chooseRefreshInterval]);
 
   useEffect(() => {
     void fetchSnapshot("initial").catch((err) => setError(err instanceof Error ? err.message : String(err)));
@@ -225,6 +229,7 @@ export function useSnapshotController({
     refreshInterval,
     refreshSnapshot,
     cycleRefreshInterval,
+    chooseRefreshInterval,
     isSurfaceVisible,
     surfaceVisible: isSurfaceVisible(),
   };
@@ -264,7 +269,7 @@ function readerContextActive(view: SurfaceView, popoverView: PopoverView, shell:
   const root = shell ?? document;
   if (root.querySelector('[aria-expanded="true"]')) return true;
   if (view === "popover") {
-    if (popoverView === "trend" || popoverView === "diagnostics") return true;
+    if (popoverView === "throughput" || popoverView === "activity" || popoverView === "diagnostics") return true;
     const scroller = root.querySelector<HTMLElement>(".popover-current-scroll");
     if (scroller && scroller.scrollTop > 8) return true;
   }

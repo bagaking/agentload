@@ -103,11 +103,13 @@ body[data-view="popover"] .system-metric-headline {
 
 body[data-view="popover"] .system-metric-headline:hover,
 body[data-view="popover"] .system-metric-headline.is-selected {
+  border-radius: 8px;
   background: color-mix(in srgb, var(--metric-soft, transparent) 54%, transparent);
 }
 
 body[data-view="popover"] .system-metric-headline.is-selected {
-  border-bottom-color: var(--metric-strong, var(--accent));
+  border-bottom-color: transparent;
+  background: color-mix(in srgb, var(--metric-strong, var(--accent)) 13%, color-mix(in srgb, var(--metric-soft, transparent) 54%, transparent));
 }
 
 body[data-view="popover"] .system-metric-headline:focus-visible,
@@ -153,10 +155,14 @@ body[data-view="popover"] .system-metric-headline.is-unavailable > strong {
   line-height: 1.1;
 }
 
+/* Sections separate by their own surface and spacing, not by rules across the
+   panel — the same language the process panel and worktree tiers now use. */
 body[data-view="popover"] .system-resource-support-list {
   display: grid;
+  gap: 2px;
   min-width: 0;
-  border-top: 1px solid color-mix(in srgb, var(--console-line) 76%, transparent);
+  margin-top: 4px;
+  border-top: 0;
 }
 
 body[data-view="popover"] .system-metric-row {
@@ -180,11 +186,15 @@ body[data-view="popover"] .system-metric-row {
 
 body[data-view="popover"] .system-metric-row:hover,
 body[data-view="popover"] .system-metric-row.is-selected {
+  border-radius: 7px;
   background: color-mix(in srgb, var(--metric-soft, transparent) 42%, transparent);
 }
 
+/* Selection deepens the plate instead of drawing a bar down its edge — the same
+   fill-don't-outline rule the process rows and worktree tiers follow. */
 body[data-view="popover"] .system-metric-row.is-selected {
-  box-shadow: inset 1px 0 0 var(--metric-strong, var(--accent));
+  background: color-mix(in srgb, var(--metric-strong, var(--accent)) 15%, color-mix(in srgb, var(--metric-soft, transparent) 42%, transparent));
+  box-shadow: none;
 }
 
 body[data-view="popover"] .system-metric-row-label {
@@ -246,11 +256,11 @@ body[data-view="popover"] .system-resource-inspector {
   grid-template-columns: minmax(0, 1fr);
   gap: 5px;
   min-width: 0;
+  margin-top: 4px;
   padding: 8px 9px 7px;
   border: 0;
-  border-top: 1px solid color-mix(in srgb, var(--metric-color, var(--accent)) 23%, var(--console-line-soft));
-  border-radius: 0;
-  background: transparent;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--metric-color, var(--accent)) 7%, color-mix(in srgb, var(--console-material-2) 44%, transparent));
   box-shadow: none;
 }
 
@@ -327,8 +337,8 @@ body[data-view="popover"] .system-resource-trend {
   gap: 4px;
   min-width: 0;
   margin: 0;
-  padding: 4px 0 1px;
-  border-top: 1px solid color-mix(in srgb, var(--console-line-soft) 78%, transparent);
+  padding: 5px 0 1px;
+  border-top: 0;
 }
 
 body[data-view="popover"] .system-resource-trend figcaption {
@@ -380,8 +390,8 @@ body[data-view="popover"] .system-resource-trend-empty {
   min-height: 24px;
   margin: 0;
   gap: 6px;
-  padding: 4px 0 1px;
-  border-top: 1px solid color-mix(in srgb, var(--console-line-soft) 78%, transparent);
+  padding: 5px 0 1px;
+  border-top: 0;
   color: var(--console-text-faint);
   font-size: 9px;
   line-height: 1.2;
@@ -395,8 +405,11 @@ body[data-view="popover"] .system-resource-trend-empty svg {
 body[data-view="popover"] .system-resource-facts {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin: 0;
-  border-top: 1px solid color-mix(in srgb, var(--console-line-soft) 78%, transparent);
+  margin: 4px 0 0;
+  padding: 2px 0;
+  border-top: 0;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
 }
 
 body[data-view="popover"] .system-resource-facts > div {
@@ -437,8 +450,11 @@ body[data-view="popover"] .system-resource-inspector-foot {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
-  padding-top: 7px;
-  border-top: 1px solid color-mix(in srgb, var(--console-line-soft) 78%, transparent);
+  margin-top: 5px;
+  padding: 7px 8px;
+  border-top: 0;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
 }
 
 body[data-view="popover"] .system-resource-inspector-foot span {
@@ -510,7 +526,7 @@ body[data-view="popover"] .system-resource-inspector-foot b {
   }
 
   body[data-view="popover"] .system-resource-facts > div:nth-child(3) {
-    border-top: 1px solid color-mix(in srgb, var(--console-line-soft) 72%, transparent);
+    border-top: 0;
   }
 }
 

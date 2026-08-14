@@ -2,6 +2,24 @@
   align-items: stretch;
 }
 
+.throughput-current-readout {
+  display: flex;
+  align-items: center;
+  min-width: 92px;
+  padding: 0 8px;
+  border-left: 1px solid var(--console-line-soft);
+}
+
+.throughput-current-readout .live-token-rate-readout {
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.throughput-current-readout .live-token-rate-readout > strong {
+  font-size: 20px;
+}
+
 .throughput-period-summary {
   display: grid;
   flex: 1 1 250px;
@@ -20,8 +38,9 @@
   display: inline-flex;
   align-items: center;
   align-self: start;
+  justify-self: end;
   gap: 2px;
-  margin-top: 5px;
+  margin-top: 0;
   padding: 2px;
   border-radius: 5px;
   background: var(--inset);
@@ -35,7 +54,7 @@
   border-radius: 4px;
   color: var(--fg-muted);
   background: transparent;
-  font: 700 9px/1 var(--font-mono);
+  font: 700 11px/1 var(--font-mono);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -75,7 +94,7 @@
 
 .throughput-period-summary dt {
   color: var(--fg-faint);
-  font-size: 7.8px;
+  font-size: 10px;
   font-weight: 780;
   line-height: 1;
 }
@@ -108,18 +127,180 @@
   }
 }
 
+/* Compact throughput header. Plain popover scoping wins over the dashboard base
+   rules above by specificity + import order — no !important needed. Type floor:
+   interactive labels >= 11px, secondary text >= 10px. */
+body[data-view="popover"] .trend-suite.compact .trend-lane {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-chart {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+body[data-view="popover"] .trend-suite.compact .throughput-kpi-bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 0 6px 0;
+}
+
+body[data-view="popover"] .trend-suite.compact .throughput-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+body[data-view="popover"] .trend-suite.compact .throughput-heading {
+  margin: 0;
+  color: var(--fg);
+  font-size: 13.5px;
+  font-weight: 780;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+}
+
+body[data-view="popover"] .trend-suite.compact .throughput-chart-control-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 2px 0 6px 0;
+}
+
+body[data-view="popover"] .trend-suite.compact .chart-control-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+body[data-view="popover"] .trend-suite.compact .control-label {
+  color: var(--console-text-faint);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .trend-suite.compact .throughput-window-switch {
+  display: inline-flex;
+  align-self: center;
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--console-line-soft) 68%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--console-material-2) 42%, transparent);
+}
+
+body[data-view="popover"] .trend-suite.compact .throughput-window-switch button {
+  min-width: 32px;
+  min-height: 22px;
+  padding: 2px 7px;
+  color: var(--console-text-faint);
+  font: 700 11px/1 var(--font-mono);
+  border-radius: 4px;
+}
+
+body[data-view="popover"] .trend-suite.compact .throughput-window-switch button[aria-pressed="true"] {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 22%, var(--console-material-2));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
 body[data-view="popover"] .trend-suite.compact .throughput-period-summary {
-  max-width: 320px;
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 12px;
+  width: auto;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+body[data-view="popover"] .trend-suite.compact .throughput-period-summary > div {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+}
+
+body[data-view="popover"] .trend-suite.compact .throughput-period-summary > div + div {
+  border-left: 0;
+}
+
+body[data-view="popover"] .trend-suite.compact .throughput-period-summary dt {
+  color: var(--console-text-faint);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+body[data-view="popover"] .trend-suite.compact .throughput-period-summary dd {
+  color: var(--fg);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+body[data-view="popover"] .trend-suite.compact .throughput-current-readout {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  padding: 0;
+  border-left: 0;
+  text-align: right;
+  flex: 0 0 auto;
+}
+
+body[data-view="popover"] .trend-suite.compact .throughput-basis-label {
+  color: var(--console-text-faint);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+body[data-view="popover"] .trend-suite.compact .throughput-current-readout .live-token-rate-readout {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  text-align: right;
+}
+
+body[data-view="popover"] .trend-suite.compact .throughput-current-readout .live-token-rate-readout strong {
+  color: var(--accent-hi);
+  font-family: var(--font-mono);
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+body[data-view="popover"] .trend-suite.compact .throughput-current-readout .live-token-rate-readout em {
+  margin-top: 3px;
+  color: var(--console-text-faint);
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 @media (max-width: 430px) {
-  .trend-lane.throughput .trend-lane-head {
-    display: grid;
-    justify-content: stretch;
-  }
-
-  .throughput-period-summary,
-  body[data-view="popover"] .trend-suite.compact .throughput-period-summary {
+  .throughput-period-summary {
     width: 100%;
     max-width: none;
     border-top: 1px solid var(--console-line-soft);
@@ -133,7 +314,7 @@ body[data-view="popover"] .trend-suite.compact .throughput-period-summary {
   }
 
   .throughput-period-summary dt {
-    font-size: 7.2px;
+    font-size: 10px;
   }
 
   .throughput-period-summary dd {
@@ -141,6 +322,7 @@ body[data-view="popover"] .trend-suite.compact .throughput-period-summary {
   }
 
   .throughput-window-switch {
+    justify-self: start;
     max-width: 100%;
     overflow-x: auto;
   }
@@ -148,4 +330,292 @@ body[data-view="popover"] .trend-suite.compact .throughput-period-summary {
   .trend-inspector.throughput .trend-inspector-unit strong {
     font-size: 14px;
   }
+}
+
+.throughput-ranking-deck {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  margin-top: 8px;
+  background: color-mix(in srgb, var(--console-material-2) 40%, transparent);
+  border: 1px solid color-mix(in srgb, var(--console-line-soft) 60%, transparent);
+  border-radius: 8px;
+}
+
+.ranking-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--console-text-faint);
+  letter-spacing: 0.02em;
+}
+
+.ranking-head small {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.ranking-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.ranking-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ranking-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.ranking-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.ranking-name {
+  font-weight: 700;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+
+.ranking-branch-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 4px;
+  font-size: 8.5px;
+  font-family: var(--font-mono);
+  color: var(--console-text-soft);
+  background: color-mix(in srgb, var(--console-material-3) 60%, transparent);
+  border-radius: 3px;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ranking-rate {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--fg);
+}
+
+.ranking-pct {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--console-text-faint);
+  min-width: 28px;
+  text-align: right;
+}
+
+.ranking-bar-track {
+  width: 100%;
+  height: 4px;
+  background: color-mix(in srgb, var(--console-line-soft) 50%, transparent);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.ranking-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.2s ease;
+}
+
+.ranking-empty {
+  padding: 12px;
+  text-align: center;
+  font-size: 10.5px;
+  color: var(--console-text-faint);
+}
+
+/* --- River interaction states, axes and sort disclosure (P0-1/#3/#4/#5/#7/#8) --- */
+
+/* Type floor: base rules in styles.css set 7-8px; lift the selectors we own to >= 10px. */
+.throughput-river-legend {
+  font-size: 10px;
+}
+
+.throughput-river-projects span {
+  font-size: 10px;
+}
+
+.throughput-river-projects em {
+  font-size: 10.5px;
+}
+
+.throughput-river-projects b {
+  max-width: 96px;
+  font-size: 10px;
+}
+
+.throughput-river-tooltip b {
+  font-size: 10px;
+}
+
+.throughput-river-tooltip em {
+  font-size: 10.5px;
+}
+
+.throughput-river-tooltip small {
+  color: var(--console-text-faint);
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.throughput-river-tooltip.is-gap {
+  width: 132px;
+}
+
+.throughput-river-tooltip .river-gap-line b {
+  color: var(--accent-hi);
+  font-weight: 800;
+}
+
+/* Two-state markers: hover = transient inspect, pin = persistent selection. */
+.throughput-river-marker line {
+  vector-effect: non-scaling-stroke;
+}
+
+.throughput-river-marker.is-pinned line {
+  stroke: color-mix(in srgb, var(--accent-hi) 82%, transparent);
+  stroke-width: 1.5;
+}
+
+.throughput-river-marker.is-pinned circle {
+  fill: var(--bg);
+  stroke: var(--accent-hi);
+  stroke-width: 1.75;
+  vector-effect: non-scaling-stroke;
+}
+
+.throughput-river-marker.is-hover line {
+  stroke: color-mix(in srgb, var(--fg) 55%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
+.throughput-river-marker.is-hover circle {
+  fill: var(--bg);
+  stroke: color-mix(in srgb, var(--fg) 78%, transparent);
+  stroke-width: 1.25;
+  vector-effect: non-scaling-stroke;
+}
+
+.throughput-river-marker.is-hover.is-gap line {
+  stroke: color-mix(in srgb, var(--fg-faint) 60%, transparent);
+  stroke-dasharray: 1 4;
+}
+
+/* Axis labels rendered as HTML over the non-uniformly scaled SVG (never inside it). */
+.throughput-river-yaxis,
+.throughput-river-xaxis {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--console-text-faint);
+}
+
+.throughput-river-yaxis {
+  top: 0;
+  left: 6px;
+  height: 100%;
+}
+
+.throughput-river-yaxis span {
+  position: absolute;
+  transform: translateY(-50%);
+  font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.throughput-river-xaxis {
+  left: 0;
+  right: 0;
+  bottom: 3px;
+  height: 12px;
+}
+
+.throughput-river-xaxis span {
+  position: absolute;
+  font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.throughput-river-shell:not(.compact) .throughput-river-projects {
+  bottom: 16px;
+}
+
+.ranking-head-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ranking-sort-note {
+  margin-top: -2px;
+  color: var(--console-text-faint);
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.ranking-expand {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 3px 6px;
+  border: 1px solid color-mix(in srgb, var(--console-line-soft) 70%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--console-material-2) 45%, transparent);
+  color: var(--accent-hi);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ranking-expand:hover {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.river-inline-expand {
+  flex: 0 0 auto;
+}
+
+/* Compact lane fits its content. The suite's 3-row template belongs to the
+   dashboard layout; the popover tabs render two children, so a stretched
+   grid inflated a phantom third row into a tall void above the chart. */
+body[data-view="popover"] .trend-suite.compact {
+  grid-template-rows: none;
+  grid-auto-rows: auto;
+  align-content: start;
+}
+
+body[data-view="popover"] .trend-compact-view {
+  display: grid;
+  grid-auto-rows: auto;
+  gap: 9px;
+  min-width: 0;
+  align-content: start;
 }

@@ -7,9 +7,9 @@ body[data-view="popover"] {
   --popover-tab-pad-bottom: 9px;
   --popover-tab-gap: 8px;
   --popover-tab-title: 12.2px;
-  --popover-tab-kicker: 8.8px;
-  --popover-tab-meta: 8.7px;
-  --popover-tab-body: 9.4px;
+  --popover-tab-kicker: 10px;
+  --popover-tab-meta: 10px;
+  --popover-tab-body: 10px;
   --popover-tab-readout: 10.8px;
 }
 
@@ -32,6 +32,7 @@ body[data-view="popover"] .system-shell {
 body[data-view="popover"] .audit-shell {
   padding: 0;
 }
+
 
 body[data-view="popover"] .popover-instrument,
 body[data-view="popover"] .scan-boundary,
@@ -89,15 +90,27 @@ body[data-view="popover"] .system-resource-card-head span {
 }
 
 body[data-view="popover"] .trend-suite.compact .trend-range-switch {
+  flex: 0 0 auto;
   min-height: 27px;
+  gap: 2px;
   padding: 2px;
+  border: 1px solid color-mix(in srgb, var(--console-line-soft) 60%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--console-material-2) 40%, transparent);
 }
 
 body[data-view="popover"] .trend-suite.compact .trend-range-switch button {
-  min-width: 34px;
+  min-width: 30px;
   min-height: 22px;
   padding: 3px 7px;
-  font-size: 10px;
+  color: var(--console-text-faint);
+  font: 700 11px/1 var(--font-mono);
+}
+
+body[data-view="popover"] .trend-suite.compact .trend-range-switch button[aria-pressed="true"] {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 22%, var(--console-material-2));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 body[data-view="popover"] .scan-boundary-main,
@@ -176,4 +189,58 @@ body[data-view="popover"] .system-shell .popover-process-head {
     min-width: 30px;
     padding-inline: 5px;
   }
+}
+
+/* Worktree tier. A worktree is part of the project body, so it nests one level
+   under it. The nesting reads as a tinted surface rather than an indent rail —
+   the same surface language the resource cards and ranking deck already use. */
+.session-worktree-block {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 6px 8px 7px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--console-material-2) 38%, transparent);
+}
+
+.session-worktree-block + .session-worktree-block {
+  margin-top: 6px;
+}
+
+/* The main checkout is the project's own body, so it carries no extra surface —
+   only the worktrees branching off it read as nested panels. */
+.session-worktree-block.is-main {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.session-worktree-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  color: var(--console-text-faint);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.session-worktree-head span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-worktree-head strong {
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 760;
+  white-space: nowrap;
 }

@@ -17,6 +17,7 @@ import {
 import { toolDisplayName, toolIconName } from "../lib/activityModel";
 import { ActivityProcessTrend } from "./ActivityProcessTrend";
 import { ThroughputRiver } from "./ThroughputRiver";
+import { TrendRangeRail, activeTrendRanges, trendWindowForRange } from "./TrendRangeRail";
 
 export type TrendSnapshot = {
   trends?: TrendSet;
@@ -28,6 +29,8 @@ export type TrendSnapshot = {
 
 type ProjectHeatmapActivity = {
   project?: string;
+  worktrees?: { name?: string }[];
+  branches?: string[];
   last_event_age_seconds?: number;
   last_event_at?: string;
 };
@@ -73,7 +76,9 @@ type TrendSignalDatum = {
 export function TrendSuite({
   t,
   snapshot,
+  liveReadout,
   compact = false,
+  lane = "throughput",
   range,
   setRange,
   trendSelection,
@@ -81,12 +86,15 @@ export function TrendSuite({
 }: {
   t: Translate;
   snapshot: TrendSnapshot;
+  liveReadout?: React.ReactNode;
   compact?: boolean;
+  lane?: "throughput" | "activity";
   range: TrendRange;
   setRange: (value: TrendRange) => void;
   trendSelection: Record<TrendLane, string | undefined>;
   setTrendSelection: React.Dispatch<React.SetStateAction<Record<TrendLane, string | undefined>>>;
 }) {
+  const currentLane = lane || "throughput";
   const [throughputSeriesKey, setThroughputSeriesKey] = useState("minute:300");
   const activeRanges = activeTrendRanges(snapshot);
   const effectiveRange = activeRanges.includes(range) ? range : activeRanges[0] ?? range;
@@ -97,62 +105,125 @@ export function TrendSuite({
   const throughputView = useMemo(() => throughputSeriesWindow(throughput, throughputSeries), [throughput, throughputSeries]);
   const projectHeatmap = projectHeatmapWindowForRange(snapshot.project_heatmaps, effectiveRange);
   const projectActivity = useMemo(() => projectHeatmapActivityByProject(snapshot.project_focus), [snapshot.project_focus]);
-  const [focusedLane, setFocusedLane] = useState<TrendLane>("history");
+  const projectWorktrees = useMemo(() => {
+    const map = new Map<string, { worktrees?: string[]; branches?: string[] }>();
+    (snapshot.project_focus ?? []).forEach((p) => {
+      if (p.project) {
+        map.set(p.project.toLowerCase(), {
+          worktrees: (p.worktrees ?? []).map((w) => w.name).filter((name): name is string => !!name),
+          branches: p.branches,
+        });
+      }
+    });
+    return map;
+  }, [snapshot.project_focus]);
+  const [focusedLane, setFocusedLane] = useState<TrendLane>("throughput");
   // Stable summary (and points) identities keep the chart data effect from
   // re-firing on focus-only re-renders.
-  const laneSummaries: TrendLaneSummary[] = useMemo(() => [
+  const allLaneSummaries: TrendLaneSummary[] = useMemo(() => [
     trendLaneSummary("history", t("trendActiveSessions"), history, trendSelection.history),
     trendLaneSummary("runtime", t("trendVisiblePids"), runtime, trendSelection.runtime),
     trendLaneSummary("throughput", t("throughputLane"), throughputView, trendSelection.throughput, throughputSeries),
-  ].filter((summary) => Boolean(summary.trendWindow || summary.points.length)), [t, history, runtime, throughputView, throughputSeries, trendSelection.history, trendSelection.runtime, trendSelection.throughput]);
+  ], [t, history, runtime, throughputView, throughputSeries, trendSelection.history, trendSelection.runtime, trendSelection.throughput]);
+  const laneSummaries = allLaneSummaries.filter((summary) => Boolean(summary.trendWindow || summary.points.length));
   const historySummary = laneSummaries.find((summary) => summary.lane === "history");
   const runtimeSummary = laneSummaries.find((summary) => summary.lane === "runtime");
-  const throughputSummary = laneSummaries.find((summary) => summary.lane === "throughput");
+  // The compact throughput lane keeps its summary even with no trend window yet:
+  // the live rate beside the chart is a real measurement available immediately,
+  // and the lane renders its own empty state for the chart alone. Dropping the
+  // whole lane would hide a number we actually have during warm-up.
+  const throughputSummary = (compact && currentLane === "throughput" ? allLaneSummaries : laneSummaries).find((summary) => summary.lane === "throughput");
   const activeSummary = laneSummaries.find((summary) => summary.lane === focusedLane && summary.selected) ?? laneSummaries.find((summary) => summary.selected);
+  // In compact mode only one lane is on screen, so the empty state has to follow
+  // that lane. Gating it on "any lane has data" rendered an empty container —
+  // a blank panel with no explanation — whenever the open tab was the one still
+  // warming up.
+  const laneHasData = compact
+    ? Boolean(currentLane === "throughput" ? throughputSummary : historySummary || runtimeSummary)
+    : laneSummaries.length > 0;
   return (
     <section className={`trend-suite ${compact ? "compact" : "dashboard"}`}>
-      <div className="trend-suite-head">
-        <div className="trend-suite-copy">
-          <h2>{t("trendSuite")}</h2>
-          <span>{effectiveRange} · {formatTrendWindow(t, history ?? runtime ?? throughput)}</span>
-        </div>
-        <div className="trend-range-switch" role="group" aria-label={t("trend")}>
-          {TREND_RANGES.map((item) => (
-            <button key={item} type="button" disabled={!activeRanges.includes(item)} aria-pressed={item === effectiveRange} data-focus-key={focusKey("trend-range", item)} onClick={() => setRange(item)}>
-              {item}
-            </button>
-          ))}
-        </div>
-      </div>
-      {laneSummaries.length ? (
-        <>
-          <div className="trend-duo">
-            {historySummary || runtimeSummary ? (
-              <ActivityProcessLane
-                t={t}
-                history={historySummary}
-                runtime={runtimeSummary}
-                focusedLane={focusedLane}
-                compact={compact}
-                setFocusedLane={setFocusedLane}
-                setTrendSelection={setTrendSelection}
-              />
-            ) : null}
-            {throughputSummary ? (
-              <ThroughputLaneView
-                t={t}
-                summary={throughputSummary}
-                seriesOptions={throughput?.throughput_series ?? []}
-                selectedSeriesKey={throughputSeries?.key ?? "minute:300"}
-                isFocused={activeSummary?.lane === "throughput"}
-                setFocusedLane={setFocusedLane}
-                setSeriesKey={setThroughputSeriesKey}
-                setTrendSelection={setTrendSelection}
-              />
-            ) : null}
+      {compact ? null : (
+        <div className="trend-suite-head">
+          <div className="trend-suite-copy">
+            <h2 tabIndex={0} title={`${t("trendSuite")} · ${formatTrendWindow(t, throughput ?? history ?? runtime)}`}>
+              {t("trend")}
+            </h2>
           </div>
-          <ProjectHeatmap t={t} window={projectHeatmap} projectActivity={projectActivity} compact={compact} />
-          {compact ? null : <TrendSelectionInspector t={t} summary={activeSummary} compact={compact} />}
+          <TrendRangeRail label={t("trend")} range={effectiveRange} setRange={setRange} activeRanges={activeRanges} focusKey={focusKey} />
+        </div>
+      )}
+      {laneHasData ? (
+        <>
+          {compact ? (
+            <div className="trend-compact-view">
+              {currentLane === "throughput" && throughputSummary ? (
+                <ThroughputLaneView
+                  t={t}
+                  summary={throughputSummary}
+                  seriesOptions={throughput?.throughput_series ?? []}
+                  selectedSeriesKey={throughputSeries?.key ?? "minute:300"}
+                  isFocused={true}
+                  setFocusedLane={setFocusedLane}
+                  setSeriesKey={setThroughputSeriesKey}
+                  setTrendSelection={setTrendSelection}
+                  liveReadout={liveReadout}
+                  compact={compact}
+                  projectWorktrees={projectWorktrees}
+                  range={effectiveRange}
+                  setRange={setRange}
+                  activeRanges={activeRanges}
+                />
+              ) : null}
+              {currentLane === "activity" && (historySummary || runtimeSummary) ? (
+                <>
+                  <ActivityProcessLane
+                    t={t}
+                    history={historySummary}
+                    runtime={runtimeSummary}
+                    focusedLane={focusedLane}
+                    compact={compact}
+                    setFocusedLane={setFocusedLane}
+                    setTrendSelection={setTrendSelection}
+                  />
+                  <ProjectHeatmap t={t} window={projectHeatmap} projectActivity={projectActivity} compact={compact} />
+                </>
+              ) : null}
+            </div>
+          ) : (
+            <>
+              <div className="trend-duo">
+                {throughputSummary ? (
+                  <ThroughputLaneView
+                    t={t}
+                    summary={throughputSummary}
+                    seriesOptions={throughput?.throughput_series ?? []}
+                    selectedSeriesKey={throughputSeries?.key ?? "minute:300"}
+                    isFocused={activeSummary?.lane === "throughput"}
+                    setFocusedLane={setFocusedLane}
+                    setSeriesKey={setThroughputSeriesKey}
+                    setTrendSelection={setTrendSelection}
+                    liveReadout={liveReadout}
+                    compact={compact}
+                    projectWorktrees={projectWorktrees}
+                  />
+                ) : null}
+                {historySummary || runtimeSummary ? (
+                  <ActivityProcessLane
+                    t={t}
+                    history={historySummary}
+                    runtime={runtimeSummary}
+                    focusedLane={focusedLane}
+                    compact={compact}
+                    setFocusedLane={setFocusedLane}
+                    setTrendSelection={setTrendSelection}
+                  />
+                ) : null}
+              </div>
+              <ProjectHeatmap t={t} window={projectHeatmap} projectActivity={projectActivity} compact={compact} />
+              <TrendSelectionInspector t={t} summary={activeSummary} compact={compact} />
+            </>
+          )}
         </>
       ) : (
         <section className="empty-inline"><Gauge size={18} /><span>{t("noTrend")}</span></section>
@@ -372,10 +443,11 @@ function ActivityProcessLane({
   return (
     <article className={`trend-lane activity-process ${focusedLane !== "throughput" ? "is-focused" : ""}`}>
       <div className="trend-lane-head activity-process-head">
-        <div className="trend-lane-title">
-          <span className="trend-kicker">{t("activityProcessLane")}</span>
-          <small>{range} · {sampleMeta}</small>
-        </div>
+        {!compact ? (
+          <div className="trend-lane-title">
+            <span className="trend-kicker" tabIndex={0} title={`${range} · ${sampleMeta}`}>{t("activityProcessLane")}</span>
+          </div>
+        ) : null}
         <div className="activity-process-legend" role="group" aria-label={t("selectedValues")}>
           <button
             aria-pressed={focusedLane === "history"}
@@ -442,6 +514,12 @@ function ThroughputLaneView({
   setFocusedLane,
   setSeriesKey,
   setTrendSelection,
+  liveReadout,
+  compact = false,
+  projectWorktrees,
+  range,
+  setRange,
+  activeRanges = [],
 }: {
   t: Translate;
   summary: TrendLaneSummary;
@@ -451,6 +529,12 @@ function ThroughputLaneView({
   setFocusedLane: (lane: TrendLane) => void;
   setSeriesKey: (key: string) => void;
   setTrendSelection: React.Dispatch<React.SetStateAction<Record<TrendLane, string | undefined>>>;
+  liveReadout?: React.ReactNode;
+  compact?: boolean;
+  projectWorktrees?: Map<string, { worktrees?: string[]; branches?: string[] }>;
+  range?: TrendRange;
+  setRange?: (value: TrendRange) => void;
+  activeRanges?: readonly TrendRange[];
 }) {
   const { title, trendWindow, points, selected } = summary;
   const series = summary.throughputSeries;
@@ -461,47 +545,79 @@ function ThroughputLaneView({
     { label: "MAX", value: formatThroughputPeriodRate(periodSummary?.max) },
     { label: "P95", value: formatThroughputPeriodRate(periodSummary?.p95) },
     { label: "AVG", value: formatThroughputPeriodRate(periodSummary?.avg) },
-    ...(!legacySeries ? [{ label: `CUR(${windowLabel})`, value: formatThroughputPeriodRate(periodSummary?.current) }] : []),
+    ...(!legacySeries && !compact ? [{ label: `CUR(${windowLabel})`, value: formatThroughputPeriodRate(periodSummary?.current) }] : []),
   ];
   const selectPoint = useCallback((at?: string) => {
     setFocusedLane("throughput");
     if (at) setTrendSelection((current) => ({ ...current, throughput: at }));
   }, [setFocusedLane, setTrendSelection]);
+
+  const windowSwitch = (
+    <div className="throughput-window-switch" role="group" aria-label={t("throughputRateWindow")}>
+      {seriesOptions.map((option) => {
+        const key = String(option.key || "");
+        const legacy = option.kind === "legacy_rolling_rate";
+        const label = formatThroughputWindowLabel(option.window_seconds);
+        return (
+          <button
+            key={key}
+            type="button"
+            className={legacy ? "legacy" : ""}
+            aria-pressed={key === selectedSeriesKey}
+            title={legacy ? `${t("throughputLegacyShort")} · ${label}` : `${t("throughputRateWindow")} · ${label}`}
+            onClick={() => setSeriesKey(key)}
+          >
+            {legacy ? `${t("throughputLegacyShort")} ${label}` : label}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  const periodSummaryDl = (
+    <dl className={`throughput-period-summary ${legacySeries ? "legacy" : ""}`} aria-label={t("selectedValues")}>
+      {periodMetrics.map((metric) => (
+        <div key={metric.label} title={`${metric.label}: ${metric.value} ${t("tokenRateUnit")}`}>
+          <dt>{metric.label}</dt>
+          <dd>{metric.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+
   return (
     <article className={`trend-lane throughput ${isFocused ? "is-focused" : ""}`} onPointerEnter={() => setFocusedLane("throughput")}>
-      <div className="trend-lane-head">
-        <div className="trend-lane-title">
-          <span className="trend-kicker">{title}</span>
-          <small>{trendWindow?.range || t("unavailable")} · {periodSummary?.sample_count ?? 0} {t("samples")} · {windowLabel}</small>
-          <div className="throughput-window-switch" role="group" aria-label={t("throughputRateWindow")}>
-            {seriesOptions.map((option) => {
-              const key = String(option.key || "");
-              const legacy = option.kind === "legacy_rolling_rate";
-              const label = formatThroughputWindowLabel(option.window_seconds);
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  className={legacy ? "legacy" : ""}
-                  aria-pressed={key === selectedSeriesKey}
-                  title={legacy ? `${t("throughputLegacyShort")} · ${label}` : `${t("throughputRateWindow")} · ${label}`}
-                  onClick={() => setSeriesKey(key)}
-                >
-                  {legacy ? `${t("throughputLegacyShort")} ${label}` : label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        <dl className={`throughput-period-summary ${legacySeries ? "legacy" : ""}`} aria-label={t("selectedValues")}>
-          {periodMetrics.map((metric) => (
-            <div key={metric.label} title={`${metric.label}: ${metric.value} ${t("tokenRateUnit")}`}>
-              <dt>{metric.label}</dt>
-              <dd>{metric.value}</dd>
+      {compact ? (
+        <>
+          <div className="throughput-kpi-bar">
+            <div className="throughput-title-group">
+              <h2 className="throughput-heading">{title}</h2>
+              {periodSummaryDl}
             </div>
-          ))}
-        </dl>
-      </div>
+            <div className="throughput-current-readout">
+              <span className="throughput-basis-label">{t("throughputLiveBasis")}</span>
+              {liveReadout}
+            </div>
+          </div>
+          <div className="throughput-chart-control-row">
+            <div className="chart-control-cluster window-cluster">
+              <span className="control-label">{t("throughputHistoryWindow")}</span>
+              {windowSwitch}
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="trend-lane-head">
+          <div className="trend-lane-title">
+            <span className="trend-kicker" tabIndex={0} title={`${trendWindow?.range || t("unavailable")} · ${periodSummary?.sample_count ?? 0} ${t("samples")} · ${windowLabel} · ${t("tokenRateUnit")}`}>{title}{legacySeries ? ` · ${t("throughputLegacyShort")}` : ""}</span>
+          </div>
+          <div className="throughput-controls-left">
+            {windowSwitch}
+            {periodSummaryDl}
+          </div>
+          <div className="throughput-current-readout">{liveReadout}</div>
+        </div>
+      )}
       {summary.data.length ? (
         <ThroughputRiver
           key={`${trendWindow?.range}:${selectedSeriesKey}`}
@@ -512,6 +628,8 @@ function ThroughputLaneView({
           to={trendWindow?.to}
           selectedAt={selected?.at}
           onSelect={selectPoint}
+          compact={compact}
+          projectWorktrees={projectWorktrees}
         />
       ) : (
         <section className="empty-inline"><Gauge size={18} /><span>{t("noTrend")}</span></section>
@@ -718,14 +836,6 @@ function TrendSelectionInspector({ t, summary, compact }: { t: Translate; summar
       </div>
     </aside>
   );
-}
-
-function activeTrendRanges(snapshot: TrendSnapshot): TrendRange[] {
-  return TREND_RANGES.filter((range) => Boolean(trendWindowForRange(snapshot.trends, range) || trendWindowForRange(snapshot.realtime_trends, range) || trendWindowForRange(snapshot.throughput_trends, range)));
-}
-
-function trendWindowForRange(set: TrendSet | undefined, range: TrendRange): TrendWindow | undefined {
-  return set?.windows?.find((window) => window.range === range);
 }
 
 function projectHeatmapWindowForRange(set: ProjectHeatmapSet | undefined, range: TrendRange): ProjectHeatmapWindow | undefined {

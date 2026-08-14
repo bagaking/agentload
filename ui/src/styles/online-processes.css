@@ -1,14 +1,15 @@
 /* Current process evidence belongs in Online; whole-machine diagnostics remain in System. */
 
+/* Surface, not rails: the panel is one tinted plate, the same language the
+   ranking deck and worktree tiers use, so it sits flush with the rest. */
 body[data-view="popover"] .online-process-panel {
   min-width: 0;
-  padding: 6px 9px;
+  margin: 2px 0;
+  padding: 7px 9px 8px;
   overflow: hidden;
-  border-top: 1px solid color-mix(in srgb, var(--run) 22%, var(--console-line));
-  border-bottom: 1px solid var(--console-line-soft);
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--run) 5%, transparent), transparent 38%),
-    var(--console-material);
+  border: 0;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--console-material-2) 46%, transparent);
 }
 
 body[data-view="popover"] .online-process-panel .popover-project-head {
@@ -21,21 +22,23 @@ body[data-view="popover"] .online-process-panel .popover-project-head h2 {
 }
 
 body[data-view="popover"] .online-process-panel .popover-process-list {
-  border-top-color: color-mix(in srgb, var(--run) 16%, var(--console-line-soft));
+  border-top-color: transparent;
 }
 
+/* Cards separate by their own spacing, not a divider line. */
 body[data-view="popover"] .online-process-panel .popover-process-card {
   position: relative;
-  border-bottom-color: color-mix(in srgb, var(--console-line-soft) 86%, transparent);
+  border-bottom-color: transparent;
 }
 
+/* Selection fills the row rather than drawing an edge beside it. */
 body[data-view="popover"] .online-process-panel .popover-process-card.is-selected::before {
   content: "";
   position: absolute;
-  z-index: 1;
-  inset: 0 auto 0 -4px;
-  width: 1px;
-  background: color-mix(in srgb, var(--run) 72%, transparent);
+  z-index: 0;
+  inset: 0 -5px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--run) 13%, transparent);
 }
 
 body[data-view="popover"] .online-process-panel .popover-process-head {
@@ -50,7 +53,8 @@ body[data-view="popover"] .online-process-panel .popover-process-head {
 body[data-view="popover"] .online-process-panel .popover-process-head:hover,
 body[data-view="popover"] .online-process-panel .popover-process-head:focus-visible {
   outline: none;
-  background: color-mix(in srgb, var(--run) 5%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--run) 9%, transparent);
 }
 
 body[data-view="popover"] .online-process-panel .popover-process-head:focus-visible {
@@ -142,12 +146,12 @@ body[data-view="popover"] .online-process-panel .popover-process-metrics > span 
   gap: 3px;
   min-width: 0;
   padding: 3px 5px 2px 0;
-  border-top: 1px solid color-mix(in srgb, var(--run) 10%, transparent);
+  border-top: 0;
 }
 
 body[data-view="popover"] .online-process-panel .popover-process-metrics > span + span {
-  padding-left: 6px;
-  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--console-line-soft) 48%, transparent);
+  padding-left: 10px;
+  box-shadow: none;
 }
 
 body[data-view="popover"] .online-process-panel .popover-process-metrics b,
@@ -186,7 +190,10 @@ body[data-view="popover"] .popover-process-empty {
   align-items: center;
   gap: 7px;
   min-height: 45px;
-  border-top: 1px solid var(--console-line-soft);
+  padding: 0 8px;
+  border-top: 0;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
   color: var(--console-text-faint);
 }
 

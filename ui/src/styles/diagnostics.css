@@ -44,10 +44,10 @@ body[data-view="popover"] .diagnostics-shell {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border: 1px solid color-mix(in srgb, var(--diag-ok) 34%, transparent);
+  border: 0;
   border-radius: 999px;
   color: color-mix(in srgb, var(--diag-ok) 90%, var(--fg));
-  background: color-mix(in srgb, var(--diag-ok) 6%, transparent);
+  background: color-mix(in srgb, var(--diag-ok) 16%, transparent);
   padding: 2px 6px;
   font-family: var(--font-ui);
   font-size: 8.4px;
@@ -60,44 +60,43 @@ body[data-view="popover"] .diagnostics-shell {
 .diagnostic-chain-plane,
 .diagnostic-export-plane {
   position: relative;
-  border: 1px solid var(--diag-line);
-  border-radius: 6px;
+  /* Surface, not outline: the plane reads as a raised plate, so the hairline
+     that used to draw its edge is carried by the fill instead. */
+  border: 0;
+  border-radius: 8px;
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--accent) 4%, transparent), transparent 38%),
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 5%, transparent), transparent 38%),
     color-mix(in srgb, var(--diag-plane) 94%, transparent);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--fg) 5%, transparent);
 }
 
 .diagnostic-evidence-strip {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: stretch;
-  gap: 0;
+  gap: 4px;
   min-height: 76px;
   overflow: hidden;
 }
 
+/* The tone used to be a 1px bar down the cell edge; it is now the cell's own
+   tint, so the signal survives without an outline. */
 .diagnostic-evidence-cell {
   position: relative;
   display: grid;
   grid-template-rows: auto auto auto;
   gap: 4px;
   min-width: 0;
-  padding: 8px 10px 7px 11px;
+  padding: 8px 10px 7px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--tone-color, var(--diag-muted)) 9%, transparent);
 }
 
+/* Cells are separated by their own inset plates rather than a rail. */
 .diagnostic-evidence-cell + .diagnostic-evidence-cell {
-  border-left: 1px solid var(--diag-line-strong);
+  border-left: 0;
 }
 
-.diagnostic-evidence-cell::after {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 1px;
-  background: var(--tone-color, var(--diag-muted));
-  opacity: .75;
-}
+
 
 .diagnostic-evidence-label {
   display: inline-flex;
@@ -128,9 +127,9 @@ body[data-view="popover"] .diagnostics-shell {
   width: 100%;
   height: 4px;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--tone-color, var(--diag-muted)) 34%, transparent);
+  border: 0;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--fg) 5%, transparent);
+  background: color-mix(in srgb, var(--tone-color, var(--diag-muted)) 16%, transparent);
 }
 
 .diagnostic-evidence-cell i em {
@@ -155,10 +154,10 @@ body[data-view="popover"] .diagnostics-shell {
   align-items: center;
   gap: 5px;
   max-width: min(270px, 44%);
-  border: 1px solid color-mix(in srgb, var(--diag-ok) 48%, transparent);
+  border: 0;
   border-radius: 999px;
   color: color-mix(in srgb, var(--diag-ok) 88%, var(--fg));
-  background: color-mix(in srgb, var(--diag-ok) 7%, transparent);
+  background: color-mix(in srgb, var(--diag-ok) 18%, transparent);
   padding: 4px 9px;
   font-size: 8.8px;
   font-weight: 740;
@@ -208,8 +207,9 @@ body[data-view="popover"] .diagnostics-shell {
 
 .diagnostic-priority-table {
   display: grid;
+  gap: 3px;
   overflow: hidden;
-  border-top: 1px solid var(--diag-line);
+  border-top: 0;
 }
 
 .diagnostic-priority-header,
@@ -229,9 +229,13 @@ body[data-view="popover"] .diagnostics-shell {
   letter-spacing: .02em;
 }
 
+/* Each row is its own quiet plate, so the separating rails are gone. */
 .diagnostic-priority-row {
   min-height: 46px;
-  border-top: 1px solid var(--diag-line);
+  padding: 0 6px;
+  border-top: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
   color: var(--console-text-soft);
 }
 
@@ -281,10 +285,10 @@ body[data-view="popover"] .diagnostics-shell {
   display: inline-flex;
   align-items: baseline;
   max-width: 100%;
-  border: 1px solid color-mix(in srgb, var(--tone-color, var(--diag-muted)) 38%, transparent);
-  border-radius: 3px;
+  border: 0;
+  border-radius: 5px;
   color: color-mix(in srgb, var(--tone-color, var(--diag-muted)) 86%, var(--fg));
-  background: color-mix(in srgb, var(--tone-color, var(--diag-muted)) 7%, transparent);
+  background: color-mix(in srgb, var(--tone-color, var(--diag-muted)) 18%, transparent);
   padding: 3px 5px;
   font-size: 8.5px;
   line-height: 1;
@@ -353,11 +357,11 @@ body[data-view="popover"] .diagnostics-shell {
   min-width: 0;
   padding: 6px;
   overflow: hidden;
-  border: 1px solid var(--diag-line);
-  border-radius: 4px;
+  border: 0;
+  border-radius: 6px;
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--accent) 4%, transparent), transparent 45%),
-    color-mix(in srgb, var(--fg) 2.5%, transparent);
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 5%, transparent), transparent 45%),
+    color-mix(in srgb, var(--fg) 4.5%, transparent);
 }
 
 .diagnostic-chain-stage {
@@ -388,12 +392,12 @@ body[data-view="popover"] .diagnostics-shell {
   gap: 5px;
   min-height: 25px;
   min-width: 0;
-  padding: 3px 4px;
-  border: 1px solid color-mix(in srgb, var(--tone-color, var(--diag-muted)) 18%, transparent);
-  border-radius: 3px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 6px;
   color: var(--console-text-soft);
   text-align: left;
-  background: color-mix(in srgb, var(--tone-color, var(--diag-muted)) 4.5%, transparent);
+  background: color-mix(in srgb, var(--tone-color, var(--diag-muted)) 10%, transparent);
 }
 
 .diagnostic-chain-node-icon {
@@ -498,12 +502,12 @@ body[data-view="popover"] .diagnostics-shell {
   justify-content: center;
   gap: 7px;
   min-height: 28px;
-  border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
-  border-radius: 4px;
+  border: 0;
+  border-radius: 6px;
   color: var(--fg);
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent),
-    color-mix(in srgb, var(--fg) 3%, transparent);
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 18%, transparent), transparent),
+    color-mix(in srgb, var(--fg) 6%, transparent);
   font-size: 9.2px;
   font-weight: 760;
   white-space: nowrap;
@@ -624,7 +628,7 @@ body[data-view="popover"] .diagnostics-shell {
 
   .diagnostic-evidence-cell + .diagnostic-evidence-cell {
     border-top: 0;
-    border-left: 1px solid var(--diag-line-strong);
+    border-left: 0;
   }
 
   .diagnostic-no-forecast {

@@ -4,7 +4,7 @@ body[data-view="popover"] .popover-project-table .lineage-summary {
   gap: 4px 7px;
   margin: 1px 4px 4px 20px;
   padding: 5px 7px;
-  border-top: 1px solid color-mix(in srgb, var(--console-line-soft) 52%, transparent);
+  border-top: 0;
   border-bottom: 1px solid color-mix(in srgb, var(--console-line-soft) 44%, transparent);
   background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 4%, transparent), color-mix(in srgb, var(--ok) 3%, transparent));
 }
