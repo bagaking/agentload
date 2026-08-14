@@ -30,6 +30,24 @@ void agentLoadPopoverHide(void);
 // current macOS version. Returns 1 on success, 0 otherwise.
 int agentLoadPopoverIsSupported(void);
 
+// AgentLoadStatusBoxPayload holds pre-formatted metrics for the menubar box widget.
+// rowN_mask carries one byte per character of rowN ('1' = dim as a metric label,
+// '0' = draw bright). The Go side owns label placement so ObjC never has to infer
+// structure from the flattened string.
+typedef struct {
+    char row1[48];
+    char row2[48];
+    char row1_mask[48];
+    char row2_mask[48];
+    int is_loading;
+} AgentLoadStatusBoxPayload;
+
+// agentLoadStatusBoxUpdate draws and updates the custom menubar box widget in Cocoa.
+void agentLoadStatusBoxUpdate(AgentLoadStatusBoxPayload payload);
+
+// agentLoadStatusBoxIsAvailable reports whether the Cocoa status item button is accessible.
+int agentLoadStatusBoxIsAvailable(void);
+
 #ifdef __cplusplus
 }
 #endif

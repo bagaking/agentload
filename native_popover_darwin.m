@@ -696,3 +696,86 @@ int agentLoadPopoverIsSupported(void) {
     Class wk = NSClassFromString(@"WKWebView");
     return wk != nil ? 1 : 0;
 }
+
+static NSAttributedString *buildDimmedPrefixMetric(NSString *text, NSString *mask, NSFont *font, NSColor *primaryColor, NSColor *dimColor) {
+    NSMutableAttributedString *attr = [[NSMutableAttributedString alloc] initWithString:text];
+    NSRange fullRange = NSMakeRange(0, text.length);
+    [attr addAttribute:NSFontAttributeName value:font range:fullRange];
+    [attr addAttribute:NSForegroundColorAttributeName value:primaryColor range:fullRange];
+
+    // mask carries one '1'/'0' per character of text (the Go side knows exactly
+    // where the labels are). All widget glyphs are BMP, so mask index == text
+    // character index. Clamp to the shorter length defensively.
+    NSUInteger n = MIN(text.length, mask.length);
+    for (NSUInteger i = 0; i < n; i++) {
+        if ([mask characterAtIndex:i] == '1') {
+            [attr addAttribute:NSForegroundColorAttributeName value:dimColor range:NSMakeRange(i, 1)];
+        }
+    }
+    return attr;
+}
+
+void agentLoadStatusBoxUpdate(AgentLoadStatusBoxPayload payload) {
+    NSString *row1 = [NSString stringWithUTF8String:payload.row1];
+    NSString *row2 = [NSString stringWithUTF8String:payload.row2];
+    NSString *mask1 = [NSString stringWithUTF8String:payload.row1_mask];
+    NSString *mask2 = [NSString stringWithUTF8String:payload.row2_mask];
+    BOOL isLoading = (payload.is_loading != 0);
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSStatusItem *item = [[AgentLoadMenubarPopover shared] statusItemFromAppDelegate];
+        if (item == nil || item.button == nil) return;
+        NSStatusBarButton *button = item.button;
+
+        // Template image: alpha is the only channel that survives, so the system
+        // recolors it for the live menubar appearance (light/dark, light
+        // wallpaper) instead of us caching a labelColor that goes stale between
+        // refresh ticks. Dim prefixes carry their dim via alpha.
+        NSFont *font = [NSFont monospacedDigitSystemFontOfSize:8.5 weight:NSFontWeightMedium];
+        NSColor *primaryColor = [NSColor blackColor];
+        NSColor *dimColor = [[NSColor blackColor] colorWithAlphaComponent:0.45];
+
+        NSAttributedString *s1 = buildDimmedPrefixMetric(row1, mask1, font, primaryColor, dimColor);
+        NSAttributedString *s2 = buildDimmedPrefixMetric(row2, mask2, font, primaryColor, dimColor);
+
+        const CGFloat leftPad = 2.0;
+        const CGFloat rightPad = 6.0; // room for the loading dot
+        const CGFloat widgetHeight = 20.0;
+        CGFloat contentWidth = MAX(ceil(s1.size.width), ceil(s2.size.width));
+        CGFloat widgetWidth = leftPad + contentWidth + rightPad;
+        NSSize size = NSMakeSize(widgetWidth, widgetHeight);
+
+        NSImage *img = [NSImage imageWithSize:size flipped:NO drawingHandler:^BOOL(NSRect dstRect) {
+            [s1 drawAtPoint:NSMakePoint(leftPad, 10.0)];
+            [s2 drawAtPoint:NSMakePoint(leftPad, 1.5)];
+
+            if (isLoading) {
+                NSRect loadDot = NSMakeRect(widgetWidth - 4.5, widgetHeight - 4.5, 2.5, 2.5);
+                [[[NSColor blackColor] colorWithAlphaComponent:0.85] setFill];
+                [[NSBezierPath bezierPathWithOvalInRect:loadDot] fill];
+            }
+
+            return YES;
+        }];
+
+        img.template = YES;
+        button.image = img;
+        button.title = @"";
+        button.imagePosition = NSImageOnly;
+    });
+}
+
+int agentLoadStatusBoxIsAvailable(void) {
+    id delegate = NSApp.delegate;
+    if (delegate == nil) return 0;
+    id value = nil;
+    @try {
+        value = [delegate valueForKey:@"statusItem"];
+    } @catch (NSException *e) {
+        return 0;
+    }
+    if (![value isKindOfClass:[NSStatusItem class]]) return 0;
+    NSStatusItem *item = (NSStatusItem *)value;
+    return (item.button != nil) ? 1 : 0;
+}
+

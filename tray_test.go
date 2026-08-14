@@ -421,10 +421,10 @@ func TestSnapshotScanAborted(t *testing.T) {
 			want:     true,
 		},
 		{
-			name:     "ordinary transcript error is an abort",
+			name:     "ordinary transcript error is degraded evidence",
 			ctx:      context.Background(),
 			snapshot: Snapshot{TranscriptStats: TranscriptStats{Errors: []string{"session.jsonl: invalid JSON"}}},
-			want:     true,
+			want:     false,
 		},
 	}
 	for _, tt := range tests {
@@ -477,5 +477,95 @@ func TestStartLiveTokenRateStartsForIncompleteSnapshotWithoutReplacingMapping(t 
 	}
 	if _, ok := projects["codex\x00partial"]; ok {
 		t.Fatalf("incomplete snapshot introduced a partial project mapping: %+v", projects)
+	}
+}
+
+func TestFormatStatusBoxPayload(t *testing.T) {
+	t.Run("zero values and uninitialized tps", func(t *testing.T) {
+		got := formatStatusBoxPayload(Snapshot{}, SystemResourceSnapshot{}, -1, false)
+		if got.Row1 != "A0 S0  M-- D--" {
+			t.Errorf("Row1 = %q, want A0 S0  M-- D--", got.Row1)
+		}
+		if got.Row2 != "T --/s  ↓0 ↑0" {
+			t.Errorf("Row2 = %q, want T --/s  ↓0 ↑0", got.Row2)
+		}
+	})
+
+	t.Run("normal active values", func(t *testing.T) {
+		snapshot := Snapshot{
+			Current: CurrentMetrics{
+				ActiveBurstConcurrency: 2,
+				SessionConcurrency:     3,
+			},
+		}
+		sysRes := SystemResourceSnapshot{
+			MemoryTotalBytes:     32 * 1024 * 1024 * 1024,
+			MemoryUsedBytes:      16 * 1024 * 1024 * 1024,
+			MemoryUsedPct:        96.2,
+			DiskTotalBytes:       1024 * 1024 * 1024 * 1024,
+			DiskUsedBytes:        240 * 1024 * 1024 * 1024,
+			DiskUsedPct:          98.8,
+			NetworkRxBytesPerSec: 700 * 1024,
+			NetworkTxBytesPerSec: 100 * 1024,
+		}
+		got := formatStatusBoxPayload(snapshot, sysRes, 3200, true)
+		if got.Row1 != "A2 S3  M96% D99%" {
+			t.Errorf("Row1 = %q, want A2 S3  M96%%%% D99%%%%", got.Row1)
+		}
+		if got.Row2 != "T 3.2k/s  ↓700k ↑100k" {
+			t.Errorf("Row2 = %q, want T 3.2k/s  ↓700k ↑100k", got.Row2)
+		}
+		if !got.Loading {
+			t.Errorf("expected loading to be true")
+		}
+	})
+
+	t.Run("fractional tps and single rate", func(t *testing.T) {
+		snapshot := Snapshot{}
+		sysRes := SystemResourceSnapshot{
+			MemoryTotalBytes:     16 * 1024 * 1024 * 1024,
+			MemoryUsedPct:        50.0,
+			DiskTotalBytes:       500 * 1024 * 1024 * 1024,
+			DiskUsedPct:          40.0,
+			NetworkRxBytesPerSec: 1.2 * 1024 * 1024,
+			NetworkTxBytesPerSec: 0,
+		}
+		got := formatStatusBoxPayload(snapshot, sysRes, 5.8, false)
+		if got.Row1 != "A0 S0  M50% D40%" {
+			t.Errorf("Row1 = %q, want A0 S0  M50%%%% D40%%%%", got.Row1)
+		}
+		if got.Row2 != "T 5.8/s  ↓1.2M ↑0" {
+			t.Errorf("Row2 = %q, want T 5.8/s  ↓1.2M ↑0", got.Row2)
+		}
+	})
+}
+
+func TestDimMask(t *testing.T) {
+	// The mask must dim only token-leading labels, never value glyphs or unit
+	// suffixes. The regression: "↑1.2M" must keep its trailing "M" (megabytes)
+	// bright even though "M" is also the Memory label.
+	cases := []struct {
+		row  string
+		want string
+	}{
+		{"A2 S3  M96% D99%", "1001000100001000"},
+		// ↓ and ↑ are 3-byte runes but dimMask emits one byte per rune.
+		{"T 3.2k/s  ↓700k ↑100k", "100000000010000010000"},
+		{"T 5.8/s  ↓1.2M ↑0", "10000000010000010"},
+		{"A0 S0  M-- D--", "10010001000100"},
+	}
+	for _, c := range cases {
+		got := dimMask(c.row)
+		if got != c.want {
+			t.Errorf("dimMask(%q) = %q, want %q", c.row, got, c.want)
+		}
+		if len([]rune(c.row)) != len(got) {
+			t.Errorf("dimMask(%q): mask len %d != rune count %d", c.row, len(got), len([]rune(c.row)))
+		}
+	}
+	// Explicit guard on the reported bug: the last char of "↑1.2M" is NOT dimmed.
+	m := dimMask("T 152/s  ↓338k ↑1.2M")
+	if m[len(m)-1] != '0' {
+		t.Errorf("trailing megabytes unit was dimmed: mask=%q", m)
 	}
 }

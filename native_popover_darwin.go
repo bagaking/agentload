@@ -49,3 +49,32 @@ func nativePopoverHide() {
 func nativePopoverSupported() bool {
 	return C.agentLoadPopoverIsSupported() != 0
 }
+
+func setFixedCString(dst *C.char, maxLen int, src string) {
+	b := []byte(src)
+	if len(b) >= maxLen {
+		b = b[:maxLen-1]
+	}
+	slice := unsafe.Slice((*byte)(unsafe.Pointer(dst)), maxLen)
+	for i := range slice {
+		slice[i] = 0
+	}
+	copy(slice, b)
+}
+
+func nativeStatusBoxUpdate(payload statusBoxPayload) {
+	var cPayload C.AgentLoadStatusBoxPayload
+	setFixedCString(&cPayload.row1[0], 48, payload.Row1)
+	setFixedCString(&cPayload.row2[0], 48, payload.Row2)
+	setFixedCString(&cPayload.row1_mask[0], 48, payload.Row1Mask)
+	setFixedCString(&cPayload.row2_mask[0], 48, payload.Row2Mask)
+	if payload.Loading {
+		cPayload.is_loading = 1
+	}
+	C.agentLoadStatusBoxUpdate(cPayload)
+}
+
+func nativeStatusBoxSupported() bool {
+	return C.agentLoadStatusBoxIsAvailable() != 0
+}
+

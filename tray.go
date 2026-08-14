@@ -45,9 +45,11 @@ type trayApp struct {
 	shutdownCancel   context.CancelFunc
 	refreshDone      chan struct{}
 	menuDone         chan struct{}
+	statusBoxDone    chan struct{}
 	heartbeatDone    <-chan struct{}
 	refreshStarted   bool
 	menuStarted      bool
+	statusBoxStarted bool
 	heartbeatStarted bool
 
 	lastMu            sync.RWMutex
@@ -138,6 +140,9 @@ func newTrayApp(cfg Config, observer *Observer, logger *log.Logger, listener net
 func (a *trayApp) run() error {
 	startSystemResourceSampler(systemResourceSampleInterval)
 	a.observer.evidenceIndex.start()
+	if a.liveTokenRate != nil {
+		a.liveTokenRate.start(liveTokenRateSampleInterval)
+	}
 	a.shutdownMu.Lock()
 	if a.lifecycle != nil {
 		heartbeatDone := a.lifecycle.startHeartbeat(a.stopCh, lifecycleHeartbeatInterval)
@@ -201,6 +206,27 @@ func (a *trayApp) registerLoopDone(refresh bool) chan struct{} {
 		a.menuStarted = true
 	}
 	return done
+}
+
+func (a *trayApp) registerStatusBoxDone() chan struct{} {
+	if a == nil {
+		return nil
+	}
+	a.shutdownMu.Lock()
+	defer a.shutdownMu.Unlock()
+	done := make(chan struct{})
+	a.statusBoxDone = done
+	a.statusBoxStarted = true
+	return done
+}
+
+func (a *trayApp) statusBoxLoopDone() (chan struct{}, bool) {
+	if a == nil {
+		return nil, false
+	}
+	a.shutdownMu.Lock()
+	defer a.shutdownMu.Unlock()
+	return a.statusBoxDone, a.statusBoxStarted
 }
 
 func (a *trayApp) loopDone(refresh bool) (chan struct{}, bool) {
@@ -286,6 +312,9 @@ func (a *trayApp) waitForTrayLoops() error {
 			return err
 		}
 	}
+	if done, started := a.statusBoxLoopDone(); wait(done, started) != nil {
+		return fmt.Errorf("tray status box did not stop within %s", trayShutdownTimeout)
+	}
 	if done, started := a.heartbeatLoopDone(); wait(done, started) != nil {
 		return fmt.Errorf("tray heartbeat did not stop within %s", trayShutdownTimeout)
 	}
@@ -335,6 +364,12 @@ func (a *trayApp) onReady() {
 		defer close(refreshDone)
 		defer recoverBackgroundPanic("tray refresh loop")
 		a.refreshLoop()
+	}()
+	statusBoxDone := a.registerStatusBoxDone()
+	go func() {
+		defer close(statusBoxDone)
+		defer recoverBackgroundPanic("tray status box loop")
+		a.statusBoxLoop()
 	}()
 }
 
@@ -601,9 +636,9 @@ func (a *trayApp) startLiveTokenRate(snapshot Snapshot, scanAborted bool) {
 	a.liveTokenRate.start(liveTokenRateSampleInterval)
 }
 
-// snapshotScanAborted reports whether a snapshot came from a cancelled/expired
-// context or an aborted transcript scan; such partial samples would undercount
-// concurrency if committed to history or served as the cached snapshot.
+// snapshotScanAborted reports whether a snapshot lacks global evidence
+// coverage. A local parser error is disclosed as degraded evidence, while
+// cancellation, discovery failure, and coverage gaps remain non-durable.
 func snapshotScanAborted(ctx context.Context, snapshot Snapshot) bool {
 	if ctx != nil && ctx.Err() != nil {
 		return true
@@ -614,8 +649,10 @@ func snapshotScanAborted(ctx context.Context, snapshot Snapshot) bool {
 	if snapshot.ProcessStats.Incomplete {
 		return true
 	}
-	if len(snapshot.TranscriptStats.Errors) > 0 {
-		return true
+	for _, err := range snapshot.TranscriptStats.Errors {
+		if transcriptScanErrorIsGlobal(err) {
+			return true
+		}
 	}
 	return false
 }
@@ -745,33 +782,21 @@ func (a *trayApp) cachedSnapshot() (Snapshot, bool) {
 }
 
 func (a *trayApp) applyLoadingState() {
-	icon := renderStatusIcon(CurrentMetrics{}, true)
-	systray.SetTemplateIcon(icon, icon)
-	if snapshot, ok := a.cachedSnapshot(); ok {
-		systray.SetTitle(formatStatusTitle(snapshot))
-		systray.SetTooltip("Agent Load is refreshing\n" + formatTooltip(snapshot))
-		if a.mRefreshNow != nil {
-			a.mRefreshNow.SetTitle("Refreshing…")
-			a.mRefreshNow.Disable()
-		}
-		return
-	}
-	systray.SetTitle("…")
-	systray.SetTooltip("Agent Load is refreshing")
-	if a.mCurrent != nil {
-		a.mCurrent.SetTitle("Refreshing snapshot…")
-	}
+	a.updateStatusBox()
 	if a.mRefreshNow != nil {
 		a.mRefreshNow.SetTitle("Refreshing…")
 		a.mRefreshNow.Disable()
 	}
+	if _, ok := a.cachedSnapshot(); ok {
+		return
+	}
+	if a.mCurrent != nil {
+		a.mCurrent.SetTitle("Refreshing snapshot…")
+	}
 }
 
 func (a *trayApp) applySnapshot(snapshot Snapshot) {
-	icon := renderStatusIcon(snapshot.Current, false)
-	systray.SetTemplateIcon(icon, icon)
-	systray.SetTitle(formatStatusTitle(snapshot))
-	systray.SetTooltip(formatTooltip(snapshot))
+	a.updateStatusBox()
 
 	if a.mCurrent != nil {
 		a.mCurrent.SetTitle(fmt.Sprintf(
@@ -810,6 +835,155 @@ func (a *trayApp) applySnapshot(snapshot Snapshot) {
 		a.mRefreshNow.SetTitle("Refresh Now")
 		a.mRefreshNow.Enable()
 	}
+}
+
+func (a *trayApp) statusBoxLoop() {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	a.updateStatusBox()
+	for {
+		select {
+		case <-ticker.C:
+			a.updateStatusBox()
+		case <-a.stopCh:
+			return
+		}
+	}
+}
+
+func (a *trayApp) updateStatusBox() {
+	if a == nil || a.isClosing() {
+		return
+	}
+	snapshot, _ := a.cachedSnapshot()
+	sysRes, ok := latestBackgroundSystemResourceSample()
+	if !ok {
+		sysRes = snapshot.SystemResources
+	}
+	now := time.Now()
+	var tps float64 = -1
+	if a.liveTokenRate != nil {
+		sample := a.liveTokenRate.sample(now)
+		if sample.OutputTokensPerSecond != nil {
+			tps = *sample.OutputTokensPerSecond
+		} else if sample.State == "zero" {
+			tps = 0
+		}
+	}
+	payload := formatStatusBoxPayload(snapshot, sysRes, tps, a.isRefreshing())
+	if nativeStatusBoxSupported() {
+		nativeStatusBoxUpdate(payload)
+	} else {
+		icon := renderStatusIcon(snapshot.Current, payload.Loading)
+		systray.SetTemplateIcon(icon, icon)
+		if payload.Loading && snapshot.Current.ActiveBurstConcurrency == 0 && snapshot.Current.SessionConcurrency == 0 {
+			systray.SetTitle("…")
+		} else {
+			systray.SetTitle(formatStatusTitle(snapshot))
+		}
+	}
+	if payload.Loading {
+		systray.SetTooltip("Agent Load is refreshing\n" + formatTooltip(snapshot, sysRes, tps))
+	} else {
+		systray.SetTooltip(formatTooltip(snapshot, sysRes, tps))
+	}
+}
+
+type statusBoxPayload struct {
+	Row1     string
+	Row2     string
+	Row1Mask string
+	Row2Mask string
+	Loading  bool
+}
+
+func formatStatusBoxPayload(snapshot Snapshot, sysRes SystemResourceSnapshot, tps float64, loading bool) statusBoxPayload {
+	row1 := fmt.Sprintf("A%d S%d  %s", snapshot.Current.ActiveBurstConcurrency, snapshot.Current.SessionConcurrency, formatMetroResources(sysRes))
+	row2 := fmt.Sprintf("%s  %s", formatMetroTPS(tps), formatMetroNetwork(sysRes.NetworkRxBytesPerSec, sysRes.NetworkTxBytesPerSec))
+	return statusBoxPayload{
+		Row1:     row1,
+		Row2:     row2,
+		Row1Mask: dimMask(row1),
+		Row2Mask: dimMask(row2),
+		Loading:  loading,
+	}
+}
+
+// dimMask marks which runes are metric labels (dimmed in the menubar widget):
+// the leading glyph of each whitespace-delimited token, when it is a known
+// label. Value glyphs and unit suffixes (k/M/G/B/T) are never token-leading, so
+// they stay bright. Output is one byte ('1'/'0') per rune of row.
+func dimMask(row string) string {
+	const labels = "ASTMD↓↑"
+	var b strings.Builder
+	atStart := true
+	for _, r := range row {
+		dim := false
+		if r == ' ' {
+			atStart = true
+		} else {
+			dim = atStart && strings.ContainsRune(labels, r)
+			atStart = false
+		}
+		if dim {
+			b.WriteByte('1')
+		} else {
+			b.WriteByte('0')
+		}
+	}
+	return b.String()
+}
+
+func formatMetroResources(sysRes SystemResourceSnapshot) string {
+	mem := "M--"
+	if sysRes.MemoryTotalBytes > 0 {
+		mem = fmt.Sprintf("M%.0f%%", sysRes.MemoryUsedPct)
+	}
+	disk := "D--"
+	if sysRes.DiskTotalBytes > 0 {
+		disk = fmt.Sprintf("D%.0f%%", sysRes.DiskUsedPct)
+	}
+	return mem + " " + disk
+}
+
+func formatMetroTPS(tps float64) string {
+	switch {
+	case tps < 0:
+		return "T --/s"
+	case tps == 0:
+		return "T 0/s"
+	case tps < 10:
+		if tps == float64(int(tps)) {
+			return fmt.Sprintf("T %d/s", int(tps))
+		}
+		return fmt.Sprintf("T %.1f/s", tps)
+	case tps < 1000:
+		return fmt.Sprintf("T %.0f/s", tps)
+	default:
+		return fmt.Sprintf("T %.1fk/s", tps/1000)
+	}
+}
+
+func formatRateUnit(r float64) string {
+	switch {
+	case r <= 0:
+		return "0"
+	case r < 1024:
+		return fmt.Sprintf("%.0fB", r)
+	case r < 1000*1024:
+		return fmt.Sprintf("%.0fk", r/1024)
+	case r < 1000*1024*1024:
+		return fmt.Sprintf("%.1fM", r/(1024*1024))
+	default:
+		return fmt.Sprintf("%.1fG", r/(1024*1024*1024))
+	}
+}
+
+func formatMetroNetwork(rx, tx float64) string {
+	if rx <= 0 && tx <= 0 {
+		return "↓0 ↑0"
+	}
+	return fmt.Sprintf("↓%s ↑%s", formatRateUnit(rx), formatRateUnit(tx))
 }
 
 func formatTrayMetaTitle(snapshot Snapshot) string {
@@ -872,31 +1046,133 @@ func formatStatusTitle(snapshot Snapshot) string {
 	return fmt.Sprintf("%dA %dS", snapshot.Current.ActiveBurstConcurrency, snapshot.Current.SessionConcurrency)
 }
 
-func formatTooltip(snapshot Snapshot) string {
-	codex := snapshot.CurrentByTool["codex"]
-	claude := snapshot.CurrentByTool["claude"]
-	firstProject := "none"
-	if len(snapshot.ProjectFocus) > 0 {
-		firstProject = snapshot.ProjectFocus[0].Project
+func formatCompactBytes(b uint64, suffix string) string {
+	if b == 0 {
+		return strings.TrimSpace("-- " + suffix)
 	}
-	return fmt.Sprintf(
-		"Active %d · Sessions %d · PIDs %d\nProjects %d · Active projects %d · Mapping %.1f%%\nActive means local-log movement within %s\nCodex %d/%d/%d · Claude %d/%d/%d\nFirst project row %s · Updated %s",
-		snapshot.Current.ActiveBurstConcurrency,
-		snapshot.Current.SessionConcurrency,
-		snapshot.Current.PIDConcurrency,
-		snapshot.Summary.ProjectCount,
-		snapshot.Summary.HotProjectCount,
-		snapshot.Summary.MappingCoveragePct,
-		formatActiveWindowSeconds(snapshot.Config.IdleGapSeconds),
-		codex.ActiveBurstConcurrency,
-		codex.SessionConcurrency,
-		codex.PIDConcurrency,
-		claude.ActiveBurstConcurrency,
-		claude.SessionConcurrency,
-		claude.PIDConcurrency,
-		firstProject,
-		formatTimestamp(snapshot.GeneratedAt),
-	)
+	gb := float64(b) / (1024 * 1024 * 1024)
+	if gb >= 1024 {
+		return strings.TrimSpace(fmt.Sprintf("%.1fT %s", gb/1024, suffix))
+	}
+	if gb >= 10 {
+		return strings.TrimSpace(fmt.Sprintf("%.0fG %s", gb, suffix))
+	}
+	return strings.TrimSpace(fmt.Sprintf("%.1fG %s", gb, suffix))
+}
+
+func capitalizeTool(tool string) string {
+	switch strings.ToLower(tool) {
+	case "codex":
+		return "Codex"
+	case "claude":
+		return "Claude"
+	case "trae":
+		return "Trae"
+	default:
+		return tool
+	}
+}
+
+func formatTooltip(snapshot Snapshot, sysRes SystemResourceSnapshot, tps float64) string {
+	var tpsStr string
+	if tps >= 0 {
+		if tps < 10 {
+			tpsStr = fmt.Sprintf("%.1f tok/s", tps)
+		} else {
+			tpsStr = fmt.Sprintf("%.0f tok/s", tps)
+		}
+	} else {
+		tpsStr = "--"
+	}
+	memStr := "--"
+	if sysRes.MemoryTotalBytes > 0 {
+		memStr = fmt.Sprintf("%.0f%%", sysRes.MemoryUsedPct)
+	}
+	diskStr := "--"
+	if sysRes.DiskTotalBytes > 0 {
+		diskStr = fmt.Sprintf("%.0f%%", sysRes.DiskUsedPct)
+	}
+	netStr := formatMetroNetwork(sysRes.NetworkRxBytesPerSec, sysRes.NetworkTxBytesPerSec)
+
+	var lines []string
+
+	// Direct 1-to-1 mapping to menubar items (3 compact lines, never wrap)
+	lines = append(lines, fmt.Sprintf("[A]ctive: %d · [S]essions: %d", snapshot.Current.ActiveBurstConcurrency, snapshot.Current.SessionConcurrency))
+	lines = append(lines, fmt.Sprintf("[M]emory: %s · [D]isk: %s", memStr, diskStr))
+	lines = append(lines, fmt.Sprintf("[T]PS: %s · %s", tpsStr, netStr))
+
+	// Top projects
+	var projectLines []string
+	for i, p := range snapshot.ProjectFocus {
+		if i >= 3 {
+			break
+		}
+		if p.ActiveBurstCount > 0 || p.SessionCount > 0 {
+			projectLines = append(projectLines, fmt.Sprintf("  • %s (%dA/%dS)", p.Project, p.ActiveBurstCount, p.SessionCount))
+		}
+	}
+	if len(projectLines) > 0 {
+		lines = append(lines, "", "Top Projects:")
+		lines = append(lines, projectLines...)
+	}
+
+	// Tools, Peaks, Host
+	var metaLines []string
+
+	var toolParts []string
+	for _, tool := range []string{"codex", "claude", "trae"} {
+		if m, ok := snapshot.CurrentByTool[tool]; ok && (m.ActiveBurstConcurrency > 0 || m.SessionConcurrency > 0) {
+			toolParts = append(toolParts, fmt.Sprintf("%s (%dA/%dS)", capitalizeTool(tool), m.ActiveBurstConcurrency, m.SessionConcurrency))
+		}
+	}
+	if len(toolParts) > 0 {
+		metaLines = append(metaLines, fmt.Sprintf("Tools: %s", strings.Join(toolParts, " · ")))
+	}
+
+	today := snapshot.HistoricPeaks.Today
+	sevenDay := snapshot.HistoricPeaks.SevenDay
+	if today.ActiveBurstConcurrency.Value > 0 || today.SessionConcurrency.Value > 0 ||
+		sevenDay.ActiveBurstConcurrency.Value > 0 || sevenDay.SessionConcurrency.Value > 0 {
+		metaLines = append(metaLines, fmt.Sprintf("Peaks: Today %dA/%dS · 7-Day %dA/%dS",
+			today.ActiveBurstConcurrency.Value,
+			today.SessionConcurrency.Value,
+			sevenDay.ActiveBurstConcurrency.Value,
+			sevenDay.SessionConcurrency.Value,
+		))
+	}
+
+	if sysRes.Supported {
+		var hostParts []string
+		if sysRes.CPUPercent > 0 || sysRes.LoadAverage1 > 0 {
+			hostParts = append(hostParts, fmt.Sprintf("CPU %.1f%%", sysRes.CPUPercent))
+		}
+		if sysRes.MemoryTotalBytes > 0 {
+			hostParts = append(hostParts, fmt.Sprintf("RAM %s/%s", formatCompactBytes(sysRes.MemoryUsedBytes, ""), formatCompactBytes(sysRes.MemoryTotalBytes, "")))
+		}
+		if sysRes.DiskTotalBytes > 0 {
+			hostParts = append(hostParts, fmt.Sprintf("Disk %s/%s", formatCompactBytes(sysRes.DiskUsedBytes, ""), formatCompactBytes(sysRes.DiskTotalBytes, "")))
+		}
+		if len(hostParts) > 0 {
+			metaLines = append(metaLines, fmt.Sprintf("Host: %s", strings.Join(hostParts, " · ")))
+		}
+	}
+
+	metaParts := []string{fmt.Sprintf("Updated %s", formatTimestamp(snapshot.GeneratedAt))}
+	if snapshot.TranscriptStats.ScannedFiles > 0 {
+		cacheState := "fresh scan"
+		if snapshot.TranscriptStats.Cached {
+			cacheState = "cache hit"
+		}
+		metaParts = append(metaParts, fmt.Sprintf("%d transcripts (%s)", snapshot.TranscriptStats.ScannedFiles, cacheState))
+	}
+	metaLines = append(metaLines, strings.Join(metaParts, " · "))
+
+	if len(metaLines) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, metaLines...)
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 func formatActiveWindowSeconds(seconds int) string {
