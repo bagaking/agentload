@@ -160,9 +160,11 @@ meta:
 - **当前 sprint：`M01_S01.hardening_release_gate.md`**——落地在途 hardening、把脏工作树收敛为干净提交、四门验证、录基线指标、打 tag。
 - M01 后续排队：M01_S02（Go 拆包 + VendorAdapter）、M01_S03（main.tsx 拆分 + popover 快路径）。
 
+**交接**：2026-09-20 会话的收尾盘点见 [`HANDOFF_2026-09-20.md`](HANDOFF_2026-09-20.md)（未完成项按"接手方最可能先碰"排序 + 踩过的坑 + 安全红线）。接手方读完并更新本节后即可删除该文件。
+
 **近期待办（非 sprint 内）**：
 
-- PLAN.md §8 未决问题中标〔用户决策〕的项（Q2/Q6/Q9/Q13）向用户提出。
+- PLAN.md §8 未决问题中标〔用户决策〕的项（Q2/Q6/Q9/Q13）向用户提出。**17 个未决问题目前一个都没关闭**，表格「处理」列写的是计划去向不是结论。
 - 建立**吸收巡检仪式**：每个 milestone 出口，审计 Claude Code / Codex / gemini 第一方新出了什么，重新校验受影响 sprint（源于 critic，见 OPINIONS_001 D-006）。
 
 ## 3. 文档目录
@@ -172,6 +174,7 @@ meta:
 | `PLAN.md` | 主计划：北极星、用户原话、5W1H、SWOT、品类格局、硬约束、Roadmap、否决项、未决问题 |
 | `CURRENT.md` | 本文件：标准与原则、执行状态、文档目录、质检记录 |
 | `OPINIONS_001.strategy_decisions.md` | 战略决策记录（来源与语境版本齐备） |
+| `HANDOFF_2026-09-20.md` | **一次性**交接单：未完成项排序、踩过的坑、安全红线、常用命令。接手方消化后删除 |
 | `DOCREF_001.competitor_landscape_ai_agent_monitors.md` | 直接竞品格局调研 |
 | `DOCREF_002.agent_observability_reference.md` | 相邻 agent 可观测性参照（OTel GenAI、hooks/OTLP） |
 | `DOCREF_003.macos_menubar_ux_bar.md` | 菜单栏产品体验及格线（delight table-stakes 清单） |
