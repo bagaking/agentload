@@ -92,6 +92,23 @@ func loadLocalHistoryState(path string, now time.Time) (localHistoryState, error
 	}
 	defer lock.Release()
 
+	cutoff := now.Add(-historyRetentionWindow)
+
+	// Cold rows live in month partitions beside the hot file. Only partitions
+	// that can still hold retained rows are opened, so the read stays bounded
+	// however long the archive grows.
+	partitions, err := archivePartitionsSince(state.path, cutoff)
+	if err != nil {
+		return state, err
+	}
+	archived, err := readArchiveLines(partitions)
+	if err != nil {
+		return state, err
+	}
+	for _, line := range archived {
+		state.consumeHistoryLine(line, cutoff)
+	}
+
 	file, err := os.Open(state.path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -101,7 +118,7 @@ func loadLocalHistoryState(path string, now time.Time) (localHistoryState, error
 	}
 	defer file.Close()
 
-	cutoff := now.Add(-historyRetentionWindow)
+	hotLines := 0
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
@@ -109,33 +126,86 @@ func loadLocalHistoryState(path string, now time.Time) (localHistoryState, error
 		if line == "" {
 			continue
 		}
-		var sample HistorySample
-		if err := json.Unmarshal([]byte(line), &sample); err != nil {
-			state.corruptLineCount++
-			continue
-		}
-		at, ok := historySampleTime(sample)
-		if !ok {
-			state.corruptLineCount++
-			continue
-		}
-		state.loadedSampleCount++
-		if at.Before(cutoff) {
-			state.droppedSampleCount++
-			continue
-		}
-		state.samples, _ = appendRetainedHistorySample(state.samples, sample, cutoff)
+		hotLines++
+		state.consumeHistoryLine([]byte(line), cutoff)
 	}
 	if err := scanner.Err(); err != nil {
 		return state, err
 	}
-	if historyFileNeedsCompaction(state.loadedSampleCount+state.corruptLineCount, len(state.samples)) {
-		if err := rewriteHistorySampleFile(state.path, state.samples); err != nil {
+	if historyFileNeedsCompaction(hotLines, state.hotSampleCount(now)) {
+		if err := compactHistorySampleFile(state.path, state.samples, now); err != nil {
 			return state, err
 		}
 	}
 	return state, nil
 }
+
+// consumeHistoryLine folds one stored line into the retained window. Archived
+// and hot lines take the same path, so a row that a crash left in both places is
+// merged by timestamp rather than counted twice.
+func (s *localHistoryState) consumeHistoryLine(line []byte, cutoff time.Time) {
+	var sample HistorySample
+	if err := json.Unmarshal(line, &sample); err != nil {
+		s.corruptLineCount++
+		return
+	}
+	at, ok := historySampleTime(sample)
+	if !ok {
+		s.corruptLineCount++
+		return
+	}
+	s.loadedSampleCount++
+	if at.Before(cutoff) {
+		s.droppedSampleCount++
+		return
+	}
+	s.samples, _ = appendRetainedHistorySample(s.samples, sample, cutoff)
+}
+
+// hotSampleCount counts retained samples inside the hot window, which is what
+// the hot file holds after compaction.
+func (s *localHistoryState) hotSampleCount(now time.Time) int {
+	hotCutoff := now.Add(-historyHotWindow)
+	count := 0
+	for _, sample := range s.samples {
+		if at, ok := historySampleTime(sample); ok && !at.Before(hotCutoff) {
+			count++
+		}
+	}
+	return count
+}
+
+// compactHistorySampleFile archives samples older than the hot window and then
+// rewrites the hot file with the remainder.
+//
+// Order matters: the archive is made durable first, so a crash between the two
+// steps leaves a row in both places -- a duplicate that consumeHistoryLine
+// merges -- instead of in neither.
+func compactHistorySampleFile(path string, samples []HistorySample, now time.Time) error {
+	hotCutoff := now.Add(-historyHotWindow)
+	cold := make([]archiveRow, 0, len(samples))
+	hot := make([]HistorySample, 0, len(samples))
+	for _, sample := range samples {
+		at, ok := historySampleTime(sample)
+		if !ok {
+			continue
+		}
+		if at.Before(hotCutoff) {
+			raw, err := json.Marshal(sample)
+			if err != nil {
+				return err
+			}
+			cold = append(cold, archiveRow{At: at, Line: raw})
+			continue
+		}
+		hot = append(hot, sample)
+	}
+	if err := archiveColdRows(path, cold); err != nil {
+		return err
+	}
+	return rewriteHistorySampleFile(path, hot)
+}
+
 
 func historyFileNeedsCompaction(fileLineCount, retainedCount int) bool {
 	excess := fileLineCount - retainedCount
@@ -183,7 +253,7 @@ func rewriteHistorySampleFile(path string, samples []HistorySample) error {
 		os.Remove(tmpPath)
 		return err
 	}
-	return nil
+	return syncDir(dir)
 }
 
 func (s *localHistoryState) recordSample(sample HistorySample) error {

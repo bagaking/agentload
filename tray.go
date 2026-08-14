@@ -96,6 +96,9 @@ func newTrayApp(cfg Config, observer *Observer, logger *log.Logger, listener net
 	if lifecycle == nil {
 		lifecycle = newLifecycleLog(cfg.HistoryFile)
 	}
+	if err := lifecycle.compact(time.Now()); err != nil && logger != nil {
+		logger.Printf("lifecycle log compaction failed: %v", err)
+	}
 	history, err := loadLocalHistoryState(cfg.HistoryFile, time.Now())
 	if err != nil && logger != nil {
 		logger.Printf("local history load failed: %v", err)

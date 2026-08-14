@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -109,6 +112,112 @@ func lifecycleLogPath(historyPath string) string {
 	return filepath.Join(filepath.Dir(historyPath), lifecycleLogFileName)
 }
 
+// compact moves events older than the hot window into month archive partitions.
+//
+// Nothing reads this log, so it deliberately stays untyped here: rows are moved
+// as opaque lines keyed on the "at" prefix rather than decoded into
+// lifecycleEvent. It is the only store with no retention at all, which is why it
+// had grown past every other one.
+func (l *lifecycleLog) compact(now time.Time) error {
+	if l == nil || strings.TrimSpace(l.path) == "" {
+		return nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	lock, err := historyfile.Acquire(l.path)
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
+
+	file, err := os.Open(l.path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	hotCutoff := now.Add(-historyHotWindow)
+	cold := []archiveRow{}
+	hot := [][]byte{}
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	for scanner.Scan() {
+		line := bytes.TrimSpace(scanner.Bytes())
+		if len(line) == 0 {
+			continue
+		}
+		copied := append([]byte(nil), line...)
+		at, ok := lifecycleLineTime(copied)
+		// An unparsable line keeps its place in the hot file rather than being
+		// filed under a guessed month or dropped.
+		if !ok || !at.Before(hotCutoff) {
+			hot = append(hot, copied)
+			continue
+		}
+		cold = append(cold, archiveRow{At: at, Line: copied})
+	}
+	if err := scanner.Err(); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	if len(cold) == 0 {
+		return nil
+	}
+	if err := archiveColdRows(l.path, cold); err != nil {
+		return err
+	}
+	return rewriteLifecycleLogFile(l.path, hot)
+}
+
+// lifecycleLineTime reads just the "at" field of a stored line.
+func lifecycleLineTime(line []byte) (time.Time, bool) {
+	var header struct {
+		At string `json:"at"`
+	}
+	if err := json.Unmarshal(line, &header); err != nil {
+		return time.Time{}, false
+	}
+	return parseObservedTime(header.At)
+}
+
+func rewriteLifecycleLogFile(path string, lines [][]byte) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".compact-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	cleanup := func(err error) error {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	for _, line := range lines {
+		if _, err := tmp.Write(append(line, '\n')); err != nil {
+			return cleanup(err)
+		}
+	}
+	if err := tmp.Chmod(0o644); err != nil {
+		return cleanup(err)
+	}
+	if err := tmp.Sync(); err != nil {
+		return cleanup(err)
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	return syncDir(dir)
+}
+
 func (l *lifecycleLog) record(event lifecycleEvent) error {
 	if l == nil || strings.TrimSpace(l.path) == "" {
 		return nil
@@ -210,16 +319,24 @@ func (l *lifecycleLog) recordPanic() {
 }
 
 func lifecycleEventFromSnapshot(event, reason string, snapshot Snapshot) lifecycleEvent {
-	return lifecycleEvent{
-		Event:            event,
-		RefreshSlotID:    snapshot.RefreshSlotID,
-		Reason:           reason,
-		Metrics:          lifecycleMetricsFromSnapshot(snapshot),
-		TranscriptStats:  lifecycleTranscriptStatsFromSnapshot(snapshot.TranscriptStats),
-		ProcessStats:     lifecycleProcessStatsFromSnapshot(snapshot.ProcessStats),
-		RuntimeProcesses: lifecycleRuntimeProcesses(snapshot.RuntimeProcesses),
-		HostAppProcesses: lifecycleHostAppProcesses(snapshot.HostAppProcesses),
+	out := lifecycleEvent{
+		Event:           event,
+		RefreshSlotID:   snapshot.RefreshSlotID,
+		Reason:          reason,
+		Metrics:         lifecycleMetricsFromSnapshot(snapshot),
+		TranscriptStats: lifecycleTranscriptStatsFromSnapshot(snapshot.TranscriptStats),
+		ProcessStats:    lifecycleProcessStatsFromSnapshot(snapshot.ProcessStats),
 	}
+	// A recorded snapshot is also appended to history.jsonl, which keeps a strict
+	// superset of these two process rosters, so repeating them here costs ~64% of
+	// this log's bytes and adds no fact. An aborted snapshot is deliberately kept
+	// out of history (see trayApp.refresh), so for those the rosters are the only
+	// surviving record of what the machine was doing and must stay.
+	if event != "snapshot_recorded" {
+		out.RuntimeProcesses = lifecycleRuntimeProcesses(snapshot.RuntimeProcesses)
+		out.HostAppProcesses = lifecycleHostAppProcesses(snapshot.HostAppProcesses)
+	}
+	return out
 }
 
 func lifecycleProcessStatsFromSnapshot(stats ProcessObservationStats) *lifecycleProcessStats {

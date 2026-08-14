@@ -38,7 +38,7 @@ meta:
 - **矩阵门禁**——vendor 与信号只按其证据诚实支持的档位出货；解析异常自动降档而非输出错数；矩阵单元格由 adapter 代码生成，永不手编。
 - **Sprint 纪律**——量化验收未过不得进入下一 sprint；回归或 >30% 偏差开 FIX/REFACTOR mini-sprint 并更新本文件，不许静默漂移。
 
-## 2. 执行状态（更新于 2026-09-19）
+## 2. 执行状态（更新于 2026-09-20）
 
 **今日已完成**：
 
@@ -118,6 +118,18 @@ meta:
 - **审计规模**：8 agent（4 路理解 + 4 路对抗验证），四个 bundle 全部 `refuted: false` / `blockers: []`。SQLite 直开与文档矩阵两条被独立判为 concern 而非 blocker。
 - **计划偏差**：M02_S03（opencode）7 项 checklist 全未勾选而代码已落地；M02_S04（gemini）前提被**第二次**推翻（本批接的 `~/.gemini/tmp/**/chats/*.jsonl` 与 M02_S05 查证的 Antigravity protobuf 是**不同证据源、不互相否证**）。两个 sprint 的验收标准均待按已落地现状重写——**不得反向为用例适配代码**。
 
+**2026-09-20 完成**（mini-sprint `M02_S05.005.PERF`，用户「我们是不是没有特地去对 history 做过压缩之类的操作？」）：
+
+- **三个 JSONL 存储改为「2 天热明文 + 按月 gzip 冷归档」**：本机 **109.5MB → 12.26MB（-88.8%），零行丢失**。热文件保持**原名、原格式、原逐行 fsync 追加路径**，压缩只发生在启动压实时的冷段——`appendHistorySampleFile` 与 `lifecycleLog.record` 对每一行 `Sync()`，崩溃最多丢 1 行，这个保证一个字节都没动。
+- **先修正两条我自己的误判**：(a) history/throughput **并非无界增长**，它们有 30 天保留，109MB 接近稳态；真正无界的只有 `lifecycle.jsonl`（唯一既无读者也无保留的存储）。(b) **压实只在启动时发生**，进程内长跑期间三个文件都单调增长——本机 2.4 次重启/天使这个节奏可接受，但方案不得依赖运行期压实。
+- **月分区让 keep-forever 与有界读取同时成立**：保留窗口 30 天，读者最多开 2 个分区即覆盖全窗口，更早的分区永不再读也永不删除，且**由文件名判定**，无需打开。单一归档文件做不到——它随年份线性变大并在每次启动被整读。
+- **否掉了三项指标全胜的方案**（D-020 附带）：往归档追加 gzip 成员体积只差 1%、快 76ms、`Multistream(true)` 可透明读回——但**一个被截断的半成员会让其后所有成员都读不出来**（实测 100 行只读回 28）。改用整月原子重写：慢一点，但复用仓库已有的 temp→`Chmod`→`Sync`→`Close`→`rename` 模式、天然幂等、没有截断态。
+- **「原子」不等于「不丢」（D-020）**：跨两个文件的一次逻辑提交，靠三件事压住——先落归档后截热文件（崩在中间是**重复**而非丢失，由既有 `At` 去重吸收）；两次 rename 之间 `syncDir` fsync 目录（`os.Rename` 原子但**不持久**，断电可丢归档 rename 而保留截断 rename）；读分区出错即中止整次压实且热文件保持原样。
+- **lifecycle 额外省 20.8MB**：`snapshot_recorded` 行上的两个进程名册在 history 里有信息量更大的一份，删。**`snapshot_aborted` 上的必须保留**——aborted 快照不进 history，那是唯一证据。**对抗评审「逐字节相同」的依据被我实测证伪**（精确匹配 0 命中、±5s 邻近 4620 行内容相同 0 行，实为严格子集少 4 个字段），结论方向对但依据错——照着错依据做会连 aborted 的一起删掉（D-021）。
+- **补齐三处既有欠账**：`appendThroughputHistoryRecords` **今天就没有逐行 fsync**，已补 `file.Sync()`；`rewriteThroughputHistoryFile` 补 `Chmod(0o644)`（磁盘上 `throughput.jsonl` 一直是 `0600`，另两个是 `0644`）与 Close/Rename 失败分支的临时文件清理。
+- **测试抓出一个真 bug**：`compactHistorySampleFile` 收到的是**归档+热文件合并后**的集合，已归档的行每次压实会被**再归档一遍**，分区无界增长——而 **gzip 藏起了字节，从磁盘大小完全看不出来**。修复是 `writeArchivePartition` 读回既有内容去重。**「预期会红的测试没红」当时是覆盖缺口的信号**：既有夹具的冷集恒为空，归档路径零覆盖（D-021 附带）。
+- **验收**：五门全绿；真实数据迁移后**行数守恒经 Python 独立复算逐条吻合**（history -508、throughput -741 均精确等于保留窗口过期数，lifecycle +2 为迁移期间新事件）；65425 行归档 `invalid_json=0`、落在热窗口内 0 行；**重启二次压实 history/throughput 归档字节完全相同**（幂等），lifecycle 增的 6 行经核验是恰好跨过 2 天边界的 heartbeat；9 个文件全部 `0644`。**语义完整性**：`trends.windows` 五个区间全部正常，最长跨至 **2026-08-21**（整 30 天，只可能来自归档）；空闲 CPU **0.3%**。
+
 **当前活跃**：
 
 - **M01 地基**（本轮架构与熵审查修复已落地，发布门已复跑）。
@@ -153,6 +165,7 @@ meta:
 | `M02_S05.002.REDESIGN.activity_concurrency_view.md` | 并发视图重设计：末点虚构 0 的修复、live hero 取代三按钮图例、阶跃线与拆分价格轴 |
 | `M02_S05.003.FIX.worktree_project_aggregation.md` | worktree 项目聚合：中途 cd 进临时目录导致同 rank cwd 竞争、项目名被沙盒目录名顶掉；`file://` cwd 让仓库边界解析全程 miss |
 | `M02_S05.004.VENDOR.extra_transcript_adapters.md` | 补录计划外落地的 gemini/opencode/hermes/openclaw/pi adapter；**代码档位与本机语料分开记账** |
+| `M02_S05.005.PERF.history_archive_compression.md` | 历史压缩：2 天热明文 + 按月 gzip 冷归档（109.5MB→12.26MB，零行丢失）；lifecycle 保留缺口与三处持久性/权限欠账 |
 | `M03_S01.attention_state_engine.md` | 证据化会话 attention states 引擎 |
 | `M03_S02.needs_you_triage_and_tray.md` | needs-you 分诊面、菜单栏 glyph、tray i18n |
 | `M03_S03.one_keystroke_actions.md` | 一次按键动作：跳转/检视/续跑/显式停止 |
@@ -199,6 +212,8 @@ meta:
 
 | 2026-09-19 | mini-sprint `M02_S05.004.VENDOR`：补录另一会话落地的 gemini/opencode/hermes/openclaw/pi adapter（vendor 4→9） | `go vet ./...`、`go test ./...`、`npm --prefix ui run build`、`node scripts/validate_locales.js` 全绿；`ui/dist` 哈希与工作树产物一致。**8 路审计**（4 理解 + 4 对抗验证）四个 bundle 全部 `refuted: false` / `blockers: []`。**生产解析器实跑本机真实文件**：hermes `state.db` → **10287 个 trace、1932 个含 output token**（真实可用）；gemini 唯一真实文件 → `trace=nil`；openclaw/pi 各 0 个数据文件 | **代码档位 ≠ 本机语料，分两行记账**（mini-sprint §3）。四家出不了数是正确行为——`DecodeUsage` 在 `OutputTokens<=0` 时 `ok=false`、`nonEmptyTrace` 无事件时间即 nil；活体快照证实五家只在 `tool_coverage` 档位报真实观测 0，`token_usage`/`output_token_throughput` 两条经济档零输出。**我阻断提交的判断是错的**，四条理由塌三条，见 OPINIONS **D-019**。已知天花板：hermes 全解析 6.84s 且 DB 有意绕过 mtime 缓存（本机因 9 天未动而 deferred，活跃用户会每次付）；文档矩阵无生成器（归 M02_S01）；7 个新测试夹具全合成且 gemini 夹具形状与真实文件不符（测试债，本机无语料无法消除）。打包安装 `2026.09.19.192831`（dmg 8.5M / zip 7.9M，ad-hoc 签名），已装 `/Applications`；实机验证 `current_by_tool` 九家齐备，五家新 vendor 在 coverage 档位报真实 0、经济档零输出 |
 
+| 2026-09-20 | mini-sprint `M02_S05.005.PERF`：三个 JSONL 存储改为 2 天热明文 + 按月 gzip 冷归档（用户「我们是不是没有特地去对 history 做过压缩之类的操作？」） | `go vet ./...`、`go test ./...`（`ok agentload 7.846s`，新增 8 个测试）、`npm --prefix ui run build`、`node scripts/validate_locales.js`、`./build_macos_app.sh` 全绿。**真实数据迁移**（备份 `/tmp/agentload_backup_pre_install_20260920_103529`，73534 行 / 109.5MB）：109.5MB → **12.26MB（-88.8%）**，行数守恒经 Python 独立复算**逐条吻合**——history 热 514 + 归档 4199 = 4713，差 508 精确等于保留窗口过期数；throughput 差 741 同样精确吻合；lifecycle +2 为迁移期间新写入事件。归档 65425 行 `invalid_json=0`、落在热窗口内 **0** 行。**重启二次压实**：history/throughput 归档**字节完全相同**（幂等成立），lifecycle 增 6 行经核验是 09-18 10:35–10:40 恰好跨过 2 天边界的 heartbeat。9 个文件全部 `0644`（迁移前 `throughput.jsonl` 为 `0600`）。**语义完整性**：`trends.windows` 五区间全部正常，最长跨至 **2026-08-21**（整 30 天，只可能来自归档）；`/api/refresh` 后 `parsed_files=80`，空闲 CPU **0.3%** | 写路径一个字节未动（逐行 `Sync()` 的崩溃丢 1 行保证保持不变）。**否掉了三项指标全胜的 gzip 追加成员方案**——半成员污染其后所有成员（实测 100 行只读回 28），改整月原子重写（D-020 附带）。**测试抓出真 bug**：已归档行每次压实被再归档，分区无界增长且 **gzip 藏起字节从磁盘看不出来**；「预期会红的测试没红」是覆盖缺口的信号（D-021 附带）。**对抗评审「逐字节相同」依据被实测证伪**（实为严格子集），结论方向对但照错依据做会连 `snapshot_aborted` 的唯一证据一起删（D-021）。教训见 OPINIONS **D-020**（原子 ≠ 不丢）与 **D-021**（冗余判定必须自己比对字节） |
+
 **质检步骤库（随 sprint 验收累积）**：
 
 - 目前基础步骤 = §1.2 常设门六项。M01_S01 完成后追加：基线性能指标复核（空闲 CPU %、popover 打开 ms、snapshot p95 ms、二进制 MB，测量方法须记录在案）。后续每个 sprint 验收通过时，把其量化验收中可复用的检查项追加到本节并注明来源文件。
@@ -213,3 +228,8 @@ meta:
   3. **新 adapter 必须用生产解析器跑一遍本机真实文件**，而不是只看夹具绿。本轮 hermes 跑出 10287 个 trace（真实可用），gemini 跑出 `trace=nil`（本机语料形状与夹具不符）——**两个结论都只能这样得到**，夹具全绿时两者看起来一样。
   4. **DB 类证据源要量一次全解析耗时并判断是否落在扫描热路径上**。`isAgentDatabase` 有意绕过 mtime 缓存（mtime 不反映 WAL 提交），代价是每次扫描重解析；本机 hermes 6.84s 但因 9 天未动而 deferred，**活跃用户会每次都付**。记明天花板与升级路径，不要因为「本机不痛」就不记。
   5. **测试名被反转时必须同步改名**。本轮 `TestVendorsWithoutEvidenceDeclareNoTranscriptOrUsageCapability` 断言反了而名字未改，留下「读名字得到相反预期」的陷阱；注释改了不算够。
+- **存储/压实类改动追加（来源 `M02_S05.005.PERF`）**：
+  1. **动真实数据前先备份，迁移后做行数守恒的独立复算**。不是「看起来少了一些」，而是**用另一种语言/工具把该丢的行数单独算一遍**，两个数字必须精确相等。本轮 history -508、throughput -741 均由 Python 独立复算逐条吻合；只要差一行就说明有丢失或重复。注意 `at` 带 `+08:00` 偏移，字符串比较会错 8 小时；且 Go 写出的 5 位小数秒会让 Python 的 `fromisoformat` 报错——**复算脚本本身先要能解析全部行（unparsable 必须为 0）**，否则算出来的是脚本的 bug 不是数据的账。
+  2. **压实类改动必须验幂等：连跑两次，归档字节应当完全相同**。本轮 history/throughput 二次压实后归档字节一致；lifecycle 增的 6 行经核验是恰好跨过热窗口边界的 heartbeat（正确行为）。**跨边界的增量与重复归档在行数上长得一样，必须看时间戳落在哪个带**。
+  3. **压缩会藏起证据，缺陷要在解压后的行上验**。本轮真 bug（已归档行每次压实被再归档）在磁盘大小上**完全看不出来**——gzip 把重复内容压掉了。归档类断言一律对 `gunzip -c` 后的行数与内容做，不对文件大小做。
+  4. **「预期会红的测试没红」先当覆盖缺口查，不要当好消息**。本轮既有夹具把过期行放在保留窗口外、保留行放在热窗口内，**冷集恒为空、归档路径零覆盖**，所以接上归档后全绿。新路径落地时若既有测试毫无反应，先确认它们是否**根本没走到新路径**。

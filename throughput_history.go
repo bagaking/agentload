@@ -102,6 +102,22 @@ func loadThroughputHistoryStore(historyPath string, now time.Time) (*throughputH
 	cutoff := now.Add(-historyRetentionWindow)
 	minutes := map[string]ThroughputMinuteFact{}
 	legacy := map[string]LegacyThroughputFact{}
+
+	// Cold records live in month partitions beside the hot file. Only partitions
+	// that can still hold retained records are opened.
+	partitions, err := archivePartitionsSince(store.path, cutoff)
+	if err != nil {
+		return store, err
+	}
+	archived, err := readArchiveLines(partitions)
+	if err != nil {
+		return store, err
+	}
+	for _, line := range archived {
+		store.consumeThroughputLine(line, cutoff, minutes, legacy)
+	}
+
+	hotLines := 0
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
@@ -109,38 +125,8 @@ func loadThroughputHistoryStore(historyPath string, now time.Time) (*throughputH
 		if line == "" {
 			continue
 		}
-		var record throughputHistoryRecord
-		if err := json.Unmarshal([]byte(line), &record); err != nil || record.SchemaVersion != throughputHistorySchemaVersion {
-			store.corruptRecordCount++
-			continue
-		}
-		store.loadedRecordCount++
-		switch record.Kind {
-		case throughputHistoryKindMinute:
-			minute, at, ok := normalizeThroughputMinute(record.Minute)
-			if !ok {
-				store.corruptRecordCount++
-				continue
-			}
-			if at.Before(cutoff) {
-				store.droppedRecordCount++
-				continue
-			}
-			minutes[minute.At] = minute
-		case throughputHistoryKindLegacy:
-			fact, at, ok := normalizeLegacyThroughput(record.Legacy)
-			if !ok {
-				store.corruptRecordCount++
-				continue
-			}
-			if at.Before(cutoff) {
-				store.droppedRecordCount++
-				continue
-			}
-			legacy[legacyThroughputKey(fact)] = fact
-		default:
-			store.corruptRecordCount++
-		}
+		hotLines++
+		store.consumeThroughputLine([]byte(line), cutoff, minutes, legacy)
 	}
 	if err := scanner.Err(); err != nil {
 		return store, err
@@ -152,14 +138,117 @@ func loadThroughputHistoryStore(historyPath string, now time.Time) (*throughputH
 		store.legacy = append(store.legacy, fact)
 	}
 	sortThroughputHistory(store.minutes, store.legacy)
-	retained := len(store.minutes) + len(store.legacy)
-	if historyFileNeedsCompaction(store.loadedRecordCount+store.corruptRecordCount, retained) {
-		if err := rewriteThroughputHistoryFile(store.path, store.minutes, store.legacy); err != nil {
+	if historyFileNeedsCompaction(hotLines, store.hotRecordCount(now)) {
+		if err := compactThroughputHistoryFile(store.path, store.minutes, store.legacy, now); err != nil {
 			return store, err
 		}
 	}
 	return store, nil
 }
+
+// consumeThroughputLine folds one stored record into the retained maps. Archived
+// and hot lines take the same path, and both key on the record's own timestamp,
+// so a row a crash left in both places is merged rather than double counted.
+func (store *throughputHistoryStore) consumeThroughputLine(line []byte, cutoff time.Time, minutes map[string]ThroughputMinuteFact, legacy map[string]LegacyThroughputFact) {
+	var record throughputHistoryRecord
+	if err := json.Unmarshal(line, &record); err != nil || record.SchemaVersion != throughputHistorySchemaVersion {
+		store.corruptRecordCount++
+		return
+	}
+	store.loadedRecordCount++
+	switch record.Kind {
+	case throughputHistoryKindMinute:
+		minute, at, ok := normalizeThroughputMinute(record.Minute)
+		if !ok {
+			store.corruptRecordCount++
+			return
+		}
+		if at.Before(cutoff) {
+			store.droppedRecordCount++
+			return
+		}
+		minutes[minute.At] = minute
+	case throughputHistoryKindLegacy:
+		fact, at, ok := normalizeLegacyThroughput(record.Legacy)
+		if !ok {
+			store.corruptRecordCount++
+			return
+		}
+		if at.Before(cutoff) {
+			store.droppedRecordCount++
+			return
+		}
+		legacy[legacyThroughputKey(fact)] = fact
+	default:
+		store.corruptRecordCount++
+	}
+}
+
+// hotRecordCount counts retained records inside the hot window, which is what
+// the hot file holds after compaction.
+func (store *throughputHistoryStore) hotRecordCount(now time.Time) int {
+	hotCutoff := now.Add(-historyHotWindow)
+	count := 0
+	for _, minute := range store.minutes {
+		if at, err := time.Parse(time.RFC3339, minute.At); err == nil && !at.Before(hotCutoff) {
+			count++
+		}
+	}
+	for _, fact := range store.legacy {
+		if at, ok := parseObservedTime(fact.At); ok && !at.Before(hotCutoff) {
+			count++
+		}
+	}
+	return count
+}
+
+// compactThroughputHistoryFile archives records older than the hot window and
+// then rewrites the hot file with the remainder. The archive is made durable
+// first so a crash in between duplicates a record rather than losing it.
+func compactThroughputHistoryFile(path string, minutes []ThroughputMinuteFact, legacy []LegacyThroughputFact, now time.Time) error {
+	hotCutoff := now.Add(-historyHotWindow)
+	cold := make([]archiveRow, 0, len(minutes)+len(legacy))
+	hotMinutes := make([]ThroughputMinuteFact, 0, len(minutes))
+	hotLegacy := make([]LegacyThroughputFact, 0, len(legacy))
+
+	for i := range minutes {
+		at, err := time.Parse(time.RFC3339, minutes[i].At)
+		if err != nil {
+			continue
+		}
+		if !at.Before(hotCutoff) {
+			hotMinutes = append(hotMinutes, minutes[i])
+			continue
+		}
+		minute := cloneThroughputMinute(minutes[i])
+		raw, err := json.Marshal(throughputHistoryRecord{SchemaVersion: throughputHistorySchemaVersion, Kind: throughputHistoryKindMinute, Minute: &minute})
+		if err != nil {
+			return err
+		}
+		cold = append(cold, archiveRow{At: at, Line: raw})
+	}
+	for i := range legacy {
+		at, ok := parseObservedTime(legacy[i].At)
+		if !ok {
+			continue
+		}
+		if !at.Before(hotCutoff) {
+			hotLegacy = append(hotLegacy, legacy[i])
+			continue
+		}
+		fact := cloneLegacyThroughput(legacy[i])
+		raw, err := json.Marshal(throughputHistoryRecord{SchemaVersion: throughputHistorySchemaVersion, Kind: throughputHistoryKindLegacy, Legacy: &fact})
+		if err != nil {
+			return err
+		}
+		cold = append(cold, archiveRow{At: at, Line: raw})
+	}
+	if err := archiveColdRows(path, cold); err != nil {
+		return err
+	}
+	return rewriteThroughputHistoryFile(path, hotMinutes, hotLegacy)
+}
+
 
 func normalizeThroughputMinute(raw *ThroughputMinuteFact) (ThroughputMinuteFact, time.Time, bool) {
 	if raw == nil {
@@ -420,6 +509,10 @@ func appendThroughputHistoryRecords(path string, records []throughputHistoryReco
 		_ = file.Close()
 		return err
 	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return err
+	}
 	return file.Close()
 }
 
@@ -455,13 +548,21 @@ func rewriteThroughputHistoryFile(path string, minutes []ThroughputMinuteFact, l
 	if err := writer.Flush(); err != nil {
 		return cleanup(err)
 	}
+	if err := tmp.Chmod(0o644); err != nil {
+		return cleanup(err)
+	}
 	if err := tmp.Sync(); err != nil {
 		return cleanup(err)
 	}
 	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
 		return err
 	}
-	return os.Rename(tmpPath, path)
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	return syncDir(dir)
 }
 
 func cloneThroughputMinute(minute ThroughputMinuteFact) ThroughputMinuteFact {
