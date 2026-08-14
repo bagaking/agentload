@@ -188,44 +188,37 @@ func isCodexInternalProcess(command processCommand) bool {
 	}
 }
 
-func crashpadExecutablePath(command string) string {
+func unquotedFrameworkExecutablePath(command string) string {
 	raw := strings.TrimSpace(command)
 	if raw == "" {
 		return ""
 	}
 	lower := strings.ToLower(raw)
 	fields := strings.Fields(raw)
-	if len(fields) == 0 {
+	if len(fields) > 0 && strings.Trim(strings.ToLower(fields[0]), `"'`) == "codex" {
 		return ""
 	}
-	first := strings.ToLower(strings.Trim(fields[0], `"'`))
-	firstBase := normalizedExecutableBase(first)
-	if strings.Contains(firstBase, "codex") && !strings.Contains(first, ".app") && !strings.Contains(first, ".framework") {
+	frameworkMarker := string(filepath.Separator) + "contents" + string(filepath.Separator) + "frameworks" + string(filepath.Separator)
+	frameworkIndex := strings.Index(lower, frameworkMarker)
+	if frameworkIndex <= 0 || strings.Contains(raw[:frameworkIndex], " --") {
 		return ""
 	}
 	for _, name := range []string{"browser_crashpad_handler", "crashpad_handler"} {
-		marker := string(filepath.Separator) + name
-		index := strings.Index(lower, marker)
-		if index < 0 {
-			if lower != name && !strings.HasPrefix(lower, name+" ") {
-				continue
-			}
-			index = -1
+		remainder := lower[frameworkIndex+len(frameworkMarker):]
+		candidate := -1
+		if strings.HasPrefix(remainder, name) {
+			candidate = 0
+		} else if index := strings.Index(remainder, string(filepath.Separator)+name); index >= 0 {
+			candidate = index + 1
 		}
-		end := index + len(marker)
-		if index < 0 {
-			end = len(name)
+		if candidate < 0 {
+			continue
 		}
+		start := frameworkIndex + len(frameworkMarker) + candidate
+		end := start + len(name)
 		rest := strings.TrimSpace(lower[end:])
 		if rest != "" && !strings.HasPrefix(rest, "-") {
 			continue
-		}
-		contentsMacOS := string(filepath.Separator) + "contents" + string(filepath.Separator) + "macos" + string(filepath.Separator)
-		if index >= 0 && strings.Contains(lower[:index], contentsMacOS) {
-			continue
-		}
-		if index < 0 {
-			return name
 		}
 		return strings.TrimSpace(raw[:end])
 	}
@@ -242,7 +235,7 @@ func commandExecutablePath(command string) string {
 			return raw[1 : end+1]
 		}
 	}
-	if crashpadPath := crashpadExecutablePath(raw); crashpadPath != "" {
+	if crashpadPath := unquotedFrameworkExecutablePath(raw); crashpadPath != "" {
 		return crashpadPath
 	}
 	// macOS may print an unquoted bundle executable containing spaces. Use the
