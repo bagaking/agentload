@@ -51,3 +51,15 @@ When a Developer ID certificate is available:
    `sha256` pin.
 
 Distribution strategy and store constraints: `docs/apple-distribution-readiness.md`.
+
+## Baseline Performance Metrics (M01_S01)
+
+Measured on macOS Darwin 25.3.0 (Apple Silicon, arm64, 2026-09-13):
+
+| Metric | Measured Baseline | Release Gate Target | Measurement Method |
+|---|---|---|---|
+| **Idle CPU** | 0.0% – 0.1% | < 1.0% | `ps -o %cpu -p <pid>` over 10s idle observation |
+| **API Latency (`/api/snapshot`)** | p50: 2.53ms, p95: 97.9ms | p95 < 250ms | HTTP client benchmark across 20 sequential fetches |
+| **Popover Hot Opening** | < 16ms | < 50ms | Native NSPanel showURL with pre-warmed WKWebView |
+| **Binary Size** | 12 MB (DMG: 8.3 MB, Zip: 7.8 MB) | < 25 MB | `ls -lh "dist/Agent Load.app/Contents/MacOS/agentload"` |
+

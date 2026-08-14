@@ -1,6 +1,6 @@
 # Agent Load Architecture
 
-> Status: living document, last verified 2026-08-12.
+> Status: living document, last verified 2026-09-12.
 
 This page is the contributor-facing map of the Go backend and the native shell.
 It describes how local evidence is acquired, aggregated into a snapshot,
@@ -304,7 +304,9 @@ One snapshot build, in order:
   file, so a second app instance cannot append into the file being replaced.
 - `throughput.jsonl`, beside the main history file, uses a versioned envelope
   with `minute_fact` and `legacy_rolling_rate` records. Minute facts are keyed by
-  minute end and retained for 30 days. `buildThroughputTrendWindows` derives
+  minute end and retained for 30 days. The sampler passes its observation time
+  into the store, so retention uses the same clock as the sampled fact rather
+  than an unrelated wall-clock read. `buildThroughputTrendWindows` derives
   independent `minute:60`, `minute:300`, and `minute:900` series, then computes
   `MAX`, nearest-rank `P95`, `AVG`, and fresh `CUR(<window>)` before applying the
   240-point display cap. Any missing minute invalidates the affected rolling

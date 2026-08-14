@@ -78,9 +78,36 @@ semantic layer says so.
   numeric rate. A numeric zero is valid only when fresh output-token evidence
   exists and no positive output falls inside the trailing window.
 - Live `unavailable` samples expose `unavailable_reason`. Supported reasons are
-  unconfigured transcript sources, recent-file capacity, and incomplete
-  file-event coverage. Token volume or raw usage-event count is not an
-  unavailable reason.
+  unconfigured transcript sources, and incomplete file-event coverage while no
+  positive output has been measured. Token volume, raw usage-event count, and
+  the recent-file sampling cap are not unavailable reasons.
+- Degraded coverage suppresses the rate only while the measured total is zero. A
+  zero floor is trivially true and reads as "nothing is happening" when the truth
+  is "we may have missed all of it", so that case fails closed. Once positive
+  output is measured, missing evidence can only mean there was more throughput,
+  never less, so the reading survives as a floor with `coverage: "partial"` and
+  a `coverage_reason`.
+- Sampling more recent transcripts than the file cap allows does not make the
+  rate unknown: every token in the sample was really observed, so the sample
+  stays numeric and declares `coverage: "partial"` with `tracked_file_count` and
+  `eligible_file_count`. Such a rate is a floor and must be presented as one
+  (a `≥` marker and the file counts), never as a complete measurement. The cap
+  evicts the coldest tracked file rather than refusing the newest candidate, so
+  the retained subset is the hottest one available. Honest-unknown means never
+  claiming completeness you do not have — it does not mean withholding a real
+  measurement, least of all when transcript volume is at its highest.
+- A floor stays a floor once persisted. A minute measured under degraded
+  coverage carries `coverage: "partial"` into the throughput history, and a
+  rolled-up window inherits it from any minute behind it: the sum of floors can
+  only be missing tokens, never carrying extra. Storing such a minute as a plain
+  exact count would launder away the qualifier the live sample is careful to
+  carry.
+- A transcript path only names a project when the path is actually inside a
+  repository. Transcript stores are not checkouts — `~/.codex/sessions/2026/09/14/`
+  has a leaf that looks like an ordinary directory name but identifies nothing,
+  and attributing to it would merge unrelated sessions into a fabricated project.
+  An unprovable project is `unassigned`, which is honest, rather than a confident
+  wrong bucket, which is not.
 - The persistent throughput fact is one closed, non-overlapping minute: minute
   end, evidence state and reason, exact output-token count, exact sparse project
   token partitions, and hashed contributing-session identities. A pointer-valued

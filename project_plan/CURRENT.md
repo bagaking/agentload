@@ -1,7 +1,7 @@
 <!--
 meta:
   目的: 项目执行状态的唯一驱动文档——核心标准与原则、当前状态、文档目录、质检记录。关键节点（计划调整/重大变更/验收/sprint 完成/与用户深谈后）必须更新本文件。
-  日期: 2026-07-26
+  日期: 2026-09-12
   来源: 全局「组织目录的最佳实践」；PLAN.md（北极星与 Roadmap）；judge 横切验收主题；仓库现行门禁（AGENTS.md、docs/agent-load-metric-semantics.md、docs/agent-load-ui-design-system.md、scripts/validate_locales.js）。
 -->
 
@@ -23,7 +23,7 @@ meta:
 
 1. `go vet ./...` 与 `go test ./...` 绿。
 2. `npm --prefix ui run build` 绿，且内嵌 `ui/dist` 与 `ui/src` 构建产物一致（不带过期 chunk 出货）。
-3. `node scripts/validate_locales.js` 绿——en/zh/ja 全表面对齐，含 tray、通知、onboarding，无豁免。
+3. `node scripts/validate_locales.js` 绿——en/zh/ja 全表面对齐，覆盖 UI、通知和 onboarding；native tray 文案由原生壳层单独维护，尚未纳入此脚本。
 4. `./build_macos_app.sh` 绿。
 5. **中立观测合规审查**：任何涉及指标语义的变更须对照 docs/neutral-observation-principles.md 与 docs/agent-load-metric-semantics.md 复审；指标计算只准出现在共享语义层。
 6. **设计系统 token 合规**：任何 UI 变更遵守 docs/agent-load-ui-design-system.md 的 token 体系。
@@ -31,14 +31,14 @@ meta:
 **横切验收主题（judge 裁定，逐条落到 sprint 验收）**：
 
 - **四大构建门逢合入必跑**——含只改文档但触及生成表面的 sprint。
-- **中立观测审计**——指标计算全部路由语义层（CI guard 强制）；无文档化、用户可见阈值不得有判断性文案；unknown/unavailable/not_configured 渲染为设计过的状态，绝不用零/估值/沉默。
+- **中立观测审计**——指标计算全部路由语义层（本仓库无 CI，靠 `go test ./...` 中的语义层测试 + 合入前人工复审强制）；无文档化、用户可见阈值不得有判断性文案；unknown/unavailable/not_configured 渲染为设计过的状态，绝不用零/估值/沉默。
 - **三语对齐**——每个新增用户可见字符串同发 en/zh/ja，由 validate_locales 强制。
-- **能耗发布门**——空闲 CPU <1%；永不进「重要耗能 App」列表；CI perf budget 对照 M01 基线；30s 节拍下限与 refresh_slot_id 合并由回归测试守住每个新 poller/事件通道。
+- **能耗发布门**——空闲 CPU <1%；永不进「重要耗能 App」列表；发布前手测对照 M01 基线（perf budget 尚无自动化，见 M02_S02）；30s 节拍下限与 refresh_slot_id 合并由回归测试守住每个新 poller/事件通道。
 - **隐私不变式**——仅 loopback 监听（网络审计）、零外发遥测、导出消毒并附省略清单、consent 表面展示确切变更（如 settings.json diff）且一键回退。
 - **矩阵门禁**——vendor 与信号只按其证据诚实支持的档位出货；解析异常自动降档而非输出错数；矩阵单元格由 adapter 代码生成，永不手编。
 - **Sprint 纪律**——量化验收未过不得进入下一 sprint；回归或 >30% 偏差开 FIX/REFACTOR mini-sprint 并更新本文件，不许静默漂移。
 
-## 2. 执行状态（更新于 2026-07-26）
+## 2. 执行状态（更新于 2026-09-12）
 
 **今日已完成**：
 
@@ -47,9 +47,20 @@ meta:
 - 品类战略调研完成（产出 DOCREF_001..004）。
 - 三案合议（judge）+ 批评复核（critic）完成，主计划落档（PLAN.md）；M01–M06 全部 23 个 sprint 文件落档。
 
+**2026-09-14 完成**（mini-sprint `M01_S01.001.FIX`）：
+
+- **指标语义变更**：`LiveTokenRateSample` 新增 `coverage` / `tracked_file_count` / `eligible_file_count`。采样超出文件上限时不再整体判 unavailable，而是出「带覆盖度标注的下限值」。删除 `file_capacity` 不可用理由及其三语文案。
+- 修复吞吐 lane 冷启动时的空白面板（compact 空状态误按「任意 lane 有数据」判断）。
+- 同一错误模式的第二、第三次发作一并修复：`watch_incomplete` 在已测到正值时不再清空指标（零值时仍诚实失败关闭，边界由测试锁定）；前端 lane 不再因缺趋势窗口而连带藏掉已可用的实时读数。
+- 未归属反解：从 transcript 路径恢复项目名，但必须由 `resolveRepoBoundary` 证明路径确在仓库内，否则诚实记为 unassigned。
+- **对抗式复审（opus 子代理）已完成**，7 条发现：2 条真 bug 已修（下限值落盘丢失 partial 标记；codex 日期路径被反解成捏造项目「14」），1 条部分采纳（本轮新引入的 stat 风暴已消，既有重复行走留作性能项），1 条经测试证伪，3 条判定不修。并发面无发现。详见 mini-sprint §4，新决策记入 OPINIONS D-008。
+- 项目排序改为吞吐优先，无实测速率时退回活跃度。
+- 面性设计铺开至 diagnostics / online-processes / system-resource-inspector / activity-process-trend / system-process；周期选择组件化为 `TrendRangeRail`（居中悬浮 + 滑动高亮）。
+- 修正本文件 §1.2 两处失真表述：本仓库无 CI，相关门禁实为 `go test` + 人工复审。
+
 **当前活跃**：
 
-- **M01 地基**（功能合入冻结期）。
+- **M01 地基**（本轮架构与熵审查修复已落地，发布门已复跑）。
 - **当前 sprint：`M01_S01.hardening_release_gate.md`**——落地在途 hardening、把脏工作树收敛为干净提交、四门验证、录基线指标、打 tag。
 - M01 后续排队：M01_S02（Go 拆包 + VendorAdapter）、M01_S03（main.tsx 拆分 + popover 快路径）。
 
@@ -70,6 +81,7 @@ meta:
 | `DOCREF_003.macos_menubar_ux_bar.md` | 菜单栏产品体验及格线（delight table-stakes 清单） |
 | `DOCREF_004.user_needs_and_pain_points.md` | 用户需求与痛点排序（jobs-to-be-done） |
 | `M01_S01.hardening_release_gate.md` | 加固发布门与打 tag 基线 |
+| `M01_S01.001.FIX.throughput_attribution_and_surface_unification.md` | 吞吐归属诚实性（partial coverage 语义）与 popover 面性统一 |
 | `M01_S02.go_package_split_vendor_adapter.md` | Go 拆包与 VendorAdapter 抽象 |
 | `M01_S03.main_tsx_split_popover_fast_path.md` | main.tsx 模块拆分与 popover 快路径 |
 | `M02_S01.evidence_coverage_matrix.md` | Evidence Coverage Matrix（API/UI/docs 同源生成） |
@@ -100,7 +112,19 @@ meta:
 | 日期 | 范围 | 结果 | 备注 |
 |---|---|---|---|
 | 2026-07-26 | hardening 前基线：`go vet` / `go test ./...` / `npm --prefix ui run build` + `./build_macos_app.sh` / `node scripts/validate_locales.js` | 全绿 | hardening workflow 启动前的参照点 |
-| 2026-07-26 | hardening 落地后（`dfe5a4b`）：四道门复跑 + 三路对抗审查（Go 并发/语义/前端） | 全绿；审查 19 条：1 高危已修，18 advisory | 遗留项见 M01_S01「审查遗留项」；`go test -race` 亦通过（goA/goB 验证记录） |
+| 2026-07-26 | hardening 落地后（`dfe5a4b`）：四道门复跑 + 三路对抗审查（Go 并发/语义/前端） | 全绿；审查 19 条：1 高危已修，18 advisory | 旧基线，不能替代当前验证 |
+| 2026-09-12 | 熵审查修复：统一 throughput 采样时钟、区分局部解析错误与全局覆盖缺口、收敛 roots 投影、精简 popover 重复信息 | `go test ./...`、`go test -race ./...`、`npm --prefix ui run build`、`node scripts/validate_locales.js`、`go vet ./...`、`./build_macos_app.sh` 全部通过；Darwin FSEvents 集成测试在当前环境不可用时跳过 | UI dist 已按当前源码重建；native tray 文案仍是独立壳层，未纳入 UI locale validator |
+| 2026-09-13 | 吞吐主视觉极致重塑（响应 Image #11/12 反馈）：1. 彻底移除所有嵌套深色卡片背景与 1px 线框（`.trend-lane` 与 `.trend-chart` 设置无框透明底），内容纯净呼吸在画布上；2. 滚动窗口与跨度严格归属于图表（紧贴图表上方并列呈现：左[跨度 1D..30D] 右[窗口 1m..15m]），逻辑极度自洽清晰；3. 核心实时流速（`93.3 token/秒`）大号亮蓝字体右对齐展现，左侧承载标题与 `MAX/P95/AVG`，消除高突兀高度；4. 下方项目排行榜基于全周期 Top 项目生成（行数与高度恒定固定，绝不上下跳变闪烁），鼠标悬停仅高亮该时刻的单点数值与平滑滑块 | `go test ./...` 全绿；`node scripts/validate_locales.js` 绿；`npm --prefix ui run build` 绿；`./scripts/package_macos_app.sh` 绿；已安装至 `/Applications/Agent Load.app` 并实机验证运行 | 告别黑框套叠、元素撞车与高度抖动，现代极简专业感十足，视觉张力极强 |
+
+| 2026-09-14 | mini-sprint `M01_S01.001.FIX`：吞吐归属诚实性 + popover 面性统一 | `go vet ./...`、`go test ./...`、`npm --prefix ui run build`、`node scripts/validate_locales.js`、`./build_macos_app.sh` 全绿；新增 3 个测试；已装入 `/Applications` 并用 Playwright 实机截图验证 | 实测 tps 1116 token/秒（此前因 120>96 文件上限而整体不可用）；partial coverage 为新增指标语义，须同步 docs/agent-load-metric-semantics.md |
+
+| 2026-09-14 | mini-sprint `M01_S01.001.FIX` 对抗式复审（opus 子代理，7 条发现） | 2 条真 bug 已修并补测试（persisted floor 丢标记、codex 日期路径捏造项目「14」）；1 条部分采纳；1 条经测试证伪；3 条判定不修；并发面无发现。`go vet`、`go test ./...`、`tsc --noEmit`、`./build_macos_app.sh`、`validate_locales.js` 全绿 | 已装机实测：`58.11 token/秒` + `coverage: partial` + `coverage_reason: watch_incomplete`，下限语义端到端成立。教训见 OPINIONS D-008：断言「应被拒绝」的测试，输入必须取自真实布局 |
+
+| 2026-09-14 | 性能优化（profile 驱动） | `resolveRepoBoundary` memo：隔离基准 19096ns → 154ns（124x），pprof 中 `os.Stat` 占比 53.84% → 0.19%，由 TTL 过期测试锁定。lsof 缓存经复审判定对真实 5 分钟节奏无收益，已回退。「256KB 尾读」建议经计数实测证伪（0 次）。`go vet`、`go test ./...`、`tsc --noEmit`、`validate_locales.js`、`./build_macos_app.sh` 全绿，已装机验证（46 sessions、worktree 归属正常、快照 0.8ms） | 新增 `snapshot_benchmark_test.go`（需 `AGENTLOAD_BENCH_REAL=1`）。过程中 `git checkout transcripts.go` 误删 4 处未提交修改，由测试全数抓出并还原——教训见 OPINIONS D-009 |
+
+| 2026-09-14 | 未归属成分核查 + 脱敏器文案 bug 修复 | 吞吐侧 0 未归属；快照侧未归属全部为「transcript 未落盘、无 cwd 证据」的诚实未知。查出并修复 `sanitizeEmbeddedAbsolutePaths` 把 `cwd/project` 误判为路径、吃掉分隔符与后续词（`and/or` → `andlocal-path`），真实路径脱敏不受影响。`go vet`、`go test ./...`、`./build_macos_app.sh` 全绿，已装机验证理由文案正确渲染 | 新增 `TestSanitizeTextForClientKeepsProseSlashesWhileRedactingPaths` 双向锁定（prose 保留 + 路径仍脱敏）。详见 mini-sprint §7 |
+
+| 2026-09-14 | 两条实机分歧的根因修复（用户截图与质疑触发） | **(1) 归属路径分叉**：`minuteFactLocked` 传原始 session 映射、`publishLocked` 传恢复后的映射，同一批 token 写出两种桶（实时 0% vs 历史 78% 未归属）。已统一，`TestLiveTokenRateMinuteFactsAttributeLikeTheLiveSample` 锁定。**(2) 子代理身份合并**：Claude sidechain 行携带父会话 `sessionId`，被无条件采纳后十份子代理 transcript 塌成一行。已改为记为 `ParentThreadID`，新增 `jsonTrueField` 与两条对称回归测试。`go build`、`go test ./...`、`./build_macos_app.sh` 全绿，已装机实测 | 装机后实测：分钟事实 05:00Z 起未归属 **0.0%** 且带 `coverage: partial`（04:58Z 为 35.2% 且无标记）；claude 会话 21 → **37**，agentmux 1 → **15** 行，新增 subagent 角色 17 个。教训见 OPINIONS D-010（双写入路径必然分叉）与 D-011（父 ID 不是子身份；计数偏少要分发现/解析/聚合三段量）。**遗留数据债**：05:00Z 之前的 20.8MB 历史带错误归属且因单向 hash 无法回算，待用户决策丢弃或标注断点 |
 
 **质检步骤库（随 sprint 验收累积）**：
 

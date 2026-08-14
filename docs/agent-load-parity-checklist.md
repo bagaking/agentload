@@ -6,6 +6,11 @@ title: Agent Load Parity Checklist
 
 Handle: `f-225rx4b7x`
 
+Latest implementation review: 2026-09-12. Local parser errors are disclosed
+as degraded evidence; cancellation, discovery failure, and evidence revision
+gaps remain non-durable. Current line citations still require regeneration
+when this checklist is next used as release evidence.
+
 > Status: point-in-time audit. Line-number citations below have drifted since
 > the audit (`ui/src/main.tsx` has since been reduced), and the popover now has
 > four tabs (Online/Trend/System/Diagnostics) while this checklist verified two.
