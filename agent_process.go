@@ -162,6 +162,12 @@ func newCodexProcessIdentity() agentProcessIdentity {
 func isCodexInternalProcess(command processCommand) bool {
 	raw := strings.TrimSpace(command.Raw)
 	lowerRaw := strings.ToLower(raw)
+	executablePrefix := strings.TrimSpace(strings.SplitN(lowerRaw, " --", 2)[0])
+	for _, name := range []string{"browser_crashpad_handler", "crashpad_handler"} {
+		if executablePrefix == name || strings.HasSuffix(executablePrefix, string(filepath.Separator)+name) || strings.HasSuffix(executablePrefix, " "+name) {
+			return true
+		}
+	}
 	if marker := strings.Index(lowerRaw, "/contents/macos/"); marker >= 0 && !strings.Contains(raw[:marker], " --") {
 		executable := strings.TrimSpace(lowerRaw[marker+len("/contents/macos/"):])
 		for _, name := range []string{"codex helper", "codex helper (renderer)", "codex helper (gpu)", "codex (renderer)", "codex (gpu)", "codex (service)"} {
@@ -172,7 +178,7 @@ func isCodexInternalProcess(command processCommand) bool {
 	}
 	executablePath := commandExecutablePath(command.Raw)
 	base := normalizedExecutableBase(executablePath)
-	if base == "codex-code-mode-host" || base == "crashpad_handler" || base == "browser_crashpad_handler" {
+	if base == "codex-code-mode-host" || base == "crashpad-handler" || base == "browser-crashpad-handler" {
 		return true
 	}
 	lowerPath := strings.ToLower(executablePath)

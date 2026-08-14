@@ -156,6 +156,7 @@ func TestDetectedTool(t *testing.T) {
 		{command: `fixture/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/1.0/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer) --type=renderer`, want: ""},
 		{command: `fixture/Codex.app/Contents/Frameworks/crashpad_handler --annotation=_productName=Codex`, want: ""},
 		{command: `fixture/Codex.app/Contents/Frameworks/browser_crashpad_handler --annotation=_productName=ChatGPT`, want: ""},
+		{command: `fixture/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/1.0/Helpers/browser_crashpad_handler --monitor-self`, want: ""},
 		{command: `fixture/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/1.0/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service) --type=gpu-process`, want: ""},
 		{command: `codex-code-mode-host`, want: ""},
 		{command: `fixture/Codex.app/Contents/MacOS/Updater.app --sparkle`, want: ""},
