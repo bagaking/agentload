@@ -1,6 +1,6 @@
 # Agent Load API Reference
 
-> Status: living document, last verified 2026-07-26.
+> Status: living document, last verified 2026-09-22.
 
 This page documents every route registered in `server.go` (`trayApp.handler`).
 The server binds to loopback only (`127.0.0.1:8642` by default, ephemeral-port
@@ -28,6 +28,7 @@ Global behavior:
 | `/dashboard` | GET/HEAD | Dashboard page (same embedded HTML) | HTML | `no-store` |
 | `/assets/` | GET/HEAD | Embedded UI bundle assets | JS/CSS/SVG | `no-store` |
 | `/api/snapshot` | GET/HEAD | Full sanitized observation snapshot | `Snapshot` | `no-cache` + ETag |
+| `/api/capabilities` | GET/HEAD | Registry-owned vendor × signal-family evidence coverage | `{families, rows}` | `no-store` |
 | `/api/system-resources` | GET/HEAD | Live whole-machine resource sample | `SystemResourceSnapshot` | `no-store` |
 | `/api/live-token-rate` | GET/HEAD | Latest trailing output-token throughput sample | `LiveTokenRateSample` | `no-store` |
 | `/api/diagnostic-export` | GET/HEAD | Downloadable sanitized evidence bundle | `DiagnosticExportSnapshot` | `no-store` |
@@ -104,7 +105,25 @@ cold first poll can block noticeably.
 - **Throughput storage health**: `history.throughput` reports retained minute
   facts, legacy facts, dropped/corrupt record counts, and optional
   `last_write_error`. Its local `store_path` is removed by the sanitize layer.
+- **Capability coverage**: `capability_matrix` carries the same registry-owned
+  vendor rows exposed by `/api/capabilities`, including seven signal-family
+  cells and their evidence notes. It is descriptive evidence coverage, not a
+  claim that unavailable or not-configured signals have been measured.
 - **Sanitization** (`sanitizeSnapshotForClient`): see "Sanitize layer" below.
+
+### `GET /api/capabilities`
+
+Returns the registry-owned evidence coverage matrix. `families` is the stable
+ordered list of seven signal-family keys; `rows` contains one entry per
+registered vendor with the four underlying capability slots, evidence shapes,
+notes, and `signal_families` cells. Cell states are `supported`, `partial`,
+`unavailable`, or `not_configured`; observed cells are the only cells that
+claim local evidence. The endpoint is read-only and uses the
+same projection embedded in `Snapshot.capability_matrix` and rendered by the
+diagnostics coverage panel, so a registry change cannot update only one of the
+three surfaces.
+
+`Cache-Control: no-store`.
 
 ### `GET /api/system-resources`
 

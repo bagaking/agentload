@@ -32,6 +32,7 @@ type Snapshot struct {
 	ProjectHeatmaps    ProjectHeatmapSet           `json:"project_heatmaps"`
 	History            SnapshotHistory             `json:"history"`
 	MetricRegistry     []MetricRegistryEntry       `json:"metric_registry"`
+	CapabilityMatrix   []CapabilityMatrixRow       `json:"capability_matrix,omitempty"`
 	Diagnostics        DiagnosticSnapshot          `json:"diagnostics"`
 	RuntimeTelemetry   RuntimeTelemetrySnapshot    `json:"runtime_telemetry"`
 	TranscriptStats    TranscriptStats             `json:"transcript_stats"`
@@ -47,6 +48,26 @@ type Snapshot struct {
 	Notes              []string                    `json:"notes,omitempty"`
 	LiveTokenRateFiles []TranscriptFile            `json:"-"`
 	LiveTokenProjects  map[string]string           `json:"-"`
+}
+
+// CapabilityMatrixRow is the code-owned evidence coverage projection. Each
+// family reports only what the adapter's registered evidence slots support;
+// unavailable and not-configured are explicit states, never numeric zeros.
+type CapabilityMatrixRow struct {
+	Agent          string                   `json:"agent"`
+	Process        string                   `json:"process_identity"`
+	Discovery      string                   `json:"evidence_discovery"`
+	Transcript     string                   `json:"transcript_evidence"`
+	Usage          string                   `json:"output_usage"`
+	Evidence       []string                 `json:"evidence,omitempty"`
+	Note           string                   `json:"note,omitempty"`
+	SignalFamilies []CapabilitySignalFamily `json:"signal_families,omitempty"`
+}
+
+type CapabilitySignalFamily struct {
+	Key      string   `json:"key"`
+	State    string   `json:"state"`
+	Evidence []string `json:"evidence,omitempty"`
 }
 
 type SnapshotConfig struct {
@@ -787,6 +808,8 @@ type LiveSessionSnapshot struct {
 	ActiveBurst                  bool                 `json:"active_burst"`
 	Freshness                    string               `json:"freshness"`
 	NeedsReview                  bool                 `json:"needs_review"`
+	AttentionState               string               `json:"attention_state"`
+	AttentionReason              string               `json:"attention_reason,omitempty"`
 	MappingMethod                string               `json:"mapping_method"`
 	MissingTranscript            bool                 `json:"missing_transcript"`
 	Confidence                   string               `json:"confidence"`

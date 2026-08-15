@@ -65,6 +65,81 @@ slot. A nil slot renders `unsupported` — never an inferred parity.
 - **hermes**: usage is database-backed and not decoded
 - **opencode**: usage is database-backed and not decoded
 
+### Signal family coverage
+
+| Agent | Signal family | State | Evidence |
+| --- | --- | --- | --- |
+| claude | `presence_resources` | observed | process identity |
+| claude | `sessions_roles` | observed | evidence discovery<br>transcript evidence |
+| claude | `recent_movement` | observed | transcript event timestamps |
+| claude | `tokens_cost` | observed | output usage decoder |
+| claude | `quota_windows` | unavailable | no local quota ledger registered |
+| claude | `workspace_context` | observed | transcript/project evidence |
+| claude | `consented_telemetry` | not_configured | runtime telemetry is opt-in |
+| codex | `presence_resources` | observed | process identity |
+| codex | `sessions_roles` | observed | evidence discovery<br>transcript evidence |
+| codex | `recent_movement` | observed | transcript event timestamps |
+| codex | `tokens_cost` | observed | output usage decoder |
+| codex | `quota_windows` | unavailable | no local quota ledger registered |
+| codex | `workspace_context` | observed | transcript/project evidence |
+| codex | `consented_telemetry` | not_configured | runtime telemetry is opt-in |
+| cursor | `presence_resources` | unavailable | process identity |
+| cursor | `sessions_roles` | unavailable | evidence discovery<br>transcript evidence |
+| cursor | `recent_movement` | unavailable | transcript event timestamps |
+| cursor | `tokens_cost` | unavailable | output usage decoder |
+| cursor | `quota_windows` | unavailable | no local quota ledger registered |
+| cursor | `workspace_context` | unavailable | transcript/project evidence |
+| cursor | `consented_telemetry` | not_configured | runtime telemetry is opt-in |
+| gemini | `presence_resources` | observed | process identity |
+| gemini | `sessions_roles` | observed | evidence discovery<br>transcript evidence |
+| gemini | `recent_movement` | observed | transcript event timestamps |
+| gemini | `tokens_cost` | observed | output usage decoder |
+| gemini | `quota_windows` | unavailable | no local quota ledger registered |
+| gemini | `workspace_context` | observed | transcript/project evidence |
+| gemini | `consented_telemetry` | not_configured | runtime telemetry is opt-in |
+| grok | `presence_resources` | observed | process identity |
+| grok | `sessions_roles` | observed | evidence discovery<br>transcript evidence |
+| grok | `recent_movement` | observed | transcript event timestamps |
+| grok | `tokens_cost` | observed | output usage decoder |
+| grok | `quota_windows` | unavailable | no local quota ledger registered |
+| grok | `workspace_context` | observed | transcript/project evidence |
+| grok | `consented_telemetry` | not_configured | runtime telemetry is opt-in |
+| hermes | `presence_resources` | observed | process identity |
+| hermes | `sessions_roles` | observed | evidence discovery<br>transcript evidence |
+| hermes | `recent_movement` | observed | transcript event timestamps |
+| hermes | `tokens_cost` | unavailable | output usage decoder |
+| hermes | `quota_windows` | unavailable | no local quota ledger registered |
+| hermes | `workspace_context` | observed | transcript/project evidence |
+| hermes | `consented_telemetry` | not_configured | runtime telemetry is opt-in |
+| openclaw | `presence_resources` | observed | process identity |
+| openclaw | `sessions_roles` | observed | evidence discovery<br>transcript evidence |
+| openclaw | `recent_movement` | observed | transcript event timestamps |
+| openclaw | `tokens_cost` | observed | output usage decoder |
+| openclaw | `quota_windows` | unavailable | no local quota ledger registered |
+| openclaw | `workspace_context` | observed | transcript/project evidence |
+| openclaw | `consented_telemetry` | not_configured | runtime telemetry is opt-in |
+| opencode | `presence_resources` | observed | process identity |
+| opencode | `sessions_roles` | observed | evidence discovery<br>transcript evidence |
+| opencode | `recent_movement` | observed | transcript event timestamps |
+| opencode | `tokens_cost` | unavailable | output usage decoder |
+| opencode | `quota_windows` | unavailable | no local quota ledger registered |
+| opencode | `workspace_context` | observed | transcript/project evidence |
+| opencode | `consented_telemetry` | not_configured | runtime telemetry is opt-in |
+| pi | `presence_resources` | observed | process identity |
+| pi | `sessions_roles` | observed | evidence discovery<br>transcript evidence |
+| pi | `recent_movement` | observed | transcript event timestamps |
+| pi | `tokens_cost` | observed | output usage decoder |
+| pi | `quota_windows` | unavailable | no local quota ledger registered |
+| pi | `workspace_context` | observed | transcript/project evidence |
+| pi | `consented_telemetry` | not_configured | runtime telemetry is opt-in |
+| trae | `presence_resources` | observed | process identity |
+| trae | `sessions_roles` | observed | evidence discovery<br>transcript evidence |
+| trae | `recent_movement` | observed | transcript event timestamps |
+| trae | `tokens_cost` | observed | output usage decoder |
+| trae | `quota_windows` | unavailable | no local quota ledger registered |
+| trae | `workspace_context` | observed | transcript/project evidence |
+| trae | `consented_telemetry` | not_configured | runtime telemetry is opt-in |
+
 <!-- END GENERATED CAPABILITY MATRIX -->
 
 Registering an agent name is not evidence support. New capabilities require

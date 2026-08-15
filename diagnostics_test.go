@@ -109,8 +109,110 @@ func TestDiagnosticEvolutionInsightsDescribeObservedPatterns(t *testing.T) {
 	}
 }
 
-func TestSessionModelUsageKeepsUnattributedResidualExplicit(t *testing.T) {
-	trace := snapshot.SessionTrace{
+// TestCoordinationShapeEvidenceNamesOnlyTheHalfThatFired pins the zero-as-
+// evidence bug. The insight fires on overlaps OR wide project spread, but the
+// evidence string used to print both counts unconditionally -- so a snapshot
+// with no overlaps rendered "0 overlap suspicions across 32 projects", a zero
+// offered as support for the hypothesis it actually fails to support.
+func TestCoordinationShapeEvidenceNamesOnlyTheHalfThatFired(t *testing.T) {
+	spreadOnly := snapshot.Snapshot{CoordinationRisk: snapshot.CoordinationRiskSnapshot{
+		DuplicateOverlapSuspicionCount: 0,
+		ProjectSpreadCount:             32,
+	}}
+	insight := requireEvolutionInsight(t, buildDiagnosticEvolutionInsights(spreadOnly), "coordination_shape")
+	if strings.Contains(insight.Evidence, "0 overlap") {
+		t.Errorf("spread-only evidence still cites a zero count: %q", insight.Evidence)
+	}
+	if insight.EvidenceKey != "coordination_shape_spread" {
+		t.Errorf("spread-only insight should select the spread copy, got %q", insight.EvidenceKey)
+	}
+
+	overlapOnly := snapshot.Snapshot{CoordinationRisk: snapshot.CoordinationRiskSnapshot{
+		DuplicateOverlapSuspicionCount: 2,
+		ProjectSpreadCount:             1,
+	}}
+	insight = requireEvolutionInsight(t, buildDiagnosticEvolutionInsights(overlapOnly), "coordination_shape")
+	if insight.EvidenceKey != "coordination_shape_overlap" {
+		t.Errorf("overlap-only insight should select the overlap copy, got %q", insight.EvidenceKey)
+	}
+
+	both := snapshot.Snapshot{CoordinationRisk: snapshot.CoordinationRiskSnapshot{
+		DuplicateOverlapSuspicionCount: 2,
+		ProjectSpreadCount:             32,
+	}}
+	insight = requireEvolutionInsight(t, buildDiagnosticEvolutionInsights(both), "coordination_shape")
+	if insight.EvidenceKey != "coordination_shape" {
+		t.Errorf("both-halves insight should keep the combined copy, got %q", insight.EvidenceKey)
+	}
+}
+
+// TestAnomaliesRestatingAGapAreDropped pins the deduplication. observer.go and
+// diagnostics.go each derive a row from the same counter, so the panel showed
+// one fact as two rows -- and with the priority table capped at six, every
+// duplicate evicted a distinct finding (the deferred-scan and out-of-horizon
+// counts were the ones actually pushed off the page).
+func TestAnomaliesRestatingAGapAreDropped(t *testing.T) {
+	snap := snapshot.Snapshot{
+		Current: snapshot.CurrentMetrics{PIDConcurrency: 116},
+		Summary: snapshot.SnapshotSummary{UnmappedProcesses: 16},
+		CoordinationRisk: snapshot.CoordinationRiskSnapshot{
+			LowConfidenceSessionCount: 11,
+			Signals: []snapshot.RiskSignalSnapshot{
+				{Kind: "unmatched_processes", Severity: "observed", Evidence: "16 visible live processes are not currently matched"},
+				{Kind: "low_confidence_mapping", Severity: "observed", Evidence: "11 live sessions have low-confidence mapping"},
+				{Kind: "project_spread", Severity: "observed", Evidence: "118 sessions span 33 projects"},
+			},
+		},
+	}
+	diagnostics := buildDiagnosticsSnapshot(snap, time.Now())
+	for _, kind := range []string{"unmatched_processes", "low_confidence_mapping"} {
+		if hasDiagnosticSignal(diagnostics.AnomalySignals, kind) {
+			t.Errorf("anomaly %q duplicates an evidence gap and should have been dropped", kind)
+		}
+	}
+	// The gap each duplicate restated must survive: dropping both rows would
+	// hide the fact instead of deduplicating it.
+	for _, kind := range []string{"unmapped_processes", "low_confidence_sessions"} {
+		if !hasDiagnosticSignal(diagnostics.EvidenceGaps, kind) {
+			t.Errorf("evidence gap %q went missing; dedup must keep the richer row", kind)
+		}
+	}
+	// A risk signal with no gap counterpart is untouched.
+	if !hasDiagnosticSignal(diagnostics.AnomalySignals, "project_spread") {
+		t.Error("project_spread has no gap counterpart and must survive dedup")
+	}
+}
+
+// TestGapWithoutItsAnomalyKeepsTheAnomaly guards the other direction: the drop
+// is conditional on the gap actually being present, so a snapshot that raises
+// the risk signal without the gap still reports the fact once.
+func TestGapWithoutItsAnomalyKeepsTheAnomaly(t *testing.T) {
+	snap := snapshot.Snapshot{CoordinationRisk: snapshot.CoordinationRiskSnapshot{
+		Signals: []snapshot.RiskSignalSnapshot{
+			{Kind: "unmatched_processes", Severity: "observed", Evidence: "3 unmatched"},
+		},
+	}}
+	diagnostics := buildDiagnosticsSnapshot(snap, time.Now())
+	if hasDiagnosticSignal(diagnostics.EvidenceGaps, "unmapped_processes") {
+		t.Fatal("fixture should not raise the unmapped_processes gap")
+	}
+	if !hasDiagnosticSignal(diagnostics.AnomalySignals, "unmatched_processes") {
+		t.Error("with no gap to restate, the risk signal is the only report of this fact and must survive")
+	}
+}
+
+func requireEvolutionInsight(t *testing.T, insights []snapshot.DiagnosticEvolutionInsight, key string) snapshot.DiagnosticEvolutionInsight {
+	t.Helper()
+	for _, insight := range insights {
+		if insight.Key == key {
+			return insight
+		}
+	}
+	t.Fatalf("expected an evolution insight keyed %q, got %+v", key, insights)
+	return snapshot.DiagnosticEvolutionInsight{}
+}
+
+func TestSessionModelUsageKeepsUnattributedResidualExplicit(t *testing.T) {	trace := snapshot.SessionTrace{
 		TokenUsage: snapshot.TokenUsage{InputTokens: 12, OutputTokens: 8, TotalTokens: 20},
 		ModelUsage: snapshot.ModelTokenUsage{"model-a": {InputTokens: 7, OutputTokens: 5, TotalTokens: 12}},
 	}
@@ -144,6 +246,30 @@ func TestDiagnosticBaselinesKeepEmptyMappingAndMeasuredTokensHonest(t *testing.T
 	}
 }
 
+// TestUnjudgedWalkCostNeverClaimsAPassingStatus guards the one status producer
+// in diagnostics.go that compares the value against nothing.
+//
+// Every other one earns "ok" by clearing a bound: baselineStatus compares
+// against okAt/warnAt, tokenStatus compares measured against total,
+// zeroGoodStatus compares against zero. scanCostStatus has no budget to compare
+// against (M02_S02 owns that), and "ok" renders mint green -- so returning it
+// would paint a 30s walk and a 9ms walk the same reassuring color, which is
+// exactly the verdict the function's own comment says it cannot make.
+func TestUnjudgedWalkCostNeverClaimsAPassingStatus(t *testing.T) {
+	for _, elapsed := range []int64{9, 1173, 30000} {
+		snap := snapshot.Snapshot{TranscriptStats: snapshot.TranscriptStats{
+			ScanCost: snapshot.TranscriptScanCost{WalkMeasured: true, ElapsedMs: elapsed},
+		}}
+		cost := requireDiagnosticBaseline(t, buildDiagnosticsSnapshot(snap, time.Now()).Baselines, "evidence_walk_cost")
+		if cost.Status == "ok" || cost.Status == "available" {
+			t.Fatalf("a %dms walk claims passing status %q, but no documented budget says it passed", elapsed, cost.Status)
+		}
+		if cost.Status != "observed" {
+			t.Fatalf("a measured %dms walk should report observed, got %q", elapsed, cost.Status)
+		}
+	}
+}
+
 func TestScanCostStaysUnavailableUntilAWalkHasRun(t *testing.T) {
 	// evidence_index.go zeroes its walk counters on a pass served from the
 	// index. Surfacing those unguarded would report "no walk has run" as a
@@ -169,7 +295,7 @@ func TestScanCostStaysUnavailableUntilAWalkHasRun(t *testing.T) {
 	}}
 	diagnostics = buildDiagnosticsSnapshot(warm, time.Now())
 	cost = requireDiagnosticBaseline(t, diagnostics.Baselines, "evidence_walk_cost")
-	if cost.Value != "1173ms" || cost.Status != "ok" {
+	if cost.Value != "1173ms" || cost.Status != "observed" {
 		t.Fatalf("expected a warm pass to keep the last measured walk, got %+v", cost)
 	}
 
@@ -178,8 +304,8 @@ func TestScanCostStaysUnavailableUntilAWalkHasRun(t *testing.T) {
 	}}
 	diagnostics = buildDiagnosticsSnapshot(fast, time.Now())
 	cost = requireDiagnosticBaseline(t, diagnostics.Baselines, "evidence_walk_cost")
-	if cost.Value != "9ms" || cost.Status != "ok" {
-		t.Fatalf("expected a cheap measured walk to report ok, got %+v", cost)
+	if cost.Value != "9ms" || cost.Status != "observed" {
+		t.Fatalf("expected a cheap measured walk to report observed, got %+v", cost)
 	}
 }
 
@@ -196,7 +322,7 @@ func TestWalkCostIsReportedWithoutJudgingIt(t *testing.T) {
 		}}
 		diagnostics := buildDiagnosticsSnapshot(snap, time.Now())
 		cost := requireDiagnosticBaseline(t, diagnostics.Baselines, "evidence_walk_cost")
-		if cost.Status != "ok" {
+		if cost.Status != "observed" {
 			t.Errorf("a %dms walk reported status %q; a measured cost is known, not good or bad", elapsed, cost.Status)
 		}
 		for _, signal := range diagnostics.EvidenceGaps {

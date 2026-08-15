@@ -58,6 +58,39 @@ func TestHandleUIAssetServesViteAssets(t *testing.T) {
 	}
 }
 
+func TestHandleCapabilitiesAPIUsesRegistryEvidence(t *testing.T) {
+	root := t.TempDir()
+	observer := newObserver(Config{ClaudeRoots: []string{root}})
+	app := &trayApp{observer: observer}
+	req := newLoopbackRequest(http.MethodGet, "/api/capabilities", nil)
+	rec := httptest.NewRecorder()
+	app.handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d with body %q", rec.Code, rec.Body.String())
+	}
+	var payload struct {
+		Families []string                       `json:"families"`
+		Rows     []snapshot.CapabilityMatrixRow `json:"rows"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode capabilities: %v", err)
+	}
+	if len(payload.Families) != 7 || len(payload.Rows) == 0 {
+		t.Fatalf("capability payload = %+v", payload)
+	}
+	for _, row := range payload.Rows {
+		if len(row.SignalFamilies) != 7 {
+			t.Fatalf("row %q has %d signal families", row.Agent, len(row.SignalFamilies))
+		}
+	}
+	head := newLoopbackRequest(http.MethodHead, "/api/capabilities", nil)
+	headRec := httptest.NewRecorder()
+	app.handler().ServeHTTP(headRec, head)
+	if headRec.Code != http.StatusOK || headRec.Body.Len() != 0 {
+		t.Fatalf("HEAD response = status %d body %q", headRec.Code, headRec.Body.String())
+	}
+}
+
 func TestHandleUIAssetRejectsInvalidAssetPaths(t *testing.T) {
 	app := &trayApp{}
 	handler := app.handler()

@@ -60,6 +60,21 @@ The UI may use this to separate human interaction entry points from derived
 execution sessions. It must not treat either category as inherently better or
 worse.
 
+Attention routing is a separate observed state, not a judgment about agent
+quality. The current three-state slice is:
+
+- `working`: a mapped session has recent transcript movement inside the
+  configured movement window;
+- `needs_review`: a mapped main session has measured transcript timing but no
+  recent movement inside the idle window;
+- `unknown`: transcript timing or role evidence is missing, or the session is
+  stale beyond the documented idle window.
+
+Every attention state carries a reason and remains traceable to the session's
+role, freshness, and transcript evidence. A visible process alone never emits
+`needs_review`, and `unknown` is rendered as a designed state rather than
+silently treated as idle.
+
 Project rows are grouping containers, not role labels. A project can contain a
 mix of main-agent entries, subagent sessions, and unknown-role sessions. Product
 surfaces should show project activity counts together with this per-project role

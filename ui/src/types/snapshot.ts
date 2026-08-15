@@ -26,6 +26,7 @@ export type Snapshot = {
     };
   };
   metric_registry?: MetricRegistryEntry[];
+  capability_matrix?: CapabilityMatrixRow[];
   diagnostics?: DiagnosticSnapshot;
   runtime_telemetry?: RuntimeTelemetrySnapshot;
   transcript_stats?: TranscriptStats;
@@ -50,6 +51,23 @@ export type MetricRegistryEntry = {
   window?: string;
   missing_state?: string;
   description?: string;
+};
+
+export type CapabilitySignalFamily = {
+  key?: string;
+  state?: "observed" | "supported" | "partial" | "unavailable" | "not_configured" | string;
+  evidence?: string[];
+};
+
+export type CapabilityMatrixRow = {
+  agent?: string;
+  process_identity?: string;
+  evidence_discovery?: string;
+  transcript_evidence?: string;
+  output_usage?: string;
+  evidence?: string[];
+  note?: string;
+  signal_families?: CapabilitySignalFamily[];
 };
 
 export type LiveTokenRateState = "live" | "zero" | "no_data" | "stale" | "unavailable";
@@ -212,6 +230,7 @@ export type TranscriptStats = {
   foreground_scan_lookback_seconds?: number;
   configured_history_lookback_seconds?: number;
   cached?: boolean;
+  coverage_incomplete?: boolean;
   errors?: string[];
   scan_cost?: TranscriptScanCost;
 };
@@ -446,6 +465,8 @@ export type LiveSession = {
   active_burst?: boolean;
   freshness?: string;
   needs_review?: boolean;
+  attention_state?: "working" | "needs_review" | "unknown" | string;
+  attention_reason?: string;
   mapping_method?: string;
   missing_transcript?: boolean;
   confidence?: string;

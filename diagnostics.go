@@ -14,11 +14,40 @@ func buildDiagnosticsSnapshot(snap snapshot.Snapshot, now time.Time) snapshot.Di
 		Export:      diagnosticExportSummary(),
 	}
 	out.Evolution = buildDiagnosticEvolutionInsights(snap)
-	out.AnomalySignals = buildDiagnosticAnomalySignals(snap)
 	out.EvidenceGaps = buildDiagnosticEvidenceGaps(snap)
+	out.AnomalySignals = dropAnomaliesRestatingAGap(buildDiagnosticAnomalySignals(snap), out.EvidenceGaps)
 	out.Baselines = buildDiagnosticBaselines(snap)
 	out.Capabilities = buildDiagnosticCapabilities(snap)
 	return out
+}
+
+// anomalyKindsRestatedByAGap maps a coordination-risk signal onto the evidence
+// gap that reports the same fact. Both builders read the same counter, so the
+// panel was printing one fact as two rows -- and with the table capped at six,
+// each duplicate pushed a distinct finding off the page entirely.
+//
+// The gap wins: it carries a Detail, a deliberate severity, and a named source,
+// while the risk signal arrives with only Kind and Evidence. This drops the
+// duplicate rather than merging them, because there is nothing in the risk row
+// the gap row does not already say.
+var anomalyKindsRestatedByAGap = map[string]string{
+	"unmatched_processes":    "unmapped_processes",
+	"low_confidence_mapping": "low_confidence_sessions",
+}
+
+func dropAnomaliesRestatingAGap(anomalies, gaps []snapshot.DiagnosticSignalSnapshot) []snapshot.DiagnosticSignalSnapshot {
+	present := make(map[string]bool, len(gaps))
+	for _, gap := range gaps {
+		present[gap.Kind] = true
+	}
+	kept := anomalies[:0]
+	for _, signal := range anomalies {
+		if gap, duplicated := anomalyKindsRestatedByAGap[signal.Kind]; duplicated && present[gap] {
+			continue
+		}
+		kept = append(kept, signal)
+	}
+	return kept
 }
 
 // buildDiagnosticEvolutionInsights is the RSI surface: it converts observed
@@ -44,12 +73,23 @@ func buildDiagnosticEvolutionInsights(snap snapshot.Snapshot) []snapshot.Diagnos
 		})
 	}
 	if risk.DuplicateOverlapSuspicionCount > 0 || risk.ProjectSpreadCount > 1 {
+		// Either half can fire alone, so the evidence names only the half that
+		// actually did. Printing both unconditionally produced "0 overlap
+		// suspicions across 32 projects" -- a zero offered as evidence for the
+		// hypothesis it fails to support.
+		evidenceKey := "coordination_shape"
+		switch {
+		case risk.DuplicateOverlapSuspicionCount == 0:
+			evidenceKey = "coordination_shape_spread"
+		case risk.ProjectSpreadCount <= 1:
+			evidenceKey = "coordination_shape_overlap"
+		}
 		insights = append(insights, snapshot.DiagnosticEvolutionInsight{
 			Key:            "coordination_shape",
 			Title:          "Test coordination shape",
 			Hypothesis:     "Overlapping sessions or wide project spread may be adding coordination cost.",
-			Evidence:       fmt.Sprintf("%d overlap suspicions across %d projects", risk.DuplicateOverlapSuspicionCount, risk.ProjectSpreadCount),
-			EvidenceKey:    "coordination_shape",
+			Evidence:       coordinationShapeEvidence(risk.DuplicateOverlapSuspicionCount, risk.ProjectSpreadCount),
+			EvidenceKey:    evidenceKey,
 			EvidenceValues: map[string]int{"count_a": risk.DuplicateOverlapSuspicionCount, "count_b": risk.ProjectSpreadCount},
 			Experiment:     "Run the next comparable task with one explicit owner and one bounded subagent branch.",
 			Verification:   "Compare the next run's session count, overlap evidence, and review outcome; Agent Load does not infer outcome quality.",
@@ -91,8 +131,20 @@ func buildDiagnosticEvolutionInsights(snap snapshot.Snapshot) []snapshot.Diagnos
 	return insights
 }
 
-func diagnosticExportSummary() snapshot.DiagnosticExportSummary {
-	return snapshot.DiagnosticExportSummary{
+// coordinationShapeEvidence is the untranslated fallback for the same rule the
+// evidenceKey switch above encodes: name only the half that fired.
+func coordinationShapeEvidence(overlaps, projects int) string {
+	switch {
+	case overlaps == 0:
+		return fmt.Sprintf("live sessions span %d projects", projects)
+	case projects <= 1:
+		return fmt.Sprintf("%d overlap suspicions", overlaps)
+	default:
+		return fmt.Sprintf("%d overlap suspicions across %d projects", overlaps, projects)
+	}
+}
+
+func diagnosticExportSummary() snapshot.DiagnosticExportSummary {	return snapshot.DiagnosticExportSummary{
 		Endpoint:  "/api/diagnostic-export",
 		Redaction: "sanitized snapshot; local roots, history paths, transcript paths, bundle paths, and command values are omitted or reduced to identity labels",
 		OmittedFields: []string{
@@ -353,11 +405,19 @@ func scanCostValue(cost snapshot.TranscriptScanCost) string {
 // scanCostStatus reports whether the walk cost is known, not whether it is
 // acceptable. Judging it would need a documented refresh budget (M02_S02), and
 // picking a number here would be an undocumented user-visible threshold.
+//
+// "observed" rather than "ok" for exactly that reason: every other status in
+// this file earns "ok" by clearing a bound (baselineStatus compares, tokenStatus
+// compares, zeroGoodStatus compares), and "ok" renders mint green. Returning it
+// from the one function that compares nothing would paint a 5s walk and a 50ms
+// walk the same reassuring color -- a judgment this function just said it
+// cannot make. "observed" maps to a neutral tone and says only what is true:
+// the number was measured.
 func scanCostStatus(cost snapshot.TranscriptScanCost) string {
 	if !cost.WalkMeasured {
 		return "unavailable"
 	}
-	return "ok"
+	return "observed"
 }
 
 func buildDiagnosticCapabilities(snap snapshot.Snapshot) []snapshot.DiagnosticCapabilitySnapshot {

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
-import { Activity, ArrowUpRight, Bot, CheckCircle2, ChevronDown, Copy, ExternalLink, FolderGit2, Gauge, GitBranch, Info, Languages, Layers, Moon, Pause, PauseCircle, Radar, RefreshCw, Search, Server, Sun, Terminal, TrendingUp, X, XCircle } from "lucide-react";
+import { Activity, ArrowUpRight, Bot, CheckCircle2, ChevronDown, Copy, Cpu, ExternalLink, FolderGit2, Gauge, GitBranch, Info, Languages, Layers, Moon, Pause, PauseCircle, Radar, RefreshCw, Search, Server, Sun, Terminal, TrendingUp, X, XCircle } from "lucide-react";
 import { copy, type Lang } from "./i18n";
 import { buildToolSessionGroups, confidenceLabel, freshnessLabel, groupSessionsByWorktree, hiddenToolSessionCount, mappingMethodLabel, normalizedRole, orderedProjects, projectEvidenceItems, roleLabel, sessionEvidenceItems, sessionIdentity, sessionsForProject, tokenUsageProvenanceLabel, toolBadgeLabel, toolDisplayName, toolIconName } from "./lib/activityModel";
 import { activeWindowLabel, buildRailItems, coordinationPostureLabel, currentMeaningLead, currentMeaningPoints, dashboardProjectMeta, deferredScanValue, mappingHealthText, metricState, primaryEvidenceNote, statusTone, transcriptScanNote, transcriptScanSummary } from "./lib/dashboardModel";
@@ -11,7 +11,6 @@ import { LineageSummary } from "./lineage/LineageSummary";
 import { useLiveTokenRate } from "./live/useLiveTokenRate";
 import { TrendRangeRail, activeTrendRanges } from "./trend/TrendRangeRail";
 import { REFRESH_INTERVALS_MS, useSnapshotController } from "./snapshot/useSnapshotController";
-import { SystemResourceDeck } from "./system/SystemResourceDeck";
 import { useLiveSystemResources } from "./system/useLiveSystemResources";
 import type { TrendLane, TrendRange } from "./trend/types";
 import type { PopoverView, ProjectMetricObject, ProjectMetricScope, RailItem, RailTab, RoleCounts, Selection, Theme } from "./types/app";
@@ -37,6 +36,10 @@ const TrendSuite = React.lazy(async () => {
 const DiagnosticsPanel = React.lazy(async () => {
   const module = await import("./diagnostics/DiagnosticsPanel");
   return { default: module.DiagnosticsPanel };
+});
+const SystemResourceDeck = React.lazy(async () => {
+  const module = await import("./system/SystemResourceDeck");
+  return { default: module.SystemResourceDeck };
 });
 
 const BRAND_NAME = "Agent Load";
@@ -78,7 +81,7 @@ function App() {
   const [trendSelection, setTrendSelection] = useState<Record<TrendLane, string | undefined>>({ history: undefined, runtime: undefined, throughput: undefined });
   const shellRef = useRef<HTMLDivElement | null>(null);
   const popoverResizeRequestRef = useRef<(() => void) | null>(null);
-  const { snapshot, error, refreshing, refreshInterval, refreshSnapshot, chooseRefreshInterval, isSurfaceVisible, surfaceVisible } = useSnapshotController({ view, popoverView, shellRef });
+  const { snapshot, snapshotPending, error, refreshing, refreshInterval, refreshSnapshot, chooseRefreshInterval, isSurfaceVisible, surfaceVisible } = useSnapshotController({ view, popoverView, shellRef });
   const liveTokenRate = useLiveTokenRate(surfaceVisible);
 
   const t = useCallback((key: string) => copy[lang][key] || copy.en[key] || key, [lang]);
@@ -166,6 +169,7 @@ function App() {
           <PopoverSurface
             t={t}
             snapshot={snapshot}
+            snapshotPending={snapshotPending}
             liveTokenRate={liveTokenRate}
             error={error}
             selection={selection}
@@ -194,6 +198,7 @@ function App() {
         <DashboardSurface
           t={t}
           snapshot={snapshot}
+          snapshotPending={snapshotPending}
           liveTokenRate={liveTokenRate}
           error={error}
           running={running}
@@ -219,6 +224,7 @@ function App() {
 function PopoverSurface({
   t,
   snapshot,
+  snapshotPending,
   liveTokenRate,
   error,
   selection,
@@ -232,6 +238,7 @@ function PopoverSurface({
 }: {
   t: (key: string) => string;
   snapshot: Snapshot | null;
+  snapshotPending: boolean;
   liveTokenRate: LiveTokenRateSample | undefined;
   error: string | null;
   selection: Selection;
@@ -289,7 +296,7 @@ function PopoverSurface({
   }, [clearHoverDetailTimer, popoverView, snapshot?.generated_at, snapshot?.refresh_slot_id]);
   useEffect(() => () => clearHoverDetailTimer(), [clearHoverDetailTimer]);
 
-  if (!snapshot) return <EmptySurface t={t} compact error={error} />;
+  if (!snapshot) return <EmptySurface t={t} compact error={error} pending={snapshotPending} />;
   return (
     <main className="popover-surface">
       <div className="popover-current-surface" onPointerMove={onSurfacePointerMove}>
@@ -571,6 +578,7 @@ function PopoverFooter({
 function DashboardSurface({
   t,
   snapshot,
+  snapshotPending,
   liveTokenRate,
   error,
   running,
@@ -590,6 +598,7 @@ function DashboardSurface({
 }: {
   t: (key: string) => string;
   snapshot: Snapshot | null;
+  snapshotPending: boolean;
   liveTokenRate: LiveTokenRateSample | undefined;
   error: string | null;
   running: boolean;
@@ -607,7 +616,7 @@ function DashboardSurface({
   trendSelection: Record<TrendLane, string | undefined>;
   setTrendSelection: React.Dispatch<React.SetStateAction<Record<TrendLane, string | undefined>>>;
 }) {
-  if (!snapshot) return <EmptySurface t={t} error={error} />;
+  if (!snapshot) return <EmptySurface t={t} error={error} pending={snapshotPending} />;
   const railItems = buildRailItems(t, snapshot, railTab, query);
   return (
     <main className="dashboard-surface">
@@ -898,9 +907,9 @@ function ErrorBanner({ t, error, compact = false }: { t: (key: string) => string
   );
 }
 
-function EmptySurface({ t, compact = false, error = null }: { t: (key: string) => string; compact?: boolean; error?: string | null }) {
-  const title = error ? t("noCurrentSnapshotTitle") : t("noData");
-  const detail = error ? t("noCurrentSnapshotDetail") : t("emptySub");
+function EmptySurface({ t, compact = false, error = null, pending = false }: { t: (key: string) => string; compact?: boolean; error?: string | null; pending?: boolean }) {
+  const title = pending ? t("samplingPendingTitle") : error ? t("noCurrentSnapshotTitle") : t("noData");
+  const detail = pending ? t("samplingPendingDetail") : error ? t("noCurrentSnapshotDetail") : t("emptySub");
   return (
     <main className={compact ? "popover-surface" : "dashboard-surface"}>
       <ErrorBanner t={t} error={error} compact={compact} />
@@ -952,6 +961,7 @@ const PopoverAuditShell = React.memo(function PopoverAuditShell({
   return (
     <section className="popover-panel audit-shell">
       <PopoverRuntimeInstrument t={t} snapshot={snapshot} liveTokenRate={liveTokenRate} />
+      <AttentionStrip t={t} snapshot={snapshot} setSelection={setSelection} />
       <PopoverProcessPanel t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} context="online" />
       <ScanBoundary t={t} snapshot={snapshot} compact />
       <section className="popover-project-table">
@@ -968,6 +978,38 @@ const PopoverAuditShell = React.memo(function PopoverAuditShell({
   );
 });
 
+function AttentionStrip({ t, snapshot, setSelection }: { t: (key: string) => string; snapshot: Snapshot; setSelection: (value: Selection) => void }) {
+  const sessions = [...(snapshot.live_sessions ?? [])]
+    .filter((session) => session.attention_state === "needs_review" || session.attention_state === "working")
+    .sort((a, b) => Number(a.attention_state === "needs_review") - Number(b.attention_state === "needs_review"))
+    .reverse()
+    .slice(0, 3);
+  const unknownCount = (snapshot.live_sessions ?? []).filter((session) => session.attention_state === "unknown").length;
+  if (!sessions.length && !unknownCount) return null;
+  return (
+    <section className="attention-strip" aria-label={t("attention")}>
+      <div className="attention-strip-head">
+        <span><Radar size={13} />{t("attention")}</span>
+        <em>{sessions.length ? `${sessions.length} ${t("sessions")}` : t("unknown")}</em>
+      </div>
+      <div className="attention-strip-items">
+        {sessions.map((session) => {
+          const needsReview = session.attention_state === "needs_review";
+          const title = session.agent_nickname || shortID(session.session_id) || t("session");
+          return (
+            <button className={`attention-strip-item ${needsReview ? "needs-review" : "working"}`} type="button" key={session.session_id || session.path} onClick={() => setSelection({ type: "session", id: safeID(session.session_id || session.path) })}>
+              <span className="attention-strip-dot" aria-hidden="true" />
+              <strong>{title}</strong>
+              <small>{needsReview ? t("attentionAgent") : t("active")}</small>
+            </button>
+          );
+        })}
+        {unknownCount ? <span className="attention-strip-unknown">{unknownCount} {t("unknown")}</span> : null}
+      </div>
+    </section>
+  );
+}
+
 function PopoverSystemPanel({ t, snapshot, selection, setSelection, active }: { t: (key: string) => string; snapshot: Snapshot; selection: Selection; setSelection: (value: Selection) => void; active: boolean }) {
   const { resources, history } = useLiveSystemResources(snapshot.system_resources, active);
   const processes = snapshot.live_processes ?? [];
@@ -982,17 +1024,19 @@ function PopoverSystemPanel({ t, snapshot, selection, setSelection, active }: { 
         </div>
         <span>{t("liveSample")} · {sampledAt}</span>
       </div>
-      <SystemResourceDeck
-        t={t}
-        resources={resources}
-        history={history}
-        processCount={processes.length}
-        processCPU={processTotals.cpu}
-        processMemory={processTotals.memory}
-        mappedProcesses={summaryMappedProcessCount(snapshot.summary)}
-        unmappedProcesses={summaryUnmappedProcessCount(snapshot.summary)}
-        processEvidenceComplete={!snapshot.process_stats?.incomplete}
-      />
+      <React.Suspense fallback={<PanelLoading t={t} icon={<Cpu size={15} />} />}>
+        <SystemResourceDeck
+          t={t}
+          resources={resources}
+          history={history}
+          processCount={processes.length}
+          processCPU={processTotals.cpu}
+          processMemory={processTotals.memory}
+          mappedProcesses={summaryMappedProcessCount(snapshot.summary)}
+          unmappedProcesses={summaryUnmappedProcessCount(snapshot.summary)}
+          processEvidenceComplete={!snapshot.process_stats?.incomplete}
+        />
+      </React.Suspense>
       <PopoverProcessPanel t={t} snapshot={snapshot} selection={selection} setSelection={setSelection} context="system" />
     </section>
   );

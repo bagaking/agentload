@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"fmt"
 	"sort"
 	"strings"
@@ -30,13 +31,83 @@ const (
 )
 
 type capabilityMatrixRow struct {
-	Agent      string   `json:"agent"`
-	Process    string   `json:"process_identity"`
-	Discovery  string   `json:"evidence_discovery"`
-	Transcript string   `json:"transcript_evidence"`
-	Usage      string   `json:"output_usage"`
-	Evidence   []string `json:"evidence,omitempty"`
-	Note       string   `json:"note,omitempty"`
+	Agent          string                   `json:"agent"`
+	Process        string                   `json:"process_identity"`
+	Discovery      string                   `json:"evidence_discovery"`
+	Transcript     string                   `json:"transcript_evidence"`
+	Usage          string                   `json:"output_usage"`
+	Evidence       []string                 `json:"evidence,omitempty"`
+	Note           string                   `json:"note,omitempty"`
+	SignalFamilies []capabilitySignalFamily `json:"signal_families,omitempty"`
+}
+
+type capabilitySignalFamily struct {
+	Key      string
+	State    string
+	Evidence []string
+}
+
+const (
+	capabilityStatePartial       = "partial"
+	capabilityStateUnavailable   = "unavailable"
+	capabilityStateNotConfigured = "not_configured"
+	capabilityStateObserved      = "observed"
+)
+
+// signalFamilies projects the four registered evidence slots into the seven
+// user-facing families. The mapping is deliberately conservative: a family is
+// supported only when the slot that produces it exists, partial when only one
+// half of a compound signal exists, and not_configured for opt-in telemetry.
+func signalFamilies(adapter codingAgentAdapter) []capabilitySignalFamily {
+	process := adapter.Capabilities.Process != nil
+	discovery := adapter.Capabilities.Discovery != nil
+	transcript := adapter.Capabilities.Transcript != nil
+	usage := adapter.Capabilities.Usage != nil
+	state := func(ok bool) string {
+		if ok {
+			return capabilityStateObserved
+		}
+		return capabilityStateUnavailable
+	}
+	compound := func(a, b bool) string {
+		switch {
+		case a && b:
+			return capabilityStateObserved
+		case a || b:
+			return capabilityStatePartial
+		default:
+			return capabilityStateUnavailable
+		}
+	}
+	return []capabilitySignalFamily{
+		{Key: "presence_resources", State: state(process), Evidence: []string{"process identity"}},
+		{Key: "sessions_roles", State: compound(discovery, transcript), Evidence: []string{"evidence discovery", "transcript evidence"}},
+		{Key: "recent_movement", State: state(transcript), Evidence: []string{"transcript event timestamps"}},
+		{Key: "tokens_cost", State: state(usage), Evidence: []string{"output usage decoder"}},
+		{Key: "quota_windows", State: capabilityStateUnavailable, Evidence: []string{"no local quota ledger registered"}},
+		{Key: "workspace_context", State: compound(discovery, transcript), Evidence: []string{"transcript/project evidence"}},
+		{Key: "consented_telemetry", State: capabilityStateNotConfigured, Evidence: []string{"runtime telemetry is opt-in"}},
+	}
+}
+
+func (r *codingAgentRegistry) capabilitySnapshot() []snapshot.CapabilityMatrixRow {
+	if r == nil {
+		return nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	rows := make([]snapshot.CapabilityMatrixRow, 0, len(r.adapters))
+	for _, adapter := range r.adapters {
+		families := signalFamilies(adapter)
+		familyRows := make([]snapshot.CapabilitySignalFamily, 0, len(families))
+		for _, family := range families {
+			familyRows = append(familyRows, snapshot.CapabilitySignalFamily{Key: family.Key, State: family.State, Evidence: append([]string(nil), family.Evidence...)})
+		}
+		row := capabilityMatrixRow{Agent: adapter.ID, Process: capabilityState(adapter.Capabilities.Process != nil), Discovery: capabilityState(adapter.Capabilities.Discovery != nil), Transcript: capabilityState(adapter.Capabilities.Transcript != nil), Usage: capabilityState(adapter.Capabilities.Usage != nil), Evidence: append([]string(nil), adapter.Evidence...), Note: adapter.Note, SignalFamilies: families}
+		rows = append(rows, snapshot.CapabilityMatrixRow{Agent: row.Agent, Process: row.Process, Discovery: row.Discovery, Transcript: row.Transcript, Usage: row.Usage, Evidence: row.Evidence, Note: row.Note, SignalFamilies: familyRows})
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Agent < rows[j].Agent })
+	return rows
 }
 
 func capabilityState(supported bool) string {
@@ -57,13 +128,14 @@ func (r *codingAgentRegistry) capabilityMatrix() []capabilityMatrixRow {
 	rows := make([]capabilityMatrixRow, 0, len(r.adapters))
 	for _, adapter := range r.adapters {
 		rows = append(rows, capabilityMatrixRow{
-			Agent:      adapter.ID,
-			Process:    capabilityState(adapter.Capabilities.Process != nil),
-			Discovery:  capabilityState(adapter.Capabilities.Discovery != nil),
-			Transcript: capabilityState(adapter.Capabilities.Transcript != nil),
-			Usage:      capabilityState(adapter.Capabilities.Usage != nil),
-			Evidence:   append([]string(nil), adapter.Evidence...),
-			Note:       adapter.Note,
+			Agent:          adapter.ID,
+			Process:        capabilityState(adapter.Capabilities.Process != nil),
+			Discovery:      capabilityState(adapter.Capabilities.Discovery != nil),
+			Transcript:     capabilityState(adapter.Capabilities.Transcript != nil),
+			Usage:          capabilityState(adapter.Capabilities.Usage != nil),
+			Evidence:       append([]string(nil), adapter.Evidence...),
+			Note:           adapter.Note,
+			SignalFamilies: signalFamilies(adapter),
 		})
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Agent < rows[j].Agent })
@@ -101,6 +173,18 @@ func renderCapabilityMatrixMarkdown(rows []capabilityMatrixRow) string {
 		b.WriteString("\n")
 		for _, note := range notes {
 			b.WriteString(note)
+		}
+	}
+	b.WriteString("\n### Signal family coverage\n\n")
+	b.WriteString("| Agent | Signal family | State | Evidence |\n")
+	b.WriteString("| --- | --- | --- | --- |\n")
+	for _, row := range rows {
+		for _, family := range row.SignalFamilies {
+			evidence := "none"
+			if len(family.Evidence) > 0 {
+				evidence = strings.Join(family.Evidence, "<br>")
+			}
+			b.WriteString(fmt.Sprintf("| %s | `%s` | %s | %s |\n", row.Agent, family.Key, family.State, evidence))
 		}
 	}
 	b.WriteString("\n")

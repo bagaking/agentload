@@ -81,6 +81,7 @@ func (o *Observer) Snapshot(ctx context.Context) snapshot.Snapshot {
 		CurrentByTool:    currentByTool,
 		HistoricPeaks:    historicPeaks,
 		MetricRegistry:   defaultMetricRegistry(),
+		CapabilityMatrix: o.adapters.capabilitySnapshot(),
 		RuntimeTelemetry: defaultRuntimeTelemetrySnapshot(),
 		Trends:           buildTranscriptTrendWindows(data, now, o.cfg.Lookback),
 		TranscriptStats: snapshot.TranscriptStats{
@@ -1143,6 +1144,7 @@ func projectLiveSessions(sessions []snapshot.LiveSession, idleGap time.Duration,
 		facts := metricFactsForLiveSession(session, observation)
 		projectAttribution := observeProjectAttribution(session)
 		role := observeSessionRole(session)
+		attentionState, attentionReason := attentionStateForSession(facts.Role, observation)
 		item := snapshot.LiveSessionSnapshot{
 			Tool:                         session.Tool,
 			SessionID:                    session.SessionID,
@@ -1155,6 +1157,8 @@ func projectLiveSessions(sessions []snapshot.LiveSession, idleGap time.Duration,
 			ActiveBurst:                  facts.RecentMovement,
 			Freshness:                    observation.Freshness,
 			NeedsReview:                  sessionNeedsReviewObservation(facts.Role, observation),
+			AttentionState:               attentionState,
+			AttentionReason:              attentionReason,
 			MappingMethod:                observation.MappingMethod,
 			MissingTranscript:            observation.MissingTranscript,
 			Confidence:                   observation.Confidence,

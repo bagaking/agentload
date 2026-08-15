@@ -40,6 +40,14 @@ const (
 	freshnessUnknown = "unknown"
 )
 
+// Attention state is a routing signal, not a productivity judgment. It is
+// emitted only from session role, transcript timing, and recent movement.
+const (
+	attentionStateWorking     = "working"
+	attentionStateNeedsReview = "needs_review"
+	attentionStateUnknown     = "unknown"
+)
+
 // freshnessFromEventAge is the only place an age becomes a freshness bucket.
 // Callers pass the already-clamped age; a session with no transcript timing
 // never reaches here, because absent timing is unknown rather than stale.
@@ -338,14 +346,38 @@ type ProcessEvidenceMetricFacts struct {
 }
 
 // sessionNeedsReviewObservation is the backend source of truth for the
-// "needs human review" cue: a main session whose local log shows no recent
-// movement and whose freshness observation is idle or stale. It describes
-// observed evidence only; it is not a judgment that the session is stuck.
+// "needs human review" cue: a main session whose local log stopped moving
+// recently enough that a human may still be the thing it is waiting for. It
+// describes observed evidence only; it is not a judgment that the session is
+// stuck.
+//
+// Stale is deliberately excluded. Stale means "last event older than
+// staleSessionThreshold" with no upper bound, so on a machine that leaves
+// terminals parked it matches sessions whose transcript last moved weeks ago
+// while a process lingers -- measured here at 65 of 106 live sessions, every
+// one of them stale and none idle. A cue that fires on 61% of sessions ranks
+// nothing, and "may be waiting for human input" is false for a session that
+// last moved 23 days ago. Staleness itself is not lost: coordination_risk's
+// stale_session_count, the sessions_without_recent_event signal, and the
+// session_hygiene insight each report it under its own name.
 func sessionNeedsReviewObservation(role string, observation liveSessionObservation) bool {
 	if normalizedRole(role) != "main" || observation.ActiveBurst {
 		return false
 	}
-	return observation.Freshness == freshnessIdle || observation.Freshness == freshnessStale
+	return observation.Freshness == freshnessIdle
+}
+
+func attentionStateForSession(role string, observation liveSessionObservation) (string, string) {
+	if observation.MissingTranscript || normalizedRole(role) == "unknown" {
+		return attentionStateUnknown, "session role or transcript timing is unavailable"
+	}
+	if observation.ActiveBurst {
+		return attentionStateWorking, "recent transcript movement observed"
+	}
+	if sessionNeedsReviewObservation(role, observation) {
+		return attentionStateNeedsReview, "main session has measured evidence but no recent movement"
+	}
+	return attentionStateUnknown, "no current attention state evidence"
 }
 
 func metricFactsForLiveSession(session snapshot.LiveSession, observation liveSessionObservation) SessionMetricFacts {

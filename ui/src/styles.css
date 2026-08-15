@@ -13125,6 +13125,35 @@ body[data-view="popover"] .instrument-readout-row.burst dd strong { color: var(-
 body[data-view="popover"] .instrument-readout-row.session dd strong { color: var(--accent); }
 body[data-view="popover"] .instrument-readout-row.mapping dd strong { color: var(--run); }
 
+.attention-strip {
+  display: grid;
+  gap: 6px;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--panel));
+}
+
+.attention-strip-head,
+.attention-strip-items {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.attention-strip-head { justify-content: space-between; }
+.attention-strip-head span { display: inline-flex; align-items: center; gap: 5px; color: var(--fg); font-size: 10px; font-weight: 700; }
+.attention-strip-head em { color: var(--console-text-soft); font-size: 9px; font-style: normal; }
+.attention-strip-items { flex-wrap: wrap; }
+.attention-strip-item { display: inline-flex; align-items: center; gap: 5px; min-width: 0; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; color: var(--fg); background: color-mix(in srgb, var(--panel) 80%, transparent); text-align: left; cursor: pointer; }
+.attention-strip-item strong { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; }
+.attention-strip-item small { color: var(--console-text-soft); font-size: 8px; white-space: nowrap; }
+.attention-strip-item.needs-review { border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+.attention-strip-item.working { border-color: color-mix(in srgb, var(--ok) 32%, transparent); }
+.attention-strip-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--ok); }
+.attention-strip-item.needs-review .attention-strip-dot { background: var(--warn); }
+.attention-strip-unknown { color: var(--console-text-soft); font-size: 9px; }
+
 @media (max-width: 430px) {
   body[data-view="popover"] .instrument-readout-row {
     grid-template-columns: minmax(76px, .58fr) minmax(0, 1.42fr);

@@ -1144,6 +1144,633 @@
       "description": "Exports a minimized evidence bundle that omits raw prompts, absolute paths, command arguments, and environment variables."
     }
   ],
+  "capability_matrix": [
+    {
+      "agent": "claude",
+      "process_identity": "supported",
+      "evidence_discovery": "supported",
+      "transcript_evidence": "supported",
+      "output_usage": "supported",
+      "evidence": [
+        "projects/**/*.jsonl"
+      ],
+      "signal_families": [
+        {
+          "key": "presence_resources",
+          "state": "observed",
+          "evidence": [
+            "process identity"
+          ]
+        },
+        {
+          "key": "sessions_roles",
+          "state": "observed",
+          "evidence": [
+            "evidence discovery",
+            "transcript evidence"
+          ]
+        },
+        {
+          "key": "recent_movement",
+          "state": "observed",
+          "evidence": [
+            "transcript event timestamps"
+          ]
+        },
+        {
+          "key": "tokens_cost",
+          "state": "observed",
+          "evidence": [
+            "output usage decoder"
+          ]
+        },
+        {
+          "key": "quota_windows",
+          "state": "unavailable",
+          "evidence": [
+            "no local quota ledger registered"
+          ]
+        },
+        {
+          "key": "workspace_context",
+          "state": "observed",
+          "evidence": [
+            "transcript/project evidence"
+          ]
+        },
+        {
+          "key": "consented_telemetry",
+          "state": "not_configured",
+          "evidence": [
+            "runtime telemetry is opt-in"
+          ]
+        }
+      ]
+    },
+    {
+      "agent": "codex",
+      "process_identity": "supported",
+      "evidence_discovery": "supported",
+      "transcript_evidence": "supported",
+      "output_usage": "supported",
+      "evidence": [
+        "sessions/YYYY/MM/DD/rollout-*.jsonl"
+      ],
+      "signal_families": [
+        {
+          "key": "presence_resources",
+          "state": "observed",
+          "evidence": [
+            "process identity"
+          ]
+        },
+        {
+          "key": "sessions_roles",
+          "state": "observed",
+          "evidence": [
+            "evidence discovery",
+            "transcript evidence"
+          ]
+        },
+        {
+          "key": "recent_movement",
+          "state": "observed",
+          "evidence": [
+            "transcript event timestamps"
+          ]
+        },
+        {
+          "key": "tokens_cost",
+          "state": "observed",
+          "evidence": [
+            "output usage decoder"
+          ]
+        },
+        {
+          "key": "quota_windows",
+          "state": "unavailable",
+          "evidence": [
+            "no local quota ledger registered"
+          ]
+        },
+        {
+          "key": "workspace_context",
+          "state": "observed",
+          "evidence": [
+            "transcript/project evidence"
+          ]
+        },
+        {
+          "key": "consented_telemetry",
+          "state": "not_configured",
+          "evidence": [
+            "runtime telemetry is opt-in"
+          ]
+        }
+      ]
+    },
+    {
+      "agent": "cursor",
+      "process_identity": "unsupported",
+      "evidence_discovery": "unsupported",
+      "transcript_evidence": "unsupported",
+      "output_usage": "unsupported",
+      "note": "host-app ancestry only: CLI transcripts carry no timestamp or token field, and IDE per-message counters are all zero",
+      "signal_families": [
+        {
+          "key": "presence_resources",
+          "state": "unavailable",
+          "evidence": [
+            "process identity"
+          ]
+        },
+        {
+          "key": "sessions_roles",
+          "state": "unavailable",
+          "evidence": [
+            "evidence discovery",
+            "transcript evidence"
+          ]
+        },
+        {
+          "key": "recent_movement",
+          "state": "unavailable",
+          "evidence": [
+            "transcript event timestamps"
+          ]
+        },
+        {
+          "key": "tokens_cost",
+          "state": "unavailable",
+          "evidence": [
+            "output usage decoder"
+          ]
+        },
+        {
+          "key": "quota_windows",
+          "state": "unavailable",
+          "evidence": [
+            "no local quota ledger registered"
+          ]
+        },
+        {
+          "key": "workspace_context",
+          "state": "unavailable",
+          "evidence": [
+            "transcript/project evidence"
+          ]
+        },
+        {
+          "key": "consented_telemetry",
+          "state": "not_configured",
+          "evidence": [
+            "runtime telemetry is opt-in"
+          ]
+        }
+      ]
+    },
+    {
+      "agent": "gemini",
+      "process_identity": "supported",
+      "evidence_discovery": "supported",
+      "transcript_evidence": "supported",
+      "output_usage": "supported",
+      "evidence": [
+        "tmp/**/chats/session-*.json(l)",
+        "antigravity-cli/brain/\u003csession\u003e/.system_generated/logs/transcript.jsonl"
+      ],
+      "note": "the antigravity root carries created_at but no token field of any kind, so it contributes session spans only",
+      "signal_families": [
+        {
+          "key": "presence_resources",
+          "state": "observed",
+          "evidence": [
+            "process identity"
+          ]
+        },
+        {
+          "key": "sessions_roles",
+          "state": "observed",
+          "evidence": [
+            "evidence discovery",
+            "transcript evidence"
+          ]
+        },
+        {
+          "key": "recent_movement",
+          "state": "observed",
+          "evidence": [
+            "transcript event timestamps"
+          ]
+        },
+        {
+          "key": "tokens_cost",
+          "state": "observed",
+          "evidence": [
+            "output usage decoder"
+          ]
+        },
+        {
+          "key": "quota_windows",
+          "state": "unavailable",
+          "evidence": [
+            "no local quota ledger registered"
+          ]
+        },
+        {
+          "key": "workspace_context",
+          "state": "observed",
+          "evidence": [
+            "transcript/project evidence"
+          ]
+        },
+        {
+          "key": "consented_telemetry",
+          "state": "not_configured",
+          "evidence": [
+            "runtime telemetry is opt-in"
+          ]
+        }
+      ]
+    },
+    {
+      "agent": "grok",
+      "process_identity": "supported",
+      "evidence_discovery": "supported",
+      "transcript_evidence": "supported",
+      "output_usage": "supported",
+      "evidence": [
+        "sessions/\u003ccwd\u003e/\u003csession\u003e/updates.jsonl"
+      ],
+      "note": "usage is per-turn, not cumulative, and is repeated under usage.modelUsage.\u003cmodel\u003e",
+      "signal_families": [
+        {
+          "key": "presence_resources",
+          "state": "observed",
+          "evidence": [
+            "process identity"
+          ]
+        },
+        {
+          "key": "sessions_roles",
+          "state": "observed",
+          "evidence": [
+            "evidence discovery",
+            "transcript evidence"
+          ]
+        },
+        {
+          "key": "recent_movement",
+          "state": "observed",
+          "evidence": [
+            "transcript event timestamps"
+          ]
+        },
+        {
+          "key": "tokens_cost",
+          "state": "observed",
+          "evidence": [
+            "output usage decoder"
+          ]
+        },
+        {
+          "key": "quota_windows",
+          "state": "unavailable",
+          "evidence": [
+            "no local quota ledger registered"
+          ]
+        },
+        {
+          "key": "workspace_context",
+          "state": "observed",
+          "evidence": [
+            "transcript/project evidence"
+          ]
+        },
+        {
+          "key": "consented_telemetry",
+          "state": "not_configured",
+          "evidence": [
+            "runtime telemetry is opt-in"
+          ]
+        }
+      ]
+    },
+    {
+      "agent": "hermes",
+      "process_identity": "supported",
+      "evidence_discovery": "supported",
+      "transcript_evidence": "supported",
+      "output_usage": "unsupported",
+      "evidence": [
+        "state.db (read-only)"
+      ],
+      "note": "usage is database-backed and not decoded",
+      "signal_families": [
+        {
+          "key": "presence_resources",
+          "state": "observed",
+          "evidence": [
+            "process identity"
+          ]
+        },
+        {
+          "key": "sessions_roles",
+          "state": "observed",
+          "evidence": [
+            "evidence discovery",
+            "transcript evidence"
+          ]
+        },
+        {
+          "key": "recent_movement",
+          "state": "observed",
+          "evidence": [
+            "transcript event timestamps"
+          ]
+        },
+        {
+          "key": "tokens_cost",
+          "state": "unavailable",
+          "evidence": [
+            "output usage decoder"
+          ]
+        },
+        {
+          "key": "quota_windows",
+          "state": "unavailable",
+          "evidence": [
+            "no local quota ledger registered"
+          ]
+        },
+        {
+          "key": "workspace_context",
+          "state": "observed",
+          "evidence": [
+            "transcript/project evidence"
+          ]
+        },
+        {
+          "key": "consented_telemetry",
+          "state": "not_configured",
+          "evidence": [
+            "runtime telemetry is opt-in"
+          ]
+        }
+      ]
+    },
+    {
+      "agent": "openclaw",
+      "process_identity": "supported",
+      "evidence_discovery": "supported",
+      "transcript_evidence": "supported",
+      "output_usage": "supported",
+      "evidence": [
+        "agents/*/sessions/*.jsonl"
+      ],
+      "signal_families": [
+        {
+          "key": "presence_resources",
+          "state": "observed",
+          "evidence": [
+            "process identity"
+          ]
+        },
+        {
+          "key": "sessions_roles",
+          "state": "observed",
+          "evidence": [
+            "evidence discovery",
+            "transcript evidence"
+          ]
+        },
+        {
+          "key": "recent_movement",
+          "state": "observed",
+          "evidence": [
+            "transcript event timestamps"
+          ]
+        },
+        {
+          "key": "tokens_cost",
+          "state": "observed",
+          "evidence": [
+            "output usage decoder"
+          ]
+        },
+        {
+          "key": "quota_windows",
+          "state": "unavailable",
+          "evidence": [
+            "no local quota ledger registered"
+          ]
+        },
+        {
+          "key": "workspace_context",
+          "state": "observed",
+          "evidence": [
+            "transcript/project evidence"
+          ]
+        },
+        {
+          "key": "consented_telemetry",
+          "state": "not_configured",
+          "evidence": [
+            "runtime telemetry is opt-in"
+          ]
+        }
+      ]
+    },
+    {
+      "agent": "opencode",
+      "process_identity": "supported",
+      "evidence_discovery": "supported",
+      "transcript_evidence": "supported",
+      "output_usage": "unsupported",
+      "evidence": [
+        "storage/message/**",
+        "storage/*.db"
+      ],
+      "note": "usage is database-backed and not decoded",
+      "signal_families": [
+        {
+          "key": "presence_resources",
+          "state": "observed",
+          "evidence": [
+            "process identity"
+          ]
+        },
+        {
+          "key": "sessions_roles",
+          "state": "observed",
+          "evidence": [
+            "evidence discovery",
+            "transcript evidence"
+          ]
+        },
+        {
+          "key": "recent_movement",
+          "state": "observed",
+          "evidence": [
+            "transcript event timestamps"
+          ]
+        },
+        {
+          "key": "tokens_cost",
+          "state": "unavailable",
+          "evidence": [
+            "output usage decoder"
+          ]
+        },
+        {
+          "key": "quota_windows",
+          "state": "unavailable",
+          "evidence": [
+            "no local quota ledger registered"
+          ]
+        },
+        {
+          "key": "workspace_context",
+          "state": "observed",
+          "evidence": [
+            "transcript/project evidence"
+          ]
+        },
+        {
+          "key": "consented_telemetry",
+          "state": "not_configured",
+          "evidence": [
+            "runtime telemetry is opt-in"
+          ]
+        }
+      ]
+    },
+    {
+      "agent": "pi",
+      "process_identity": "supported",
+      "evidence_discovery": "supported",
+      "transcript_evidence": "supported",
+      "output_usage": "supported",
+      "evidence": [
+        "agent/sessions/**.jsonl",
+        "agent/session-artifacts/**.jsonl"
+      ],
+      "signal_families": [
+        {
+          "key": "presence_resources",
+          "state": "observed",
+          "evidence": [
+            "process identity"
+          ]
+        },
+        {
+          "key": "sessions_roles",
+          "state": "observed",
+          "evidence": [
+            "evidence discovery",
+            "transcript evidence"
+          ]
+        },
+        {
+          "key": "recent_movement",
+          "state": "observed",
+          "evidence": [
+            "transcript event timestamps"
+          ]
+        },
+        {
+          "key": "tokens_cost",
+          "state": "observed",
+          "evidence": [
+            "output usage decoder"
+          ]
+        },
+        {
+          "key": "quota_windows",
+          "state": "unavailable",
+          "evidence": [
+            "no local quota ledger registered"
+          ]
+        },
+        {
+          "key": "workspace_context",
+          "state": "observed",
+          "evidence": [
+            "transcript/project evidence"
+          ]
+        },
+        {
+          "key": "consented_telemetry",
+          "state": "not_configured",
+          "evidence": [
+            "runtime telemetry is opt-in"
+          ]
+        }
+      ]
+    },
+    {
+      "agent": "trae",
+      "process_identity": "supported",
+      "evidence_discovery": "supported",
+      "transcript_evidence": "supported",
+      "output_usage": "supported",
+      "evidence": [
+        "sessions/**/*.jsonl"
+      ],
+      "signal_families": [
+        {
+          "key": "presence_resources",
+          "state": "observed",
+          "evidence": [
+            "process identity"
+          ]
+        },
+        {
+          "key": "sessions_roles",
+          "state": "observed",
+          "evidence": [
+            "evidence discovery",
+            "transcript evidence"
+          ]
+        },
+        {
+          "key": "recent_movement",
+          "state": "observed",
+          "evidence": [
+            "transcript event timestamps"
+          ]
+        },
+        {
+          "key": "tokens_cost",
+          "state": "observed",
+          "evidence": [
+            "output usage decoder"
+          ]
+        },
+        {
+          "key": "quota_windows",
+          "state": "unavailable",
+          "evidence": [
+            "no local quota ledger registered"
+          ]
+        },
+        {
+          "key": "workspace_context",
+          "state": "observed",
+          "evidence": [
+            "transcript/project evidence"
+          ]
+        },
+        {
+          "key": "consented_telemetry",
+          "state": "not_configured",
+          "evidence": [
+            "runtime telemetry is opt-in"
+          ]
+        }
+      ]
+    }
+  ],
   "diagnostics": {
     "generated_at": "<instant>",
     "evolution": [
@@ -1162,16 +1789,6 @@
         "metric_key": "process_pressure",
         "confidence": "observed",
         "status": "needs_review"
-      }
-    ],
-    "anomaly_signals": [
-      {
-        "kind": "unmatched_processes",
-        "severity": "info",
-        "title": "Unmatched process pressure",
-        "evidence": "3 visible live processes are not currently matched to local session evidence.",
-        "metric_key": "process_pressure",
-        "source": "coordination_risk"
       }
     ],
     "evidence_gaps": [
@@ -1248,7 +1865,7 @@
         "key": "evidence_walk_cost",
         "label": "Evidence walk cost",
         "value": "0ms",
-        "status": "ok",
+        "status": "observed",
         "detail": "Duration of the last full evidence walk. The index reconciles about once per process, so this is the last measured walk, and stays no data until one has run.",
         "metric_key": "recent_movement"
       }

@@ -130,7 +130,7 @@ agentload 要成为本地 AI coding agent 监控品类里**最全面、最舒服
 | Q2 | **厂商官方本地查询面未作为证据族调研**：codex app-server RPC（CodexBar 主策略）、Claude OAuth usage 端点（ground-truth 配额，但属单次显式同意的外发调用）、gemini-cli 本地 OTel 文件。Roadmap 把 local-only 与「只解析文件」画了等号。 | 〔spike/调研〕+〔用户决策〕OAuth 端点涉及外发，须用户裁决是否破例；RPC/OTel 文件属本地，纳入调研。 |
 | Q3 | **第一方吸收未评估**：Claude Code 内建 /usage 已显示 5h/周窗口与重置计时，掏空 M04_S02 单厂商价值。 | 〔计划修订〕M04_S02 重构为跨厂商统一配额视图；吸收巡检仪式已列入 CURRENT.md 待办。 |
 | Q4 | **agent 实际运行位置未测量**：devcontainer/Docker/SSH/云会话对进程观测不可见——「最全面」对一个可能过半的非本地进程人群未量化。 | 〔spike/调研〕矩阵将容器/远程作为一等标注空白；bind-mount transcript 根检测与 SSH 端口转发模式入调研。 |
-| Q5 | **本地 HTTP 攻击面未做威胁建模**：无 Host 白名单、无 auth token，Origin 校验可被 DNS rebinding 绕过——只读 API 尚可容忍，一旦有 stop/hooks/exec-on-event 端点则不可接受。 | 〔计划修订〕Host 白名单 + auth token（或 unix socket）为 M03_S03 与 M06_S02 的硬前置。 |
+| Q5 | **本地 HTTP 攻击面仍需分阶段建模**：现有 server 已有 loopback Host 白名单、Origin 校验和对应测试，已覆盖当前只读/本地动作面；未来 stop/hooks/exec-on-event 仍需独立的认证与权限边界，不能把当前校验当成完整授权。 | 〔部分关闭〕保留现有 Host/Origin 回归门；在 M03_S03/M06_S02 设计状态改变接口时补 auth token 或 unix socket，并把权限模型写入验收。 |
 | Q6 | **无 LICENSE、商业化未决**：仓库无任何 LICENSE，阻塞 Homebrew cask 与「public spine」定位；可持续性（SessionWatcher 收费 vs ccusage MIT）未审视。 | 〔用户决策〕LICENSE 与商业化决策提至 M01。 |
 | Q7 | **轮询架构规模上限未研究**：需求证据是 20+ 并发 agent；per-PID 采样 O(n)、几十个活跃 JSONL 尾随、自身历史无盘量预算（opencode 用户报 ~5GB）。 | 〔计划修订〕M02_S02 增加 50 并发会话 + 多 GB 历史的负载门，发布磁盘预算与留存/压缩策略。 |
 | Q8 | **TCC 权限清单未产出**：精确聚焦终端窗口需 Accessibility/Automation 弹窗，与「onboarding 零弹窗」舒适教义冲突。 | 〔计划修订〕M03_S03 交付 TCC 权限映射 + 无权限降级路径（app 级 activate）。 |

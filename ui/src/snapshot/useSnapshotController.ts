@@ -21,6 +21,7 @@ export function useSnapshotController({
   shellRef: RefObject<HTMLElement | null>;
 }) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [snapshotPending, setSnapshotPending] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshInterval, setRefreshInterval] = useState<number>(() => initialRefreshInterval());
@@ -32,6 +33,7 @@ export function useSnapshotController({
   const popoverVisibleRef = useRef(true);
   const fetchInFlightRef = useRef<Promise<void> | null>(null);
   const refreshTimerRef = useRef<number | null>(null);
+  const pendingRetryRef = useRef<number | null>(null);
   const readerActiveUntilRef = useRef(0);
 
   const isSurfaceVisible = useCallback(
@@ -62,6 +64,22 @@ export function useSnapshotController({
       const next = (await response.json()) as Snapshot;
       lastSnapshotETagRef.current = response.headers.get("ETag") || "";
       lastSnapshotReceivedAtRef.current = Date.now();
+      const incomplete = Boolean(next.transcript_stats?.coverage_incomplete || next.process_stats?.incomplete);
+      if (incomplete) {
+        // A cold scan may return a partial snapshot when its waiter times out.
+        // Do not promote that empty projection into the durable UI state: the
+        // observer keeps the scan flight alive and a short retry will pick up
+        // the complete evidence once it is ready.
+        setSnapshotPending(true);
+        if (pendingRetryRef.current === null) {
+          pendingRetryRef.current = window.setTimeout(() => {
+            pendingRetryRef.current = null;
+            void fetchSnapshot("initial").catch(() => undefined);
+          }, 2_000);
+        }
+        return;
+      }
+      setSnapshotPending(false);
       const token = next.refresh_slot_id || next.generated_at || "";
       if (token && token === lastRenderTokenRef.current) {
         snapshotRef.current = next;
@@ -133,8 +151,15 @@ export function useSnapshotController({
   }, [refreshInterval, chooseRefreshInterval]);
 
   useEffect(() => {
-    void fetchSnapshot("initial").catch((err) => setError(err instanceof Error ? err.message : String(err)));
+    void fetchSnapshot("initial").catch((err) => {
+      setSnapshotPending(false);
+      setError(err instanceof Error ? err.message : String(err));
+    });
   }, [fetchSnapshot]);
+
+  useEffect(() => () => {
+    if (pendingRetryRef.current !== null) window.clearTimeout(pendingRetryRef.current);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -224,6 +249,7 @@ export function useSnapshotController({
 
   return {
     snapshot,
+    snapshotPending,
     error,
     refreshing,
     refreshInterval,

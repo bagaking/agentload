@@ -45,7 +45,7 @@ export function sessionNeedsHumanReview(session: LiveSession): boolean {
   const freshness = String(session.freshness || "").trim().toLowerCase();
   if (normalizedRole(session.session_role) !== "main") return false;
   if (sessionHasRecentMovement(session)) return false;
-  return freshness === "idle" || freshness === "stale";
+  return freshness === "idle";
 }
 
 export function snapshotHumanReviewSessions(snapshot?: Snapshot | null): LiveSession[] {

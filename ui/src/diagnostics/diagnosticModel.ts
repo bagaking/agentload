@@ -49,6 +49,12 @@ export type EvolutionRow = {
   metric: string;
   status: string;
   tone: DiagnosticTone;
+  // Which priority rows rest on the same metric as this insight, and how many
+  // of them the capped table is not showing. Without this the card's headline
+  // number appeared nowhere else on the page, so the reader had no way to get
+  // from "111 stale sessions" to the evidence behind it.
+  relatedSignals: string[];
+  relatedHiddenCount: number;
 };
 
 export type DiagnosticViewModel = {
@@ -77,22 +83,28 @@ export function buildDiagnosticViewModel(t: Translate, snapshot: Snapshot): Diag
   const signals = [...anomalies, ...gaps].slice().sort(
     (a, b) => signalSeverityRank(a.severity) - signalSeverityRank(b.severity),
   );
+  const shown = signals.slice(0, PRIORITY_ROW_LIMIT);
+  const hidden = signals.slice(PRIORITY_ROW_LIMIT);
   return {
     generated: diagnostics?.generated_at ? formatDateTime(diagnostics.generated_at) : snapshot.generated_at ? formatDateTime(snapshot.generated_at) : t("unavailable"),
     anomalyCount: anomalies.length,
     gapCount: gaps.length,
     evidenceMetrics: buildEvidenceMetrics(t, diagnostics?.baselines ?? [], snapshot.transcript_stats?.scan_cost),
-    priorityRows: buildPriorityRows(t, signals),
-    hiddenSignalCount: Math.max(0, signals.length - PRIORITY_ROW_LIMIT),
-    evolutionRows: buildEvolutionRows(t, diagnostics?.evolution ?? []),
+    priorityRows: buildPriorityRows(t, shown),
+    hiddenSignalCount: hidden.length,
+    evolutionRows: buildEvolutionRows(t, diagnostics?.evolution ?? [], shown, hidden),
     chainNodes: buildChainNodes(t, diagnostics?.capabilities ?? [], snapshot.runtime_telemetry),
     omittedFields: diagnostics?.export?.omitted_fields ?? [],
   };
 }
 
-function buildEvolutionRows(t: Translate, insights: DiagnosticEvolutionInsight[]): EvolutionRow[] {
+function buildEvolutionRows(t: Translate, insights: DiagnosticEvolutionInsight[], shown: DiagnosticSignal[], hidden: DiagnosticSignal[]): EvolutionRow[] {
   return insights.map((insight, index) => {
     const key = insight.key || `evolution-${index}`;
+    // metric_key is the join the backend already writes on both insights and
+    // signals; the panel just never rendered it, which is why an insight's
+    // number led nowhere.
+    const sameMetric = (signal: DiagnosticSignal) => Boolean(insight.metric_key) && signal.metric_key === insight.metric_key;
     return {
       key,
       title: evolutionText(t, key, "Title", insight.title || humanizeKey(key)),
@@ -103,6 +115,8 @@ function buildEvolutionRows(t: Translate, insights: DiagnosticEvolutionInsight[]
       metric: metricKeyLabel(t, insight.metric_key, humanizeKey(insight.metric_key || "evidence")),
       status: evolutionStatusLabel(t, insight.status),
       tone: evolutionTone(insight.status),
+      relatedSignals: shown.filter(sameMetric).map((signal) => diagnosticSignalTitle(t, signal)),
+      relatedHiddenCount: hidden.filter(sameMetric).length,
     };
   });
 }
@@ -442,6 +456,10 @@ function toneFromStatus(status?: string): DiagnosticTone {
   if (value === "watch" || value === "partial" || value === "idle") return "watch";
   if (value === "warn" || value === "unavailable") return "warn";
   if (value === "empty") return "empty";
+  // "observed" means measured-but-unjudged: the backend has a number and no
+  // documented budget to compare it against. Listed rather than left to the
+  // fallback so that renaming it shows up here instead of silently going muted.
+  if (value === "observed") return "muted";
   return "muted";
 }
 

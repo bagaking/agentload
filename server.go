@@ -40,6 +40,7 @@ func (a *trayApp) handler() http.Handler {
 	mux.HandleFunc("/dashboard", a.handleDashboardPage)
 	mux.HandleFunc("/assets/", a.handleUIAsset)
 	mux.HandleFunc("/api/snapshot", a.handleSnapshotAPI)
+	mux.HandleFunc("/api/capabilities", a.handleCapabilitiesAPI)
 	mux.HandleFunc("/api/system-resources", a.handleSystemResourcesAPI)
 	mux.HandleFunc("/api/live-token-rate", a.handleLiveTokenRateAPI)
 	mux.HandleFunc("/api/diagnostic-export", a.handleDiagnosticExportAPI)
@@ -58,6 +59,34 @@ func (a *trayApp) handler() http.Handler {
 			return
 		}
 		mux.ServeHTTP(w, r)
+	})
+}
+
+// handleCapabilitiesAPI exposes the registry-owned coverage matrix as a small
+// read-only projection. The same matrix is embedded in snapshots for the UI;
+// this endpoint is useful to scripts and release audits without requiring a
+// full snapshot refresh.
+func (a *trayApp) handleCapabilitiesAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	var rows []snapshot.CapabilityMatrixRow
+	if a != nil && a.observer != nil && a.observer.adapters != nil {
+		rows = a.observer.adapters.capabilitySnapshot()
+	}
+	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(struct {
+		Families []string                       `json:"families"`
+		Rows     []snapshot.CapabilityMatrixRow `json:"rows"`
+	}{
+		Families: []string{"presence_resources", "sessions_roles", "recent_movement", "tokens_cost", "quota_windows", "workspace_context", "consented_telemetry"},
+		Rows:     rows,
 	})
 }
 

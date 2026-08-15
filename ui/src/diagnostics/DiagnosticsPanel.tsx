@@ -66,16 +66,6 @@ export function DiagnosticsPanel({ t, snapshot }: { t: Translate; snapshot: Snap
         </span>
       </div>
 
-      <section className="diagnostic-evolution-plane" aria-label={t("diagnosticEvolution")}>
-        <div className="diagnostic-plane-head">
-          <span><Sparkles size={15} />{t("diagnosticEvolution")}</span>
-          <em>{t("diagnosticEvolutionCopy")}</em>
-        </div>
-        <div className="diagnostic-evolution-list">
-          {viewModel.evolutionRows.map((row) => <EvolutionInsightCard key={row.key} row={row} t={t} />)}
-        </div>
-      </section>
-
       <section className="diagnostic-evidence-strip" aria-label={t("diagnosticEvidenceHealth")}>
         {viewModel.evidenceMetrics.map((metric) => <EvidenceMetricCell key={metric.key} metric={metric} />)}
       </section>
@@ -103,6 +93,16 @@ export function DiagnosticsPanel({ t, snapshot }: { t: Translate; snapshot: Snap
         )}
       </section>
 
+      <section className="diagnostic-evolution-plane" aria-label={t("diagnosticEvolution")}>
+        <div className="diagnostic-plane-head">
+          <span><Sparkles size={15} />{t("diagnosticEvolution")}</span>
+          <em>{t("diagnosticEvolutionCopy")}</em>
+        </div>
+        <div className="diagnostic-evolution-list">
+          {viewModel.evolutionRows.map((row) => <EvolutionInsightCard key={row.key} row={row} t={t} />)}
+        </div>
+      </section>
+
       <section className="diagnostic-chain-plane" aria-label={t("diagnosticEvidenceChain")}>
         <div className="diagnostic-plane-head">
           <span><Link2 size={15} />{t("diagnosticEvidenceChain")}</span>
@@ -119,6 +119,8 @@ export function DiagnosticsPanel({ t, snapshot }: { t: Translate; snapshot: Snap
           ))}
         </div>
       </section>
+
+      <CoverageMatrix t={t} rows={snapshot.capability_matrix ?? []} />
 
       <section className="diagnostic-export-plane" aria-label={t("diagnosticExportBoundary")}>
         <div className="diagnostic-export-title">
@@ -137,7 +139,55 @@ export function DiagnosticsPanel({ t, snapshot }: { t: Translate; snapshot: Snap
   );
 }
 
+function CoverageMatrix({ t, rows }: { t: Translate; rows: NonNullable<Snapshot["capability_matrix"]> }) {
+  if (!rows.length) return null;
+  const familyLabel = (key?: string) => {
+    switch (key) {
+      case "presence_resources": return `${t("process")} / ${t("resources")}`;
+      case "sessions_roles": return `${t("sessions")} / ${t("role")}`;
+      case "recent_movement": return t("metricFresh");
+      case "tokens_cost": return t("tokenUsage");
+      case "quota_windows": return t("quotaWindows");
+      case "workspace_context": return t("workspaceContext");
+      case "consented_telemetry": return t("consentedTelemetry");
+      default: return key || t("unknown");
+    }
+  };
+  const stateLabel = (state?: string) => {
+    if (state === "observed" || state === "supported") return t("available");
+    if (state === "partial") return t("partial");
+    if (state === "not_configured") return t("notConfigured");
+    return t("unavailable");
+  };
+  const families = rows[0]?.signal_families ?? [];
+  return (
+    <section className="diagnostic-coverage-plane" aria-label={t("coverageMatrix")}>
+      <div className="diagnostic-plane-head">
+        <span><Database size={15} />{t("coverageMatrix")}</span>
+        <em>{t("coverageMatrixDetail")}</em>
+      </div>
+      <div className="diagnostic-coverage-table">
+        <div className="diagnostic-coverage-row diagnostic-coverage-header" aria-hidden="true">
+          <b>{t("codingAgents")}</b>
+          {families.map((family) => <b key={family.key}>{familyLabel(family.key)}</b>)}
+        </div>
+        {rows.map((row) => (
+          <div className="diagnostic-coverage-row" key={row.agent}>
+            <strong>{row.agent || t("unknown")}</strong>
+            {(row.signal_families ?? []).map((family) => (
+              <span className={`coverage-state state-${family.state || "unavailable"}`} key={`${row.agent}-${family.key}`} title={(family.evidence ?? []).join(" · ")}>
+                {stateLabel(family.state)}
+              </span>
+            ))}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function EvolutionInsightCard({ row, t }: { row: EvolutionRow; t: Translate }) {
+  const hasTrace = row.relatedSignals.length > 0 || row.relatedHiddenCount > 0;
   return (
     <article className={`diagnostic-evolution-card tone-${row.tone}`}>
       <div className="diagnostic-evolution-head">
@@ -150,6 +200,20 @@ function EvolutionInsightCard({ row, t }: { row: EvolutionRow; t: Translate }) {
         <div className="diagnostic-evolution-field"><b>{t("diagnosticEvolutionExperiment")}</b><span>{row.experiment}</span></div>
         <div className="diagnostic-evolution-field"><b>{t("diagnosticEvolutionVerification")}</b><span>{row.verification}</span></div>
       </div>
+      {/* The trace line answers "where does this number come from" with the
+          priority rows built on the same metric. An insight whose rows are all
+          below the table cap says so, rather than pointing at nothing. */}
+      {hasTrace ? (
+        <div className="diagnostic-evolution-trace">
+          <b>{t("diagnosticEvolutionTracedTo")}</b>
+          <span>
+            {row.relatedSignals.join(" · ")}
+            {row.relatedHiddenCount > 0
+              ? `${row.relatedSignals.length ? " · " : ""}${t("diagnosticEvolutionTracedHidden").replace("{count}", String(row.relatedHiddenCount))}`
+              : ""}
+          </span>
+        </div>
+      ) : null}
       <small>{t("metricSemantics")}: {row.metric}</small>
     </article>
   );

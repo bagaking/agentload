@@ -70,6 +70,41 @@ body[data-view="popover"] .diagnostics-shell {
     color-mix(in srgb, var(--diag-plane) 94%, transparent);
 }
 
+.diagnostic-coverage-plane {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--diag-line);
+  border-radius: 14px;
+  background: var(--diag-plane);
+}
+
+.diagnostic-coverage-table {
+  overflow-x: auto;
+  border: 1px solid var(--diag-line);
+  border-radius: 10px;
+}
+
+.diagnostic-coverage-row {
+  display: grid;
+  grid-template-columns: minmax(76px, 1.2fr) repeat(7, minmax(78px, 1fr));
+  min-width: 640px;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--diag-line);
+  font-size: 10px;
+}
+
+.diagnostic-coverage-row:first-child { border-top: 0; }
+.diagnostic-coverage-header { color: var(--text-muted); font-size: 9px; }
+.diagnostic-coverage-row strong { color: var(--fg); }
+.coverage-state { display: inline-flex; justify-content: center; padding: 3px 4px; border-radius: 5px; color: var(--diag-muted); background: var(--diag-plane-soft); white-space: nowrap; }
+.coverage-state.state-supported { color: var(--diag-ok); background: color-mix(in srgb, var(--diag-ok) 12%, transparent); }
+.coverage-state.state-partial { color: var(--diag-watch); background: color-mix(in srgb, var(--diag-watch) 12%, transparent); }
+.coverage-state.state-not_configured { color: var(--diag-muted); }
+.coverage-state.state-unavailable { color: var(--diag-muted); }
+
 .diagnostic-evolution-plane {
   padding: 9px;
 }
@@ -119,16 +154,16 @@ body[data-view="popover"] .diagnostics-shell {
 
 .diagnostic-evolution-field {
   display: grid;
-  grid-template-columns: 68px minmax(0, 1fr);
+  grid-template-columns: 74px minmax(0, 1fr);
   gap: 6px;
   color: var(--console-text-soft);
-  font-size: 8.7px;
-  line-height: 1.25;
+  font-size: 10px;
+  line-height: 1.3;
 }
 
 .diagnostic-evolution-field b {
   color: var(--tone-color, var(--diag-muted));
-  font-size: 8px;
+  font-size: 10px;
   text-transform: uppercase;
 }
 
@@ -136,10 +171,36 @@ body[data-view="popover"] .diagnostics-shell {
   min-width: 0;
 }
 
+/* The trace line ties the card's numbers back to the priority rows built on
+   the same metric. It reads as an annotation under the stage fields, not as a
+   fifth field, so it uses a hairline rather than the field grid. */
+.diagnostic-evolution-trace {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  align-items: baseline;
+  margin-top: 2px;
+  padding-top: 5px;
+  border-top: 1px solid color-mix(in srgb, var(--tone-color, var(--diag-muted)) 24%, transparent);
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.diagnostic-evolution-trace b {
+  color: var(--tone-color, var(--diag-muted));
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.diagnostic-evolution-trace span {
+  min-width: 0;
+  color: var(--console-text-soft);
+}
+
 .diagnostic-evolution-card small {
   color: var(--console-text-soft);
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .diagnostic-evidence-strip {

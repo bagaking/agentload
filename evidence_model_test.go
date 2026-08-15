@@ -1800,7 +1800,7 @@ func TestSessionNeedsReviewObservation(t *testing.T) {
 	}{
 		{name: "main active", role: "main", freshness: "active", activeBurst: true, want: false},
 		{name: "main idle", role: "main", freshness: "idle", want: true},
-		{name: "main stale", role: "main", freshness: "stale", want: true},
+		{name: "main stale", role: "main", freshness: "stale", want: false},
 		{name: "main unknown freshness", role: "main", freshness: "unknown", want: false},
 		{name: "subagent active", role: "subagent", freshness: "active", activeBurst: true, want: false},
 		{name: "subagent idle", role: "subagent", freshness: "idle", want: false},
@@ -1814,6 +1814,27 @@ func TestSessionNeedsReviewObservation(t *testing.T) {
 			observation := liveSessionObservation{Freshness: tc.freshness, ActiveBurst: tc.activeBurst}
 			if got := sessionNeedsReviewObservation(tc.role, observation); got != tc.want {
 				t.Fatalf("sessionNeedsReviewObservation(%q, %q) = %v, want %v", tc.role, tc.freshness, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAttentionStateForSessionUsesOnlyObservedEvidence(t *testing.T) {
+	cases := []struct {
+		name, role, freshness, wantState string
+		missing, active                  bool
+	}{
+		{name: "working", role: "main", freshness: "active", active: true, wantState: attentionStateWorking},
+		{name: "needs review", role: "main", freshness: "idle", wantState: attentionStateNeedsReview},
+		{name: "stale is unknown", role: "main", freshness: "stale", wantState: attentionStateUnknown},
+		{name: "missing timing", role: "main", missing: true, wantState: attentionStateUnknown},
+		{name: "unknown role", role: "unknown", freshness: "active", wantState: attentionStateUnknown},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			state, reason := attentionStateForSession(tc.role, liveSessionObservation{Freshness: tc.freshness, ActiveBurst: tc.active, MissingTranscript: tc.missing})
+			if state != tc.wantState || reason == "" {
+				t.Fatalf("attentionStateForSession(%q, %+v) = %q, %q", tc.role, tc, state, reason)
 			}
 		})
 	}
@@ -1855,7 +1876,7 @@ func TestProjectLiveSessionsComputesNeedsReview(t *testing.T) {
 	want := map[string]bool{
 		"main-active":    false,
 		"main-idle":      true,
-		"main-stale":     true,
+		"main-stale":     false,
 		"main-no-timing": false,
 		"sub-stale":      false,
 	}

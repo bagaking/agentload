@@ -38,7 +38,7 @@ meta:
 - **矩阵门禁**——vendor 与信号只按其证据诚实支持的档位出货；解析异常自动降档而非输出错数；矩阵单元格由 adapter 代码生成，永不手编。
 - **Sprint 纪律**——量化验收未过不得进入下一 sprint；回归或 >30% 偏差开 FIX/REFACTOR mini-sprint 并更新本文件，不许静默漂移。
 
-## 2. 执行状态（更新于 2026-09-21）
+## 2. 执行状态（更新于 2026-09-22）
 
 **今日已完成**：
 
@@ -164,6 +164,19 @@ meta:
 - **变异验证**：`observer.go` 一处改回裸 `"stale"` → KR2 守卫变红并打出行号；改回 → 绿。
 - **明确未做**：`agents`/`core`/`app` 三包未拆；**CI 尚未建立**，四道门仍靠人手跑，KR2 说的"进 CI"只做到"进测试"。
 
+**2026-09-21 完成**（诊断页信息流优化，用户「我觉得现在诊断页面比之前方向大概正确了一些，但是有意义的洞察以及这些洞察与具体数据之间的关联，好像还看不太出来」+「感觉这一页的信息流、数据证据，以及它想呈现的信息布局，都需要再优化优化」）：
+
+- **用户两句感受都能量化复现**（装机版 warm，`parsed_files=157`）。洞察与数据「看不出关联」的机制是：`evolution` 三张卡的头号数字（111 stale / 32 projects）**在这一页的任何证据条格子和任何信号行里都不出现**，而且整页唯一可点元素是导出按钮——不是关联弱，是**根本没有通路**。
+- **信号表 13 条里有 2 条是另 2 条的重复**，根因是两个 builder 各自从同一计数器派生一行：`observer.go:2151 unmatched_processes` vs `diagnostics.go:191 unmapped_processes`、`observer.go:2190 low_confidence_mapping` vs `diagnostics.go:202 low_confidence_sessions`，页面直接拼接不去重。**6 行上限下，每条重复都挤掉一条真发现**——被挤掉的正是 `deferred_transcript_scan 2842` 与 `evidence_out_of_horizon 9878` 这两条证据完整性读数。
+- **去重取 gap 舍 anomaly**：gap 行带 Detail、带刻意设定的 severity、带具名 source；risk 行只有 Kind + Evidence。**条件是对应 gap 确实存在**（`TestGapWithoutItsAnomalyKeepsTheAnomaly` 守住反向），否则该事实会一条都不剩。实测 13 → 9 条，重复归零，4 条 warn 全部进表。
+- **洞察接上数据用的是已有的 `metric_key`**，不新增字段：后端早就在 insight 和 signal 两侧都写了这个 join key，前端从来没渲染过。新增 trace 行「证据来源 → <同 metric 的信号标题>」，并对落在 6 行上限之外的补「另有 {count} 条在表格显示上限之外」——**指向不到的洞察要说出来，而不是指向空气**。
+- **顺序按规范 151 行「Put observed evidence quality first」调正**：evolution 从第一屏降到信号表之后。原先第一屏是三张同框卡 × 4 段散文 ≈ 889 字符纯文字，正是规范同一行禁止的 "AI report / card pile" 形态。
+- **修掉一处用零当证据**：`diagnostics.go:46` 触发条件是 `Overlap>0 || Spread>1`，证据文案却无条件拼两个数，实测出现 "**0** overlap suspicions across 32 projects"——用零去支撑它恰恰不支撑的假设。改为只陈述真正触发的那一半，新增 spread/overlap 两套三语文案。
+- **顺手把 evolution 卡抬到字号下限**：8.7px/8px → 10px（同 R2-07 的下限口径，该卡是全页最小字号）。
+- **两道新门均变异验证**：还原去重 → 如期打印 `anomaly "unmatched_processes" duplicates an evidence gap`；还原证据拼接 → 如期打印 `spread-only evidence still cites a zero count: "0 overlap suspicions across 32 projects"`。
+- **`TestSnapshotMatchesGolden` 如期变红并已重生成**，diff **只有**被删掉的那条重复 anomaly（10 行），其余字节未变——证明去重没有波及其他序列化面。
+- **验收**：四门全绿（`go vet`、`go test ./...` `ok 12.336s`、`npm --prefix ui run build`、`node scripts/validate_locales.js`）。**渲染层实测**（sucrase 跑真实 `buildDiagnosticViewModel` × 活体 `/api/snapshot` × 三语）：三张卡 trace 行均渲染、零裸 key 泄漏；打补丁后的实例实测 `hidden=0`，每条洞察都指向表内可见行。
+
 **2026-09-21 完成**（mini-sprint `M02_S05.007.FIX`，用户「诊断页面有按之前说的进行调整吗?」+「最大并发推进下 1」）：
 
 - **上一轮的验收记录被自查推翻了一半（D-029）**：`M02_S05.006.RSI` 写的「诊断面 `evidence_walk_cost 319ms ok`」是真的，但我抓的是 `/api/snapshot` 与导出 JSON——**证明的是序列化层，声称的是渲染层**。前端 `buildEvidenceMetrics` 按字面量挑三条 baseline，后端产出五条，`evidence_walk_cost` 与 `low_confidence_sessions` 每次都算、都序列化、**然后被视图模型静默丢弃**。页面上从来没有过。
@@ -177,10 +190,11 @@ meta:
 
 **当前活跃**：
 
-- **M01 地基**（本轮架构与熵审查修复已落地，发布门已复跑）。
-- **当前 sprint：`M01_S02.go_package_split_vendor_adapter.md`**——类型树与两道门已落地；余下 `agents`/`core`/`app` 三包。
+- **M01 地基已按实测边界收口**：`internal/snapshot`、registry/semantic guards、golden gate、可重复质量门脚本和 UI fast-path chunks 已落地；三包拆分没有被强行制造，原因与退出边界记录在 `M01_S02`。
+- **当前主线：`M03_S01` attention vertical slice**——后端已输出 `working` / `needs_review` / `unknown` 三态，popover 已有 needs-you evidence strip；下一步是用真实 watcher 事件验证延迟、误报和 CPU。
 - **`M02_S05.007.FIX` 已收口**：五门全绿 + 装机渲染层实测（两种 scan_cost 状态 × 三语），最终装机 `2026.09.21.010319` 已核对 bundle hash 与 HEAD 一致。
-- M01 后续排队：M01_S01 收尾（基线 tag + 冻结声明，仓库目前零 tag）、M01_S03（main.tsx 拆分 + popover 快路径）。
+- M01 已完成本轮收口；`M01_S03` 的重型模块 lazy chunks 与 attention strip 已进入当前构建，原生首绘实测仍作为独立性能验证项保留。
+- **2026-09-22 本轮收口**：需求池 review 的 1/2/3 已落地。M01 的可重复质量门脚本为 `scripts/quality_gate.sh`；M03 attention slice 已进入 snapshot 与 popover；M02_S01 能力矩阵已覆盖 7 个 signal family、4 个状态，并由 snapshot、`/api/capabilities`、诊断面和生成文档共用 registry projection。冷启动证据扫描不再把不完整空快照伪装成“暂无采样”，前端会显示“正在采集本地采样”并自动重试。当前安装版本为 `2026.09.22.020409`；真实 watcher 延迟/误报/CPU 与 native popover 首绘仍是后续实测项。
 
 **交接**：2026-09-20 会话的收尾盘点见 [`HANDOFF_2026-09-20.md`](HANDOFF_2026-09-20.md)（未完成项按"接手方最可能先碰"排序 + 踩过的坑 + 安全红线）。接手方读完并更新本节后即可删除该文件。
 
@@ -188,6 +202,7 @@ meta:
 
 - PLAN.md §8 未决问题中标〔用户决策〕的项（Q2/Q6/Q9/Q13）向用户提出。**17 个未决问题目前一个都没关闭**，表格「处理」列写的是计划去向不是结论。
 - 建立**吸收巡检仪式**：每个 milestone 出口，审计 Claude Code / Codex / gemini 第一方新出了什么，重新校验受影响 sprint（源于 critic，见 OPINIONS_001 D-006）。
+- 已完成一次需求池 review：见 [`REVIEW_001.requirement_pool_and_delivery_method.md`](REVIEW_001.requirement_pool_and_delivery_method.md)。结论是先收口 M01 地基，再做 `M03_S01` 的三状态 needs-you vertical slice；M02 vendor/诊断/历史相关条目按已吸收能力改写为回归门或 conformance，而不是继续按“从零开发”排期。
 
 ## 3. 文档目录
 
@@ -197,6 +212,7 @@ meta:
 | `CURRENT.md` | 本文件：标准与原则、执行状态、文档目录、质检记录 |
 | `OPINIONS_001.strategy_decisions.md` | 战略决策记录（来源与语境版本齐备） |
 | `HANDOFF_2026-09-20.md` | **一次性**交接单：未完成项排序、踩过的坑、安全红线、常用命令。接手方消化后删除 |
+| `REVIEW_001.requirement_pool_and_delivery_method.md` | 需求池 review、idea、证据合同与推进顺序 |
 | `DOCREF_001.competitor_landscape_ai_agent_monitors.md` | 直接竞品格局调研 |
 | `DOCREF_002.agent_observability_reference.md` | 相邻 agent 可观测性参照（OTel GenAI、hooks/OTLP） |
 | `DOCREF_003.macos_menubar_ux_bar.md` | 菜单栏产品体验及格线（delight table-stakes 清单） |
@@ -267,6 +283,8 @@ meta:
 | 2026-09-20 | mini-sprint `M02_S05.006.RSI`：删 agent DB 缓存旁路 + 删 4 个 test-only wrapper + Antigravity 接为 timeline 档 + 扫描开销诊断面（计划文件批次 2） | 五门全绿（`go vet ./...`、`go test ./...` `ok agentload 11.174s`、`npm --prefix ui run build`、`node scripts/validate_locales.js` 474 keys × 3 locales、`./scripts/package_macos_app.sh`）。**两处变异测试均如期变红**：去掉 `scanCostValue` 的 `!WalkMeasured` 守卫实测报出 `Value:0ms`；删掉 `index.lastWalk = index.lastStats` 冷 pass 即失去测量。**装机实测**（2026.09.20.153726）：冷启动 `walk_measured=true elapsed_ms=319 visited=28555 pruned=936 aged=9100`，随后三次 pass **`walk_fresh=False` 但 `walk_measured=True` 且数值稳定**；诊断面 `evidence_out_of_horizon \| 9100 files`、`evidence_walk_cost 319ms ok`。缓存旁路删除后 agent DB 解析 **410ms/次 → 首次 400ms 后 ~9ms（45×）**。Antigravity 102 文件 → 22087 事件 → **0 条 trace 声称 token**。空闲 CPU **0.0%** | **计划偏差一处（D-022）**：计划头条「强制重解析计数器」被同批次第 1 项消灭，再上会**结构性恒为零**，故放弃而非延后。**装机后才暴露的第二个陷阱（D-023）**：只报「本次 pass」的走查开销在稳态下每次都是 false（索引约每进程只 reconcile 一次），诚实但无用——改为保留 `lastWalk` + `MeasuredAt`，`WalkMeasured`/`WalkFresh` 分开表达。**一次误判**：冷启动 `parsed_files=0` 被我当成自己引入的 hang 并开始怀疑 Antigravity 谓词，实测否掉（gemini 根 72ms/23 文件，完整快照 34s 正常）——真因是**短超时反复轮询，每次轮询自带 context，超时即取消**。教训见 OPINIONS **D-022**（恒为零的指标不叫诚实）与 **D-023**（只报本次等于几乎不报）|
 | 2026-09-20 | `M02_S01` 部分落地：能力矩阵 code→doc 单端同源（触发事件是同日 `M02_S05.006.RSI` 造成的一次真实文档漂移） | 五门全绿（`go vet ./...`、`go test ./...` `ok agentload 8.767s`、`npm --prefix ui run build`、`node scripts/validate_locales.js`、`./scripts/package_macos_app.sh` 产出 `2026.09.20.174628`）。装机实测 `parsed_files=84`、`scan_cost elapsed_ms=512 visited=28223 pruned=942 aged=9202`、诊断面两条信号在位、空闲 CPU 0.0%。**变异测试两类均如期变红**：删掉 gemini 的 antigravity 证据声明 → `TestCapabilityMatrixDocMatchesTheRegistry` 与 `TestCapabilityMatrixDeclaresEveryEvidenceRootTheParserReads` 同时失败；给 hermes 注入它并不具备的 Usage 槽 → doc 判定陈旧并打印 `\| hermes \| … \| supported \|`。生成表比旧手写表**多出** `Evidence discovery` 列、每个 adapter 的磁盘路径形状、以及旧表里根本不存在的 **antigravity 根** | **漂移是实测到的而非假设的**：Antigravity 接入后手写表毫无反应，因为全仓库没有任何东西比对代码与文档。**nil 槽一律渲染 `unsupported`**，绝不软化也绝不从兄弟槽推断。`spliceCapabilityMatrix` 在标记缺失时**报错而非猜测**，避免把手写散文整体覆盖。**明确未做**：7 信号族无对应代码结构（只有 4 能力槽）、4 态 cell 未实现（槽本身二元，造 partial 即虚构）、`/api` 与 UI 面板未做——KR1 只满足 docs 一端，KR2/KR3 未触及 |
 | 2026-09-21 | mini-sprint `M02_S05.007.FIX`：诊断页接上算完即丢的两条 baseline + 两道渲染门（用户「诊断页面有按之前说的进行调整吗?」） | 四门全绿（`go vet ./...`、`go test ./...` `ok agentload 10.2s`、`npm --prefix ui run build`、`node scripts/validate_locales.js` 484 keys × 3 locales）。**视图模型直接执行验证**（sucrase 跑真实 `buildDiagnosticViewModel`，非读码推断）：measured-but-stale 下六格为 `2/5 pct=40` / `3/4 pct=75` / `1/5 pct=20` / `2 pct=null` / `319ms pct=null last measured …` / `12,480 pct=null`；never-walked 下走查两格为 `no data pct=null`，且三个既有格子的 pct 由 0 改为 null（不再画 2% 假条）。**两道新门均如期变红**：`byKey.get("evidence_walk_cost")` 改错名 → 点名该 baseline 未被渲染；删掉 en 的 `diagnosticSignalProcessObservationIncompleteTitle` → 点名缺失 key 与 locale | **上一轮验收被自查推翻（D-029）**：`M02_S05.006.RSI` 声称「诊断面 319ms ok」，实测那是 `/api/snapshot` 层，页面层从未渲染过——**验证层级必须与声称层级一致**。**门禁形状是「两个列表的比对」而非「更仔细地看」**，且两道门都不维护清单（正则扫 kind、按 `^  xx: {` 扫 locale）。locale 门**首跑即抓真缺口**：`process_observation_incomplete` 三语全缺。**附带修掉类型层的虚构**：`baselinePercent` 用返回 0 表示「算不出」，配 `max(2%, ...)` 会在 "n/a" 旁画条——改 `number \| null`。**装机实测改在渲染层做**（`renderToStaticMarkup` × 活体 `/api/snapshot` × 三语 × 两种 scan_cost 状态；实测版本 `2026.09.21.005326`，修正后最终装机 `2026.09.21.010319`）：冷启动六格含两条 `no data`，走查完成后 `399ms / last measured 12:53:59 AM / 28,783 entries visited · 948 directories pruned`，零裸 key 泄漏，`hiddenSignalCount` 披露路径被真实的 11–13 条信号走到。**这一步又抓到两条同类虚构**：`coverageDetail` 的 `pct <= 0` 把已测到的 0% 报成 "n/a"（D-029 附带四的镜像），以及 CSS 的 `max(2%, ...)` 下限让实测 0% 画出 2% 的条——`number \| null` 解决了「没有分母」，没解决「分母有、分子是零」 |
+| 2026-09-21 | 诊断页信息流优化：信号表跨 builder 去重 + 洞察经 `metric_key` 接上证据 + 顺序按规范调正（用户「有意义的洞察以及这些洞察与具体数据之间的关联，好像还看不太出来」「信息流、数据证据、信息布局都需要再优化」） | 四门全绿（`go vet ./...`、`go test ./...` `ok agentload 12.336s`、`npm --prefix ui run build`、`node scripts/validate_locales.js` 515 keys × 3 locales）。**活体前后对比**（装机版 warm，`parsed_files=157`；打补丁实例 :38122）：信号 **13 → 9**，重复归零，4 条 warn 全部进 6 行表——去重前被挤出表外的是 `deferred_transcript_scan 2842` 与 `evidence_out_of_horizon 9878`。**两道新门均如期变红**：还原去重 → `anomaly "unmatched_processes" duplicates an evidence gap`；还原证据拼接 → `spread-only evidence still cites a zero count: "0 overlap suspicions across 32 projects"`。`TestSnapshotMatchesGolden` 如期变红并重生成，**diff 只有被删的那条重复 anomaly（10 行）**，其余字节未变。**渲染层实测**（sucrase 跑真实 `buildDiagnosticViewModel` × 活体 `/api/snapshot` × 三语）：三张卡 trace 行均渲染、零裸 key 泄漏、`hidden=0` | **重复在有上限的表里等于删除（D-030）**：两个互不知情的 builder 从同一计数器各派生一行，单看都对，6 行上限把「多说一遍」变成「少说一件」，被删的那件不留痕。去重取 gap 舍 risk（gap 有 Detail/severity/source），且**条件化于 gap 确实存在**（`TestGapWithoutItsAnomalyKeepsTheAnomaly` 守反向）。**「洞察和数据对不上」是通路不存在，不是文案问题**：evolution 卡的 111 stale / 32 projects 在本页任何证据格与任何信号行里都不出现，整页唯一可点元素是导出按钮——而后端两侧早就都写了 `metric_key`，**修复未新增任何后端结构**。落在上限之外的相关信号显式计数（「另有 {count} 条」），否则「没有证据」与「被截断」长得一样。**第三种零失真**：`A>0 \|\| B>1` 触发、文案无条件拼两个数，实测页面出现 "0 overlap suspicions across 32 projects"——**把零当证据引用**。**顺序是可验收项**：规范 151 行的 "evidence quality first / not a card pile" 被 889 字符散文开场违反，不能因为「每张卡内容都对」就算过 |
+| 2026-09-22 | 需求池 review 1/2/3：质量门脚本、needs-you 三态垂直切片、七族能力矩阵三端同源；冷启动空快照改为 pending + 自动重试 | `./scripts/quality_gate.sh` 全绿（Go vet/test、UI build、locale）；能力矩阵 API 测试、golden snapshot、attention 状态测试全绿；`./build_macos_app.sh` 产出并安装 `2026.09.22.020409`，`/api/capabilities` 实测 7 families × 10 rows，snapshot/UI 共用同一 registry projection；实际页面验证吞吐图、MAX/P95/AVG、项目分解均可见 | M01_S02 收口为实测边界，未强行制造 agents/core/app 三包；native 首绘、真实 watcher 延迟/误报/CPU、后续动作与通知仍待独立验收 |
 
 **质检步骤库（随 sprint 验收累积）**：
 
@@ -315,3 +333,8 @@ meta:
   8. **`x <= 0` 这种把「零」和「无」写进同一个条件的判断，要逐个复核**。已测到的 0% 被 `pct <= 0` 判成 "unavailable"，是「用算不出表示零」——与「用零表示算不出」同样失真，而且更难发现（页面上看起来只是谦虚）。
   9. **在类型层分开的两种零，会被表现层的下限值重新合并**。`percent: number | null` 挡住了「没有分母」，`max(2%, ...)` 又把「分母有、分子是零」画成细条。改类型时要顺着看一遍消费它的 CSS/格式化。
   10. **实测结论要绑定到产生它的那个 bundle**。`go:embed ui/dist` 意味着在跑的进程永远不会自己拾取新产物，而装机后再改代码是常态（本轮实测本身就带出两条修正）。收口前 `curl 127.0.0.1:8642/ | grep assets/index-` 与 `ui/dist/index.html` 逐一核对 hash——**不核对就等于拿旧二进制的观测去为新代码背书**。
+  11. **两个来源汇入同一个截断列表时，先量重复率再谈排版**（D-030）。重复在无上限的列表里只是啰嗦，在有 N 行上限的列表里是**删除**——每条重复精确挤掉一条真发现，而且被挤掉的那条不留痕。核验手段：`curl /api/snapshot | jq '[.diagnostics.anomaly_signals[],.diagnostics.evidence_gaps[]] | group_by(.metric_key) | map(select(length>1))'`。
+  12. **去重必须条件化于对方确实存在，并配一个反向测试**。舍弃 risk 行是因为 gap 行携带 Detail/severity/source；但若 gap 侧某天改了触发条件，无条件丢弃会让这个事实**一条都不剩**。`TestGapWithoutItsAnomalyKeepsTheAnomaly` 守的就是这个方向。
+  13. **「洞察和数据对不上」先查已有 join key 有没有被渲染，再考虑加字段**。后端在 insight 与 signal 两侧早就都写了 `metric_key`，前端从没用过——修复不需要任何新后端结构。同时**指不到的部分要说出来**（落在表格上限之外的相关信号要显式计数），否则「没有证据」和「证据被截断」在页面上长得一样。
+  14. **或条件触发（`A>0 || B>1`）的证据文案，必须按实际触发的那一支分别成文**。实测出现过 "0 overlap suspicions across 32 projects"——**把零当成证据引用**，是继「用零表示算不出」「用算不出表示零」之后的第三种形态。
+  15. **设计规范里写了顺序的地方，顺序本身是可验收项**。`docs/agent-load-ui-design-system.md:151` 写了 "Put observed evidence quality first / not an AI report, not a card pile"；诊断页原第一屏是 889 字符散文才见到第一个数字。**不能因为「每张卡内容都对」就认为过了**。
