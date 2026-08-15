@@ -685,7 +685,7 @@ func TestTrajectorySearchCanonicalCorruptionIsPreserved(t *testing.T) {
 
 func TestTrajectorySearchRejectsUnsynchronizedAuthorizationSnapshot(t *testing.T) {
 	s, _ := fixture(t, request("private needle"))
-	first := searchTestQuery(t, s, snapshot.TrajectorySelector{Text: "needle"})
+	first := searchTestPreparedQuery(t, s, snapshot.TrajectorySelector{Text: "needle"})
 	if len(first.Sessions) != 1 {
 		t.Fatal(first)
 	}
