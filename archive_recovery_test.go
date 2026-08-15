@@ -17,6 +17,62 @@ type archiveCountingDecoder struct {
 	found *atomic.Bool
 }
 
+func TestTrajectoryArchiveReconcilesMissingCachedSource(t *testing.T) {
+	for _, change := range []string{"removed", "moved"} {
+		t.Run(change, func(t *testing.T) {
+			app, _, _ := trajectoryTestApp(t)
+			initial := app.archiveSources(context.Background())
+			if !initial.CatalogComplete || len(initial.Sources) != 1 {
+				t.Fatal("initial archive discovery", initial)
+			}
+			path := initial.Sources[0].Path
+			body, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sibling := filepath.Join(filepath.Dir(path), "rollout-retained.jsonl")
+			if err := os.WriteFile(sibling, body, 0600); err != nil {
+				t.Fatal(err)
+			}
+			app.observer.evidenceIndex.requestReconcile()
+			baseline := app.archiveSources(context.Background())
+			if !baseline.CatalogComplete || len(baseline.Sources) != 2 {
+				t.Fatal("two-source archive discovery", baseline)
+			}
+			moved := filepath.Join(filepath.Dir(path), "rollout-moved.jsonl")
+			if change == "moved" {
+				err = os.Rename(path, moved)
+			} else {
+				err = os.Remove(path)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			// No watcher runs in this fixture. A failed stat cannot prove that
+			// discovery is complete, but must schedule authoritative discovery.
+			gap := app.archiveSources(context.Background())
+			if gap.CatalogComplete || gap.Coverage.Complete || len(gap.Sources) != 1 || gap.Sources[0].Path != sibling {
+				t.Fatal("missing cached source did not retain the discovery gap", gap)
+			}
+			reconciled := app.archiveSources(context.Background())
+			wantCount := 1
+			if change == "moved" {
+				wantCount = 2
+			}
+			if !reconciled.CatalogComplete || !reconciled.Coverage.Complete || len(reconciled.Sources) != wantCount {
+				t.Fatal("archive remained stuck on an absent cached path", reconciled)
+			}
+			found := map[string]bool{}
+			for _, source := range reconciled.Sources {
+				found[source.Path] = true
+			}
+			if found[path] || !found[sibling] || (change == "moved" && !found[moved]) {
+				t.Fatal("reconciled archive did not reflect the actual directory", found)
+			}
+		})
+	}
+}
+
 func TestTrajectoryArchiveRootsRejectRedirectedFiles(t *testing.T) {
 	for _, redirect := range []string{"leaf", "parent"} {
 		t.Run(redirect, func(t *testing.T) {

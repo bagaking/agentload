@@ -47,6 +47,7 @@ func (a *trayApp) archiveSources(ctx context.Context) trajectory.SourceSet {
 		}
 		allowed[agent] = roots
 	}
+	reconcileNeeded := false
 	for _, entry := range idx.Files {
 		if ctx.Err() != nil {
 			set.CatalogComplete = false
@@ -72,6 +73,7 @@ func (a *trayApp) archiveSources(ctx context.Context) trajectory.SourceSet {
 		path := filepath.Join(parent, filepath.Base(file.Path))
 		info, err := os.Lstat(path)
 		if err != nil {
+			reconcileNeeded = reconcileNeeded || os.IsNotExist(err)
 			set.CatalogComplete = false
 			set.Coverage.Complete = false
 			set.Coverage.Gaps = append(set.Coverage.Gaps, "source_unreadable:"+file.Tool)
@@ -81,6 +83,7 @@ func (a *trayApp) archiveSources(ctx context.Context) trajectory.SourceSet {
 			path = canonicalEvidencePath(path)
 			info, err = os.Stat(path)
 			if err != nil {
+				reconcileNeeded = reconcileNeeded || os.IsNotExist(err)
 				set.CatalogComplete = false
 				set.Coverage.Complete = false
 				set.Coverage.Gaps = append(set.Coverage.Gaps, "source_unreadable:"+file.Tool)
@@ -108,6 +111,12 @@ func (a *trayApp) archiveSources(ctx context.Context) trajectory.SourceSet {
 			native = filepath.Base(filepath.Dir(file.Path))
 		}
 		set.Sources = append(set.Sources, trajectory.Source{Agent: file.Tool, Path: path, NativeID: native, Decoder: adapter.Capabilities.Trajectory, Info: info})
+	}
+	if reconcileNeeded {
+		// Only a complete adapter-owned discovery can establish absence.
+		// Retain this call's gap and refresh the stale catalog on the next call,
+		// including during offline maintenance where no watcher is running.
+		a.observer.evidenceIndex.requestReconcile()
 	}
 	return set
 }
