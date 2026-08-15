@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"context"
 	"fmt"
 	"os"
@@ -159,7 +160,7 @@ func (index *transcriptEvidenceIndex) installWatcher(construct func([]string) ev
 	var watcher evidenceWatcher
 	constructed := false
 	// A platform watcher constructor is an external boundary. Keep a bad
-	// constructor from escaping through Snapshot, while preserving the enabled
+	// constructor from escaping through snapshot.Snapshot, while preserving the enabled
 	// state so the next snapshot can retry construction.
 	runBackgroundStep("transcript evidence watcher start", func() {
 		watcher = factory(watchPaths)
@@ -277,7 +278,7 @@ func (index *transcriptEvidenceIndex) stopIndex() {
 	}
 }
 
-func (index *transcriptEvidenceIndex) snapshot(ctx context.Context, cutoff time.Time, priority []TranscriptFile) transcriptEvidenceSnapshot {
+func (index *transcriptEvidenceIndex) snapshot(ctx context.Context, cutoff time.Time, priority []snapshot.TranscriptFile) transcriptEvidenceSnapshot {
 	if index == nil {
 		return transcriptEvidenceSnapshot{Errors: []string{"transcript evidence index is unavailable"}}
 	}
@@ -345,12 +346,12 @@ func (index *transcriptEvidenceIndex) snapshot(ctx context.Context, cutoff time.
 		break
 	}
 
-	snapshot := index.currentSnapshot(cutoff, priority, reconciled)
+	snap := index.currentSnapshot(cutoff, priority, reconciled)
 	if reportGap {
-		snapshot.Complete = false
-		snapshot.Errors = append(snapshot.Errors, "transcript evidence index recovered after incomplete coverage")
+		snap.Complete = false
+		snap.Errors = append(snap.Errors, "transcript evidence index recovered after incomplete coverage")
 	}
-	return snapshot
+	return snap
 }
 
 // reconcileLocked runs one full reconciliation and commits it, reporting whether
@@ -436,7 +437,7 @@ func (index *transcriptEvidenceIndex) releaseReconcileFlight(flight chan struct{
 	close(flight)
 }
 
-func (index *transcriptEvidenceIndex) currentSnapshot(cutoff time.Time, priority []TranscriptFile, reconciled bool) transcriptEvidenceSnapshot {
+func (index *transcriptEvidenceIndex) currentSnapshot(cutoff time.Time, priority []snapshot.TranscriptFile, reconciled bool) transcriptEvidenceSnapshot {
 	priorityFiles := make(map[string]discoveredTranscriptFile, len(priority))
 	for _, file := range priority {
 		if !index.adapters.hasTranscript(file.Tool) {

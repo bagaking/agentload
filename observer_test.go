@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"context"
 	"os"
 	"path/filepath"
@@ -96,8 +97,8 @@ func TestObserverSnapshotConfigUsesRefreshIntervalAndDiscoveredRoots(t *testing.
 }
 
 func TestSnapshotNotesDescribeDeferredHistoricalParsing(t *testing.T) {
-	notes := buildSnapshotNotes(Snapshot{
-		TranscriptStats: TranscriptStats{
+	notes := buildSnapshotNotes(snapshot.Snapshot{
+		TranscriptStats: snapshot.TranscriptStats{
 			HistoricalScanDeferred: true,
 		},
 	}, nil, nil)
@@ -115,8 +116,8 @@ func TestSnapshotNotesDescribeDeferredHistoricalParsing(t *testing.T) {
 
 func TestObserverSnapshotKeepsDetectedToolPIDMetricsWithoutSessions(t *testing.T) {
 	originalDiscover := discoverLiveProcessesFunc
-	discoverLiveProcessesFunc = func(context.Context, *codingAgentRegistry) ([]LiveProcess, []string) {
-		return []LiveProcess{
+	discoverLiveProcessesFunc = func(context.Context, *codingAgentRegistry) ([]snapshot.LiveProcess, []string) {
+		return []snapshot.LiveProcess{
 			{PID: 11, Tool: "opencode", Command: "opencode run"},
 			{PID: 12, Tool: "gemini", Command: "gemini --prompt hello"},
 		}, nil
@@ -149,8 +150,8 @@ func TestObserverSnapshotKeepsDetectedToolPIDMetricsWithoutSessions(t *testing.T
 func TestObserverSnapshotRetainsLastKnownProcessesWhenDiscoveryFails(t *testing.T) {
 	originalDiscover := discoverLiveProcessesFunc
 	defer func() { discoverLiveProcessesFunc = originalDiscover }()
-	processes := []LiveProcess{{PID: 11, Tool: "codex", Command: "codex run"}}
-	discoverLiveProcessesFunc = func(context.Context, *codingAgentRegistry) ([]LiveProcess, []string) {
+	processes := []snapshot.LiveProcess{{PID: 11, Tool: "codex", Command: "codex run"}}
+	discoverLiveProcessesFunc = func(context.Context, *codingAgentRegistry) ([]snapshot.LiveProcess, []string) {
 		return processes, nil
 	}
 	observer := newObserver(Config{IdleGap: 90 * time.Second, MinInterval: 15 * time.Second, Lookback: time.Hour})
@@ -159,7 +160,7 @@ func TestObserverSnapshotRetainsLastKnownProcessesWhenDiscoveryFails(t *testing.
 		t.Fatalf("expected clean initial process sample, got stats=%+v processes=%+v", first.ProcessStats, first.LiveProcesses)
 	}
 
-	discoverLiveProcessesFunc = func(context.Context, *codingAgentRegistry) ([]LiveProcess, []string) {
+	discoverLiveProcessesFunc = func(context.Context, *codingAgentRegistry) ([]snapshot.LiveProcess, []string) {
 		return nil, []string{processDiscoveryFailurePrefix + "signal: killed"}
 	}
 	second := observer.Snapshot(context.Background())
@@ -190,7 +191,7 @@ func TestTranscriptScanSkipsUnchangedFileContent(t *testing.T) {
 		MinInterval: 15 * time.Second,
 		Lookback:    24 * time.Hour,
 	})
-	candidate := TranscriptFile{Tool: "codex", Path: path}
+	candidate := snapshot.TranscriptFile{Tool: "codex", Path: path}
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("stat transcript: %v", err)
@@ -200,7 +201,7 @@ func TestTranscriptScanSkipsUnchangedFileContent(t *testing.T) {
 	var tailReads atomic.Int32
 	installTranscriptParserProbe(t, observer, "codex", &reads, &tailReads, nil, nil)
 
-	first := observer.scanTranscripts([]TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
+	first := observer.scanTranscripts([]snapshot.TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
 	if reads.Load() != 1 {
 		t.Fatalf("expected first scan to parse once, got %d", reads.Load())
 	}
@@ -224,7 +225,7 @@ func TestTranscriptScanSkipsUnchangedFileContent(t *testing.T) {
 		t.Fatalf("restore transcript mtime: %v", err)
 	}
 
-	second := observer.scanTranscripts([]TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
+	second := observer.scanTranscripts([]snapshot.TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
 	if reads.Load() != 1 {
 		t.Fatalf("expected unchanged mtime/size scan to reuse cached parse without rereading content, got %d parses", reads.Load())
 	}
@@ -249,14 +250,14 @@ func TestTranscriptScanUsesAppendParserForAppendOnlyGrowth(t *testing.T) {
 		MinInterval: 15 * time.Second,
 		Lookback:    24 * time.Hour,
 	})
-	candidate := TranscriptFile{Tool: "codex", Path: path}
+	candidate := snapshot.TranscriptFile{Tool: "codex", Path: path}
 
 	var fullReads atomic.Int32
 	var appendReads atomic.Int32
 	var appendOffset atomic.Int64
 	installTranscriptParserProbe(t, observer, "codex", &fullReads, nil, &appendReads, appendOffset.Store)
 
-	first := observer.scanTranscripts([]TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
+	first := observer.scanTranscripts([]snapshot.TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
 	if fullReads.Load() != 1 || appendReads.Load() != 0 {
 		t.Fatalf("expected first scan to use one full parse and no append parse, got full=%d append=%d", fullReads.Load(), appendReads.Load())
 	}
@@ -277,7 +278,7 @@ func TestTranscriptScanUsesAppendParserForAppendOnlyGrowth(t *testing.T) {
 		t.Fatalf("close transcript: %v", err)
 	}
 
-	second := observer.scanTranscripts([]TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
+	second := observer.scanTranscripts([]snapshot.TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
 	if fullReads.Load() != 1 || appendReads.Load() != 1 {
 		t.Fatalf("expected second scan to append parse only, got full=%d append=%d", fullReads.Load(), appendReads.Load())
 	}
@@ -315,13 +316,13 @@ func TestTranscriptScanFallsBackWhenCachedFileEndedWithoutNewline(t *testing.T) 
 		MinInterval: 15 * time.Second,
 		Lookback:    24 * time.Hour,
 	})
-	candidate := TranscriptFile{Tool: "codex", Path: path}
+	candidate := snapshot.TranscriptFile{Tool: "codex", Path: path}
 
 	var fullReads atomic.Int32
 	var appendReads atomic.Int32
 	installTranscriptParserProbe(t, observer, "codex", &fullReads, nil, &appendReads, nil)
 
-	observer.scanTranscripts([]TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
+	observer.scanTranscripts([]snapshot.TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
 	if fullReads.Load() != 1 || appendReads.Load() != 0 {
 		t.Fatalf("expected first scan to use full parse only, got full=%d append=%d", fullReads.Load(), appendReads.Load())
 	}
@@ -329,7 +330,7 @@ func TestTranscriptScanFallsBackWhenCachedFileEndedWithoutNewline(t *testing.T) 
 	if err := os.WriteFile(path, []byte(firstLine+"\n"+`{"timestamp":"2026-06-28T12:05:00Z"}`+"\n"), 0o644); err != nil {
 		t.Fatalf("rewrite grown transcript: %v", err)
 	}
-	observer.scanTranscripts([]TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
+	observer.scanTranscripts([]snapshot.TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
 	if fullReads.Load() != 2 || appendReads.Load() != 0 {
 		t.Fatalf("expected second scan to fall back to full parse, got full=%d append=%d", fullReads.Load(), appendReads.Load())
 	}
@@ -350,17 +351,17 @@ func TestTranscriptScanKeepsCodexLLaneFilesOnFullParse(t *testing.T) {
 		MinInterval: 15 * time.Second,
 		Lookback:    24 * time.Hour,
 	})
-	candidate := TranscriptFile{Tool: "codex", Path: path}
+	candidate := snapshot.TranscriptFile{Tool: "codex", Path: path}
 
 	var fullReads atomic.Int32
 	var appendReads atomic.Int32
 	installTranscriptParserProbe(t, observer, "codex", &fullReads, nil, &appendReads, nil)
 
-	observer.scanTranscripts([]TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
+	observer.scanTranscripts([]snapshot.TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
 	if err := os.WriteFile(path, []byte(`{"thread_id":"lane-1"}`+"\n"+`{"event":"still-running"}`+"\n"), 0o644); err != nil {
 		t.Fatalf("grow lane events: %v", err)
 	}
-	observer.scanTranscripts([]TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
+	observer.scanTranscripts([]snapshot.TranscriptFile{candidate}, time.Time{}, 90*time.Second, 15*time.Second)
 	if fullReads.Load() != 2 || appendReads.Load() != 0 {
 		t.Fatalf("expected codexL lane events to stay on full parse, got full=%d append=%d", fullReads.Load(), appendReads.Load())
 	}
@@ -409,7 +410,7 @@ func TestForegroundTranscriptScanDefersOlderNonPriorityFiles(t *testing.T) {
 	var tailReads atomic.Int32
 	installTranscriptParserProbe(t, observer, "codex", &reads, &tailReads, nil, nil)
 
-	data := observer.scanTranscriptsWithOptions(context.Background(), []TranscriptFile{{Tool: "codex", Path: priorityPath}}, transcriptScanOptions{
+	data := observer.scanTranscriptsWithOptions(context.Background(), []snapshot.TranscriptFile{{Tool: "codex", Path: priorityPath}}, transcriptScanOptions{
 		HistoryCutoff:      time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC),
 		ForegroundCutoff:   time.Date(2026, 6, 28, 11, 0, 0, 0, time.UTC),
 		HistoryLookback:    24 * time.Hour,
@@ -480,7 +481,7 @@ func TestForegroundTranscriptScanCanDeferHistoryWalk(t *testing.T) {
 		Lookback:    24 * time.Hour,
 		CodexRoots:  []string{codexRoot},
 	})
-	data := observer.scanTranscriptsWithOptions(context.Background(), []TranscriptFile{{Tool: "codex", Path: priorityPath}}, transcriptScanOptions{
+	data := observer.scanTranscriptsWithOptions(context.Background(), []snapshot.TranscriptFile{{Tool: "codex", Path: priorityPath}}, transcriptScanOptions{
 		HistoryCutoff:      time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC),
 		ForegroundCutoff:   time.Date(2026, 6, 28, 11, 0, 0, 0, time.UTC),
 		HistoryLookback:    24 * time.Hour,
@@ -556,21 +557,21 @@ type transcriptParserProbe struct {
 	checkOffset func(int64)
 }
 
-func (p transcriptParserProbe) Parse(file TranscriptFile) (*SessionTrace, error) {
+func (p transcriptParserProbe) Parse(file snapshot.TranscriptFile) (*snapshot.SessionTrace, error) {
 	if p.fullReads != nil {
 		p.fullReads.Add(1)
 	}
 	return p.base.Parse(file)
 }
 
-func (p transcriptParserProbe) ParseTail(file TranscriptFile) (*SessionTrace, error) {
+func (p transcriptParserProbe) ParseTail(file snapshot.TranscriptFile) (*snapshot.SessionTrace, error) {
 	if p.tailReads != nil {
 		p.tailReads.Add(1)
 	}
 	return p.base.ParseTail(file)
 }
 
-func (p transcriptParserProbe) ParseAppend(file TranscriptFile, base *SessionTrace, offset int64) (*SessionTrace, error) {
+func (p transcriptParserProbe) ParseAppend(file snapshot.TranscriptFile, base *snapshot.SessionTrace, offset int64) (*snapshot.SessionTrace, error) {
 	if p.appendReads != nil {
 		p.appendReads.Add(1)
 	}
@@ -580,7 +581,7 @@ func (p transcriptParserProbe) ParseAppend(file TranscriptFile, base *SessionTra
 	return p.base.ParseAppend(file, base, offset)
 }
 
-func (p transcriptParserProbe) CanAppend(file TranscriptFile) bool {
+func (p transcriptParserProbe) CanAppend(file snapshot.TranscriptFile) bool {
 	return p.base.CanAppend(file)
 }
 

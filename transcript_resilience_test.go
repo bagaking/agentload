@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"context"
 	"errors"
 	"fmt"
@@ -18,30 +19,30 @@ import (
 // worker-pool tests can exercise parser failures without touching filesystem
 // parsing code.
 type resilienceTranscriptParser struct {
-	parse       func(TranscriptFile) (*SessionTrace, error)
-	parseAppend func(TranscriptFile, *SessionTrace, int64) (*SessionTrace, error)
-	canAppend   func(TranscriptFile) bool
+	parse       func(snapshot.TranscriptFile) (*snapshot.SessionTrace, error)
+	parseAppend func(snapshot.TranscriptFile, *snapshot.SessionTrace, int64) (*snapshot.SessionTrace, error)
+	canAppend   func(snapshot.TranscriptFile) bool
 }
 
-func (p resilienceTranscriptParser) Parse(file TranscriptFile) (*SessionTrace, error) {
+func (p resilienceTranscriptParser) Parse(file snapshot.TranscriptFile) (*snapshot.SessionTrace, error) {
 	if p.parse == nil {
 		return nil, errors.New("full parser not configured")
 	}
 	return p.parse(file)
 }
 
-func (p resilienceTranscriptParser) ParseTail(file TranscriptFile) (*SessionTrace, error) {
+func (p resilienceTranscriptParser) ParseTail(file snapshot.TranscriptFile) (*snapshot.SessionTrace, error) {
 	return p.Parse(file)
 }
 
-func (p resilienceTranscriptParser) ParseAppend(file TranscriptFile, base *SessionTrace, offset int64) (*SessionTrace, error) {
+func (p resilienceTranscriptParser) ParseAppend(file snapshot.TranscriptFile, base *snapshot.SessionTrace, offset int64) (*snapshot.SessionTrace, error) {
 	if p.parseAppend == nil {
 		return nil, errors.New("append parser not configured")
 	}
 	return p.parseAppend(file, base, offset)
 }
 
-func (p resilienceTranscriptParser) CanAppend(file TranscriptFile) bool {
+func (p resilienceTranscriptParser) CanAppend(file snapshot.TranscriptFile) bool {
 	if p.canAppend != nil {
 		return p.canAppend(file)
 	}
@@ -58,11 +59,11 @@ func resilienceRegistry(parser agentTranscriptParser) *codingAgentRegistry {
 }
 
 func resilienceCandidate(path string) transcriptCandidate {
-	return transcriptCandidate{File: TranscriptFile{Tool: "fault", Path: path}}
+	return transcriptCandidate{File: snapshot.TranscriptFile{Tool: "fault", Path: path}}
 }
 
-func resilienceTrace(file TranscriptFile) *SessionTrace {
-	return &SessionTrace{
+func resilienceTrace(file snapshot.TranscriptFile) *snapshot.SessionTrace {
+	return &snapshot.SessionTrace{
 		Tool:       file.Tool,
 		Path:       file.Path,
 		SessionID:  filepath.Base(file.Path),
@@ -144,7 +145,7 @@ func TestParseTranscriptCandidatesRecoversEachPanic(t *testing.T) {
 	var maxActive atomic.Int32
 	entered := make(chan struct{}, workerCount)
 	release := make(chan struct{})
-	parser := resilienceTranscriptParser{parse: func(file TranscriptFile) (*SessionTrace, error) {
+	parser := resilienceTranscriptParser{parse: func(file snapshot.TranscriptFile) (*snapshot.SessionTrace, error) {
 		current := active.Add(1)
 		updateResilienceMax(&maxActive, current)
 		defer active.Add(-1)
@@ -209,14 +210,14 @@ func TestParseAppendTranscriptCandidatesRecoversPanicAndPreservesOrder(t *testin
 	for index := range candidates {
 		candidates[index] = transcriptAppendCandidate{
 			Candidate: resilienceCandidate(fmt.Sprintf("append-%d.jsonl", index)),
-			Base:      &SessionTrace{SessionID: fmt.Sprintf("base-%d", index), EventTimes: []time.Time{time.Unix(1, 0)}},
+			Base:      &snapshot.SessionTrace{SessionID: fmt.Sprintf("base-%d", index), EventTimes: []time.Time{time.Unix(1, 0)}},
 			Offset:    int64(index + 7),
 		}
 	}
 	var calls atomic.Int32
 	entered := make(chan struct{}, workerCount)
 	release := make(chan struct{})
-	parser := resilienceTranscriptParser{parseAppend: func(file TranscriptFile, base *SessionTrace, offset int64) (*SessionTrace, error) {
+	parser := resilienceTranscriptParser{parseAppend: func(file snapshot.TranscriptFile, base *snapshot.SessionTrace, offset int64) (*snapshot.SessionTrace, error) {
 		call := int(calls.Add(1))
 		if call <= workerCount {
 			entered <- struct{}{}
@@ -273,7 +274,7 @@ func TestParseAppendTranscriptCandidatesRecoversPanicAndPreservesOrder(t *testin
 
 func TestParseTranscriptCandidatesDoesNotDispatchAfterCancellation(t *testing.T) {
 	var calls atomic.Int32
-	parser := resilienceTranscriptParser{parse: func(file TranscriptFile) (*SessionTrace, error) {
+	parser := resilienceTranscriptParser{parse: func(file snapshot.TranscriptFile) (*snapshot.SessionTrace, error) {
 		calls.Add(1)
 		return resilienceTrace(file), nil
 	}}
@@ -315,7 +316,7 @@ func TestParseTranscriptCandidatesCancellationUnblocksProducer(t *testing.T) {
 		}
 	}
 	t.Cleanup(releaseWorkers)
-	parser := resilienceTranscriptParser{parse: func(file TranscriptFile) (*SessionTrace, error) {
+	parser := resilienceTranscriptParser{parse: func(file snapshot.TranscriptFile) (*snapshot.SessionTrace, error) {
 		call := int(calls.Add(1))
 		if call <= workerCount {
 			entered <- struct{}{}
@@ -381,7 +382,7 @@ func TestScanTranscriptsPersistsParserPanicAsFileError(t *testing.T) {
 		}
 	}
 	var calls atomic.Int32
-	parser := resilienceTranscriptParser{parse: func(file TranscriptFile) (*SessionTrace, error) {
+	parser := resilienceTranscriptParser{parse: func(file snapshot.TranscriptFile) (*snapshot.SessionTrace, error) {
 		calls.Add(1)
 		if file.Path == panicPath {
 			panic("synthetic durable parser panic")
@@ -389,7 +390,7 @@ func TestScanTranscriptsPersistsParserPanicAsFileError(t *testing.T) {
 		return resilienceTrace(file), nil
 	}}
 	observer := newObserverWithRegistry(Config{}, resilienceRegistry(parser))
-	priority := []TranscriptFile{{Tool: "fault", Path: panicPath}, {Tool: "fault", Path: healthyPath}}
+	priority := []snapshot.TranscriptFile{{Tool: "fault", Path: panicPath}, {Tool: "fault", Path: healthyPath}}
 	opts := transcriptScanOptions{}
 
 	data := observer.scanTranscriptsWithOptions(context.Background(), priority, opts)
@@ -431,14 +432,14 @@ func TestScanTranscriptsRetriesCachedParseErrorAfterBackoff(t *testing.T) {
 		t.Fatalf("write transcript: %v", err)
 	}
 	var calls atomic.Int32
-	parser := resilienceTranscriptParser{parse: func(file TranscriptFile) (*SessionTrace, error) {
+	parser := resilienceTranscriptParser{parse: func(file snapshot.TranscriptFile) (*snapshot.SessionTrace, error) {
 		if calls.Add(1) == 1 {
 			return nil, errors.New("transient parser failure")
 		}
 		return resilienceTrace(file), nil
 	}}
 	observer := newObserverWithRegistry(Config{}, resilienceRegistry(parser))
-	priority := []TranscriptFile{{Tool: "fault", Path: path}}
+	priority := []snapshot.TranscriptFile{{Tool: "fault", Path: path}}
 
 	first := observer.scanTranscriptsWithOptions(context.Background(), priority, transcriptScanOptions{})
 	if first.CoverageIncomplete || len(first.Errors) != 1 || calls.Load() != 1 {
@@ -462,17 +463,17 @@ func TestTranscriptDataDoesNotReturnStaleCompletedFlight(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{}\n"), 0o644); err != nil {
 		t.Fatalf("write transcript: %v", err)
 	}
-	parser := resilienceTranscriptParser{parse: func(file TranscriptFile) (*SessionTrace, error) {
+	parser := resilienceTranscriptParser{parse: func(file snapshot.TranscriptFile) (*snapshot.SessionTrace, error) {
 		return resilienceTrace(file), nil
 	}}
 	observer := newObserverWithRegistry(Config{}, resilienceRegistry(parser))
-	key := transcriptCacheKey(observer.adapters.roots(), []TranscriptFile{{Tool: "fault", Path: path}}, observer.cfg.IdleGap, observer.cfg.MinInterval, observer.cfg.Lookback)
+	key := transcriptCacheKey(observer.adapters.roots(), []snapshot.TranscriptFile{{Tool: "fault", Path: path}}, observer.cfg.IdleGap, observer.cfg.MinInterval, observer.cfg.Lookback)
 	flight := &transcriptScanFlight{
 		done:     make(chan struct{}),
 		complete: true,
-		data: &TranscriptData{
-			Traces:           map[string]*SessionTrace{path: resilienceTrace(TranscriptFile{Tool: "fault", Path: path})},
-			evidenceRevision: 1,
+		data: &snapshot.TranscriptData{
+			Traces:           map[string]*snapshot.SessionTrace{path: resilienceTrace(snapshot.TranscriptFile{Tool: "fault", Path: path})},
+			EvidenceRevision: 1,
 		},
 	}
 	close(flight.done)
@@ -483,12 +484,12 @@ func TestTranscriptDataDoesNotReturnStaleCompletedFlight(t *testing.T) {
 	observer.evidenceIndex.revision = 2
 	observer.evidenceIndex.mu.Unlock()
 
-	data, cached := observer.transcriptData(context.Background(), []TranscriptFile{{Tool: "fault", Path: path}}, time.Now())
+	data, cached := observer.transcriptData(context.Background(), []snapshot.TranscriptFile{{Tool: "fault", Path: path}}, time.Now())
 	if cached || data == nil || data.CoverageIncomplete {
 		t.Fatalf("expected waiter to rescan after stale flight, cached=%v data=%+v", cached, data)
 	}
-	if data.evidenceRevision <= 1 {
-		t.Fatalf("expected replacement scan at a current revision, got %d", data.evidenceRevision)
+	if data.EvidenceRevision <= 1 {
+		t.Fatalf("expected replacement scan at a current revision, got %d", data.EvidenceRevision)
 	}
 }
 
@@ -503,8 +504,8 @@ func TestTranscriptDataContainsPanickingCanAppendAndReleasesCacheLock(t *testing
 		t.Fatalf("stat transcript: %v", err)
 	}
 	parser := resilienceTranscriptParser{
-		parse: func(file TranscriptFile) (*SessionTrace, error) { return resilienceTrace(file), nil },
-		canAppend: func(TranscriptFile) bool {
+		parse: func(file snapshot.TranscriptFile) (*snapshot.SessionTrace, error) { return resilienceTrace(file), nil },
+		canAppend: func(snapshot.TranscriptFile) bool {
 			panic("synthetic append capability panic")
 		},
 	}
@@ -514,11 +515,11 @@ func TestTranscriptDataContainsPanickingCanAppendAndReleasesCacheLock(t *testing
 		ModTime:         info.ModTime().Add(-time.Second),
 		Size:            1,
 		EndsWithNewline: true,
-		Trace:           resilienceTrace(TranscriptFile{Tool: "fault", Path: path}),
+		Trace:           resilienceTrace(snapshot.TranscriptFile{Tool: "fault", Path: path}),
 	}
 	observer.mu.Unlock()
 
-	data, cached := observer.transcriptData(context.Background(), []TranscriptFile{{Tool: "fault", Path: path}}, time.Now())
+	data, cached := observer.transcriptData(context.Background(), []snapshot.TranscriptFile{{Tool: "fault", Path: path}}, time.Now())
 	if cached || data == nil || !data.CoverageIncomplete {
 		t.Fatalf("CanAppend panic was not converted to incomplete evidence: cached=%t data=%+v", cached, data)
 	}
@@ -551,7 +552,7 @@ func (discovery *incompleteOnceTranscriptDiscovery) Discover(ctx context.Context
 	return discovery.delegate.Discover(ctx, agentID, roots, cutoff)
 }
 
-func (discovery *incompleteOnceTranscriptDiscovery) Classify(agentID string, roots []string, path string) (TranscriptFile, bool) {
+func (discovery *incompleteOnceTranscriptDiscovery) Classify(agentID string, roots []string, path string) (snapshot.TranscriptFile, bool) {
 	return discovery.delegate.Classify(agentID, roots, path)
 }
 
@@ -608,7 +609,7 @@ func TestTranscriptDataRejectsEvidenceMutationDuringParse(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})
 	var once sync.Once
-	parser := resilienceTranscriptParser{parse: func(file TranscriptFile) (*SessionTrace, error) {
+	parser := resilienceTranscriptParser{parse: func(file snapshot.TranscriptFile) (*snapshot.SessionTrace, error) {
 		once.Do(func() {
 			close(entered)
 			<-release
@@ -621,9 +622,9 @@ func TestTranscriptDataRejectsEvidenceMutationDuringParse(t *testing.T) {
 		Lookback:           time.Hour,
 		TranscriptCacheTTL: time.Minute,
 	}, resilienceRegistry(parser))
-	priority := []TranscriptFile{{Tool: "fault", Path: path}}
+	priority := []snapshot.TranscriptFile{{Tool: "fault", Path: path}}
 	type result struct {
-		data   *TranscriptData
+		data   *snapshot.TranscriptData
 		cached bool
 	}
 	resultCh := make(chan result, 1)
@@ -664,9 +665,9 @@ func TestTranscriptDataRejectsEvidenceMutationDuringParse(t *testing.T) {
 func TestRememberSnapshotRejectsIncompleteCoverage(t *testing.T) {
 	historyPath := filepath.Join(t.TempDir(), "history.jsonl")
 	app := &trayApp{history: localHistoryState{path: historyPath}}
-	got := app.rememberSnapshot(Snapshot{
+	got := app.rememberSnapshot(snapshot.Snapshot{
 		GeneratedAt:     time.Now().Format(time.RFC3339),
-		TranscriptStats: TranscriptStats{CoverageIncomplete: true},
+		TranscriptStats: snapshot.TranscriptStats{CoverageIncomplete: true},
 	})
 	if !got.TranscriptStats.CoverageIncomplete {
 		t.Fatalf("incomplete snapshot was changed: %+v", got.TranscriptStats)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"context"
 	"crypto/sha1"
 	"embed"
@@ -111,7 +112,7 @@ func (a *trayApp) handleLiveTokenRateAPI(w http.ResponseWriter, r *http.Request)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	sample := LiveTokenRateSample{}
+	sample := snapshot.LiveTokenRateSample{}
 	if a.liveTokenRate != nil {
 		sample = a.liveTokenRate.sample(time.Now())
 	} else {
@@ -142,8 +143,8 @@ func (a *trayApp) handleDiagnosticExportAPI(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	snapshot := a.snapshotForClient(r.Context())
-	export := buildDiagnosticExport(snapshot, time.Now())
+	snap := a.snapshotForClient(r.Context())
+	export := buildDiagnosticExport(snap, time.Now())
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Disposition", `attachment; filename="agentload-diagnostics.json"`)
@@ -187,7 +188,7 @@ func (a *trayApp) handleSnapshotAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	// The refresh slot decides the ETag, so conditional requests can short-circuit
 	// before the sanitize pass runs.
-	snapshot, ok := a.snapshotForInternalUse(r.Context())
+	snap, ok := a.snapshotForInternalUse(r.Context())
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Vary", "Accept-Encoding")
@@ -196,7 +197,7 @@ func (a *trayApp) handleSnapshotAPI(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(Snapshot{})
+		_ = json.NewEncoder(w).Encode(snapshot.Snapshot{})
 		return
 	}
 	wantsGzip := httpencoding.AcceptsGzip(r.Header.Get("Accept-Encoding"))
@@ -204,9 +205,9 @@ func (a *trayApp) handleSnapshotAPI(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Encoding", "gzip")
 	}
 	var snapshotETag string
-	if snapshot.RefreshSlotID != "" {
-		snapshotETag = strconv.Quote(snapshot.RefreshSlotID)
-		w.Header().Set("X-Refresh-Slot-ID", snapshot.RefreshSlotID)
+	if snap.RefreshSlotID != "" {
+		snapshotETag = strconv.Quote(snap.RefreshSlotID)
+		w.Header().Set("X-Refresh-Slot-ID", snap.RefreshSlotID)
 		w.Header().Set("ETag", snapshotETag)
 	}
 	if snapshotETag != "" && etagListMatches(r.Header.Get("If-None-Match"), snapshotETag) {
@@ -217,17 +218,17 @@ func (a *trayApp) handleSnapshotAPI(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	payload := a.clientSnapshotJSON(snapshot)
+	payload := a.clientSnapshotJSON(snap)
 	if wantsGzip {
-		payload = a.clientSnapshotGZIP(snapshot)
+		payload = a.clientSnapshotGZIP(snap)
 	}
 	_, _ = w.Write(payload)
 }
 
 // clientSnapshotJSON caches the sanitized, encoded snapshot per refresh slot so
 // repeated polls within one slot skip the sanitize pass.
-func (a *trayApp) clientSnapshotJSON(snapshot Snapshot) []byte {
-	slotID := snapshot.RefreshSlotID
+func (a *trayApp) clientSnapshotJSON(snap snapshot.Snapshot) []byte {
+	slotID := snap.RefreshSlotID
 	if slotID != "" {
 		a.clientCacheMu.Lock()
 		if a.clientCacheSlot == slotID && a.clientCacheJSON != nil {
@@ -237,7 +238,7 @@ func (a *trayApp) clientSnapshotJSON(snapshot Snapshot) []byte {
 		}
 		a.clientCacheMu.Unlock()
 	}
-	raw, err := json.Marshal(sanitizeSnapshotForClient(snapshot))
+	raw, err := json.Marshal(sanitizeSnapshotForClient(snap))
 	if err != nil {
 		return []byte("{}\n")
 	}
@@ -252,8 +253,8 @@ func (a *trayApp) clientSnapshotJSON(snapshot Snapshot) []byte {
 	return payload
 }
 
-func (a *trayApp) clientSnapshotGZIP(snapshot Snapshot) []byte {
-	slotID := snapshot.RefreshSlotID
+func (a *trayApp) clientSnapshotGZIP(snap snapshot.Snapshot) []byte {
+	slotID := snap.RefreshSlotID
 	if slotID != "" {
 		a.clientCacheMu.Lock()
 		if a.clientCacheSlot == slotID && a.clientCacheGZIP != nil {
@@ -264,7 +265,7 @@ func (a *trayApp) clientSnapshotGZIP(snapshot Snapshot) []byte {
 		a.clientCacheMu.Unlock()
 	}
 
-	payload := httpencoding.Gzip(a.clientSnapshotJSON(snapshot))
+	payload := httpencoding.Gzip(a.clientSnapshotJSON(snap))
 	if slotID != "" {
 		a.clientCacheMu.Lock()
 		if a.clientCacheSlot == slotID {
@@ -396,16 +397,16 @@ func (a *trayApp) handleProcessDiagnosticAPI(w http.ResponseWriter, r *http.Requ
 		http.NotFound(w, r)
 		return
 	}
-	snapshot := a.snapshotForClient(r.Context())
-	if snapshot.GeneratedAt == "" {
+	snap := a.snapshotForClient(r.Context())
+	if snap.GeneratedAt == "" {
 		http.NotFound(w, r)
 		return
 	}
-	for _, process := range snapshot.LiveProcesses {
+	for _, process := range snap.LiveProcesses {
 		if process.PID != pid {
 			continue
 		}
-		diagnostic := ProcessDiagnosticSnapshot{
+		diagnostic := snapshot.ProcessDiagnosticSnapshot{
 			PID:          process.PID,
 			Command:      sanitizeCommandForClient(process.Command),
 			SessionIDs:   append([]string(nil), process.SessionIDs...),
@@ -498,97 +499,97 @@ func (a *trayApp) handleOpenHostAppAPI(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (a *trayApp) snapshotForClient(ctx context.Context) Snapshot {
-	snapshot, ok := a.snapshotForInternalUse(ctx)
+func (a *trayApp) snapshotForClient(ctx context.Context) snapshot.Snapshot {
+	snap, ok := a.snapshotForInternalUse(ctx)
 	if !ok {
-		return Snapshot{}
+		return snapshot.Snapshot{}
 	}
-	return sanitizeSnapshotForClient(snapshot)
+	return sanitizeSnapshotForClient(snap)
 }
 
-func (a *trayApp) snapshotForInternalUse(ctx context.Context) (Snapshot, bool) {
+func (a *trayApp) snapshotForInternalUse(ctx context.Context) (snapshot.Snapshot, bool) {
 	if a == nil {
-		return Snapshot{}, false
+		return snapshot.Snapshot{}, false
 	}
-	if snapshot, ok := a.cachedSnapshot(); ok {
-		if snapshot.RefreshSlotID == "" {
-			snapshot.RefreshSlotID = a.refreshSlotID(time.Now())
+	if cached, ok := a.cachedSnapshot(); ok {
+		if cached.RefreshSlotID == "" {
+			cached.RefreshSlotID = a.refreshSlotID(time.Now())
 		}
-		return snapshot, true
+		return cached, true
 	}
 	if a.observer == nil {
-		return Snapshot{}, false
+		return snapshot.Snapshot{}, false
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	ctx, cancel := context.WithTimeout(ctx, clampDuration(a.cfg.Lookback/10, 45*time.Second, 5*time.Minute))
 	defer cancel()
-	snapshot := a.observer.Snapshot(ctx)
-	if snapshot.RefreshSlotID == "" {
-		snapshot.RefreshSlotID = a.refreshSlotID(time.Now())
+	fresh := a.observer.Snapshot(ctx)
+	if fresh.RefreshSlotID == "" {
+		fresh.RefreshSlotID = a.refreshSlotID(time.Now())
 	}
-	if snapshotScanAborted(ctx, snapshot) {
+	if snapshotScanAborted(ctx, fresh) {
 		// Serve the partial result to this caller only; committing it would
 		// record undercounted history samples and cache incomplete state.
-		a.recordLifecycle(lifecycleEventFromSnapshot("snapshot_aborted", snapshotAbortReason(ctx, snapshot), snapshot))
-		return snapshot, true
+		a.recordLifecycle(lifecycleEventFromSnapshot("snapshot_aborted", snapshotAbortReason(ctx, fresh), fresh))
+		return fresh, true
 	}
-	return a.rememberSnapshot(snapshot), true
+	return a.rememberSnapshot(fresh), true
 }
 
 // snapshotSanitizePasses counts full sanitize passes; test hook for the cached
 // /api/snapshot encode path.
 var snapshotSanitizePasses atomic.Int64
 
-func sanitizeSnapshotForClient(snapshot Snapshot) Snapshot {
+func sanitizeSnapshotForClient(snap snapshot.Snapshot) snapshot.Snapshot {
 	snapshotSanitizePasses.Add(1)
-	snapshot.Config.ClaudeRoots = []string{}
-	snapshot.Config.CodexRoots = []string{}
-	snapshot.Config.TraeRoots = []string{}
-	snapshot.Config.GrokRoots = []string{}
-	snapshot.Config.GeminiRoots = nil
-	snapshot.Config.OpenCodeRoots = nil
-	snapshot.Config.HermesRoots = nil
-	snapshot.Config.OpenClawRoots = nil
-	snapshot.Config.PiRoots = nil
-	snapshot.Config.HistoryFile = ""
-	snapshot.History.StorePath = ""
-	snapshot.History.LastWriteError = sanitizeTextForClient(snapshot.History.LastWriteError)
-	if snapshot.History.Throughput != nil {
-		throughput := *snapshot.History.Throughput
+	snap.Config.ClaudeRoots = []string{}
+	snap.Config.CodexRoots = []string{}
+	snap.Config.TraeRoots = []string{}
+	snap.Config.GrokRoots = []string{}
+	snap.Config.GeminiRoots = nil
+	snap.Config.OpenCodeRoots = nil
+	snap.Config.HermesRoots = nil
+	snap.Config.OpenClawRoots = nil
+	snap.Config.PiRoots = nil
+	snap.Config.HistoryFile = ""
+	snap.History.StorePath = ""
+	snap.History.LastWriteError = sanitizeTextForClient(snap.History.LastWriteError)
+	if snap.History.Throughput != nil {
+		throughput := *snap.History.Throughput
 		throughput.StorePath = ""
 		throughput.LastWriteError = sanitizeTextForClient(throughput.LastWriteError)
-		snapshot.History.Throughput = &throughput
+		snap.History.Throughput = &throughput
 	}
-	snapshot.TranscriptStats.Errors = sanitizeTextListForClient(snapshot.TranscriptStats.Errors)
-	snapshot.ProcessStats.Error = sanitizeTextForClient(snapshot.ProcessStats.Error)
-	snapshot.CoordinationRisk = sanitizeCoordinationRiskForClient(snapshot.CoordinationRisk)
-	snapshot.ProjectFocus = sanitizeProjectFocusForClient(snapshot.ProjectFocus)
-	snapshot.ProjectHeatmaps = sanitizeProjectHeatmapsForClient(snapshot.ProjectHeatmaps)
-	snapshot.ThroughputTrends = sanitizeThroughputTrendsForClient(snapshot.ThroughputTrends)
-	snapshot.CandidateWorkitems = sanitizeCandidateWorkitemsForClient(snapshot.CandidateWorkitems)
-	snapshot.LiveProcesses = sanitizeLiveProcessesForClient(snapshot.LiveProcesses)
-	snapshot.LiveSessions = sanitizeLiveSessionsForClient(snapshot.LiveSessions)
-	snapshot.RuntimeProcesses = sanitizeRuntimeProcessSummaryForClient(snapshot.RuntimeProcesses)
-	snapshot.HostAppProcesses = sanitizeHostAppProcessSummaryForClient(snapshot.HostAppProcesses)
-	snapshot.RuntimeTelemetry = sanitizeRuntimeTelemetryForClient(snapshot.RuntimeTelemetry)
-	snapshot.Diagnostics = sanitizeDiagnosticsForClient(snapshot.Diagnostics)
-	snapshot.Notes = sanitizeTextListForClient(snapshot.Notes)
-	return snapshot
+	snap.TranscriptStats.Errors = sanitizeTextListForClient(snap.TranscriptStats.Errors)
+	snap.ProcessStats.Error = sanitizeTextForClient(snap.ProcessStats.Error)
+	snap.CoordinationRisk = sanitizeCoordinationRiskForClient(snap.CoordinationRisk)
+	snap.ProjectFocus = sanitizeProjectFocusForClient(snap.ProjectFocus)
+	snap.ProjectHeatmaps = sanitizeProjectHeatmapsForClient(snap.ProjectHeatmaps)
+	snap.ThroughputTrends = sanitizeThroughputTrendsForClient(snap.ThroughputTrends)
+	snap.CandidateWorkitems = sanitizeCandidateWorkitemsForClient(snap.CandidateWorkitems)
+	snap.LiveProcesses = sanitizeLiveProcessesForClient(snap.LiveProcesses)
+	snap.LiveSessions = sanitizeLiveSessionsForClient(snap.LiveSessions)
+	snap.RuntimeProcesses = sanitizeRuntimeProcessSummaryForClient(snap.RuntimeProcesses)
+	snap.HostAppProcesses = sanitizeHostAppProcessSummaryForClient(snap.HostAppProcesses)
+	snap.RuntimeTelemetry = sanitizeRuntimeTelemetryForClient(snap.RuntimeTelemetry)
+	snap.Diagnostics = sanitizeDiagnosticsForClient(snap.Diagnostics)
+	snap.Notes = sanitizeTextListForClient(snap.Notes)
+	return snap
 }
 
-func sanitizeThroughputTrendsForClient(trends TrendSet) TrendSet {
+func sanitizeThroughputTrendsForClient(trends snapshot.TrendSet) snapshot.TrendSet {
 	if len(trends.Windows) == 0 {
 		return trends
 	}
-	windows := append([]TrendWindow(nil), trends.Windows...)
+	windows := append([]snapshot.TrendWindow(nil), trends.Windows...)
 	for i := range windows {
-		series := append([]ThroughputTrendSeries(nil), windows[i].ThroughputSeries...)
+		series := append([]snapshot.ThroughputTrendSeries(nil), windows[i].ThroughputSeries...)
 		for j := range series {
-			series[j].Points = append([]TrendPoint(nil), series[j].Points...)
+			series[j].Points = append([]snapshot.TrendPoint(nil), series[j].Points...)
 			for k := range series[j].Points {
-				projects := cloneLiveTokenRateProjectSamples(series[j].Points[k].OutputTokenProjects)
+				projects := snapshot.CloneLiveTokenRateProjectSamples(series[j].Points[k].OutputTokenProjects)
 				for l := range projects {
 					projects[l].Project = sanitizeProjectNameForClient(projects[l].Project)
 				}
@@ -601,7 +602,7 @@ func sanitizeThroughputTrendsForClient(trends TrendSet) TrendSet {
 	return trends
 }
 
-func sanitizeLiveTokenRateSampleForClient(sample LiveTokenRateSample) LiveTokenRateSample {
+func sanitizeLiveTokenRateSampleForClient(sample snapshot.LiveTokenRateSample) snapshot.LiveTokenRateSample {
 	sample.State = sanitizeTokenForClient(sample.State)
 	sample.Basis = sanitizeTokenForClient(sample.Basis)
 	sample.Source = sanitizeTokenForClient(sample.Source)
@@ -610,18 +611,18 @@ func sanitizeLiveTokenRateSampleForClient(sample LiveTokenRateSample) LiveTokenR
 	if len(sample.Projects) == 0 {
 		return sample
 	}
-	sample.Projects = append([]LiveTokenRateProjectSample(nil), sample.Projects...)
+	sample.Projects = append([]snapshot.LiveTokenRateProjectSample(nil), sample.Projects...)
 	for i := range sample.Projects {
 		sample.Projects[i].Project = sanitizeProjectNameForClient(sample.Projects[i].Project)
 	}
 	return sample
 }
 
-func sanitizeRuntimeTelemetryForClient(telemetry RuntimeTelemetrySnapshot) RuntimeTelemetrySnapshot {
+func sanitizeRuntimeTelemetryForClient(telemetry snapshot.RuntimeTelemetrySnapshot) snapshot.RuntimeTelemetrySnapshot {
 	telemetry.Status = sanitizeTokenForClient(telemetry.Status)
 	telemetry.Detail = sanitizeTextForClient(telemetry.Detail)
 	if len(telemetry.Adapters) > 0 {
-		adapters := append([]RuntimeTelemetryAdapterState(nil), telemetry.Adapters...)
+		adapters := append([]snapshot.RuntimeTelemetryAdapterState(nil), telemetry.Adapters...)
 		for i := range adapters {
 			adapters[i].Key = sanitizeTokenForClient(adapters[i].Key)
 			adapters[i].Label = sanitizeTextForClient(adapters[i].Label)
@@ -633,7 +634,7 @@ func sanitizeRuntimeTelemetryForClient(telemetry RuntimeTelemetrySnapshot) Runti
 	return telemetry
 }
 
-func sanitizeDiagnosticsForClient(diagnostics DiagnosticSnapshot) DiagnosticSnapshot {
+func sanitizeDiagnosticsForClient(diagnostics snapshot.DiagnosticSnapshot) snapshot.DiagnosticSnapshot {
 	diagnostics.AnomalySignals = sanitizeDiagnosticSignalsForClient(diagnostics.AnomalySignals)
 	diagnostics.EvidenceGaps = sanitizeDiagnosticSignalsForClient(diagnostics.EvidenceGaps)
 	for i := range diagnostics.Baselines {
@@ -655,11 +656,11 @@ func sanitizeDiagnosticsForClient(diagnostics DiagnosticSnapshot) DiagnosticSnap
 	return diagnostics
 }
 
-func sanitizeDiagnosticSignalsForClient(items []DiagnosticSignalSnapshot) []DiagnosticSignalSnapshot {
+func sanitizeDiagnosticSignalsForClient(items []snapshot.DiagnosticSignalSnapshot) []snapshot.DiagnosticSignalSnapshot {
 	if len(items) == 0 {
 		return items
 	}
-	out := append([]DiagnosticSignalSnapshot(nil), items...)
+	out := append([]snapshot.DiagnosticSignalSnapshot(nil), items...)
 	for i := range out {
 		out[i].Kind = sanitizeTokenForClient(out[i].Kind)
 		out[i].Severity = sanitizeTokenForClient(out[i].Severity)
@@ -672,12 +673,12 @@ func sanitizeDiagnosticSignalsForClient(items []DiagnosticSignalSnapshot) []Diag
 	return out
 }
 
-func sanitizeCoordinationRiskForClient(risk CoordinationRiskSnapshot) CoordinationRiskSnapshot {
+func sanitizeCoordinationRiskForClient(risk snapshot.CoordinationRiskSnapshot) snapshot.CoordinationRiskSnapshot {
 	risk.TopProject = sanitizeProjectNameForClient(risk.TopProject)
 	if len(risk.Signals) == 0 {
 		return risk
 	}
-	signals := append([]RiskSignalSnapshot(nil), risk.Signals...)
+	signals := append([]snapshot.RiskSignalSnapshot(nil), risk.Signals...)
 	for i := range signals {
 		signals[i].Evidence = sanitizeTextForClient(signals[i].Evidence)
 	}
@@ -685,13 +686,13 @@ func sanitizeCoordinationRiskForClient(risk CoordinationRiskSnapshot) Coordinati
 	return risk
 }
 
-func sanitizeProjectHeatmapsForClient(heatmaps ProjectHeatmapSet) ProjectHeatmapSet {
+func sanitizeProjectHeatmapsForClient(heatmaps snapshot.ProjectHeatmapSet) snapshot.ProjectHeatmapSet {
 	if len(heatmaps.Windows) == 0 {
 		return heatmaps
 	}
-	windows := append([]ProjectHeatmapWindow(nil), heatmaps.Windows...)
+	windows := append([]snapshot.ProjectHeatmapWindow(nil), heatmaps.Windows...)
 	for i := range windows {
-		windows[i].Items = append([]ProjectHeatmapItem(nil), windows[i].Items...)
+		windows[i].Items = append([]snapshot.ProjectHeatmapItem(nil), windows[i].Items...)
 		for j := range windows[i].Items {
 			windows[i].Items[j].Project = sanitizeProjectNameForClient(windows[i].Items[j].Project)
 		}
@@ -700,25 +701,25 @@ func sanitizeProjectHeatmapsForClient(heatmaps ProjectHeatmapSet) ProjectHeatmap
 	return heatmaps
 }
 
-func sanitizeProjectFocusForClient(projects []ProjectSnapshot) []ProjectSnapshot {
+func sanitizeProjectFocusForClient(projects []snapshot.ProjectSnapshot) []snapshot.ProjectSnapshot {
 	if len(projects) == 0 {
 		return projects
 	}
-	out := append([]ProjectSnapshot(nil), projects...)
+	out := append([]snapshot.ProjectSnapshot(nil), projects...)
 	for i := range out {
 		out[i].Project = sanitizeProjectNameForClient(out[i].Project)
 		out[i].ConfidenceReasons = sanitizeTextListForClient(out[i].ConfidenceReasons)
 		out[i].ProjectAttributionReasons = sanitizeTextListForClient(out[i].ProjectAttributionReasons)
-		out[i].Tools = append([]ProjectToolSnapshot(nil), out[i].Tools...)
+		out[i].Tools = append([]snapshot.ProjectToolSnapshot(nil), out[i].Tools...)
 	}
 	return out
 }
 
-func sanitizeCandidateWorkitemsForClient(items []CandidateWorkitemSnapshot) []CandidateWorkitemSnapshot {
+func sanitizeCandidateWorkitemsForClient(items []snapshot.CandidateWorkitemSnapshot) []snapshot.CandidateWorkitemSnapshot {
 	if len(items) == 0 {
 		return items
 	}
-	out := append([]CandidateWorkitemSnapshot(nil), items...)
+	out := append([]snapshot.CandidateWorkitemSnapshot(nil), items...)
 	for i := range out {
 		out[i].Key = sanitizeCandidateWorkitemKeyForClient(out[i].Key)
 		out[i].Project = sanitizeProjectNameForClient(out[i].Project)
@@ -750,11 +751,11 @@ func sanitizeCandidateWorkitemKeyForClient(key string) string {
 	return strings.Join(parts, "|")
 }
 
-func sanitizeLiveProcessesForClient(processes []LiveProcessSnapshot) []LiveProcessSnapshot {
+func sanitizeLiveProcessesForClient(processes []snapshot.LiveProcessSnapshot) []snapshot.LiveProcessSnapshot {
 	if len(processes) == 0 {
 		return processes
 	}
-	out := append([]LiveProcessSnapshot(nil), processes...)
+	out := append([]snapshot.LiveProcessSnapshot(nil), processes...)
 	for i := range out {
 		out[i].Command = sanitizeCommandForClient(out[i].Command)
 		out[i].DisplayName = sanitizeTokenForClient(out[i].DisplayName)
@@ -762,7 +763,7 @@ func sanitizeLiveProcessesForClient(processes []LiveProcessSnapshot) []LiveProce
 		out[i].SessionPaths = nil
 		out[i].MatchMethods = append([]string(nil), out[i].MatchMethods...)
 		if len(out[i].MappedSessionEvidence) > 0 {
-			evidence := append([]ProcessSessionEvidence(nil), out[i].MappedSessionEvidence...)
+			evidence := append([]snapshot.ProcessSessionEvidence(nil), out[i].MappedSessionEvidence...)
 			for j := range evidence {
 				evidence[j].Project = sanitizeProjectNameForClient(evidence[j].Project)
 				evidence[j].Provenance = append([]string(nil), evidence[j].Provenance...)
@@ -776,7 +777,7 @@ func sanitizeLiveProcessesForClient(processes []LiveProcessSnapshot) []LiveProce
 	return out
 }
 
-func sanitizedHostApp(host *HostApp) *HostApp {
+func sanitizedHostApp(host *snapshot.HostApp) *snapshot.HostApp {
 	if host == nil {
 		return nil
 	}
@@ -786,11 +787,11 @@ func sanitizedHostApp(host *HostApp) *HostApp {
 	return &next
 }
 
-func sanitizeRuntimeProcessSummaryForClient(items []ProcessRuntimeSummary) []ProcessRuntimeSummary {
+func sanitizeRuntimeProcessSummaryForClient(items []snapshot.ProcessRuntimeSummary) []snapshot.ProcessRuntimeSummary {
 	if len(items) == 0 {
 		return items
 	}
-	out := append([]ProcessRuntimeSummary(nil), items...)
+	out := append([]snapshot.ProcessRuntimeSummary(nil), items...)
 	for i := range out {
 		out[i].Key = sanitizeTokenForClient(out[i].Key)
 		out[i].Tool = sanitizeTokenForClient(out[i].Tool)
@@ -799,22 +800,22 @@ func sanitizeRuntimeProcessSummaryForClient(items []ProcessRuntimeSummary) []Pro
 	return out
 }
 
-func sanitizeHostAppProcessSummaryForClient(items []HostAppProcessSummary) []HostAppProcessSummary {
+func sanitizeHostAppProcessSummaryForClient(items []snapshot.HostAppProcessSummary) []snapshot.HostAppProcessSummary {
 	if len(items) == 0 {
 		return items
 	}
-	out := append([]HostAppProcessSummary(nil), items...)
+	out := append([]snapshot.HostAppProcessSummary(nil), items...)
 	for i := range out {
 		out[i].Name = sanitizeTextForClient(out[i].Name)
 	}
 	return out
 }
 
-func sanitizeLiveSessionsForClient(sessions []LiveSessionSnapshot) []LiveSessionSnapshot {
+func sanitizeLiveSessionsForClient(sessions []snapshot.LiveSessionSnapshot) []snapshot.LiveSessionSnapshot {
 	if len(sessions) == 0 {
 		return sessions
 	}
-	out := append([]LiveSessionSnapshot(nil), sessions...)
+	out := append([]snapshot.LiveSessionSnapshot(nil), sessions...)
 	for i := range out {
 		out[i].Project = sanitizeProjectNameForClient(out[i].Project)
 		out[i].Path = ""
@@ -823,7 +824,7 @@ func sanitizeLiveSessionsForClient(sessions []LiveSessionSnapshot) []LiveSession
 		out[i].ProjectAttributionReasons = sanitizeTextListForClient(out[i].ProjectAttributionReasons)
 		out[i].Provenance = append([]string(nil), out[i].Provenance...)
 		if len(out[i].HostApps) > 0 {
-			hosts := append([]HostApp(nil), out[i].HostApps...)
+			hosts := append([]snapshot.HostApp(nil), out[i].HostApps...)
 			for j := range hosts {
 				hosts[j].Name = sanitizeTextForClient(hosts[j].Name)
 				hosts[j].BundlePath = ""
@@ -1101,39 +1102,39 @@ func serveEmbeddedFile(w http.ResponseWriter, r *http.Request, path, ctype strin
 	_, _ = io.Copy(w, f)
 }
 
-func (a *trayApp) observedHostAppFromRequest(r *http.Request, prefix string) (HostApp, bool) {
+func (a *trayApp) observedHostAppFromRequest(r *http.Request, prefix string) (snapshot.HostApp, bool) {
 	rawPID := strings.TrimPrefix(r.URL.Path, prefix)
 	if rawPID == "" || strings.Contains(rawPID, "/") {
-		return HostApp{}, false
+		return snapshot.HostApp{}, false
 	}
 	pid, err := strconv.Atoi(rawPID)
 	if err != nil || pid <= 0 {
-		return HostApp{}, false
+		return snapshot.HostApp{}, false
 	}
-	snapshot, ok := a.cachedSnapshot()
+	snap, ok := a.cachedSnapshot()
 	if !ok {
 		var loaded bool
-		snapshot, loaded = a.snapshotForInternalUse(r.Context())
+		snap, loaded = a.snapshotForInternalUse(r.Context())
 		if !loaded {
-			return HostApp{}, false
+			return snapshot.HostApp{}, false
 		}
 	}
-	for _, process := range snapshot.LiveProcesses {
+	for _, process := range snap.LiveProcesses {
 		if app := process.HostApp; app != nil && app.PID == pid && validObservedHostApp(*app) {
 			return *app, true
 		}
 	}
-	for _, session := range snapshot.LiveSessions {
+	for _, session := range snap.LiveSessions {
 		for _, app := range session.HostApps {
 			if app.PID == pid && validObservedHostApp(app) {
 				return app, true
 			}
 		}
 	}
-	return HostApp{}, false
+	return snapshot.HostApp{}, false
 }
 
-func validObservedHostApp(app HostApp) bool {
+func validObservedHostApp(app snapshot.HostApp) bool {
 	if app.PID <= 0 || strings.TrimSpace(app.Name) == "" {
 		return false
 	}
@@ -1237,7 +1238,7 @@ func resolveToolIconFile(tool string) (string, string, bool) {
 	return "", "", false
 }
 
-func resolveHostAppIconFile(app HostApp) (string, string, bool) {
+func resolveHostAppIconFile(app snapshot.HostApp) (string, string, bool) {
 	bundlePath := filepath.Clean(strings.TrimSpace(app.BundlePath))
 	if bundlePath == "" {
 		return "", "", false

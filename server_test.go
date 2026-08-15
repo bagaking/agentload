@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -107,7 +108,7 @@ func TestHandleLiveTokenRateAPIReturnsPublishedSample(t *testing.T) {
 	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
 		t.Fatalf("cache control = %q, want no-store", got)
 	}
-	var sample LiveTokenRateSample
+	var sample snapshot.LiveTokenRateSample
 	if err := json.Unmarshal(rec.Body.Bytes(), &sample); err != nil {
 		t.Fatalf("decode live token rate: %v", err)
 	}
@@ -144,7 +145,7 @@ func TestHandleLiveTokenRateAPIWithoutSamplerIsUnavailable(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", rec.Code)
 	}
-	var sample LiveTokenRateSample
+	var sample snapshot.LiveTokenRateSample
 	if err := json.Unmarshal(rec.Body.Bytes(), &sample); err != nil {
 		t.Fatal(err)
 	}
@@ -271,16 +272,16 @@ func TestHandleRefreshAPINormalizesRequestedIntervalSlot(t *testing.T) {
 func TestHandleSnapshotAPIReturnsCompactJSONAndRefreshSlotHeader(t *testing.T) {
 	currentRate := 2.5
 	app := &trayApp{}
-	app.lastSnapshot = Snapshot{
+	app.lastSnapshot = snapshot.Snapshot{
 		GeneratedAt:   "2026-06-28T12:00:00Z",
 		RefreshSlotID: "30s:2026-06-28T12:00:00Z",
-		ThroughputTrends: TrendSet{Windows: []TrendWindow{{
+		ThroughputTrends: snapshot.TrendSet{Windows: []snapshot.TrendWindow{{
 			Range: "1D",
-			ThroughputSeries: []ThroughputTrendSeries{{
+			ThroughputSeries: []snapshot.ThroughputTrendSeries{{
 				Key:           "minute:300",
 				Kind:          throughputSeriesKindMinuteRollup,
 				WindowSeconds: 300,
-				Summary: &ThroughputTrendSummary{
+				Summary: &snapshot.ThroughputTrendSummary{
 					Max:           4,
 					P95:           3.5,
 					Avg:           1.25,
@@ -322,7 +323,7 @@ func TestHandleSnapshotAPIReturnsCompactJSONAndRefreshSlotHeader(t *testing.T) {
 
 func TestHandleSnapshotAPIHonorsRefreshSlotValidators(t *testing.T) {
 	app := &trayApp{}
-	app.rememberSnapshot(Snapshot{
+	app.rememberSnapshot(snapshot.Snapshot{
 		GeneratedAt:   "2026-06-28T12:00:00Z",
 		RefreshSlotID: "30s:2026-06-28T12:00:00Z",
 	})
@@ -358,7 +359,7 @@ func TestHandleSnapshotAPIHonorsRefreshSlotValidators(t *testing.T) {
 
 func TestHandleSnapshotAPIHonorsETagLists(t *testing.T) {
 	app := &trayApp{}
-	app.rememberSnapshot(Snapshot{
+	app.rememberSnapshot(snapshot.Snapshot{
 		GeneratedAt:   "2026-06-28T12:00:00Z",
 		RefreshSlotID: "30s:2026-06-28T12:00:00Z",
 	})
@@ -415,7 +416,7 @@ func TestHandleSnapshotAPIHonorsETagLists(t *testing.T) {
 
 func TestHandleSnapshotAPIFillsRefreshSlotForCachedSnapshot(t *testing.T) {
 	app := &trayApp{cfg: Config{RefreshInterval: 5 * time.Minute}}
-	app.lastSnapshot = Snapshot{GeneratedAt: "2026-06-28T12:00:00Z"}
+	app.lastSnapshot = snapshot.Snapshot{GeneratedAt: "2026-06-28T12:00:00Z"}
 	app.haveSnapshot = true
 	handler := app.handler()
 	req := newLoopbackRequest(http.MethodGet, "/api/snapshot", nil)
@@ -442,7 +443,7 @@ func TestHandleSnapshotAPIFillsRefreshSlotForCachedSnapshot(t *testing.T) {
 
 func TestHandleSnapshotAPINotModifiedSkipsSanitizeAndCachesPayload(t *testing.T) {
 	app := &trayApp{}
-	app.rememberSnapshot(Snapshot{
+	app.rememberSnapshot(snapshot.Snapshot{
 		GeneratedAt:   "2026-06-28T12:00:00Z",
 		RefreshSlotID: "30s:2026-06-28T12:00:00Z",
 	})
@@ -486,7 +487,7 @@ func TestHandleSnapshotAPINotModifiedSkipsSanitizeAndCachesPayload(t *testing.T)
 
 func TestHandleSnapshotAPIInvalidatesClientCacheOnSlotChange(t *testing.T) {
 	app := &trayApp{}
-	app.rememberSnapshot(Snapshot{
+	app.rememberSnapshot(snapshot.Snapshot{
 		GeneratedAt:   "2026-06-28T12:00:00Z",
 		RefreshSlotID: "30s:2026-06-28T12:00:00Z",
 	})
@@ -498,7 +499,7 @@ func TestHandleSnapshotAPIInvalidatesClientCacheOnSlotChange(t *testing.T) {
 		t.Fatalf("expected status 200, got %d", firstRec.Code)
 	}
 
-	app.rememberSnapshot(Snapshot{
+	app.rememberSnapshot(snapshot.Snapshot{
 		GeneratedAt:   "2026-06-28T12:00:30Z",
 		RefreshSlotID: "30s:2026-06-28T12:00:30Z",
 	})
@@ -514,7 +515,7 @@ func TestHandleSnapshotAPIInvalidatesClientCacheOnSlotChange(t *testing.T) {
 
 func TestHandleSnapshotAPIServesCachedGzipRepresentation(t *testing.T) {
 	app := &trayApp{}
-	app.rememberSnapshot(Snapshot{
+	app.rememberSnapshot(snapshot.Snapshot{
 		GeneratedAt:   "2026-06-28T12:00:00Z",
 		RefreshSlotID: "30s:2026-06-28T12:00:00Z",
 		Notes:         []string{strings.Repeat("compressible snapshot evidence ", 200)},
@@ -665,10 +666,10 @@ func TestHandleOpenHostAppAPIRedactsOpenFailure(t *testing.T) {
 		t.Fatalf("mkdir app bundle: %v", err)
 	}
 	app := &trayApp{}
-	app.lastSnapshot = Snapshot{
-		LiveProcesses: []LiveProcessSnapshot{{
+	app.lastSnapshot = snapshot.Snapshot{
+		LiveProcesses: []snapshot.LiveProcessSnapshot{{
 			PID:     42,
-			HostApp: &HostApp{PID: 7, Name: "Terminal", BundlePath: bundlePath},
+			HostApp: &snapshot.HostApp{PID: 7, Name: "Terminal", BundlePath: bundlePath},
 		}},
 	}
 	app.haveSnapshot = true
@@ -697,16 +698,16 @@ func TestHandleOpenHostAppAPIRedactsOpenFailure(t *testing.T) {
 
 func TestHandleSnapshotAPIRedactsConfigPaths(t *testing.T) {
 	app := &trayApp{cfg: Config{RefreshInterval: 5 * time.Minute}}
-	app.lastSnapshot = Snapshot{
+	app.lastSnapshot = snapshot.Snapshot{
 		GeneratedAt: "2026-06-28T12:00:00Z",
-		LiveTokenRateFiles: []TranscriptFile{{
+		LiveTokenRateFiles: []snapshot.TranscriptFile{{
 			Tool: "codex",
 			Path: filepath.Join("private", "roots", ".codex", "sessions", "active.jsonl"),
 		}},
 		LiveTokenProjects: map[string]string{
 			"codex\x00" + filepath.Join("private", "roots", ".codex", "sessions", "active.jsonl"): "private-project",
 		},
-		Config: SnapshotConfig{
+		Config: snapshot.SnapshotConfig{
 			IdleGapSeconds:       90,
 			ClaudeRoots:          []string{filepath.Join("private", "roots", ".claude")},
 			CodexRoots:           []string{filepath.Join("private", "roots", ".codex")},
@@ -714,9 +715,9 @@ func TestHandleSnapshotAPIRedactsConfigPaths(t *testing.T) {
 			HistoryFile:          filepath.Join("private", "state", "history.jsonl"),
 			ProcessRefreshTarget: 300,
 		},
-		History: SnapshotHistory{
+		History: snapshot.SnapshotHistory{
 			StorePath: filepath.Join("private", "state", "history.jsonl"), LoadedSampleCount: 2,
-			Throughput: &SnapshotThroughputHistory{StorePath: filepath.Join("private", "state", "throughput.jsonl"), MinuteFactCount: 12},
+			Throughput: &snapshot.SnapshotThroughputHistory{StorePath: filepath.Join("private", "state", "throughput.jsonl"), MinuteFactCount: 12},
 		},
 	}
 	app.haveSnapshot = true
@@ -729,7 +730,7 @@ func TestHandleSnapshotAPIRedactsConfigPaths(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d with body %q", rec.Code, rec.Body.String())
 	}
-	var got Snapshot
+	var got snapshot.Snapshot
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode snapshot response: %v", err)
 	}
@@ -765,44 +766,44 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 	projectPath := filepath.Join(root, "projects", "agentload")
 	sessionFileURI := (&url.URL{Scheme: "file", Path: sessionPath}).String()
 	app := &trayApp{cfg: Config{RefreshInterval: 5 * time.Minute}}
-	app.lastSnapshot = Snapshot{
+	app.lastSnapshot = snapshot.Snapshot{
 		GeneratedAt: "2026-06-28T12:00:00Z",
-		TranscriptStats: TranscriptStats{
+		TranscriptStats: snapshot.TranscriptStats{
 			Errors: []string{sessionPath + ": parse failed", "opened " + sessionFileURI},
 		},
-		ProcessStats: ProcessObservationStats{Incomplete: true, LastKnown: true, Error: "ps failed near " + sessionPath},
-		LiveProcesses: []LiveProcessSnapshot{
+		ProcessStats: snapshot.ProcessObservationStats{Incomplete: true, LastKnown: true, Error: "ps failed near " + sessionPath},
+		LiveProcesses: []snapshot.LiveProcessSnapshot{
 			{
 				PID:            42,
 				Tool:           "codex",
 				Command:        executablePath + " --cwd=" + workspacePath + " resume " + sessionPath + " --source=" + sessionFileURI,
-				HostApp:        &HostApp{PID: 7, Name: "Terminal", BundlePath: bundlePath},
+				HostApp:        &snapshot.HostApp{PID: 7, Name: "Terminal", BundlePath: bundlePath},
 				SessionIDs:     []string{"session"},
 				SessionPaths:   []string{sessionPath},
 				MappedSessions: 1,
 			},
 		},
-		LiveSessions: []LiveSessionSnapshot{
+		LiveSessions: []snapshot.LiveSessionSnapshot{
 			{
 				Tool:                      "codex",
 				SessionID:                 "session",
 				Project:                   projectPath,
 				Path:                      sessionPath,
-				HostApps:                  []HostApp{{PID: 7, Name: "Terminal", BundlePath: bundlePath}},
+				HostApps:                  []snapshot.HostApp{{PID: 7, Name: "Terminal", BundlePath: bundlePath}},
 				RoleReasons:               []string{sessionPath + ": role metadata"},
 				ConfidenceReasons:         []string{"read " + sessionPath},
 				ProjectAttributionReasons: []string{"cwd=" + workspacePath},
 				Provenance:                []string{"transcript_path"},
 			},
 		},
-		ProjectFocus: []ProjectSnapshot{
+		ProjectFocus: []snapshot.ProjectSnapshot{
 			{
 				Project:                   projectPath,
 				ConfidenceReasons:         []string{"read " + sessionFileURI},
 				ProjectAttributionReasons: []string{"cwd=" + workspacePath},
 			},
 		},
-		CandidateWorkitems: []CandidateWorkitemSnapshot{
+		CandidateWorkitems: []snapshot.CandidateWorkitemSnapshot{
 			{
 				Key:                       "project=" + projectPath + "|tool=codex|freshness=active",
 				Project:                   projectPath,
@@ -811,23 +812,23 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 				ProjectAttributionReasons: []string{"cwd=" + workspacePath},
 			},
 		},
-		CoordinationRisk: CoordinationRiskSnapshot{
+		CoordinationRisk: snapshot.CoordinationRiskSnapshot{
 			TopProject: projectPath,
-			Signals: []RiskSignalSnapshot{
+			Signals: []snapshot.RiskSignalSnapshot{
 				{Kind: "evidence_note", Severity: "observed", Evidence: "checked " + sessionPath},
 			},
 		},
-		ThroughputTrends: TrendSet{Windows: []TrendWindow{{
+		ThroughputTrends: snapshot.TrendSet{Windows: []snapshot.TrendWindow{{
 			Range: "1D",
-			ThroughputSeries: []ThroughputTrendSeries{{
+			ThroughputSeries: []snapshot.ThroughputTrendSeries{{
 				Key:           "minute:300",
 				Kind:          throughputSeriesKindMinuteRollup,
 				WindowSeconds: 300,
-				Points: []TrendPoint{{
+				Points: []snapshot.TrendPoint{{
 					At:                       "2026-06-28T12:00:00Z",
 					OutputTokensPerSecond:    2,
 					HasOutputTokensPerSecond: true,
-					OutputTokenProjects: []LiveTokenRateProjectSample{{
+					OutputTokenProjects: []snapshot.LiveTokenRateProjectSample{{
 						Project:               projectPath,
 						OutputTokensPerSecond: 2,
 						ActiveSessions:        1,
@@ -848,7 +849,7 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d with body %q", rec.Code, rec.Body.String())
 	}
-	var got Snapshot
+	var got snapshot.Snapshot
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode snapshot response: %v", err)
 	}
@@ -916,27 +917,27 @@ func TestHandleDiagnosticExportAPIRedactsLocalEvidence(t *testing.T) {
 	workspacePath := filepath.Join(root, "workspace", "agentload")
 	bundlePath := filepath.Join(root, "Terminal.app")
 	app := &trayApp{cfg: Config{RefreshInterval: 5 * time.Minute}}
-	app.lastSnapshot = Snapshot{
+	app.lastSnapshot = snapshot.Snapshot{
 		GeneratedAt: "2026-06-28T12:00:00Z",
-		Config: SnapshotConfig{
+		Config: snapshot.SnapshotConfig{
 			HistoryFile: sessionPath,
 			CodexRoots:  []string{workspacePath},
 		},
-		History: SnapshotHistory{StorePath: sessionPath, LastWriteError: "open " + filepath.Join(root, "state", "history.jsonl") + ": permission denied"},
-		LiveProcesses: []LiveProcessSnapshot{
+		History: snapshot.SnapshotHistory{StorePath: sessionPath, LastWriteError: "open " + filepath.Join(root, "state", "history.jsonl") + ": permission denied"},
+		LiveProcesses: []snapshot.LiveProcessSnapshot{
 			{
 				PID:          42,
 				Tool:         "codex",
 				Command:      filepath.Join(root, "bin", "codex") + " --cwd=" + workspacePath + " " + sessionPath,
 				SessionPaths: []string{sessionPath},
-				HostApp:      &HostApp{PID: 7, Name: "Terminal", BundlePath: bundlePath},
+				HostApp:      &snapshot.HostApp{PID: 7, Name: "Terminal", BundlePath: bundlePath},
 			},
 		},
-		LiveSessions: []LiveSessionSnapshot{
+		LiveSessions: []snapshot.LiveSessionSnapshot{
 			{Tool: "codex", SessionID: "session", Project: workspacePath, Path: sessionPath},
 		},
-		Diagnostics: DiagnosticSnapshot{
-			EvidenceGaps: []DiagnosticSignalSnapshot{
+		Diagnostics: snapshot.DiagnosticSnapshot{
+			EvidenceGaps: []snapshot.DiagnosticSignalSnapshot{
 				{Kind: "path_gap", Evidence: "read " + sessionPath, Detail: "cwd=" + workspacePath},
 			},
 		},
@@ -960,7 +961,7 @@ func TestHandleDiagnosticExportAPIRedactsLocalEvidence(t *testing.T) {
 			t.Fatalf("expected diagnostic export to redact %q, got body %q", leaked, body)
 		}
 	}
-	var got DiagnosticExportSnapshot
+	var got snapshot.DiagnosticExportSnapshot
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode diagnostic export: %v", err)
 	}
@@ -986,16 +987,16 @@ func TestHandleProcessDiagnosticAPIRedactsLocalEvidence(t *testing.T) {
 	workspacePath := filepath.Join(root, "workspace", "agentload")
 	bundlePath := filepath.Join(root, "Terminal.app")
 	app := &trayApp{cfg: Config{RefreshInterval: 5 * time.Minute}}
-	app.lastSnapshot = Snapshot{
+	app.lastSnapshot = snapshot.Snapshot{
 		GeneratedAt: "2026-06-28T12:00:00Z",
-		LiveProcesses: []LiveProcessSnapshot{
+		LiveProcesses: []snapshot.LiveProcessSnapshot{
 			{
 				PID:          42,
 				Tool:         "codex",
 				Command:      filepath.Join(root, "bin", "codex") + " --cwd=" + workspacePath + " resume " + sessionPath,
 				SessionIDs:   []string{"session"},
 				SessionPaths: []string{sessionPath},
-				HostApp:      &HostApp{PID: 7, Name: "Terminal", BundlePath: bundlePath},
+				HostApp:      &snapshot.HostApp{PID: 7, Name: "Terminal", BundlePath: bundlePath},
 			},
 		},
 	}
@@ -1015,7 +1016,7 @@ func TestHandleProcessDiagnosticAPIRedactsLocalEvidence(t *testing.T) {
 			t.Fatalf("expected process diagnostic to redact %q, got body %q", leaked, body)
 		}
 	}
-	var got ProcessDiagnosticSnapshot
+	var got snapshot.ProcessDiagnosticSnapshot
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode process diagnostic: %v", err)
 	}
@@ -1226,7 +1227,7 @@ func TestSanitizeCommandForClientKeepsIdentityOnly(t *testing.T) {
 
 func TestHandleSnapshotAPIRedactsFreshObserverConfigPaths(t *testing.T) {
 	originalDiscover := discoverLiveProcessesFunc
-	discoverLiveProcessesFunc = func(context.Context, *codingAgentRegistry) ([]LiveProcess, []string) {
+	discoverLiveProcessesFunc = func(context.Context, *codingAgentRegistry) ([]snapshot.LiveProcess, []string) {
 		return nil, nil
 	}
 	t.Cleanup(func() {
@@ -1268,7 +1269,7 @@ func TestHandleSnapshotAPIRedactsFreshObserverConfigPaths(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d with body %q", rec.Code, rec.Body.String())
 	}
-	var got Snapshot
+	var got snapshot.Snapshot
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode snapshot response: %v", err)
 	}
@@ -1293,9 +1294,9 @@ func TestHandleSnapshotAPIRedactsFreshObserverConfigPaths(t *testing.T) {
 }
 
 func TestFormatTrayMetaTitleIncludesScanCoverage(t *testing.T) {
-	got := formatTrayMetaTitle(Snapshot{
+	got := formatTrayMetaTitle(snapshot.Snapshot{
 		GeneratedAt: "2026-06-28T12:00:00Z",
-		TranscriptStats: TranscriptStats{
+		TranscriptStats: snapshot.TranscriptStats{
 			ScannedFiles:                  19,
 			ParsedFiles:                   11,
 			DeferredFiles:                 4,
@@ -1473,7 +1474,7 @@ func TestResolveHostAppIconFileUsesObservedBundleResources(t *testing.T) {
 		t.Fatalf("write icon: %v", err)
 	}
 
-	gotPath, ctype, ok := resolveHostAppIconFile(HostApp{
+	gotPath, ctype, ok := resolveHostAppIconFile(snapshot.HostApp{
 		PID:        321,
 		Name:       "Example Host",
 		BundlePath: bundlePath,
@@ -1496,11 +1497,11 @@ func TestObservedHostAppFromRequestRequiresCachedSnapshotEvidence(t *testing.T) 
 		t.Fatalf("mkdir bundle: %v", err)
 	}
 	app := &trayApp{}
-	app.rememberSnapshot(Snapshot{
-		LiveProcesses: []LiveProcessSnapshot{
+	app.rememberSnapshot(snapshot.Snapshot{
+		LiveProcesses: []snapshot.LiveProcessSnapshot{
 			{
 				PID: 42,
-				HostApp: &HostApp{
+				HostApp: &snapshot.HostApp{
 					PID:        42,
 					Name:       "Terminal",
 					BundlePath: bundlePath,
@@ -1531,13 +1532,13 @@ func TestObservedHostAppFromRequestUsesInternalFreshSnapshot(t *testing.T) {
 		t.Fatalf("mkdir bundle: %v", err)
 	}
 	originalDiscover := discoverLiveProcessesFunc
-	discoverLiveProcessesFunc = func(context.Context, *codingAgentRegistry) ([]LiveProcess, []string) {
-		return []LiveProcess{
+	discoverLiveProcessesFunc = func(context.Context, *codingAgentRegistry) ([]snapshot.LiveProcess, []string) {
+		return []snapshot.LiveProcess{
 			{
 				PID:     42,
 				Tool:    "codex",
 				Command: "codex resume",
-				HostApp: &HostApp{
+				HostApp: &snapshot.HostApp{
 					PID:        42,
 					Name:       "Terminal",
 					BundlePath: bundlePath,

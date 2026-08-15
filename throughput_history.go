@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
@@ -45,12 +46,12 @@ type ThroughputMinuteFact struct {
 }
 
 type LegacyThroughputFact struct {
-	At                    string                       `json:"at"`
-	State                 string                       `json:"state"`
-	WindowSeconds         int                          `json:"window_seconds"`
-	OutputTokensPerSecond *float64                     `json:"output_tokens_per_second,omitempty"`
-	ActiveSessions        int                          `json:"active_sessions"`
-	Projects              []LiveTokenRateProjectSample `json:"projects"`
+	At                    string                                `json:"at"`
+	State                 string                                `json:"state"`
+	WindowSeconds         int                                   `json:"window_seconds"`
+	OutputTokensPerSecond *float64                              `json:"output_tokens_per_second,omitempty"`
+	ActiveSessions        int                                   `json:"active_sessions"`
+	Projects              []snapshot.LiveTokenRateProjectSample `json:"projects"`
 }
 
 type throughputHistoryRecord struct {
@@ -409,13 +410,13 @@ func (store *throughputHistoryStore) snapshot() ([]ThroughputMinuteFact, []Legac
 	return minutes, legacy
 }
 
-func (store *throughputHistoryStore) snapshotMetadata() *SnapshotThroughputHistory {
+func (store *throughputHistoryStore) snapshotMetadata() *snapshot.SnapshotThroughputHistory {
 	if store == nil {
 		return nil
 	}
 	store.mu.RLock()
 	defer store.mu.RUnlock()
-	return &SnapshotThroughputHistory{
+	return &snapshot.SnapshotThroughputHistory{
 		StorePath:          store.path,
 		MinuteFactCount:    len(store.minutes),
 		LegacyFactCount:    len(store.legacy),
@@ -451,7 +452,7 @@ func migrateLegacyThroughputHistory(history *localHistoryState, store *throughpu
 			State:          throughput.State,
 			WindowSeconds:  throughput.WindowSeconds,
 			ActiveSessions: throughput.ActiveSessions,
-			Projects:       cloneLiveTokenRateProjectSamples(throughput.Projects),
+			Projects:       snapshot.CloneLiveTokenRateProjectSamples(throughput.Projects),
 		}
 		if throughput.OutputTokensPerSecond != nil {
 			rate := *throughput.OutputTokensPerSecond
@@ -584,7 +585,7 @@ func cloneLegacyThroughput(fact LegacyThroughputFact) LegacyThroughputFact {
 		rate := *fact.OutputTokensPerSecond
 		fact.OutputTokensPerSecond = &rate
 	}
-	fact.Projects = cloneLiveTokenRateProjectSamples(fact.Projects)
+	fact.Projects = snapshot.CloneLiveTokenRateProjectSamples(fact.Projects)
 	return fact
 }
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"bytes"
 	"context"
 	"fmt"
@@ -53,7 +54,7 @@ type trayApp struct {
 	heartbeatStarted bool
 
 	lastMu            sync.RWMutex
-	lastSnapshot      Snapshot
+	lastSnapshot      snapshot.Snapshot
 	haveSnapshot      bool
 	closing           bool
 	refreshing        bool
@@ -65,7 +66,7 @@ type trayApp struct {
 
 	// mergeRecordedSampleFunc overrides the merge performed under lastMu. Nil in
 	// production; tests set it to inject a failing merge.
-	mergeRecordedSampleFunc func(Snapshot, HistorySample, time.Time, error) Snapshot
+	mergeRecordedSampleFunc func(snapshot.Snapshot, HistorySample, time.Time, error) snapshot.Snapshot
 
 	// openURLFunc is a test seam for the external URL opener. Nil in production;
 	// a contained menu step can then be tested with a real injected failure.
@@ -329,7 +330,7 @@ func (a *trayApp) onReady() {
 	if a.isClosing() {
 		return
 	}
-	icon := renderStatusIcon(CurrentMetrics{}, true)
+	icon := renderStatusIcon(snapshot.CurrentMetrics{}, true)
 	systray.SetTemplateIcon(icon, icon)
 	systray.SetTitle("…")
 	systray.SetTooltip("Agent Load is starting")
@@ -604,37 +605,37 @@ func (a *trayApp) refreshOnce(slotID string) {
 	}
 	ctx, cancel := context.WithTimeout(a.refreshContext(), clampDuration(a.cfg.Lookback/10, 90*time.Second, 5*time.Minute))
 	defer cancel()
-	snapshot := a.observer.Snapshot(ctx)
+	snap := a.observer.Snapshot(ctx)
 	if a.isClosing() {
 		return
 	}
-	snapshot.RefreshSlotID = slotID
-	scanAborted := snapshotScanAborted(ctx, snapshot)
+	snap.RefreshSlotID = slotID
+	scanAborted := snapshotScanAborted(ctx, snap)
 	// A partial transcript scan must not replace the sampler's project mapping,
 	// but it must not prevent the sampler from starting either. Persistent parser
 	// errors are common enough that gating this independent live metric on a clean
 	// snapshot would leave it disabled for the rest of the session.
-	a.startLiveTokenRate(snapshot, scanAborted)
+	a.startLiveTokenRate(snap, scanAborted)
 	if scanAborted {
 		// Show the partial result but keep it out of history/cache so trends
 		// and heatmaps only build from complete samples; the next slot rescans.
-		a.applySnapshot(snapshot)
-		a.recordLifecycle(lifecycleEventFromSnapshot("snapshot_aborted", snapshotAbortReason(ctx, snapshot), snapshot))
+		a.applySnapshot(snap)
+		a.recordLifecycle(lifecycleEventFromSnapshot("snapshot_aborted", snapshotAbortReason(ctx, snap), snap))
 		return
 	}
-	snapshot = a.rememberSnapshot(snapshot)
-	a.applySnapshot(snapshot)
+	snap = a.rememberSnapshot(snap)
+	a.applySnapshot(snap)
 }
 
 // startLiveTokenRate starts the independent token metric for every refresh. A
 // complete transcript snapshot may update attribution; an incomplete one keeps
 // the previous mapping but still allows the metric to report unassigned data.
-func (a *trayApp) startLiveTokenRate(snapshot Snapshot, scanAborted bool) {
+func (a *trayApp) startLiveTokenRate(snap snapshot.Snapshot, scanAborted bool) {
 	if a == nil || a.liveTokenRate == nil || a.isClosing() {
 		return
 	}
 	if !scanAborted {
-		a.liveTokenRate.updateSnapshotProjects(snapshot.LiveTokenProjects)
+		a.liveTokenRate.updateSnapshotProjects(snap.LiveTokenProjects)
 	}
 	a.liveTokenRate.start(liveTokenRateSampleInterval)
 }
@@ -642,17 +643,17 @@ func (a *trayApp) startLiveTokenRate(snapshot Snapshot, scanAborted bool) {
 // snapshotScanAborted reports whether a snapshot lacks global evidence
 // coverage. A local parser error is disclosed as degraded evidence, while
 // cancellation, discovery failure, and coverage gaps remain non-durable.
-func snapshotScanAborted(ctx context.Context, snapshot Snapshot) bool {
+func snapshotScanAborted(ctx context.Context, snap snapshot.Snapshot) bool {
 	if ctx != nil && ctx.Err() != nil {
 		return true
 	}
-	if snapshot.TranscriptStats.CoverageIncomplete {
+	if snap.TranscriptStats.CoverageIncomplete {
 		return true
 	}
-	if snapshot.ProcessStats.Incomplete {
+	if snap.ProcessStats.Incomplete {
 		return true
 	}
-	for _, err := range snapshot.TranscriptStats.Errors {
+	for _, err := range snap.TranscriptStats.Errors {
 		if transcriptScanErrorIsGlobal(err) {
 			return true
 		}
@@ -660,21 +661,21 @@ func snapshotScanAborted(ctx context.Context, snapshot Snapshot) bool {
 	return false
 }
 
-func snapshotAbortReason(ctx context.Context, snapshot Snapshot) string {
+func snapshotAbortReason(ctx context.Context, snap snapshot.Snapshot) string {
 	if ctx != nil && ctx.Err() != nil {
 		return ctx.Err().Error()
 	}
-	if snapshot.TranscriptStats.CoverageIncomplete {
+	if snap.TranscriptStats.CoverageIncomplete {
 		return "transcript evidence coverage incomplete"
 	}
-	if snapshot.ProcessStats.Incomplete {
-		if strings.TrimSpace(snapshot.ProcessStats.Error) != "" {
-			return "process evidence incomplete: " + snapshot.ProcessStats.Error
+	if snap.ProcessStats.Incomplete {
+		if strings.TrimSpace(snap.ProcessStats.Error) != "" {
+			return "process evidence incomplete: " + snap.ProcessStats.Error
 		}
 		return "process evidence incomplete"
 	}
-	if len(snapshot.TranscriptStats.Errors) > 0 {
-		return snapshot.TranscriptStats.Errors[0]
+	if len(snap.TranscriptStats.Errors) > 0 {
+		return snap.TranscriptStats.Errors[0]
 	}
 	return ""
 }
@@ -691,13 +692,13 @@ func (a *trayApp) isRefreshing() bool {
 	return a.refreshing
 }
 
-func (a *trayApp) rememberSnapshot(snapshot Snapshot) Snapshot {
-	if snapshot.TranscriptStats.CoverageIncomplete || snapshot.ProcessStats.Incomplete {
+func (a *trayApp) rememberSnapshot(snap snapshot.Snapshot) snapshot.Snapshot {
+	if snap.TranscriptStats.CoverageIncomplete || snap.ProcessStats.Incomplete {
 		// Incomplete evidence may be displayed for this refresh, but it must not
 		// become the durable in-memory or JSONL history source of truth.
-		return snapshot
+		return snap
 	}
-	sample := historySampleFromSnapshot(snapshot)
+	sample := historySampleFromSnapshot(snap)
 	var sampleTime time.Time
 	sample.At, sampleTime = normalizeHistorySampleTimestamp(sample.At, time.Now())
 	// The JSONL append runs before taking lastMu so /api/snapshot readers never
@@ -712,16 +713,16 @@ func (a *trayApp) rememberSnapshot(snapshot Snapshot) Snapshot {
 	// lock every snapshot reader and refresh guard waits on.
 	func() {
 		defer a.lastMu.Unlock()
-		snapshot = a.mergeRecordedSampleUnderLock(snapshot, sample, sampleTime, appendErr)
-		a.lastSnapshot = snapshot
+		snap = a.mergeRecordedSampleUnderLock(snap, sample, sampleTime, appendErr)
+		a.lastSnapshot = snap
 		a.haveSnapshot = true
 	}()
-	event := lifecycleEventFromSnapshot("snapshot_recorded", "", snapshot)
+	event := lifecycleEventFromSnapshot("snapshot_recorded", "", snap)
 	if appendErr != nil {
 		event.Error = appendErr.Error()
 	}
 	a.recordLifecycle(event)
-	return snapshot
+	return snap
 }
 
 func (a *trayApp) recordLifecycle(event lifecycleEvent) {
@@ -739,47 +740,40 @@ func (a *trayApp) appendHistorySample(sample HistorySample) error {
 	return appendHistorySampleFile(a.history.path, sample)
 }
 
-func cloneLiveTokenRateProjectSamples(projects []LiveTokenRateProjectSample) []LiveTokenRateProjectSample {
-	if projects == nil {
-		return nil
-	}
-	return append([]LiveTokenRateProjectSample{}, projects...)
-}
-
 // mergeRecordedSampleUnderLock is the merge step as invoked while lastMu is
 // held. It exists as its own field-backed seam so a test can inject a panicking
 // merge and prove the lock is still released; production leaves it nil and uses
 // mergeRecordedSampleLocked.
-func (a *trayApp) mergeRecordedSampleUnderLock(snapshot Snapshot, sample HistorySample, sampleTime time.Time, appendErr error) Snapshot {
+func (a *trayApp) mergeRecordedSampleUnderLock(snap snapshot.Snapshot, sample HistorySample, sampleTime time.Time, appendErr error) snapshot.Snapshot {
 	if a.mergeRecordedSampleFunc != nil {
-		return a.mergeRecordedSampleFunc(snapshot, sample, sampleTime, appendErr)
+		return a.mergeRecordedSampleFunc(snap, sample, sampleTime, appendErr)
 	}
-	return a.mergeRecordedSampleLocked(snapshot, sample, sampleTime, appendErr)
+	return a.mergeRecordedSampleLocked(snap, sample, sampleTime, appendErr)
 }
 
-func (a *trayApp) mergeRecordedSampleLocked(snapshot Snapshot, sample HistorySample, sampleTime time.Time, appendErr error) Snapshot {
+func (a *trayApp) mergeRecordedSampleLocked(snap snapshot.Snapshot, sample HistorySample, sampleTime time.Time, appendErr error) snapshot.Snapshot {
 	a.history.recordSampleInMemory(sample, sampleTime, appendErr)
 	trendPoints := a.history.trendPoints()
 	minuteFacts, legacyFacts := a.throughputHistory.snapshot()
-	snapshot.RealtimeTrends = buildRealtimeTrendWindows(trendPoints, sampleTime)
-	snapshot.ThroughputTrends = buildThroughputTrendWindows(minuteFacts, legacyFacts, sampleTime)
-	snapshot.ProjectHeatmaps = buildProjectHeatmapWindows(a.history.samples, sampleTime)
-	snapshot.History = a.history.snapshotMetadata()
-	snapshot.History.Throughput = a.throughputHistory.snapshotMetadata()
-	if snapshot.History.LastWriteError != "" {
-		snapshot.Notes = uniqueSortedStrings(append(snapshot.Notes, "Local history append failed; see history.last_write_error."))
+	snap.RealtimeTrends = buildRealtimeTrendWindows(trendPoints, sampleTime)
+	snap.ThroughputTrends = buildThroughputTrendWindows(minuteFacts, legacyFacts, sampleTime)
+	snap.ProjectHeatmaps = buildProjectHeatmapWindows(a.history.samples, sampleTime)
+	snap.History = a.history.snapshotMetadata()
+	snap.History.Throughput = a.throughputHistory.snapshotMetadata()
+	if snap.History.LastWriteError != "" {
+		snap.Notes = uniqueSortedStrings(append(snap.Notes, "Local history append failed; see history.last_write_error."))
 	}
-	if snapshot.History.Throughput != nil && snapshot.History.Throughput.LastWriteError != "" {
-		snapshot.Notes = uniqueSortedStrings(append(snapshot.Notes, "Throughput history append failed; see history.throughput.last_write_error."))
+	if snap.History.Throughput != nil && snap.History.Throughput.LastWriteError != "" {
+		snap.Notes = uniqueSortedStrings(append(snap.Notes, "Throughput history append failed; see history.throughput.last_write_error."))
 	}
-	return snapshot
+	return snap
 }
 
-func (a *trayApp) cachedSnapshot() (Snapshot, bool) {
+func (a *trayApp) cachedSnapshot() (snapshot.Snapshot, bool) {
 	a.lastMu.RLock()
 	defer a.lastMu.RUnlock()
 	if !a.haveSnapshot {
-		return Snapshot{}, false
+		return snapshot.Snapshot{}, false
 	}
 	return a.lastSnapshot, true
 }
@@ -798,28 +792,28 @@ func (a *trayApp) applyLoadingState() {
 	}
 }
 
-func (a *trayApp) applySnapshot(snapshot Snapshot) {
+func (a *trayApp) applySnapshot(snap snapshot.Snapshot) {
 	a.updateStatusBox()
 
 	if a.mCurrent != nil {
 		a.mCurrent.SetTitle(fmt.Sprintf(
 			"Live field: %d bursts · %d sessions · %d pids",
-			snapshot.Current.ActiveBurstConcurrency,
-			snapshot.Current.SessionConcurrency,
-			snapshot.Current.PIDConcurrency,
+			snap.Current.ActiveBurstConcurrency,
+			snap.Current.SessionConcurrency,
+			snap.Current.PIDConcurrency,
 		))
 	}
 	if a.mFocus != nil {
 		focus := "No live project focus yet."
-		if len(snapshot.ProjectFocus) > 0 {
-			top := snapshot.ProjectFocus[0]
+		if len(snap.ProjectFocus) > 0 {
+			top := snap.ProjectFocus[0]
 			focus = fmt.Sprintf(
 				"Focus: %s · %dA/%dS/%dP · %.1f%% mapped",
 				top.Project,
 				top.ActiveBurstCount,
 				top.SessionCount,
 				top.ProcessCount,
-				snapshot.Summary.MappingCoveragePct,
+				snap.Summary.MappingCoveragePct,
 			)
 		}
 		a.mFocus.SetTitle(focus)
@@ -827,12 +821,12 @@ func (a *trayApp) applySnapshot(snapshot Snapshot) {
 	if a.mPeak != nil {
 		a.mPeak.SetTitle(fmt.Sprintf(
 			"Peaks: today %s · 7d %s",
-			formatCompactPeak(snapshot.HistoricPeaks.Today),
-			formatCompactPeak(snapshot.HistoricPeaks.SevenDay),
+			formatCompactPeak(snap.HistoricPeaks.Today),
+			formatCompactPeak(snap.HistoricPeaks.SevenDay),
 		))
 	}
 	if a.mMeta != nil {
-		a.mMeta.SetTitle(formatTrayMetaTitle(snapshot))
+		a.mMeta.SetTitle(formatTrayMetaTitle(snap))
 	}
 	if a.mRefreshNow != nil {
 		a.mRefreshNow.SetTitle("Refresh Now")
@@ -858,10 +852,10 @@ func (a *trayApp) updateStatusBox() {
 	if a == nil || a.isClosing() {
 		return
 	}
-	snapshot, _ := a.cachedSnapshot()
+	snap, _ := a.cachedSnapshot()
 	sysRes, ok := latestBackgroundSystemResourceSample()
 	if !ok {
-		sysRes = snapshot.SystemResources
+		sysRes = snap.SystemResources
 	}
 	now := time.Now()
 	var tps float64 = -1
@@ -873,22 +867,22 @@ func (a *trayApp) updateStatusBox() {
 			tps = 0
 		}
 	}
-	payload := formatStatusBoxPayload(snapshot, sysRes, tps, a.isRefreshing())
+	payload := formatStatusBoxPayload(snap, sysRes, tps, a.isRefreshing())
 	if nativeStatusBoxSupported() {
 		nativeStatusBoxUpdate(payload)
 	} else {
-		icon := renderStatusIcon(snapshot.Current, payload.Loading)
+		icon := renderStatusIcon(snap.Current, payload.Loading)
 		systray.SetTemplateIcon(icon, icon)
-		if payload.Loading && snapshot.Current.ActiveBurstConcurrency == 0 && snapshot.Current.SessionConcurrency == 0 {
+		if payload.Loading && snap.Current.ActiveBurstConcurrency == 0 && snap.Current.SessionConcurrency == 0 {
 			systray.SetTitle("…")
 		} else {
-			systray.SetTitle(formatStatusTitle(snapshot))
+			systray.SetTitle(formatStatusTitle(snap))
 		}
 	}
 	if payload.Loading {
-		systray.SetTooltip("Agent Load is refreshing\n" + formatTooltip(snapshot, sysRes, tps))
+		systray.SetTooltip("Agent Load is refreshing\n" + formatTooltip(snap, sysRes, tps))
 	} else {
-		systray.SetTooltip(formatTooltip(snapshot, sysRes, tps))
+		systray.SetTooltip(formatTooltip(snap, sysRes, tps))
 	}
 }
 
@@ -900,8 +894,8 @@ type statusBoxPayload struct {
 	Loading  bool
 }
 
-func formatStatusBoxPayload(snapshot Snapshot, sysRes SystemResourceSnapshot, tps float64, loading bool) statusBoxPayload {
-	row1 := fmt.Sprintf("A%d S%d  %s", snapshot.Current.ActiveBurstConcurrency, snapshot.Current.SessionConcurrency, formatMetroResources(sysRes))
+func formatStatusBoxPayload(snap snapshot.Snapshot, sysRes snapshot.SystemResourceSnapshot, tps float64, loading bool) statusBoxPayload {
+	row1 := fmt.Sprintf("A%d S%d  %s", snap.Current.ActiveBurstConcurrency, snap.Current.SessionConcurrency, formatMetroResources(sysRes))
 	row2 := fmt.Sprintf("%s  %s", formatMetroTPS(tps), formatMetroNetwork(sysRes.NetworkRxBytesPerSec, sysRes.NetworkTxBytesPerSec))
 	return statusBoxPayload{
 		Row1:     row1,
@@ -937,7 +931,7 @@ func dimMask(row string) string {
 	return b.String()
 }
 
-func formatMetroResources(sysRes SystemResourceSnapshot) string {
+func formatMetroResources(sysRes snapshot.SystemResourceSnapshot) string {
 	mem := "M--"
 	if sysRes.MemoryTotalBytes > 0 {
 		mem = fmt.Sprintf("M%.0f%%", sysRes.MemoryUsedPct)
@@ -989,21 +983,21 @@ func formatMetroNetwork(rx, tx float64) string {
 	return fmt.Sprintf("↓%s ↑%s", formatRateUnit(rx), formatRateUnit(tx))
 }
 
-func formatTrayMetaTitle(snapshot Snapshot) string {
+func formatTrayMetaTitle(snap snapshot.Snapshot) string {
 	cacheState := "fresh scan"
-	if snapshot.TranscriptStats.Cached {
+	if snap.TranscriptStats.Cached {
 		cacheState = "cache hit"
 	}
 	parts := []string{
-		fmt.Sprintf("Updated %s", formatTimestamp(snapshot.GeneratedAt)),
+		fmt.Sprintf("Updated %s", formatTimestamp(snap.GeneratedAt)),
 		cacheState,
-		fmt.Sprintf("%d/%d transcripts", snapshot.TranscriptStats.ParsedFiles, snapshot.TranscriptStats.ScannedFiles),
-		fmt.Sprintf("%d deferred", snapshot.TranscriptStats.DeferredFiles),
-		fmt.Sprintf("%d tail", snapshot.TranscriptStats.TailParsedFiles),
+		fmt.Sprintf("%d/%d transcripts", snap.TranscriptStats.ParsedFiles, snap.TranscriptStats.ScannedFiles),
+		fmt.Sprintf("%d deferred", snap.TranscriptStats.DeferredFiles),
+		fmt.Sprintf("%d tail", snap.TranscriptStats.TailParsedFiles),
 	}
-	if snapshot.TranscriptStats.HistoricalScanDeferred {
-		if snapshot.TranscriptStats.ForegroundScanLookbackSeconds > 0 {
-			parts = append(parts, "foreground "+formatDurationLabel(time.Duration(snapshot.TranscriptStats.ForegroundScanLookbackSeconds)*time.Second))
+	if snap.TranscriptStats.HistoricalScanDeferred {
+		if snap.TranscriptStats.ForegroundScanLookbackSeconds > 0 {
+			parts = append(parts, "foreground "+formatDurationLabel(time.Duration(snap.TranscriptStats.ForegroundScanLookbackSeconds)*time.Second))
 		}
 		parts = append(parts, "history deferred")
 	}
@@ -1042,11 +1036,11 @@ func (a *trayApp) openURL(url string) {
 	}
 }
 
-func formatStatusTitle(snapshot Snapshot) string {
-	if snapshot.Current.ActiveBurstConcurrency == 0 && snapshot.Current.SessionConcurrency == 0 {
+func formatStatusTitle(snap snapshot.Snapshot) string {
+	if snap.Current.ActiveBurstConcurrency == 0 && snap.Current.SessionConcurrency == 0 {
 		return "Idle"
 	}
-	return fmt.Sprintf("%dA %dS", snapshot.Current.ActiveBurstConcurrency, snapshot.Current.SessionConcurrency)
+	return fmt.Sprintf("%dA %dS", snap.Current.ActiveBurstConcurrency, snap.Current.SessionConcurrency)
 }
 
 func formatCompactBytes(b uint64, suffix string) string {
@@ -1078,7 +1072,7 @@ func capitalizeTool(tool string) string {
 	}
 }
 
-func formatTooltip(snapshot Snapshot, sysRes SystemResourceSnapshot, tps float64) string {
+func formatTooltip(snap snapshot.Snapshot, sysRes snapshot.SystemResourceSnapshot, tps float64) string {
 	var tpsStr string
 	if tps >= 0 {
 		if tps < 10 {
@@ -1102,13 +1096,13 @@ func formatTooltip(snapshot Snapshot, sysRes SystemResourceSnapshot, tps float64
 	var lines []string
 
 	// Direct 1-to-1 mapping to menubar items (3 compact lines, never wrap)
-	lines = append(lines, fmt.Sprintf("[A]ctive: %d · [S]essions: %d", snapshot.Current.ActiveBurstConcurrency, snapshot.Current.SessionConcurrency))
+	lines = append(lines, fmt.Sprintf("[A]ctive: %d · [S]essions: %d", snap.Current.ActiveBurstConcurrency, snap.Current.SessionConcurrency))
 	lines = append(lines, fmt.Sprintf("[M]emory: %s · [D]isk: %s", memStr, diskStr))
 	lines = append(lines, fmt.Sprintf("[T]PS: %s · %s", tpsStr, netStr))
 
 	// Top projects
 	var projectLines []string
-	for i, p := range snapshot.ProjectFocus {
+	for i, p := range snap.ProjectFocus {
 		if i >= 3 {
 			break
 		}
@@ -1126,7 +1120,7 @@ func formatTooltip(snapshot Snapshot, sysRes SystemResourceSnapshot, tps float64
 
 	var toolParts []string
 	for _, tool := range []string{"codex", "claude", "trae", "grok"} {
-		if m, ok := snapshot.CurrentByTool[tool]; ok && (m.ActiveBurstConcurrency > 0 || m.SessionConcurrency > 0) {
+		if m, ok := snap.CurrentByTool[tool]; ok && (m.ActiveBurstConcurrency > 0 || m.SessionConcurrency > 0) {
 			toolParts = append(toolParts, fmt.Sprintf("%s (%dA/%dS)", capitalizeTool(tool), m.ActiveBurstConcurrency, m.SessionConcurrency))
 		}
 	}
@@ -1134,8 +1128,8 @@ func formatTooltip(snapshot Snapshot, sysRes SystemResourceSnapshot, tps float64
 		metaLines = append(metaLines, fmt.Sprintf("Tools: %s", strings.Join(toolParts, " · ")))
 	}
 
-	today := snapshot.HistoricPeaks.Today
-	sevenDay := snapshot.HistoricPeaks.SevenDay
+	today := snap.HistoricPeaks.Today
+	sevenDay := snap.HistoricPeaks.SevenDay
 	if today.ActiveBurstConcurrency.Value > 0 || today.SessionConcurrency.Value > 0 ||
 		sevenDay.ActiveBurstConcurrency.Value > 0 || sevenDay.SessionConcurrency.Value > 0 {
 		metaLines = append(metaLines, fmt.Sprintf("Peaks: Today %dA/%dS · 7-Day %dA/%dS",
@@ -1162,13 +1156,13 @@ func formatTooltip(snapshot Snapshot, sysRes SystemResourceSnapshot, tps float64
 		}
 	}
 
-	metaParts := []string{fmt.Sprintf("Updated %s", formatTimestamp(snapshot.GeneratedAt))}
-	if snapshot.TranscriptStats.ScannedFiles > 0 {
+	metaParts := []string{fmt.Sprintf("Updated %s", formatTimestamp(snap.GeneratedAt))}
+	if snap.TranscriptStats.ScannedFiles > 0 {
 		cacheState := "fresh scan"
-		if snapshot.TranscriptStats.Cached {
+		if snap.TranscriptStats.Cached {
 			cacheState = "cache hit"
 		}
-		metaParts = append(metaParts, fmt.Sprintf("%d transcripts (%s)", snapshot.TranscriptStats.ScannedFiles, cacheState))
+		metaParts = append(metaParts, fmt.Sprintf("%d transcripts (%s)", snap.TranscriptStats.ScannedFiles, cacheState))
 	}
 	metaLines = append(metaLines, strings.Join(metaParts, " · "))
 
@@ -1193,7 +1187,7 @@ func formatActiveWindowSeconds(seconds int) string {
 	return fmt.Sprintf("%ds", seconds)
 }
 
-func formatCompactPeak(window PeakWindow) string {
+func formatCompactPeak(window snapshot.PeakWindow) string {
 	return fmt.Sprintf("%dA/%dS", window.ActiveBurstConcurrency.Value, window.SessionConcurrency.Value)
 }
 
@@ -1220,7 +1214,7 @@ func clampDuration(value, floor, ceiling time.Duration) time.Duration {
 	return value
 }
 
-func renderStatusIcon(metrics CurrentMetrics, loading bool) []byte {
+func renderStatusIcon(metrics snapshot.CurrentMetrics, loading bool) []byte {
 	const (
 		width    = 18
 		height   = 18

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"context"
 	"fmt"
 	"path/filepath"
@@ -13,17 +14,17 @@ import (
 type agentProcessIdentity interface {
 	MatchesCommand(command processCommand) bool
 	DisplayIdentity(command processCommand) string
-	TranscriptFileForPath(path string) (TranscriptFile, bool)
+	TranscriptFileForPath(path string) (snapshot.TranscriptFile, bool)
 	RootFromTranscriptPath(path string) string
-	TranscriptForSessionID(roots []string, sessionID string) (TranscriptFile, bool)
+	TranscriptForSessionID(roots []string, sessionID string) (snapshot.TranscriptFile, bool)
 	RootsFromCommand(command processCommand) []string
 }
 
 type agentTranscriptParser interface {
-	Parse(file TranscriptFile) (*SessionTrace, error)
-	ParseTail(file TranscriptFile) (*SessionTrace, error)
-	ParseAppend(file TranscriptFile, base *SessionTrace, offset int64) (*SessionTrace, error)
-	CanAppend(file TranscriptFile) bool
+	Parse(file snapshot.TranscriptFile) (*snapshot.SessionTrace, error)
+	ParseTail(file snapshot.TranscriptFile) (*snapshot.SessionTrace, error)
+	ParseAppend(file snapshot.TranscriptFile, base *snapshot.SessionTrace, offset int64) (*snapshot.SessionTrace, error)
+	CanAppend(file snapshot.TranscriptFile) bool
 }
 
 type agentOutputUsageDecoder interface {
@@ -70,7 +71,7 @@ type codingAgentRegistry struct {
 // snapshotConfig applies registry-owned roots to the public snapshot shape.
 // Keeping this projection beside the adapter registry prevents every caller
 // that builds a snapshot from growing another vendor switch.
-func (r *codingAgentRegistry) snapshotConfig(base SnapshotConfig, observedRoots map[string][]string) SnapshotConfig {
+func (r *codingAgentRegistry) snapshotConfig(base snapshot.SnapshotConfig, observedRoots map[string][]string) snapshot.SnapshotConfig {
 	if r == nil {
 		return base
 	}
@@ -325,9 +326,9 @@ func (r *codingAgentRegistry) hasUsageRoots() bool {
 	return false
 }
 
-func (r *codingAgentRegistry) transcriptFileForEvidencePath(path string) (TranscriptFile, bool) {
+func (r *codingAgentRegistry) transcriptFileForEvidencePath(path string) (snapshot.TranscriptFile, bool) {
 	if r == nil {
-		return TranscriptFile{}, false
+		return snapshot.TranscriptFile{}, false
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -339,7 +340,7 @@ func (r *codingAgentRegistry) transcriptFileForEvidencePath(path string) (Transc
 			return file, true
 		}
 	}
-	return TranscriptFile{}, false
+	return snapshot.TranscriptFile{}, false
 }
 
 func (r *codingAgentRegistry) detectProcess(command string) (string, string) {
@@ -362,9 +363,9 @@ func (r *codingAgentRegistry) detectProcess(command string) (string, string) {
 	return "", ""
 }
 
-func (r *codingAgentRegistry) transcriptFileForPath(path string) (TranscriptFile, bool) {
+func (r *codingAgentRegistry) transcriptFileForPath(path string) (snapshot.TranscriptFile, bool) {
 	if r == nil {
-		return TranscriptFile{}, false
+		return snapshot.TranscriptFile{}, false
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -377,7 +378,7 @@ func (r *codingAgentRegistry) transcriptFileForPath(path string) (TranscriptFile
 			return file, true
 		}
 	}
-	return TranscriptFile{}, false
+	return snapshot.TranscriptFile{}, false
 }
 
 func (r *codingAgentRegistry) rootsFromCommand(agentID, command string) []string {
@@ -398,20 +399,20 @@ func (r *codingAgentRegistry) rootsFromCommand(agentID, command string) []string
 // foreground scan window still reaches the priority list. lsof cannot supply
 // this: claude closes its transcript between appends and grok holds
 // events.jsonl rather than the updates.jsonl this app parses.
-func (r *codingAgentRegistry) transcriptForSessionID(agentID, sessionID string) (TranscriptFile, bool) {
+func (r *codingAgentRegistry) transcriptForSessionID(agentID, sessionID string) (snapshot.TranscriptFile, bool) {
 	if r == nil {
-		return TranscriptFile{}, false
+		return snapshot.TranscriptFile{}, false
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	index, ok := r.byID[strings.TrimSpace(strings.ToLower(agentID))]
 	if !ok || r.adapters[index].Capabilities.Process == nil || len(r.adapters[index].Roots) == 0 {
-		return TranscriptFile{}, false
+		return snapshot.TranscriptFile{}, false
 	}
 	return r.adapters[index].Capabilities.Process.TranscriptForSessionID(r.adapters[index].Roots, strings.TrimSpace(sessionID))
 }
 
-func (r *codingAgentRegistry) rootFromTranscriptFile(file TranscriptFile) string {
+func (r *codingAgentRegistry) rootFromTranscriptFile(file snapshot.TranscriptFile) string {
 	if r == nil {
 		return ""
 	}

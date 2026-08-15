@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"context"
 	"fmt"
 	"io/fs"
@@ -12,7 +13,7 @@ import (
 )
 
 type discoveredTranscriptFile struct {
-	File TranscriptFile
+	File snapshot.TranscriptFile
 	Info os.FileInfo
 }
 
@@ -29,7 +30,7 @@ type transcriptDiscoveryResult struct {
 
 type transcriptDiscoveryCapability interface {
 	Discover(ctx context.Context, agentID string, roots []string, cutoff time.Time) transcriptDiscoveryResult
-	Classify(agentID string, roots []string, path string) (TranscriptFile, bool)
+	Classify(agentID string, roots []string, path string) (snapshot.TranscriptFile, bool)
 }
 
 type claudeTranscriptDiscovery struct{}
@@ -54,7 +55,7 @@ func (claudeTranscriptDiscovery) Discover(ctx context.Context, agentID string, r
 	return result
 }
 
-func (claudeTranscriptDiscovery) Classify(agentID string, roots []string, path string) (TranscriptFile, bool) {
+func (claudeTranscriptDiscovery) Classify(agentID string, roots []string, path string) (snapshot.TranscriptFile, bool) {
 	for _, root := range roots {
 		base := filepath.Join(root, "projects")
 		relative, ok := relativeEvidencePath(base, path)
@@ -69,10 +70,10 @@ func (claudeTranscriptDiscovery) Classify(agentID string, roots []string, path s
 			}
 		}
 		if !blocked {
-			return TranscriptFile{Tool: agentID, Path: filepath.Clean(filepath.Join(base, relative))}, true
+			return snapshot.TranscriptFile{Tool: agentID, Path: filepath.Clean(filepath.Join(base, relative))}, true
 		}
 	}
-	return TranscriptFile{}, false
+	return snapshot.TranscriptFile{}, false
 }
 
 type codexTranscriptDiscovery struct{}
@@ -92,24 +93,24 @@ func (codexTranscriptDiscovery) Discover(ctx context.Context, agentID string, ro
 	return result
 }
 
-func (codexTranscriptDiscovery) Classify(agentID string, roots []string, path string) (TranscriptFile, bool) {
+func (codexTranscriptDiscovery) Classify(agentID string, roots []string, path string) (snapshot.TranscriptFile, bool) {
 	for _, root := range roots {
 		base := filepath.Join(root, "sessions")
 		if relative, ok := relativeEvidencePath(base, path); ok && isDatedTranscriptRelativePath(relative) {
-			return TranscriptFile{Tool: agentID, Path: filepath.Clean(filepath.Join(base, relative))}, true
+			return snapshot.TranscriptFile{Tool: agentID, Path: filepath.Clean(filepath.Join(base, relative))}, true
 		}
 		base = filepath.Join(root, "archived_sessions")
 		if relative, ok := relativeEvidencePath(base, path); ok &&
 			!strings.Contains(relative, string(filepath.Separator)) && strings.HasSuffix(strings.ToLower(relative), ".jsonl") {
-			return TranscriptFile{Tool: agentID, Path: filepath.Clean(filepath.Join(base, relative))}, true
+			return snapshot.TranscriptFile{Tool: agentID, Path: filepath.Clean(filepath.Join(base, relative))}, true
 		}
 		base = filepath.Join(root, ".codexl")
 		if relative, ok := relativeEvidencePath(base, path); ok &&
 			strings.Contains(relative, string(filepath.Separator)) && filepath.Base(relative) == "events.jsonl" {
-			return TranscriptFile{Tool: agentID, Path: filepath.Clean(filepath.Join(base, relative))}, true
+			return snapshot.TranscriptFile{Tool: agentID, Path: filepath.Clean(filepath.Join(base, relative))}, true
 		}
 	}
-	return TranscriptFile{}, false
+	return snapshot.TranscriptFile{}, false
 }
 
 type traeTranscriptDiscovery struct{}
@@ -125,7 +126,7 @@ func (traeTranscriptDiscovery) Discover(ctx context.Context, agentID string, roo
 	return result
 }
 
-func (traeTranscriptDiscovery) Classify(agentID string, roots []string, path string) (TranscriptFile, bool) {
+func (traeTranscriptDiscovery) Classify(agentID string, roots []string, path string) (snapshot.TranscriptFile, bool) {
 	for _, root := range roots {
 		base := filepath.Join(root, "sessions")
 		relative, ok := relativeEvidencePath(base, path)
@@ -140,10 +141,10 @@ func (traeTranscriptDiscovery) Classify(agentID string, roots []string, path str
 			}
 		}
 		if !blocked {
-			return TranscriptFile{Tool: agentID, Path: filepath.Clean(filepath.Join(base, relative))}, true
+			return snapshot.TranscriptFile{Tool: agentID, Path: filepath.Clean(filepath.Join(base, relative))}, true
 		}
 	}
-	return TranscriptFile{}, false
+	return snapshot.TranscriptFile{}, false
 }
 
 // grokTranscriptDiscovery walks ~/.grok/sessions/<percent-encoded-cwd>/<session-id>/.
@@ -172,7 +173,7 @@ func (grokTranscriptDiscovery) Discover(ctx context.Context, agentID string, roo
 	return result
 }
 
-func (grokTranscriptDiscovery) Classify(agentID string, roots []string, path string) (TranscriptFile, bool) {
+func (grokTranscriptDiscovery) Classify(agentID string, roots []string, path string) (snapshot.TranscriptFile, bool) {
 	for _, root := range roots {
 		base := filepath.Join(root, "sessions")
 		relative, ok := relativeEvidencePath(base, path)
@@ -183,9 +184,9 @@ func (grokTranscriptDiscovery) Classify(agentID string, roots []string, path str
 		if len(strings.Split(relative, string(filepath.Separator))) != 3 {
 			continue
 		}
-		return TranscriptFile{Tool: agentID, Path: filepath.Clean(filepath.Join(base, relative))}, true
+		return snapshot.TranscriptFile{Tool: agentID, Path: filepath.Clean(filepath.Join(base, relative))}, true
 	}
-	return TranscriptFile{}, false
+	return snapshot.TranscriptFile{}, false
 }
 
 func (r *transcriptDiscoveryResult) merge(other transcriptDiscoveryResult) {
@@ -269,7 +270,7 @@ func walkEvidenceTree(ctx context.Context, root, agentID string, cutoff time.Tim
 			return nil
 		}
 		result.Files = append(result.Files, discoveredTranscriptFile{
-			File: TranscriptFile{Tool: agentID, Path: filepath.Clean(path)},
+			File: snapshot.TranscriptFile{Tool: agentID, Path: filepath.Clean(path)},
 			Info: entryInfo,
 		})
 		return nil

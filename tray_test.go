@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"context"
 	"encoding/json"
 	"io"
@@ -203,7 +204,7 @@ func TestOnExitIsIdempotent(t *testing.T) {
 func TestOnExitCancelsAndJoinsInFlightRefresh(t *testing.T) {
 	originalDiscover := discoverLiveProcessesFunc
 	entered := make(chan struct{}, 1)
-	discoverLiveProcessesFunc = func(ctx context.Context, _ *codingAgentRegistry) ([]LiveProcess, []string) {
+	discoverLiveProcessesFunc = func(ctx context.Context, _ *codingAgentRegistry) ([]snapshot.LiveProcess, []string) {
 		select {
 		case entered <- struct{}{}:
 		default:
@@ -317,14 +318,14 @@ func TestRememberSnapshotReleasesLastMuWhenMergePanics(t *testing.T) {
 	// Inject a failing merge. The real merge helpers are all nil-safe today, so
 	// the panic has to be injected to exercise the lock scope at all.
 	merged := false
-	app.mergeRecordedSampleFunc = func(Snapshot, HistorySample, time.Time, error) Snapshot {
+	app.mergeRecordedSampleFunc = func(snapshot.Snapshot, HistorySample, time.Time, error) snapshot.Snapshot {
 		merged = true
 		panic("merge failed")
 	}
 
 	func() {
 		defer func() { _ = recover() }()
-		app.rememberSnapshot(Snapshot{GeneratedAt: time.Now().Format(time.RFC3339)})
+		app.rememberSnapshot(snapshot.Snapshot{GeneratedAt: time.Now().Format(time.RFC3339)})
 	}()
 	if !merged {
 		t.Fatal("expected the injected merge to run under lastMu")
@@ -403,27 +404,27 @@ func TestSnapshotScanAborted(t *testing.T) {
 	tests := []struct {
 		name     string
 		ctx      context.Context
-		snapshot Snapshot
+		snapshot snapshot.Snapshot
 		want     bool
 	}{
-		{name: "live context and clean scan", ctx: context.Background(), snapshot: Snapshot{}, want: false},
-		{name: "cancelled context", ctx: cancelled, snapshot: Snapshot{}, want: true},
+		{name: "live context and clean scan", ctx: context.Background(), snapshot: snapshot.Snapshot{}, want: false},
+		{name: "cancelled context", ctx: cancelled, snapshot: snapshot.Snapshot{}, want: true},
 		{
 			name:     "scan aborted early marker",
 			ctx:      context.Background(),
-			snapshot: Snapshot{TranscriptStats: TranscriptStats{Errors: []string{"transcript scan aborted early (3 files not parsed): context deadline exceeded"}}},
+			snapshot: snapshot.Snapshot{TranscriptStats: snapshot.TranscriptStats{Errors: []string{"transcript scan aborted early (3 files not parsed): context deadline exceeded"}}},
 			want:     true,
 		},
 		{
 			name:     "scan wait cancelled marker",
 			ctx:      context.Background(),
-			snapshot: Snapshot{TranscriptStats: TranscriptStats{Errors: []string{"transcript scan wait cancelled: context canceled"}}},
+			snapshot: snapshot.Snapshot{TranscriptStats: snapshot.TranscriptStats{Errors: []string{"transcript scan wait cancelled: context canceled"}}},
 			want:     true,
 		},
 		{
 			name:     "ordinary transcript error is degraded evidence",
 			ctx:      context.Background(),
-			snapshot: Snapshot{TranscriptStats: TranscriptStats{Errors: []string{"session.jsonl: invalid JSON"}}},
+			snapshot: snapshot.Snapshot{TranscriptStats: snapshot.TranscriptStats{Errors: []string{"session.jsonl: invalid JSON"}}},
 			want:     false,
 		},
 	}
@@ -438,10 +439,10 @@ func TestSnapshotScanAborted(t *testing.T) {
 
 func TestRememberSnapshotRejectsIncompleteProcessEvidence(t *testing.T) {
 	app := &trayApp{}
-	got := app.rememberSnapshot(Snapshot{
+	got := app.rememberSnapshot(snapshot.Snapshot{
 		GeneratedAt:  "current",
-		ProcessStats: ProcessObservationStats{Incomplete: true, LastKnown: true},
-		LiveProcesses: []LiveProcessSnapshot{{
+		ProcessStats: snapshot.ProcessObservationStats{Incomplete: true, LastKnown: true},
+		LiveProcesses: []snapshot.LiveProcessSnapshot{{
 			PID: 42,
 		}},
 	})
@@ -459,7 +460,7 @@ func TestStartLiveTokenRateStartsForIncompleteSnapshotWithoutReplacingMapping(t 
 	app := &trayApp{liveTokenRate: sampler}
 	sampler.updateSnapshotProjects(map[string]string{"codex\x00known": "known-project"})
 
-	app.startLiveTokenRate(Snapshot{
+	app.startLiveTokenRate(snapshot.Snapshot{
 		LiveTokenProjects: map[string]string{"codex\x00partial": "partial-project"},
 	}, true)
 
@@ -482,7 +483,7 @@ func TestStartLiveTokenRateStartsForIncompleteSnapshotWithoutReplacingMapping(t 
 
 func TestFormatStatusBoxPayload(t *testing.T) {
 	t.Run("zero values and uninitialized tps", func(t *testing.T) {
-		got := formatStatusBoxPayload(Snapshot{}, SystemResourceSnapshot{}, -1, false)
+		got := formatStatusBoxPayload(snapshot.Snapshot{}, snapshot.SystemResourceSnapshot{}, -1, false)
 		if got.Row1 != "A0 S0  M-- D--" {
 			t.Errorf("Row1 = %q, want A0 S0  M-- D--", got.Row1)
 		}
@@ -492,13 +493,13 @@ func TestFormatStatusBoxPayload(t *testing.T) {
 	})
 
 	t.Run("normal active values", func(t *testing.T) {
-		snapshot := Snapshot{
-			Current: CurrentMetrics{
+		snap := snapshot.Snapshot{
+			Current: snapshot.CurrentMetrics{
 				ActiveBurstConcurrency: 2,
 				SessionConcurrency:     3,
 			},
 		}
-		sysRes := SystemResourceSnapshot{
+		sysRes := snapshot.SystemResourceSnapshot{
 			MemoryTotalBytes:     32 * 1024 * 1024 * 1024,
 			MemoryUsedBytes:      16 * 1024 * 1024 * 1024,
 			MemoryUsedPct:        96.2,
@@ -508,7 +509,7 @@ func TestFormatStatusBoxPayload(t *testing.T) {
 			NetworkRxBytesPerSec: 700 * 1024,
 			NetworkTxBytesPerSec: 100 * 1024,
 		}
-		got := formatStatusBoxPayload(snapshot, sysRes, 3200, true)
+		got := formatStatusBoxPayload(snap, sysRes, 3200, true)
 		if got.Row1 != "A2 S3  M96% D99%" {
 			t.Errorf("Row1 = %q, want A2 S3  M96%%%% D99%%%%", got.Row1)
 		}
@@ -521,8 +522,8 @@ func TestFormatStatusBoxPayload(t *testing.T) {
 	})
 
 	t.Run("fractional tps and single rate", func(t *testing.T) {
-		snapshot := Snapshot{}
-		sysRes := SystemResourceSnapshot{
+		snap := snapshot.Snapshot{}
+		sysRes := snapshot.SystemResourceSnapshot{
 			MemoryTotalBytes:     16 * 1024 * 1024 * 1024,
 			MemoryUsedPct:        50.0,
 			DiskTotalBytes:       500 * 1024 * 1024 * 1024,
@@ -530,7 +531,7 @@ func TestFormatStatusBoxPayload(t *testing.T) {
 			NetworkRxBytesPerSec: 1.2 * 1024 * 1024,
 			NetworkTxBytesPerSec: 0,
 		}
-		got := formatStatusBoxPayload(snapshot, sysRes, 5.8, false)
+		got := formatStatusBoxPayload(snap, sysRes, 5.8, false)
 		if got.Row1 != "A0 S0  M50% D40%" {
 			t.Errorf("Row1 = %q, want A0 S0  M50%%%% D40%%%%", got.Row1)
 		}

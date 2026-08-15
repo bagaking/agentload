@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -20,7 +21,7 @@ import (
 // agree with a refactor that quietly drops a field. A byte comparison does
 // not.
 //
-// Timestamps and durations are normalized rather than frozen. Snapshot reads
+// Timestamps and durations are normalized rather than frozen. snapshot.Snapshot reads
 // time.Now() in several places and threads real elapsed time into scan costs;
 // injecting a clock everywhere would be a larger change than the refactor it
 // guards. Normalizing keeps the comparison byte-exact over everything that is
@@ -79,10 +80,10 @@ func hermeticGoldenObserver(t *testing.T) *Observer {
 		PiRoots:       []string{filepath.Join(root, "pi")},
 	}
 	original := discoverLiveProcessesFunc
-	discoverLiveProcessesFunc = func(context.Context, *codingAgentRegistry) ([]LiveProcess, []string) {
+	discoverLiveProcessesFunc = func(context.Context, *codingAgentRegistry) ([]snapshot.LiveProcess, []string) {
 		// A fixed roster, so the fixture covers the session/project/role
 		// assembly rather than only the empty case.
-		return []LiveProcess{
+		return []snapshot.LiveProcess{
 			{PID: 4101, Tool: "claude", Command: "claude --resume abc123"},
 			{PID: 4102, Tool: "codex", Command: "codex exec"},
 			{PID: 4103, Tool: "gemini", Command: "gemini --prompt review"},

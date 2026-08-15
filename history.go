@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"bufio"
 	"encoding/json"
 	"errors"
@@ -20,22 +21,22 @@ const historyRetentionWindow = 30 * 24 * time.Hour
 const historyCompactionExcessLineLimit = 500
 
 type HistorySample struct {
-	At                    string                        `json:"at"`
-	Current               CurrentMetrics                `json:"current"`
-	Summary               SnapshotSummary               `json:"summary"`
-	CoordinationRisk      HistoryCoordinationRisk       `json:"coordination_risk"`
-	Projects              []HistoryProjectSnapshot      `json:"projects,omitempty"`
-	RuntimeProcesses      []ProcessRuntimeSummary       `json:"runtime_process_summary,omitempty"`
-	HostAppProcesses      []HostAppProcessSummary       `json:"host_app_process_summary,omitempty"`
-	OutputTokenThroughput *HistoryOutputTokenThroughput `json:"output_token_throughput,omitempty"`
+	At                    string                           `json:"at"`
+	Current               snapshot.CurrentMetrics          `json:"current"`
+	Summary               snapshot.SnapshotSummary         `json:"summary"`
+	CoordinationRisk      HistoryCoordinationRisk          `json:"coordination_risk"`
+	Projects              []HistoryProjectSnapshot         `json:"projects,omitempty"`
+	RuntimeProcesses      []snapshot.ProcessRuntimeSummary `json:"runtime_process_summary,omitempty"`
+	HostAppProcesses      []snapshot.HostAppProcessSummary `json:"host_app_process_summary,omitempty"`
+	OutputTokenThroughput *HistoryOutputTokenThroughput    `json:"output_token_throughput,omitempty"`
 }
 
 type HistoryOutputTokenThroughput struct {
-	OutputTokensPerSecond *float64                     `json:"output_tokens_per_second"`
-	State                 string                       `json:"state"`
-	WindowSeconds         int                          `json:"window_seconds"`
-	ActiveSessions        int                          `json:"active_sessions"`
-	Projects              []LiveTokenRateProjectSample `json:"projects"`
+	OutputTokensPerSecond *float64                              `json:"output_tokens_per_second"`
+	State                 string                                `json:"state"`
+	WindowSeconds         int                                   `json:"window_seconds"`
+	ActiveSessions        int                                   `json:"active_sessions"`
+	Projects              []snapshot.LiveTokenRateProjectSample `json:"projects"`
 }
 
 type HistoryProjectSnapshot struct {
@@ -277,8 +278,8 @@ func (s *localHistoryState) recordSampleInMemory(sample HistorySample, at time.T
 	s.lastWriteError = ""
 }
 
-func (s localHistoryState) snapshotMetadata() SnapshotHistory {
-	metadata := SnapshotHistory{
+func (s localHistoryState) snapshotMetadata() snapshot.SnapshotHistory {
+	metadata := snapshot.SnapshotHistory{
 		StorePath:           s.path,
 		LoadedSampleCount:   s.loadedSampleCount,
 		RetainedSampleCount: len(s.samples),
@@ -293,15 +294,15 @@ func (s localHistoryState) snapshotMetadata() SnapshotHistory {
 	return metadata
 }
 
-func (s localHistoryState) trendPoints() []TrendPoint {
-	out := make([]TrendPoint, 0, len(s.samples))
+func (s localHistoryState) trendPoints() []snapshot.TrendPoint {
+	out := make([]snapshot.TrendPoint, 0, len(s.samples))
 	for _, sample := range s.samples {
 		at, ok := historySampleTime(sample)
 		if !ok {
 			continue
 		}
 		// Realtime trend bucketing still parses RFC3339 second precision.
-		out = append(out, TrendPoint{
+		out = append(out, snapshot.TrendPoint{
 			At:                    at.Format(time.RFC3339),
 			PIDConcurrency:        sample.Current.PIDConcurrency,
 			HasPIDConcurrency:     true,
@@ -312,44 +313,44 @@ func (s localHistoryState) trendPoints() []TrendPoint {
 			UnmappedProcesses:     sample.Summary.UnmappedProcesses,
 			HasUnmappedProcesses:  true,
 			RuntimeSampled:        true,
-			RuntimeProcesses:      append([]ProcessRuntimeSummary(nil), sample.RuntimeProcesses...),
-			HostAppProcesses:      append([]HostAppProcessSummary(nil), sample.HostAppProcesses...),
+			RuntimeProcesses:      append([]snapshot.ProcessRuntimeSummary(nil), sample.RuntimeProcesses...),
+			HostAppProcesses:      append([]snapshot.HostAppProcessSummary(nil), sample.HostAppProcesses...),
 		})
 	}
 	return out
 }
 
-func historySampleFromSnapshot(snapshot Snapshot) HistorySample {
+func historySampleFromSnapshot(snap snapshot.Snapshot) HistorySample {
 	sample := HistorySample{
-		At:      strings.TrimSpace(snapshot.GeneratedAt),
-		Current: snapshot.Current,
-		Summary: snapshot.Summary,
+		At:      strings.TrimSpace(snap.GeneratedAt),
+		Current: snap.Current,
+		Summary: snap.Summary,
 		CoordinationRisk: HistoryCoordinationRisk{
-			Posture:                        snapshot.CoordinationRisk.Posture,
-			ActiveProjectCount:             snapshot.CoordinationRisk.ActiveProjectCount,
-			RecentProjectCount:             snapshot.CoordinationRisk.RecentProjectCount,
-			TopProject:                     snapshot.CoordinationRisk.TopProject,
-			TopProjectAttentionSharePct:    snapshot.CoordinationRisk.TopProjectAttentionSharePct,
-			CandidateWorkitemCount:         snapshot.CoordinationRisk.CandidateWorkitemCount,
-			CandidateWorkitemCoveragePct:   snapshot.CoordinationRisk.CandidateWorkitemCoveragePct,
-			StaleSessionCount:              snapshot.CoordinationRisk.StaleSessionCount,
-			OrphanProcessCount:             snapshot.CoordinationRisk.OrphanProcessCount,
-			ChurnSessionCount:              snapshot.CoordinationRisk.ChurnSessionCount,
-			ProjectSpreadCount:             snapshot.CoordinationRisk.ProjectSpreadCount,
-			FragmentationPct:               snapshot.CoordinationRisk.FragmentationPct,
-			LoadRatioPct:                   snapshot.CoordinationRisk.LoadRatioPct,
-			LoadPeakValue:                  snapshot.CoordinationRisk.LoadPeakValue,
-			LoadPeakSource:                 snapshot.CoordinationRisk.LoadPeakSource,
-			LoadPeakAt:                     snapshot.CoordinationRisk.LoadPeakAt,
-			DuplicateOverlapSuspicionCount: snapshot.CoordinationRisk.DuplicateOverlapSuspicionCount,
-			DuplicateOverlapClusterCount:   snapshot.CoordinationRisk.DuplicateOverlapClusterCount,
+			Posture:                        snap.CoordinationRisk.Posture,
+			ActiveProjectCount:             snap.CoordinationRisk.ActiveProjectCount,
+			RecentProjectCount:             snap.CoordinationRisk.RecentProjectCount,
+			TopProject:                     snap.CoordinationRisk.TopProject,
+			TopProjectAttentionSharePct:    snap.CoordinationRisk.TopProjectAttentionSharePct,
+			CandidateWorkitemCount:         snap.CoordinationRisk.CandidateWorkitemCount,
+			CandidateWorkitemCoveragePct:   snap.CoordinationRisk.CandidateWorkitemCoveragePct,
+			StaleSessionCount:              snap.CoordinationRisk.StaleSessionCount,
+			OrphanProcessCount:             snap.CoordinationRisk.OrphanProcessCount,
+			ChurnSessionCount:              snap.CoordinationRisk.ChurnSessionCount,
+			ProjectSpreadCount:             snap.CoordinationRisk.ProjectSpreadCount,
+			FragmentationPct:               snap.CoordinationRisk.FragmentationPct,
+			LoadRatioPct:                   snap.CoordinationRisk.LoadRatioPct,
+			LoadPeakValue:                  snap.CoordinationRisk.LoadPeakValue,
+			LoadPeakSource:                 snap.CoordinationRisk.LoadPeakSource,
+			LoadPeakAt:                     snap.CoordinationRisk.LoadPeakAt,
+			DuplicateOverlapSuspicionCount: snap.CoordinationRisk.DuplicateOverlapSuspicionCount,
+			DuplicateOverlapClusterCount:   snap.CoordinationRisk.DuplicateOverlapClusterCount,
 		},
-		Projects:         make([]HistoryProjectSnapshot, 0, len(snapshot.ProjectFocus)),
-		RuntimeProcesses: append([]ProcessRuntimeSummary(nil), snapshot.RuntimeProcesses...),
-		HostAppProcesses: append([]HostAppProcessSummary(nil), snapshot.HostAppProcesses...),
+		Projects:         make([]HistoryProjectSnapshot, 0, len(snap.ProjectFocus)),
+		RuntimeProcesses: append([]snapshot.ProcessRuntimeSummary(nil), snap.RuntimeProcesses...),
+		HostAppProcesses: append([]snapshot.HostAppProcessSummary(nil), snap.HostAppProcesses...),
 	}
 	sample.At, _ = normalizeHistorySampleTimestamp(sample.At, time.Now())
-	for _, project := range snapshot.ProjectFocus {
+	for _, project := range snap.ProjectFocus {
 		sample.Projects = append(sample.Projects, HistoryProjectSnapshot{
 			Project:             project.Project,
 			SessionCount:        project.SessionCount,
@@ -445,16 +446,16 @@ func filterHistorySamplesByRange(samples []HistorySample, from, to time.Time) []
 	return out
 }
 
-func buildProjectHeatmapWindows(samples []HistorySample, now time.Time) ProjectHeatmapSet {
+func buildProjectHeatmapWindows(samples []HistorySample, now time.Time) snapshot.ProjectHeatmapSet {
 	if now.IsZero() {
 		now = time.Now()
 	}
-	out := ProjectHeatmapSet{Windows: make([]ProjectHeatmapWindow, 0, len(defaultTrendSpecs))}
+	out := snapshot.ProjectHeatmapSet{Windows: make([]snapshot.ProjectHeatmapWindow, 0, len(defaultTrendSpecs))}
 	for _, spec := range defaultTrendSpecs {
 		from := now.Add(-spec.span)
 		filtered := filterHistorySamplesByRange(samples, from, now)
 		items, sessionWindowCount := deriveProjectHeatmapItems(filtered)
-		out.Windows = append(out.Windows, ProjectHeatmapWindow{
+		out.Windows = append(out.Windows, snapshot.ProjectHeatmapWindow{
 			Range:              spec.label,
 			From:               from.Format(time.RFC3339),
 			To:                 now.Format(time.RFC3339),
@@ -467,9 +468,9 @@ func buildProjectHeatmapWindows(samples []HistorySample, now time.Time) ProjectH
 	return out
 }
 
-func deriveProjectHeatmapItems(samples []HistorySample) ([]ProjectHeatmapItem, int) {
+func deriveProjectHeatmapItems(samples []HistorySample) ([]snapshot.ProjectHeatmapItem, int) {
 	type aggregate struct {
-		ProjectHeatmapItem
+		snapshot.ProjectHeatmapItem
 	}
 	aggregates := map[string]*aggregate{}
 	totalSessionWindows := 0
@@ -491,7 +492,7 @@ func deriveProjectHeatmapItems(samples []HistorySample) ([]ProjectHeatmapItem, i
 		for name, project := range perWindow {
 			entry := aggregates[name]
 			if entry == nil {
-				entry = &aggregate{ProjectHeatmapItem: ProjectHeatmapItem{Project: name}}
+				entry = &aggregate{ProjectHeatmapItem: snapshot.ProjectHeatmapItem{Project: name}}
 				aggregates[name] = entry
 			}
 			entry.WindowCount++
@@ -508,7 +509,7 @@ func deriveProjectHeatmapItems(samples []HistorySample) ([]ProjectHeatmapItem, i
 			totalProjectWindows++
 		}
 	}
-	out := make([]ProjectHeatmapItem, 0, len(aggregates))
+	out := make([]snapshot.ProjectHeatmapItem, 0, len(aggregates))
 	for _, entry := range aggregates {
 		if entry.WindowCount > 0 {
 			entry.AverageSessions = float64(entry.SessionWindowCount) / float64(entry.WindowCount)

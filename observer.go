@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"context"
 	"fmt"
 	"os"
@@ -12,10 +13,10 @@ import (
 	"time"
 )
 
-func (o *Observer) Snapshot(ctx context.Context) Snapshot {
+func (o *Observer) Snapshot(ctx context.Context) snapshot.Snapshot {
 	scanStart := time.Now()
 	processes, processNotes := discoverLiveProcessesFunc(ctx, o.adapters)
-	processStats := ProcessObservationStats{}
+	processStats := snapshot.ProcessObservationStats{}
 	if processError, failed := processDiscoveryFailure(processNotes); failed {
 		processStats.Incomplete = true
 		processStats.Error = processError
@@ -31,11 +32,11 @@ func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 	data, cached := o.transcriptData(ctx, priority, scanStart)
 	liveSessions, sessionNotes := buildLiveSessionsAt(processes, data, o.cfg.IdleGap, now)
 
-	currentByTool := make(map[string]ToolMetrics)
+	currentByTool := make(map[string]snapshot.ToolMetrics)
 	for _, agentID := range o.adapters.transcriptAgentIDs() {
-		currentByTool[agentID] = ToolMetrics{}
+		currentByTool[agentID] = snapshot.ToolMetrics{}
 	}
-	current := CurrentMetrics{
+	current := snapshot.CurrentMetrics{
 		PIDConcurrency: len(processes),
 	}
 	for _, process := range processes {
@@ -58,12 +59,12 @@ func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	sevenDayStart := now.Add(-7 * 24 * time.Hour)
-	historicPeaks := HistoricPeaks{
-		Today: PeakWindow{
+	historicPeaks := snapshot.HistoricPeaks{
+		Today: snapshot.PeakWindow{
 			SessionConcurrency:     peakConcurrency(data.SessionSpans, todayStart, now),
 			ActiveBurstConcurrency: peakConcurrency(data.BurstSpans, todayStart, now),
 		},
-		SevenDay: PeakWindow{
+		SevenDay: snapshot.PeakWindow{
 			SessionConcurrency:     peakConcurrency(data.SessionSpans, sevenDayStart, now),
 			ActiveBurstConcurrency: peakConcurrency(data.BurstSpans, sevenDayStart, now),
 		},
@@ -73,7 +74,7 @@ func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 	liveSessionSnapshots = attachProcessResourcesToSessions(liveSessionSnapshots, liveProcessSnapshots)
 	projectFocus := buildProjectFocus(liveSessions, o.cfg.IdleGap, now)
 	candidateWorkitems := buildCandidateWorkitems(liveSessionSnapshots, sessionProcessIDsByKey(liveSessions))
-	snapshot := Snapshot{
+	snap := snapshot.Snapshot{
 		GeneratedAt:      now.Format(time.RFC3339Nano),
 		Config:           o.snapshotConfig(roots),
 		Current:          current,
@@ -82,7 +83,7 @@ func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 		MetricRegistry:   defaultMetricRegistry(),
 		RuntimeTelemetry: defaultRuntimeTelemetrySnapshot(),
 		Trends:           buildTranscriptTrendWindows(data, now, o.cfg.Lookback),
-		TranscriptStats: TranscriptStats{
+		TranscriptStats: snapshot.TranscriptStats{
 			ScannedFiles:                     data.ScannedFiles,
 			ParsedFiles:                      data.ParsedFiles,
 			DeferredFiles:                    data.DeferredFiles,
@@ -104,46 +105,46 @@ func (o *Observer) Snapshot(ctx context.Context) Snapshot {
 		LiveSessions:       liveSessionSnapshots,
 		RuntimeProcesses:   buildRuntimeProcessSummary(liveProcessSnapshots),
 		HostAppProcesses:   buildHostAppProcessSummary(liveProcessSnapshots),
-		LiveTokenRateFiles: append([]TranscriptFile(nil), priority...),
+		LiveTokenRateFiles: append([]snapshot.TranscriptFile(nil), priority...),
 		LiveTokenProjects:  liveTokenRateProjectsFromSessions(liveSessionSnapshots),
 	}
-	snapshot.Summary = buildSnapshotSummary(snapshot.LiveProcesses, snapshot.LiveSessions, snapshot.ProjectFocus)
-	snapshot.CoordinationRisk = buildCoordinationRisk(
-		snapshot.LiveProcesses,
-		snapshot.LiveSessions,
-		snapshot.ProjectFocus,
-		snapshot.CandidateWorkitems,
-		snapshot.Current,
+	snap.Summary = buildSnapshotSummary(snap.LiveProcesses, snap.LiveSessions, snap.ProjectFocus)
+	snap.CoordinationRisk = buildCoordinationRisk(
+		snap.LiveProcesses,
+		snap.LiveSessions,
+		snap.ProjectFocus,
+		snap.CandidateWorkitems,
+		snap.Current,
 		historicPeaks,
 		now,
 		o.cfg.IdleGap,
 	)
-	snapshot.Diagnostics = buildDiagnosticsSnapshot(snapshot, now)
+	snap.Diagnostics = buildDiagnosticsSnapshot(snap, now)
 
-	snapshot.Notes = buildSnapshotNotes(snapshot, processNotes, sessionNotes)
-	return snapshot
+	snap.Notes = buildSnapshotNotes(snap, processNotes, sessionNotes)
+	return snap
 }
 
-func buildSnapshotNotes(snapshot Snapshot, processNotes, sessionNotes []string) []string {
+func buildSnapshotNotes(snap snapshot.Snapshot, processNotes, sessionNotes []string) []string {
 	notes := append([]string{}, processNotes...)
 	notes = append(notes, sessionNotes...)
-	if snapshot.TranscriptStats.CoverageIncomplete {
+	if snap.TranscriptStats.CoverageIncomplete {
 		notes = append(notes, "Transcript evidence coverage is incomplete; current counts may undercount. See transcript_stats.errors.")
-	} else if len(snapshot.TranscriptStats.Errors) > 0 {
+	} else if len(snap.TranscriptStats.Errors) > 0 {
 		notes = append(notes, "Some transcript evidence reported errors; see transcript_stats.errors.")
 	}
-	if snapshot.TranscriptStats.DeferredFiles > 0 {
+	if snap.TranscriptStats.DeferredFiles > 0 {
 		notes = append(notes, fmt.Sprintf(
 			"%d older transcript files were deferred from the foreground snapshot; live process files and transcripts with recent local activity are still included.",
-			snapshot.TranscriptStats.DeferredFiles,
+			snap.TranscriptStats.DeferredFiles,
 		))
 	}
-	if snapshot.TranscriptStats.HistoricalScanDeferred {
+	if snap.TranscriptStats.HistoricalScanDeferred {
 		notes = append(notes, "Full historical transcript parsing was deferred from the foreground snapshot; live process files and foreground-window transcripts are still included.")
 	}
-	if snapshot.ProcessStats.Incomplete {
+	if snap.ProcessStats.Incomplete {
 		note := "Process evidence is incomplete; the current process query failed"
-		if snapshot.ProcessStats.LastKnown {
+		if snap.ProcessStats.LastKnown {
 			note += ", so last observed process rows are shown"
 		} else {
 			note += ", so no process rows are available"
@@ -153,7 +154,7 @@ func buildSnapshotNotes(snapshot Snapshot, processNotes, sessionNotes []string) 
 	return uniqueSortedStrings(notes)
 }
 
-func (o *Observer) rememberProcesses(processes []LiveProcess) {
+func (o *Observer) rememberProcesses(processes []snapshot.LiveProcess) {
 	if o == nil {
 		return
 	}
@@ -162,7 +163,7 @@ func (o *Observer) rememberProcesses(processes []LiveProcess) {
 	o.processMu.Unlock()
 }
 
-func (o *Observer) lastKnownProcesses() []LiveProcess {
+func (o *Observer) lastKnownProcesses() []snapshot.LiveProcess {
 	if o == nil {
 		return nil
 	}
@@ -171,13 +172,13 @@ func (o *Observer) lastKnownProcesses() []LiveProcess {
 	return cloneLiveProcesses(o.lastProcesses)
 }
 
-func (o *Observer) snapshotConfig(roots map[string][]string) SnapshotConfig {
+func (o *Observer) snapshotConfig(roots map[string][]string) snapshot.SnapshotConfig {
 	return o.adapters.snapshotConfig(o.cfg.snapshotConfig(), roots)
 }
 
-func rootsFromLiveProcesses(processes []LiveProcess, adapters *codingAgentRegistry) (map[string][]string, []TranscriptFile) {
+func rootsFromLiveProcesses(processes []snapshot.LiveProcess, adapters *codingAgentRegistry) (map[string][]string, []snapshot.TranscriptFile) {
 	rootSets := map[string]map[string]struct{}{}
-	prioritySet := map[string]TranscriptFile{}
+	prioritySet := map[string]snapshot.TranscriptFile{}
 	addRoot := func(tool, root string) {
 		root = strings.TrimSpace(root)
 		if root == "" || !adapters.hasDiscovery(tool) {
@@ -216,7 +217,7 @@ func rootsFromLiveProcesses(processes []LiveProcess, adapters *codingAgentRegist
 		}
 		sort.Strings(roots[tool])
 	}
-	priority := make([]TranscriptFile, 0, len(prioritySet))
+	priority := make([]snapshot.TranscriptFile, 0, len(prioritySet))
 	for _, file := range prioritySet {
 		priority = append(priority, file)
 	}
@@ -234,12 +235,12 @@ type normalizedProcessSession struct {
 	Tool      string
 	SessionID string
 	Path      string
-	Trace     *SessionTrace
-	Mapping   LiveSessionMapping
+	Trace     *snapshot.SessionTrace
+	Mapping   snapshot.LiveSessionMapping
 }
 
-func buildTracesByID(data *TranscriptData) map[string]*SessionTrace {
-	out := map[string]*SessionTrace{}
+func buildTracesByID(data *snapshot.TranscriptData) map[string]*snapshot.SessionTrace {
+	out := map[string]*snapshot.SessionTrace{}
 	if data == nil {
 		return out
 	}
@@ -255,8 +256,8 @@ func buildTracesByID(data *TranscriptData) map[string]*SessionTrace {
 	return out
 }
 
-func normalizeProcessSessionMappings(process LiveProcess, data *TranscriptData, tracesByID map[string]*SessionTrace) ([]normalizedProcessSession, []string) {
-	traces := map[string]*SessionTrace{}
+func normalizeProcessSessionMappings(process snapshot.LiveProcess, data *snapshot.TranscriptData, tracesByID map[string]*snapshot.SessionTrace) ([]normalizedProcessSession, []string) {
+	traces := map[string]*snapshot.SessionTrace{}
 	if data != nil && data.Traces != nil {
 		traces = data.Traces
 	}
@@ -270,13 +271,13 @@ func normalizeProcessSessionMappings(process LiveProcess, data *TranscriptData, 
 	parsedKeys := map[string]struct{}{}
 	parsedSessionKeys := map[string]struct{}{}
 	notes := []string{}
-	addCandidate := func(key, tool, sessionID, path string, trace *SessionTrace, mapping LiveSessionMapping) *normalizedProcessSession {
+	addCandidate := func(key, tool, sessionID, path string, trace *snapshot.SessionTrace, mapping snapshot.LiveSessionMapping) *normalizedProcessSession {
 		if key == "" {
 			switch {
 			case sessionID != "":
 				key = liveSessionKeyForID(tool, sessionID)
 			case tool != "" && path != "":
-				key = liveSessionKeyForPath(TranscriptFile{Tool: tool, Path: path})
+				key = liveSessionKeyForPath(snapshot.TranscriptFile{Tool: tool, Path: path})
 			default:
 				return nil
 			}
@@ -335,7 +336,7 @@ func normalizeProcessSessionMappings(process LiveProcess, data *TranscriptData, 
 	for _, file := range process.SessionFiles {
 		trace := traces[file.Path]
 		fallback := strings.TrimSpace(file.SessionIDHint)
-		mapping := LiveSessionMapping{TranscriptPath: true}
+		mapping := snapshot.LiveSessionMapping{TranscriptPath: true}
 		sessionID := ""
 		key := liveSessionKeyForPath(file)
 		skipCandidate := false
@@ -389,7 +390,7 @@ func normalizeProcessSessionMappings(process LiveProcess, data *TranscriptData, 
 		for _, hint := range hints {
 			key := liveSessionKeyForID(process.Tool, hint)
 			trace := tracesByID[key]
-			candidate := addCandidate(key, process.Tool, hint, "", trace, LiveSessionMapping{CommandHint: true})
+			candidate := addCandidate(key, process.Tool, hint, "", trace, snapshot.LiveSessionMapping{CommandHint: true})
 			if candidate != nil && candidate.Trace == nil {
 				candidate.Trace = trace
 			}
@@ -511,9 +512,9 @@ func traeRootFromPath(path string) string {
 	return ""
 }
 
-func buildLiveSessionsAt(processes []LiveProcess, data *TranscriptData, idleGap time.Duration, now time.Time) ([]LiveSession, []string) {
+func buildLiveSessionsAt(processes []snapshot.LiveProcess, data *snapshot.TranscriptData, idleGap time.Duration, now time.Time) ([]snapshot.LiveSession, []string) {
 	tracesByID := buildTracesByID(data)
-	sessions := map[string]*LiveSession{}
+	sessions := map[string]*snapshot.LiveSession{}
 	unassigned := 0
 	untraced := 0
 	transcriptOnly := 0
@@ -528,12 +529,12 @@ func buildLiveSessionsAt(processes []LiveProcess, data *TranscriptData, idleGap 
 		for _, candidate := range processSessions {
 			session := sessions[candidate.Key]
 			if session == nil {
-				session = &LiveSession{
+				session = &snapshot.LiveSession{
 					Tool:      candidate.Tool,
 					SessionID: candidate.SessionID,
 					Path:      candidate.Path,
 					Processes: map[int]struct{}{},
-					HostApps:  map[int]HostApp{},
+					HostApps:  map[int]snapshot.HostApp{},
 					Trace:     candidate.Trace,
 					Mapping:   candidate.Mapping,
 				}
@@ -567,7 +568,7 @@ func buildLiveSessionsAt(processes []LiveProcess, data *TranscriptData, idleGap 
 			}
 			if process.HostApp != nil && process.HostApp.PID > 0 && strings.TrimSpace(process.HostApp.Name) != "" {
 				if session.HostApps == nil {
-					session.HostApps = map[int]HostApp{}
+					session.HostApps = map[int]snapshot.HostApp{}
 				}
 				session.HostApps[process.HostApp.PID] = *process.HostApp
 			}
@@ -588,14 +589,14 @@ func buildLiveSessionsAt(processes []LiveProcess, data *TranscriptData, idleGap 
 				continue
 			}
 			sessionID := strings.TrimSpace(trace.SessionID)
-			sessions[key] = &LiveSession{
+			sessions[key] = &snapshot.LiveSession{
 				Tool:      trace.Tool,
 				SessionID: sessionID,
 				Path:      trace.Path,
 				Processes: map[int]struct{}{},
-				HostApps:  map[int]HostApp{},
+				HostApps:  map[int]snapshot.HostApp{},
 				Trace:     trace,
-				Mapping: LiveSessionMapping{
+				Mapping: snapshot.LiveSessionMapping{
 					TranscriptPath:     true,
 					TranscriptActivity: true,
 					ParsedTranscriptID: strings.TrimSpace(trace.SessionID) != "",
@@ -605,7 +606,7 @@ func buildLiveSessionsAt(processes []LiveProcess, data *TranscriptData, idleGap 
 		}
 	}
 
-	out := make([]LiveSession, 0, len(sessions))
+	out := make([]snapshot.LiveSession, 0, len(sessions))
 	for _, session := range sessions {
 		if session.Trace == nil || session.Trace.LastEvent.IsZero() {
 			untraced++
@@ -633,7 +634,7 @@ func buildLiveSessionsAt(processes []LiveProcess, data *TranscriptData, idleGap 
 	return out, notes
 }
 
-func liveSessionKeyForTrace(trace *SessionTrace) string {
+func liveSessionKeyForTrace(trace *snapshot.SessionTrace) string {
 	if trace == nil {
 		return ""
 	}
@@ -641,7 +642,7 @@ func liveSessionKeyForTrace(trace *SessionTrace) string {
 		return key
 	}
 	if trace.Tool != "" && trace.Path != "" {
-		return liveSessionKeyForPath(TranscriptFile{Tool: trace.Tool, Path: trace.Path})
+		return liveSessionKeyForPath(snapshot.TranscriptFile{Tool: trace.Tool, Path: trace.Path})
 	}
 	return ""
 }
@@ -654,11 +655,11 @@ func liveSessionKeyForID(tool, sessionID string) string {
 	return tool + "\x00" + sessionID
 }
 
-func liveSessionKeyForPath(file TranscriptFile) string {
+func liveSessionKeyForPath(file snapshot.TranscriptFile) string {
 	return file.Tool + "\x00path:" + file.Path
 }
 
-func mergeLiveSessionMapping(dst *LiveSessionMapping, src LiveSessionMapping) {
+func mergeLiveSessionMapping(dst *snapshot.LiveSessionMapping, src snapshot.LiveSessionMapping) {
 	dst.TranscriptPath = dst.TranscriptPath || src.TranscriptPath
 	dst.TranscriptActivity = dst.TranscriptActivity || src.TranscriptActivity
 	dst.ParsedTranscriptID = dst.ParsedTranscriptID || src.ParsedTranscriptID
@@ -666,9 +667,9 @@ func mergeLiveSessionMapping(dst *LiveSessionMapping, src LiveSessionMapping) {
 	dst.FallbackSessionID = dst.FallbackSessionID || src.FallbackSessionID
 }
 
-func projectLiveProcessesWithSessions(processes []LiveProcess, liveSessions []LiveSession, liveSessionSnapshots []LiveSessionSnapshot, data *TranscriptData) []LiveProcessSnapshot {
+func projectLiveProcessesWithSessions(processes []snapshot.LiveProcess, liveSessions []snapshot.LiveSession, liveSessionSnapshots []snapshot.LiveSessionSnapshot, data *snapshot.TranscriptData) []snapshot.LiveProcessSnapshot {
 	tracesByID := buildTracesByID(data)
-	sessionSnapshotsByID := map[string]LiveSessionSnapshot{}
+	sessionSnapshotsByID := map[string]snapshot.LiveSessionSnapshot{}
 	for _, session := range liveSessionSnapshots {
 		if session.SessionID == "" {
 			continue
@@ -688,10 +689,10 @@ func projectLiveProcessesWithSessions(processes []LiveProcess, liveSessions []Li
 			processSessionIDs[pid][key] = struct{}{}
 		}
 	}
-	out := make([]LiveProcessSnapshot, 0, len(processes))
+	out := make([]snapshot.LiveProcessSnapshot, 0, len(processes))
 	for _, process := range processes {
 		processSessions, _ := normalizeProcessSessionMappings(process, data, tracesByID)
-		snapshot := LiveProcessSnapshot{
+		snap := snapshot.LiveProcessSnapshot{
 			PID:                  process.PID,
 			Tool:                 process.Tool,
 			DisplayName:          processDisplayName(process),
@@ -741,30 +742,30 @@ func projectLiveProcessesWithSessions(processes []LiveProcess, liveSessions []Li
 		}
 		sort.Strings(sessionIDs)
 		sort.Strings(sessionPaths)
-		snapshot.SessionIDs = sessionIDs
-		snapshot.SessionPaths = sessionPaths
-		snapshot.MappedSessions = len(sessionIDs)
-		snapshot.MappedSessionEvidence = buildProcessSessionEvidence(sessionKeys, sessionSnapshotsByID)
-		snapshot.MatchMethods = processMatchMethods(snapshot.MappedSessionEvidence)
-		for _, evidence := range snapshot.MappedSessionEvidence {
+		snap.SessionIDs = sessionIDs
+		snap.SessionPaths = sessionPaths
+		snap.MappedSessions = len(sessionIDs)
+		snap.MappedSessionEvidence = buildProcessSessionEvidence(sessionKeys, sessionSnapshotsByID)
+		snap.MatchMethods = processMatchMethods(snap.MappedSessionEvidence)
+		for _, evidence := range snap.MappedSessionEvidence {
 			facts := metricFactsForProcessSessionEvidence(evidence)
 			if facts.RecentMovement {
-				snapshot.MappedActiveSessions++
+				snap.MappedActiveSessions++
 			}
 			switch facts.Role {
 			case "main":
-				snapshot.MainSessions++
+				snap.MainSessions++
 			case "subagent":
-				snapshot.SubagentSessions++
+				snap.SubagentSessions++
 			default:
-				snapshot.UnknownRoleSessions++
+				snap.UnknownRoleSessions++
 			}
 		}
-		if snapshot.MappedSessions > len(snapshot.MappedSessionEvidence) {
-			snapshot.UnknownRoleSessions += snapshot.MappedSessions - len(snapshot.MappedSessionEvidence)
+		if snap.MappedSessions > len(snap.MappedSessionEvidence) {
+			snap.UnknownRoleSessions += snap.MappedSessions - len(snap.MappedSessionEvidence)
 		}
-		snapshot.EvidenceSummary = processEvidenceSummary(snapshot)
-		out = append(out, snapshot)
+		snap.EvidenceSummary = processEvidenceSummary(snap)
+		out = append(out, snap)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].MappedSessions != out[j].MappedSessions {
@@ -778,15 +779,15 @@ func projectLiveProcessesWithSessions(processes []LiveProcess, liveSessions []Li
 	return out
 }
 
-func buildProcessSessionEvidence(sessionKeys map[string]struct{}, sessionsByID map[string]LiveSessionSnapshot) []ProcessSessionEvidence {
-	out := []ProcessSessionEvidence{}
+func buildProcessSessionEvidence(sessionKeys map[string]struct{}, sessionsByID map[string]snapshot.LiveSessionSnapshot) []snapshot.ProcessSessionEvidence {
+	out := []snapshot.ProcessSessionEvidence{}
 	for key := range sessionKeys {
 		session, ok := sessionsByID[key]
 		if !ok || session.SessionID == "" {
 			continue
 		}
 		facts := metricFactsForSessionSnapshot(session)
-		out = append(out, ProcessSessionEvidence{
+		out = append(out, snapshot.ProcessSessionEvidence{
 			Tool:                session.Tool,
 			SessionID:           session.SessionID,
 			Project:             session.Project,
@@ -815,11 +816,11 @@ func buildProcessSessionEvidence(sessionKeys map[string]struct{}, sessionsByID m
 	return out
 }
 
-func attachProcessResourcesToSessions(sessions []LiveSessionSnapshot, processes []LiveProcessSnapshot) []LiveSessionSnapshot {
+func attachProcessResourcesToSessions(sessions []snapshot.LiveSessionSnapshot, processes []snapshot.LiveProcessSnapshot) []snapshot.LiveSessionSnapshot {
 	if len(sessions) == 0 || len(processes) == 0 {
 		return sessions
 	}
-	out := append([]LiveSessionSnapshot(nil), sessions...)
+	out := append([]snapshot.LiveSessionSnapshot(nil), sessions...)
 	index := map[string]int{}
 	for i, session := range out {
 		if session.SessionID == "" {
@@ -868,7 +869,7 @@ func normalizedRole(role string) string {
 	}
 }
 
-func processMatchMethods(evidence []ProcessSessionEvidence) []string {
+func processMatchMethods(evidence []snapshot.ProcessSessionEvidence) []string {
 	seen := map[string]struct{}{}
 	out := []string{}
 	for _, item := range evidence {
@@ -886,14 +887,14 @@ func processMatchMethods(evidence []ProcessSessionEvidence) []string {
 	return out
 }
 
-func processEvidenceSummary(process LiveProcessSnapshot) string {
+func processEvidenceSummary(process snapshot.LiveProcessSnapshot) string {
 	if process.MappedSessions == 0 {
 		return "unmapped process"
 	}
 	return fmt.Sprintf("direct %d / subagent %d / unknown %d / active %d", process.MainSessions, process.SubagentSessions, process.UnknownRoleSessions, process.MappedActiveSessions)
 }
 
-func processDisplayName(process LiveProcess) string {
+func processDisplayName(process snapshot.LiveProcess) string {
 	if identity := strings.TrimSpace(process.DisplayName); identity != "" {
 		return identity
 	}
@@ -952,16 +953,16 @@ func roleRank(role string) int {
 	}
 }
 
-func buildRuntimeProcessSummary(processes []LiveProcessSnapshot) []ProcessRuntimeSummary {
+func buildRuntimeProcessSummary(processes []snapshot.LiveProcessSnapshot) []snapshot.ProcessRuntimeSummary {
 	type accumulator struct {
-		item            ProcessRuntimeSummary
+		item            snapshot.ProcessRuntimeSummary
 		directSessions  map[string]struct{}
 		subSessions     map[string]struct{}
 		unknownSessions map[string]struct{}
 		activeSessions  map[string]struct{}
 	}
 	items := map[string]*accumulator{}
-	addEvidence := func(acc *accumulator, process LiveProcessSnapshot) {
+	addEvidence := func(acc *accumulator, process snapshot.LiveProcessSnapshot) {
 		for _, evidence := range process.MappedSessionEvidence {
 			facts := metricFactsForProcessSessionEvidence(evidence)
 			if !facts.KnownSession {
@@ -1003,7 +1004,7 @@ func buildRuntimeProcessSummary(processes []LiveProcessSnapshot) []ProcessRuntim
 		acc := items[key]
 		if acc == nil {
 			acc = &accumulator{
-				item: ProcessRuntimeSummary{
+				item: snapshot.ProcessRuntimeSummary{
 					Key:         key,
 					Tool:        key,
 					DisplayName: key,
@@ -1025,7 +1026,7 @@ func buildRuntimeProcessSummary(processes []LiveProcessSnapshot) []ProcessRuntim
 		}
 		addEvidence(acc, process)
 	}
-	out := make([]ProcessRuntimeSummary, 0, len(items))
+	out := make([]snapshot.ProcessRuntimeSummary, 0, len(items))
 	for _, acc := range items {
 		acc.item.DirectSessions = len(acc.directSessions)
 		acc.item.SubagentSessions = len(acc.subSessions)
@@ -1042,16 +1043,16 @@ func buildRuntimeProcessSummary(processes []LiveProcessSnapshot) []ProcessRuntim
 	return out
 }
 
-func buildHostAppProcessSummary(processes []LiveProcessSnapshot) []HostAppProcessSummary {
+func buildHostAppProcessSummary(processes []snapshot.LiveProcessSnapshot) []snapshot.HostAppProcessSummary {
 	type accumulator struct {
-		item            HostAppProcessSummary
+		item            snapshot.HostAppProcessSummary
 		directSessions  map[string]struct{}
 		subSessions     map[string]struct{}
 		unknownSessions map[string]struct{}
 		activeSessions  map[string]struct{}
 	}
 	items := map[string]*accumulator{}
-	addEvidence := func(acc *accumulator, process LiveProcessSnapshot) {
+	addEvidence := func(acc *accumulator, process snapshot.LiveProcessSnapshot) {
 		for _, evidence := range process.MappedSessionEvidence {
 			facts := metricFactsForProcessSessionEvidence(evidence)
 			if !facts.KnownSession {
@@ -1096,7 +1097,7 @@ func buildHostAppProcessSummary(processes []LiveProcessSnapshot) []HostAppProces
 		acc := items[key]
 		if acc == nil {
 			acc = &accumulator{
-				item: HostAppProcessSummary{
+				item: snapshot.HostAppProcessSummary{
 					Key:  key,
 					Name: process.HostApp.Name,
 					PID:  process.HostApp.PID,
@@ -1118,7 +1119,7 @@ func buildHostAppProcessSummary(processes []LiveProcessSnapshot) []HostAppProces
 		}
 		addEvidence(acc, process)
 	}
-	out := make([]HostAppProcessSummary, 0, len(items))
+	out := make([]snapshot.HostAppProcessSummary, 0, len(items))
 	for _, acc := range items {
 		acc.item.DirectSessions = len(acc.directSessions)
 		acc.item.SubagentSessions = len(acc.subSessions)
@@ -1135,14 +1136,14 @@ func buildHostAppProcessSummary(processes []LiveProcessSnapshot) []HostAppProces
 	return out
 }
 
-func projectLiveSessions(sessions []LiveSession, idleGap time.Duration, now time.Time) []LiveSessionSnapshot {
-	out := make([]LiveSessionSnapshot, 0, len(sessions))
+func projectLiveSessions(sessions []snapshot.LiveSession, idleGap time.Duration, now time.Time) []snapshot.LiveSessionSnapshot {
+	out := make([]snapshot.LiveSessionSnapshot, 0, len(sessions))
 	for _, session := range sessions {
 		observation := observeLiveSession(session, idleGap, now)
 		facts := metricFactsForLiveSession(session, observation)
 		projectAttribution := observeProjectAttribution(session)
 		role := observeSessionRole(session)
-		item := LiveSessionSnapshot{
+		item := snapshot.LiveSessionSnapshot{
 			Tool:                         session.Tool,
 			SessionID:                    session.SessionID,
 			SessionRole:                  facts.Role,
@@ -1225,7 +1226,7 @@ func projectLiveSessions(sessions []LiveSession, idleGap time.Duration, now time
 	return out
 }
 
-func cloneHostApp(app *HostApp) *HostApp {
+func cloneHostApp(app *snapshot.HostApp) *snapshot.HostApp {
 	if app == nil {
 		return nil
 	}
@@ -1233,8 +1234,8 @@ func cloneHostApp(app *HostApp) *HostApp {
 	return &out
 }
 
-func sortedHostApps(apps map[int]HostApp) []HostApp {
-	out := make([]HostApp, 0, len(apps))
+func sortedHostApps(apps map[int]snapshot.HostApp) []snapshot.HostApp {
+	out := make([]snapshot.HostApp, 0, len(apps))
 	for _, app := range apps {
 		if app.PID <= 0 || strings.TrimSpace(app.Name) == "" {
 			continue
@@ -1279,7 +1280,7 @@ type projectAttributionObservation struct {
 	Reasons    []string
 }
 
-func observeSessionRole(session LiveSession) sessionRoleObservation {
+func observeSessionRole(session snapshot.LiveSession) sessionRoleObservation {
 	trace := session.Trace
 	role := sessionRoleObservation{
 		Role:       "unknown",
@@ -1335,7 +1336,7 @@ func maxConfidence(a, b string) string {
 	return a
 }
 
-func observeLiveSession(session LiveSession, idleGap time.Duration, now time.Time) liveSessionObservation {
+func observeLiveSession(session snapshot.LiveSession, idleGap time.Duration, now time.Time) liveSessionObservation {
 	effectiveIdleGap := idleGap
 	if effectiveIdleGap <= 0 {
 		effectiveIdleGap = 90 * time.Second
@@ -1404,7 +1405,7 @@ func observeLiveSession(session LiveSession, idleGap time.Duration, now time.Tim
 	return observation
 }
 
-func observeProjectAttribution(session LiveSession) projectAttributionObservation {
+func observeProjectAttribution(session snapshot.LiveSession) projectAttributionObservation {
 	if project, source, reason := traceProjectAttribution(session.Trace); project != "" {
 		return projectAttributionObservation{
 			Project:    project,
@@ -1449,7 +1450,7 @@ func observeProjectAttribution(session LiveSession) projectAttributionObservatio
 	}
 }
 
-func sessionSortAge(item LiveSessionSnapshot) int {
+func sessionSortAge(item snapshot.LiveSessionSnapshot) int {
 	if item.LastEventAt == "" {
 		return int(^uint(0) >> 1)
 	}
@@ -1469,11 +1470,11 @@ func freshnessRank(freshness string) int {
 	}
 }
 
-func sessionHasTranscriptTiming(session LiveSession) bool {
+func sessionHasTranscriptTiming(session snapshot.LiveSession) bool {
 	return session.Trace != nil && !session.Trace.LastEvent.IsZero()
 }
 
-func sessionProvenance(mapping LiveSessionMapping) []string {
+func sessionProvenance(mapping snapshot.LiveSessionMapping) []string {
 	out := []string{}
 	if mapping.TranscriptPath {
 		out = append(out, "transcript_path")
@@ -1490,7 +1491,7 @@ func sessionProvenance(mapping LiveSessionMapping) []string {
 	return out
 }
 
-func sessionMappingMethod(mapping LiveSessionMapping) string {
+func sessionMappingMethod(mapping snapshot.LiveSessionMapping) string {
 	switch {
 	case mapping.ParsedTranscriptID:
 		return "transcript_path"
@@ -1541,8 +1542,8 @@ func lowerConfidence(level string) string {
 	}
 }
 
-func buildSnapshotSummary(processes []LiveProcessSnapshot, sessions []LiveSessionSnapshot, projects []ProjectSnapshot) SnapshotSummary {
-	summary := SnapshotSummary{
+func buildSnapshotSummary(processes []snapshot.LiveProcessSnapshot, sessions []snapshot.LiveSessionSnapshot, projects []snapshot.ProjectSnapshot) snapshot.SnapshotSummary {
+	summary := snapshot.SnapshotSummary{
 		ProjectCount: len(projects),
 	}
 	for _, process := range processes {
@@ -1583,12 +1584,12 @@ func buildSnapshotSummary(processes []LiveProcessSnapshot, sessions []LiveSessio
 	return summary
 }
 
-func buildAgeBuckets(sessions []LiveSession, idleGap time.Duration, now time.Time) []AgeBucketSnapshot {
+func buildAgeBuckets(sessions []snapshot.LiveSession, idleGap time.Duration, now time.Time) []snapshot.AgeBucketSnapshot {
 	idleSeconds := int(idleGap / time.Second)
 	if idleSeconds < 30 {
 		idleSeconds = 30
 	}
-	buckets := []AgeBucketSnapshot{
+	buckets := []snapshot.AgeBucketSnapshot{
 		{Label: "0-30s"},
 		{Label: "31-" + itoa(idleSeconds) + "s"},
 		{Label: itoa(idleSeconds+1) + "-300s"},
@@ -1618,12 +1619,12 @@ func buildAgeBuckets(sessions []LiveSession, idleGap time.Duration, now time.Tim
 	return buckets
 }
 
-func buildProjectFocus(sessions []LiveSession, idleGap time.Duration, now time.Time) []ProjectSnapshot {
+func buildProjectFocus(sessions []snapshot.LiveSession, idleGap time.Duration, now time.Time) []snapshot.ProjectSnapshot {
 	type toolAggregate struct {
 		sessionCount     int
 		activeBurstCount int
 		processes        map[int]struct{}
-		tokenUsage       TokenUsage
+		tokenUsage       snapshot.TokenUsage
 	}
 	type worktreeAggregate struct {
 		name             string
@@ -1647,7 +1648,7 @@ func buildProjectFocus(sessions []LiveSession, idleGap time.Duration, now time.T
 		processes                          map[int]struct{}
 		lastEvent                          time.Time
 		tools                              map[string]*toolAggregate
-		tokenUsage                         TokenUsage
+		tokenUsage                         snapshot.TokenUsage
 		confidenceCounts                   map[string]int
 		provenanceCounts                   map[string]int
 		projectAttributionConfidenceCounts map[string]int
@@ -1788,13 +1789,13 @@ func buildProjectFocus(sessions []LiveSession, idleGap time.Duration, now time.T
 
 	// Main checkout first, then worktrees by name, so a project's tree order is
 	// stable across refreshes.
-	buildWorktrees := func(items map[string]*worktreeAggregate) []ProjectWorktreeSnapshot {
+	buildWorktrees := func(items map[string]*worktreeAggregate) []snapshot.ProjectWorktreeSnapshot {
 		if len(items) == 0 {
 			return nil
 		}
-		out := make([]ProjectWorktreeSnapshot, 0, len(items))
+		out := make([]snapshot.ProjectWorktreeSnapshot, 0, len(items))
 		for _, wt := range items {
-			snapshot := ProjectWorktreeSnapshot{
+			snap := snapshot.ProjectWorktreeSnapshot{
 				Name:             wt.name,
 				Branch:           wt.branch,
 				SessionCount:     wt.sessionCount,
@@ -1802,9 +1803,9 @@ func buildProjectFocus(sessions []LiveSession, idleGap time.Duration, now time.T
 				ProcessCount:     len(wt.processes),
 			}
 			if !wt.lastEvent.IsZero() {
-				snapshot.LastEventAt = wt.lastEvent.Format(time.RFC3339)
+				snap.LastEventAt = wt.lastEvent.Format(time.RFC3339)
 			}
-			out = append(out, snapshot)
+			out = append(out, snap)
 		}
 		sort.Slice(out, func(i, j int) bool {
 			if (out[i].Name == "") != (out[j].Name == "") {
@@ -1815,9 +1816,9 @@ func buildProjectFocus(sessions []LiveSession, idleGap time.Duration, now time.T
 		return out
 	}
 
-	out := make([]ProjectSnapshot, 0, len(projects))
+	out := make([]snapshot.ProjectSnapshot, 0, len(projects))
 	for _, item := range projects {
-		project := ProjectSnapshot{
+		project := snapshot.ProjectSnapshot{
 			Project:                         item.project,
 			Worktrees:                       buildWorktrees(item.worktrees),
 			Branches:                        uniqueSortedStrings(mapKeys(item.branches)),
@@ -1858,7 +1859,7 @@ func buildProjectFocus(sessions []LiveSession, idleGap time.Duration, now time.T
 			project.TokenUsageConfidence = "measured"
 		}
 		for tool, toolAgg := range item.tools {
-			toolSnapshot := ProjectToolSnapshot{
+			toolSnapshot := snapshot.ProjectToolSnapshot{
 				Tool:             tool,
 				SessionCount:     toolAgg.sessionCount,
 				ActiveBurstCount: toolAgg.activeBurstCount,
@@ -1911,7 +1912,7 @@ func buildProjectFocus(sessions []LiveSession, idleGap time.Duration, now time.T
 
 // sessionProcessIDsByKey exposes per-session PID evidence so aggregates over
 // session snapshots can dedupe shared processes instead of re-counting them.
-func sessionProcessIDsByKey(sessions []LiveSession) map[string][]int {
+func sessionProcessIDsByKey(sessions []snapshot.LiveSession) map[string][]int {
 	out := map[string][]int{}
 	for _, session := range sessions {
 		key := liveSessionKeyForID(session.Tool, session.SessionID)
@@ -1927,7 +1928,7 @@ func sessionProcessIDsByKey(sessions []LiveSession) map[string][]int {
 	return out
 }
 
-func buildCandidateWorkitems(sessions []LiveSessionSnapshot, sessionProcessIDs map[string][]int) []CandidateWorkitemSnapshot {
+func buildCandidateWorkitems(sessions []snapshot.LiveSessionSnapshot, sessionProcessIDs map[string][]int) []snapshot.CandidateWorkitemSnapshot {
 	type aggregate struct {
 		key                                string
 		project                            string
@@ -2016,7 +2017,7 @@ func buildCandidateWorkitems(sessions []LiveSessionSnapshot, sessionProcessIDs m
 		}
 	}
 
-	out := make([]CandidateWorkitemSnapshot, 0, len(groups))
+	out := make([]snapshot.CandidateWorkitemSnapshot, 0, len(groups))
 	for _, item := range groups {
 		confidence := item.minConfidence
 		if confidence == "" {
@@ -2036,7 +2037,7 @@ func buildCandidateWorkitems(sessions []LiveSessionSnapshot, sessionProcessIDs m
 		if item.missingTranscriptCount > 0 {
 			reasons = append(reasons, fmt.Sprintf("%d sessions are missing transcript timing", item.missingTranscriptCount))
 		}
-		out = append(out, CandidateWorkitemSnapshot{
+		out = append(out, snapshot.CandidateWorkitemSnapshot{
 			Key:                             item.key,
 			Project:                         item.project,
 			Tool:                            item.tool,
@@ -2083,12 +2084,12 @@ type duplicateOverlapCluster struct {
 	SessionCount int
 }
 
-func buildCoordinationRisk(processes []LiveProcessSnapshot, sessions []LiveSessionSnapshot, projects []ProjectSnapshot, candidateWorkitems []CandidateWorkitemSnapshot, current CurrentMetrics, historicPeaks HistoricPeaks, now time.Time, idleGap time.Duration) CoordinationRiskSnapshot {
-	risk := CoordinationRiskSnapshot{
+func buildCoordinationRisk(processes []snapshot.LiveProcessSnapshot, sessions []snapshot.LiveSessionSnapshot, projects []snapshot.ProjectSnapshot, candidateWorkitems []snapshot.CandidateWorkitemSnapshot, current snapshot.CurrentMetrics, historicPeaks snapshot.HistoricPeaks, now time.Time, idleGap time.Duration) snapshot.CoordinationRiskSnapshot {
+	risk := snapshot.CoordinationRiskSnapshot{
 		Posture:                              "observed",
 		RecentWindowMinutes:                  int(recentSessionWindow(idleGap) / time.Minute),
-		CandidateWorkitemConfidenceBreakdown: []ConfidenceCountSnapshot{},
-		Signals:                              []RiskSignalSnapshot{},
+		CandidateWorkitemConfidenceBreakdown: []snapshot.ConfidenceCountSnapshot{},
+		Signals:                              []snapshot.RiskSignalSnapshot{},
 	}
 	projectAnchoredProjects := projectAnchoredProjectSnapshots(projects)
 	projectAnchoredSessions := projectAnchoredLiveSessions(sessions)
@@ -2133,42 +2134,42 @@ func buildCoordinationRisk(processes []LiveProcessSnapshot, sessions []LiveSessi
 
 	competingProjects := competingProjectCount(risk.ActiveProjectCount, risk.RecentProjectCount, len(projectAnchoredProjects))
 	if risk.TopProject != "" {
-		risk.Signals = append(risk.Signals, RiskSignalSnapshot{
+		risk.Signals = append(risk.Signals, snapshot.RiskSignalSnapshot{
 			Kind:     "top_project_share",
 			Severity: "observed",
 			Evidence: fmt.Sprintf("Project %s has %.1f%% of the observed project slice; other live or recent projects: %d.", risk.TopProject, risk.TopProjectAttentionSharePct, competingProjects),
 		})
 	}
 	if risk.StaleSessionCount > 0 {
-		risk.Signals = append(risk.Signals, RiskSignalSnapshot{
+		risk.Signals = append(risk.Signals, snapshot.RiskSignalSnapshot{
 			Kind:     "sessions_without_recent_event",
 			Severity: "observed",
 			Evidence: fmt.Sprintf("%d live sessions have last transcript event older than %s.", risk.StaleSessionCount, formatDurationLabel(staleSessionThreshold(idleGap))),
 		})
 	}
 	if risk.OrphanProcessCount > 0 {
-		risk.Signals = append(risk.Signals, RiskSignalSnapshot{
+		risk.Signals = append(risk.Signals, snapshot.RiskSignalSnapshot{
 			Kind:     "unmatched_processes",
 			Severity: "observed",
 			Evidence: fmt.Sprintf("%d visible live processes are not currently matched to local session evidence.", risk.OrphanProcessCount),
 		})
 	}
 	if risk.ChurnSessionCount > 0 {
-		risk.Signals = append(risk.Signals, RiskSignalSnapshot{
+		risk.Signals = append(risk.Signals, snapshot.RiskSignalSnapshot{
 			Kind:     "recent_sessions",
 			Severity: "observed",
 			Evidence: fmt.Sprintf("%d live sessions started within the last %dm.", risk.ChurnSessionCount, risk.RecentWindowMinutes),
 		})
 	}
 	if risk.ProjectSpreadCount > 1 && len(projectAnchoredSessions) > 1 {
-		risk.Signals = append(risk.Signals, RiskSignalSnapshot{
+		risk.Signals = append(risk.Signals, snapshot.RiskSignalSnapshot{
 			Kind:     "project_spread",
 			Severity: "observed",
 			Evidence: fmt.Sprintf("%d project-anchored live sessions span %d projects (%.1f%% spread).", len(projectAnchoredSessions), risk.ProjectSpreadCount, risk.FragmentationPct),
 		})
 	}
 	if risk.LoadPeakValue > 0 && current.SessionConcurrency > 0 {
-		risk.Signals = append(risk.Signals, RiskSignalSnapshot{
+		risk.Signals = append(risk.Signals, snapshot.RiskSignalSnapshot{
 			Kind:     "observed_peak_ratio",
 			Severity: "observed",
 			Evidence: fmt.Sprintf("Current live sessions are %.1f%% of the observed peak (%d/%d from %s).", risk.LoadRatioPct, current.SessionConcurrency, risk.LoadPeakValue, loadPeakSourceLabel(risk.LoadPeakSource)),
@@ -2179,21 +2180,21 @@ func buildCoordinationRisk(processes []LiveProcessSnapshot, sessions []LiveSessi
 		if details := formatDuplicateOverlapClusters(duplicateClusters); details != "" {
 			evidence = fmt.Sprintf("%s (%s)", evidence, details)
 		}
-		risk.Signals = append(risk.Signals, RiskSignalSnapshot{
+		risk.Signals = append(risk.Signals, snapshot.RiskSignalSnapshot{
 			Kind:     "duplicate_overlap_candidates",
 			Severity: "observed",
 			Evidence: evidence + ". This is overlap suspicion only, not semantic identity.",
 		})
 	}
 	if risk.LowConfidenceSessionCount > 0 {
-		risk.Signals = append(risk.Signals, RiskSignalSnapshot{
+		risk.Signals = append(risk.Signals, snapshot.RiskSignalSnapshot{
 			Kind:     "low_confidence_mapping",
 			Severity: "observed",
 			Evidence: fmt.Sprintf("%d live sessions have low-confidence mapping or missing transcript timing (%d low-confidence, %d missing transcript timing; overlaps deduplicated).", risk.LowConfidenceSessionCount, lowConfidenceMappingCount, missingTranscriptCount),
 		})
 	}
 	if len(sessions) > 0 {
-		risk.Signals = append(risk.Signals, RiskSignalSnapshot{
+		risk.Signals = append(risk.Signals, snapshot.RiskSignalSnapshot{
 			Kind:     "candidate_workitem_coverage",
 			Severity: "observed",
 			Evidence: fmt.Sprintf("Candidate workitems anchor %.1f%% of live sessions to a project (%d/%d across %d buckets); confidence mix: %s.", risk.CandidateWorkitemCoveragePct, risk.CandidateWorkitemCoveredSessionCount, len(sessions), risk.CandidateWorkitemCount, formatConfidenceBreakdown(risk.CandidateWorkitemConfidenceBreakdown)),
@@ -2203,7 +2204,7 @@ func buildCoordinationRisk(processes []LiveProcessSnapshot, sessions []LiveSessi
 	return risk
 }
 
-func summarizeProjectLoad(projects []ProjectSnapshot) (activeProjectCount, recentProjectCount int, topProject string, topProjectAttentionSharePct float64) {
+func summarizeProjectLoad(projects []snapshot.ProjectSnapshot) (activeProjectCount, recentProjectCount int, topProject string, topProjectAttentionSharePct float64) {
 	totalAttentionWeight := 0.0
 	topIndex := -1
 	for i, project := range projects {
@@ -2233,7 +2234,7 @@ func summarizeProjectLoad(projects []ProjectSnapshot) (activeProjectCount, recen
 	return activeProjectCount, recentProjectCount, topProject, topProjectAttentionSharePct
 }
 
-func projectBeatsForAttentionTop(candidate, current ProjectSnapshot) bool {
+func projectBeatsForAttentionTop(candidate, current snapshot.ProjectSnapshot) bool {
 	if projectAttentionWeight(candidate) != projectAttentionWeight(current) {
 		return projectAttentionWeight(candidate) > projectAttentionWeight(current)
 	}
@@ -2249,7 +2250,7 @@ func projectBeatsForAttentionTop(candidate, current ProjectSnapshot) bool {
 	return candidate.Project < current.Project
 }
 
-func summarizeDuplicateOverlapSuspicion(sessions []LiveSessionSnapshot) (int, int, []duplicateOverlapCluster) {
+func summarizeDuplicateOverlapSuspicion(sessions []snapshot.LiveSessionSnapshot) (int, int, []duplicateOverlapCluster) {
 	type clusterKey struct {
 		project   string
 		tool      string
@@ -2320,7 +2321,7 @@ func formatDuplicateOverlapClusters(clusters []duplicateOverlapCluster) string {
 	return strings.Join(parts, "; ")
 }
 
-func summarizeCandidateWorkitems(items []CandidateWorkitemSnapshot, sessionCount int) (coveredSessionCount int, coveragePct float64, confidenceBreakdown []ConfidenceCountSnapshot) {
+func summarizeCandidateWorkitems(items []snapshot.CandidateWorkitemSnapshot, sessionCount int) (coveredSessionCount int, coveragePct float64, confidenceBreakdown []snapshot.ConfidenceCountSnapshot) {
 	confidenceCounts := map[string]int{}
 	for _, item := range items {
 		confidenceCounts[item.Confidence]++
@@ -2331,7 +2332,7 @@ func summarizeCandidateWorkitems(items []CandidateWorkitemSnapshot, sessionCount
 	return coveredSessionCount, ratioPct(coveredSessionCount, sessionCount), buildConfidenceBreakdown(confidenceCounts)
 }
 
-func candidateWorkitemAnchorsProject(item CandidateWorkitemSnapshot) bool {
+func candidateWorkitemAnchorsProject(item snapshot.CandidateWorkitemSnapshot) bool {
 	return hasAssignedProject(item.Project)
 }
 
@@ -2344,8 +2345,8 @@ func hasAssignedProject(project string) bool {
 	}
 }
 
-func projectAnchoredProjectSnapshots(projects []ProjectSnapshot) []ProjectSnapshot {
-	out := make([]ProjectSnapshot, 0, len(projects))
+func projectAnchoredProjectSnapshots(projects []snapshot.ProjectSnapshot) []snapshot.ProjectSnapshot {
+	out := make([]snapshot.ProjectSnapshot, 0, len(projects))
 	for _, project := range projects {
 		if hasAssignedProject(project.Project) {
 			out = append(out, project)
@@ -2354,8 +2355,8 @@ func projectAnchoredProjectSnapshots(projects []ProjectSnapshot) []ProjectSnapsh
 	return out
 }
 
-func projectAnchoredLiveSessions(sessions []LiveSessionSnapshot) []LiveSessionSnapshot {
-	out := make([]LiveSessionSnapshot, 0, len(sessions))
+func projectAnchoredLiveSessions(sessions []snapshot.LiveSessionSnapshot) []snapshot.LiveSessionSnapshot {
+	out := make([]snapshot.LiveSessionSnapshot, 0, len(sessions))
 	for _, session := range sessions {
 		if hasAssignedProject(session.Project) {
 			out = append(out, session)
@@ -2364,7 +2365,7 @@ func projectAnchoredLiveSessions(sessions []LiveSessionSnapshot) []LiveSessionSn
 	return out
 }
 
-func projectAttentionWeight(project ProjectSnapshot) float64 {
+func projectAttentionWeight(project snapshot.ProjectSnapshot) float64 {
 	switch project.AttentionBasis {
 	case "process_count":
 		if project.ProcessCount > 0 {
@@ -2387,7 +2388,7 @@ func projectAttentionWeight(project ProjectSnapshot) float64 {
 	return 0
 }
 
-func formatConfidenceBreakdown(breakdown []ConfidenceCountSnapshot) string {
+func formatConfidenceBreakdown(breakdown []snapshot.ConfidenceCountSnapshot) string {
 	if len(breakdown) == 0 {
 		return "none"
 	}
@@ -2424,12 +2425,12 @@ func summarizeConfidence(counts map[string]int, total int) string {
 	return "medium"
 }
 
-func buildConfidenceBreakdown(counts map[string]int) []ConfidenceCountSnapshot {
+func buildConfidenceBreakdown(counts map[string]int) []snapshot.ConfidenceCountSnapshot {
 	order := []string{"high", "medium", "low"}
-	out := make([]ConfidenceCountSnapshot, 0, len(order))
+	out := make([]snapshot.ConfidenceCountSnapshot, 0, len(order))
 	for _, level := range order {
 		if count := counts[level]; count > 0 {
-			out = append(out, ConfidenceCountSnapshot{
+			out = append(out, snapshot.ConfidenceCountSnapshot{
 				Level: level,
 				Count: count,
 			})
@@ -2452,12 +2453,12 @@ func projectConfidenceReasons(counts map[string]int, missingTranscriptCount int)
 	return reasons
 }
 
-func buildProvenanceSummary(counts map[string]int) []ProvenanceCountSnapshot {
+func buildProvenanceSummary(counts map[string]int) []snapshot.ProvenanceCountSnapshot {
 	order := []string{"transcript_path", "transcript_activity", "command_hint", "fallback_session_id"}
-	out := make([]ProvenanceCountSnapshot, 0, len(order))
+	out := make([]snapshot.ProvenanceCountSnapshot, 0, len(order))
 	for _, source := range order {
 		if count := counts[source]; count > 0 {
-			out = append(out, ProvenanceCountSnapshot{
+			out = append(out, snapshot.ProvenanceCountSnapshot{
 				Source: source,
 				Count:  count,
 			})
@@ -2493,7 +2494,7 @@ func confidenceRank(level string) int {
 	}
 }
 
-func observedLoadPeak(currentSessions int, historicPeaks HistoricPeaks, now time.Time) (int, string, string) {
+func observedLoadPeak(currentSessions int, historicPeaks snapshot.HistoricPeaks, now time.Time) (int, string, string) {
 	bestValue := 0
 	bestSource := ""
 	bestAt := ""
@@ -2541,11 +2542,11 @@ func formatDurationLabel(duration time.Duration) string {
 	return fmt.Sprintf("%ds", int(duration/time.Second))
 }
 
-func coordinationPosture(signals []RiskSignalSnapshot) string {
+func coordinationPosture(signals []snapshot.RiskSignalSnapshot) string {
 	return "observed"
 }
 
-func traceProjectAttribution(trace *SessionTrace) (project, source, reason string) {
+func traceProjectAttribution(trace *snapshot.SessionTrace) (project, source, reason string) {
 	if trace == nil {
 		return "", "", ""
 	}
@@ -2856,12 +2857,12 @@ func projectAttributionSourceForProject(project string) string {
 	}
 }
 
-func buildProjectAttributionSourceSummary(counts map[string]int) []AttributionSourceCountSnapshot {
+func buildProjectAttributionSourceSummary(counts map[string]int) []snapshot.AttributionSourceCountSnapshot {
 	order := []string{"transcript_project", "transcript_cwd", "transcript_path", "config_root_parent", "process_cwd", "unassigned"}
-	out := make([]AttributionSourceCountSnapshot, 0, len(order))
+	out := make([]snapshot.AttributionSourceCountSnapshot, 0, len(order))
 	for _, source := range order {
 		if count := counts[source]; count > 0 {
-			out = append(out, AttributionSourceCountSnapshot{
+			out = append(out, snapshot.AttributionSourceCountSnapshot{
 				Source: source,
 				Count:  count,
 			})

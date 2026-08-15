@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -34,7 +35,7 @@ func TestSampleSystemResourcesUsesBackgroundSamplerWhenRunning(t *testing.T) {
 	startSystemResourceSampler(time.Hour)
 	t.Cleanup(stopSystemResourceSampler)
 
-	var cached SystemResourceSnapshot
+	var cached snapshot.SystemResourceSnapshot
 	ok := false
 	for i := 0; i < 500 && !ok; i++ {
 		cached, ok = latestBackgroundSystemResourceSample()
@@ -97,7 +98,7 @@ func TestSystemResourceSamplerRejectsPreviousGeneration(t *testing.T) {
 		t.Fatal("expected sampler restart to advance generation")
 	}
 
-	storeBackgroundSystemResourceSample(previousGeneration, SystemResourceSnapshot{SampledAt: "stale-generation"})
+	storeBackgroundSystemResourceSample(previousGeneration, snapshot.SystemResourceSnapshot{SampledAt: "stale-generation"})
 	s.Lock()
 	got := s.latest.SampledAt
 	s.Unlock()
@@ -139,7 +140,7 @@ func TestSystemResourceSamplerSurvivesPanickingStartupRead(t *testing.T) {
 	var mu sync.Mutex
 	fail := true
 	panicked := make(chan struct{})
-	sampleSystemResourcesNowFunc = func() SystemResourceSnapshot {
+	sampleSystemResourcesNowFunc = func() snapshot.SystemResourceSnapshot {
 		mu.Lock()
 		shouldFail := fail
 		mu.Unlock()
@@ -153,7 +154,7 @@ func TestSystemResourceSamplerSurvivesPanickingStartupRead(t *testing.T) {
 			}
 			panic("sampler read failed")
 		}
-		return SystemResourceSnapshot{SampledAt: "recovered-sample"}
+		return snapshot.SystemResourceSnapshot{SampledAt: "recovered-sample"}
 	}
 	startSystemResourceSampler(5 * time.Millisecond)
 
@@ -173,7 +174,7 @@ func TestSystemResourceSamplerSurvivesPanickingStartupRead(t *testing.T) {
 	fail = false
 	mu.Unlock()
 
-	var restored SystemResourceSnapshot
+	var restored snapshot.SystemResourceSnapshot
 	ok := false
 	for i := 0; i < 500 && !ok; i++ {
 		restored, ok = latestBackgroundSystemResourceSample()
@@ -238,7 +239,7 @@ func TestSystemResourceSamplerKeepsSamplingAfterOneFailedRead(t *testing.T) {
 	// dying with it.
 	var mu sync.Mutex
 	calls := 0
-	sampleSystemResourcesNowFunc = func() SystemResourceSnapshot {
+	sampleSystemResourcesNowFunc = func() snapshot.SystemResourceSnapshot {
 		mu.Lock()
 		calls++
 		attempt := calls
@@ -246,11 +247,11 @@ func TestSystemResourceSamplerKeepsSamplingAfterOneFailedRead(t *testing.T) {
 		if attempt == 1 {
 			panic("first read failed")
 		}
-		return SystemResourceSnapshot{SampledAt: "sample-after-failure"}
+		return snapshot.SystemResourceSnapshot{SampledAt: "sample-after-failure"}
 	}
 	startSystemResourceSampler(5 * time.Millisecond)
 
-	var got SystemResourceSnapshot
+	var got snapshot.SystemResourceSnapshot
 	ok := false
 	for i := 0; i < 500 && !ok; i++ {
 		got, ok = latestBackgroundSystemResourceSample()
@@ -272,7 +273,7 @@ func TestSystemResourceSamplerInvalidatesStaleSampleAfterReadPanic(t *testing.T)
 	original := sampleSystemResourcesNowFunc
 	var failing atomic.Bool
 	panicSeen := make(chan struct{}, 1)
-	sampleSystemResourcesNowFunc = func() SystemResourceSnapshot {
+	sampleSystemResourcesNowFunc = func() snapshot.SystemResourceSnapshot {
 		if failing.Load() {
 			select {
 			case panicSeen <- struct{}{}:
@@ -280,7 +281,7 @@ func TestSystemResourceSamplerInvalidatesStaleSampleAfterReadPanic(t *testing.T)
 			}
 			panic("sample failed after a published value")
 		}
-		return SystemResourceSnapshot{SampledAt: "initial-sample"}
+		return snapshot.SystemResourceSnapshot{SampledAt: "initial-sample"}
 	}
 	t.Cleanup(func() {
 		failing.Store(false)
@@ -290,7 +291,7 @@ func TestSystemResourceSamplerInvalidatesStaleSampleAfterReadPanic(t *testing.T)
 	})
 
 	startSystemResourceSampler(5 * time.Millisecond)
-	var initial SystemResourceSnapshot
+	var initial snapshot.SystemResourceSnapshot
 	for i := 0; i < 500; i++ {
 		var ok bool
 		initial, ok = latestBackgroundSystemResourceSample()
@@ -324,7 +325,7 @@ func TestSystemResourceSamplerInvalidatesStaleSampleAfterReadPanic(t *testing.T)
 	}
 
 	failing.Store(false)
-	var recovered SystemResourceSnapshot
+	var recovered snapshot.SystemResourceSnapshot
 	for i := 0; i < 500; i++ {
 		var ok bool
 		recovered, ok = latestBackgroundSystemResourceSample()
@@ -345,13 +346,13 @@ func TestSampleSystemResourcesDoesNotDirectReadWhileBackgroundSamplerHasNoSample
 	release := make(chan struct{})
 	var releaseOnce sync.Once
 	finishRead := func() { releaseOnce.Do(func() { close(release) }) }
-	sampleSystemResourcesNowFunc = func() SystemResourceSnapshot {
+	sampleSystemResourcesNowFunc = func() snapshot.SystemResourceSnapshot {
 		select {
 		case entered <- struct{}{}:
 		default:
 		}
 		<-release
-		return SystemResourceSnapshot{SampledAt: "delayed-sample"}
+		return snapshot.SystemResourceSnapshot{SampledAt: "delayed-sample"}
 	}
 	t.Cleanup(func() {
 		finishRead()
@@ -371,7 +372,7 @@ func TestSampleSystemResourcesDoesNotDirectReadWhileBackgroundSamplerHasNoSample
 		t.Fatalf("expected an unavailable non-blocking sample, got %+v", got)
 	}
 	finishRead()
-	var published SystemResourceSnapshot
+	var published snapshot.SystemResourceSnapshot
 	for i := 0; i < 500; i++ {
 		var ok bool
 		published, ok = latestBackgroundSystemResourceSample()

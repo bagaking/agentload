@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"slices"
 	"testing"
 	"time"
@@ -8,7 +9,7 @@ import (
 
 func TestDefaultMetricRegistryContainsCoreFamilies(t *testing.T) {
 	registry := defaultMetricRegistry()
-	keys := map[string]MetricRegistryEntry{}
+	keys := map[string]snapshot.MetricRegistryEntry{}
 	for _, entry := range registry {
 		keys[entry.Key] = entry
 	}
@@ -41,25 +42,25 @@ func TestDefaultRuntimeTelemetrySnapshotIsOptional(t *testing.T) {
 
 func TestBuildDiagnosticsSnapshotSeparatesAnomaliesAndEvidenceGaps(t *testing.T) {
 	now := time.Date(2026, 7, 7, 10, 0, 0, 0, time.UTC)
-	snapshot := Snapshot{
-		Current: CurrentMetrics{PIDConcurrency: 4, SessionConcurrency: 2, ActiveBurstConcurrency: 0},
-		Summary: SnapshotSummary{MappedProcesses: 2, UnmappedProcesses: 2, MappingCoveragePct: 50},
-		CoordinationRisk: CoordinationRiskSnapshot{
+	snap := snapshot.Snapshot{
+		Current: snapshot.CurrentMetrics{PIDConcurrency: 4, SessionConcurrency: 2, ActiveBurstConcurrency: 0},
+		Summary: snapshot.SnapshotSummary{MappedProcesses: 2, UnmappedProcesses: 2, MappingCoveragePct: 50},
+		CoordinationRisk: snapshot.CoordinationRiskSnapshot{
 			LowConfidenceSessionCount: 1,
-			Signals: []RiskSignalSnapshot{
+			Signals: []snapshot.RiskSignalSnapshot{
 				{Kind: "duplicate_overlap", Severity: "warn", Evidence: "2 sessions overlap"},
 			},
 		},
-		TranscriptStats: TranscriptStats{DeferredFiles: 3, Errors: []string{"bad trace"}},
-		ProcessStats:    ProcessObservationStats{Incomplete: true, LastKnown: true, Error: "signal: killed"},
-		SystemResources: SystemResourceSnapshot{Supported: true, CPUPercent: 91, MemoryUsedPct: 72, Notes: []string{"Network counters are unavailable."}},
-		LiveSessions: []LiveSessionSnapshot{
+		TranscriptStats: snapshot.TranscriptStats{DeferredFiles: 3, Errors: []string{"bad trace"}},
+		ProcessStats:    snapshot.ProcessObservationStats{Incomplete: true, LastKnown: true, Error: "signal: killed"},
+		SystemResources: snapshot.SystemResourceSnapshot{Supported: true, CPUPercent: 91, MemoryUsedPct: 72, Notes: []string{"Network counters are unavailable."}},
+		LiveSessions: []snapshot.LiveSessionSnapshot{
 			{SessionID: "s1"},
-			{SessionID: "s2", TokenUsage: &TokenUsage{InputTokens: 10, OutputTokens: 2}, TokenUsageSource: "transcript_usage", TokenUsageConfidence: "measured"},
+			{SessionID: "s2", TokenUsage: &snapshot.TokenUsage{InputTokens: 10, OutputTokens: 2}, TokenUsageSource: "transcript_usage", TokenUsageConfidence: "measured"},
 		},
 	}
 
-	diagnostics := buildDiagnosticsSnapshot(snapshot, now)
+	diagnostics := buildDiagnosticsSnapshot(snap, now)
 
 	if diagnostics.GeneratedAt == "" || diagnostics.Export.Endpoint != "/api/diagnostic-export" {
 		t.Fatalf("expected generated diagnostics with export contract, got %+v", diagnostics)
@@ -81,15 +82,15 @@ func TestBuildDiagnosticsSnapshotSeparatesAnomaliesAndEvidenceGaps(t *testing.T)
 }
 
 func TestDiagnosticBaselinesKeepEmptyMappingAndMeasuredTokensHonest(t *testing.T) {
-	snapshot := Snapshot{
-		Current: CurrentMetrics{PIDConcurrency: 0, SessionConcurrency: 2},
-		Summary: SnapshotSummary{},
-		LiveSessions: []LiveSessionSnapshot{
-			{SessionID: "estimated", TokenUsage: &TokenUsage{InputTokens: 10}, TokenUsageSource: "runtime_adapter", TokenUsageConfidence: "estimated"},
-			{SessionID: "measured", TokenUsage: &TokenUsage{InputTokens: 4}, TokenUsageSource: "transcript_usage", TokenUsageConfidence: "measured"},
+	snap := snapshot.Snapshot{
+		Current: snapshot.CurrentMetrics{PIDConcurrency: 0, SessionConcurrency: 2},
+		Summary: snapshot.SnapshotSummary{},
+		LiveSessions: []snapshot.LiveSessionSnapshot{
+			{SessionID: "estimated", TokenUsage: &snapshot.TokenUsage{InputTokens: 10}, TokenUsageSource: "runtime_adapter", TokenUsageConfidence: "estimated"},
+			{SessionID: "measured", TokenUsage: &snapshot.TokenUsage{InputTokens: 4}, TokenUsageSource: "transcript_usage", TokenUsageConfidence: "measured"},
 		},
 	}
-	diagnostics := buildDiagnosticsSnapshot(snapshot, time.Now())
+	diagnostics := buildDiagnosticsSnapshot(snap, time.Now())
 	mapping := requireDiagnosticBaseline(t, diagnostics.Baselines, "mapping_coverage")
 	if mapping.Status != "empty" || mapping.Value != "no visible PIDs" {
 		t.Fatalf("expected empty mapping baseline for no visible pids, got %+v", mapping)
@@ -105,8 +106,8 @@ func TestScanCostStaysUnavailableUntilAWalkHasRun(t *testing.T) {
 	// index. Surfacing those unguarded would report "no walk has run" as a
 	// measured 0ms, so an unmeasured cost must have no number at all -- and
 	// must not be compared against the cost threshold.
-	unmeasured := Snapshot{TranscriptStats: TranscriptStats{
-		ScanCost: TranscriptScanCost{WalkMeasured: false, AgedOutFiles: 9060},
+	unmeasured := snapshot.Snapshot{TranscriptStats: snapshot.TranscriptStats{
+		ScanCost: snapshot.TranscriptScanCost{WalkMeasured: false, AgedOutFiles: 9060},
 	}}
 	diagnostics := buildDiagnosticsSnapshot(unmeasured, time.Now())
 	cost := requireDiagnosticBaseline(t, diagnostics.Baselines, "evidence_walk_cost")
@@ -124,8 +125,8 @@ func TestScanCostStaysUnavailableUntilAWalkHasRun(t *testing.T) {
 
 	// A warm pass carries the last real walk, so the cost stays answerable
 	// between reconciles rather than blanking out for the process lifetime.
-	warm := Snapshot{TranscriptStats: TranscriptStats{
-		ScanCost: TranscriptScanCost{WalkMeasured: true, WalkFresh: false, ElapsedMs: 1173, VisitedEntries: 28145, PrunedDirectories: 934},
+	warm := snapshot.Snapshot{TranscriptStats: snapshot.TranscriptStats{
+		ScanCost: snapshot.TranscriptScanCost{WalkMeasured: true, WalkFresh: false, ElapsedMs: 1173, VisitedEntries: 28145, PrunedDirectories: 934},
 	}}
 	diagnostics = buildDiagnosticsSnapshot(warm, time.Now())
 	cost = requireDiagnosticBaseline(t, diagnostics.Baselines, "evidence_walk_cost")
@@ -136,8 +137,8 @@ func TestScanCostStaysUnavailableUntilAWalkHasRun(t *testing.T) {
 		t.Fatalf("expected an expensive measured walk to raise a signal, got %+v", diagnostics.EvidenceGaps)
 	}
 
-	fast := Snapshot{TranscriptStats: TranscriptStats{
-		ScanCost: TranscriptScanCost{WalkMeasured: true, WalkFresh: true, ElapsedMs: 9},
+	fast := snapshot.Snapshot{TranscriptStats: snapshot.TranscriptStats{
+		ScanCost: snapshot.TranscriptScanCost{WalkMeasured: true, WalkFresh: true, ElapsedMs: 9},
 	}}
 	diagnostics = buildDiagnosticsSnapshot(fast, time.Now())
 	cost = requireDiagnosticBaseline(t, diagnostics.Baselines, "evidence_walk_cost")
@@ -146,7 +147,7 @@ func TestScanCostStaysUnavailableUntilAWalkHasRun(t *testing.T) {
 	}
 }
 
-func hasDiagnosticSignal(items []DiagnosticSignalSnapshot, kind string) bool {
+func hasDiagnosticSignal(items []snapshot.DiagnosticSignalSnapshot, kind string) bool {
 	for _, item := range items {
 		if item.Kind == kind {
 			return true
@@ -155,7 +156,7 @@ func hasDiagnosticSignal(items []DiagnosticSignalSnapshot, kind string) bool {
 	return false
 }
 
-func hasDiagnosticCapability(items []DiagnosticCapabilitySnapshot, key, status string) bool {
+func hasDiagnosticCapability(items []snapshot.DiagnosticCapabilitySnapshot, key, status string) bool {
 	for _, item := range items {
 		if item.Key == key && item.Status == status {
 			return true
@@ -164,7 +165,7 @@ func hasDiagnosticCapability(items []DiagnosticCapabilitySnapshot, key, status s
 	return false
 }
 
-func requireDiagnosticBaseline(t *testing.T, items []DiagnosticBaselineSnapshot, key string) DiagnosticBaselineSnapshot {
+func requireDiagnosticBaseline(t *testing.T, items []snapshot.DiagnosticBaselineSnapshot, key string) snapshot.DiagnosticBaselineSnapshot {
 	t.Helper()
 	for _, item := range items {
 		if item.Key == key {
@@ -172,5 +173,5 @@ func requireDiagnosticBaseline(t *testing.T, items []DiagnosticBaselineSnapshot,
 		}
 	}
 	t.Fatalf("missing diagnostic baseline %s in %+v", key, items)
-	return DiagnosticBaselineSnapshot{}
+	return snapshot.DiagnosticBaselineSnapshot{}
 }

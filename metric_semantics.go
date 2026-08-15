@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"math"
 	"strings"
 	"time"
@@ -168,7 +169,7 @@ func liveTokenRateWindowBreakdown(events []liveTokenRateEvent, sessionProjects m
 	return tokens, len(sessions), projects
 }
 
-func liveTokenRateSampleFromFacts(facts liveTokenRateFacts) LiveTokenRateSample {
+func liveTokenRateSampleFromFacts(facts liveTokenRateFacts) snapshot.LiveTokenRateSample {
 	now := facts.SampledAt
 	if now.IsZero() {
 		now = time.Now()
@@ -177,7 +178,7 @@ func liveTokenRateSampleFromFacts(facts liveTokenRateFacts) LiveTokenRateSample 
 	if window <= 0 {
 		window = liveTokenRateWindow
 	}
-	sample := LiveTokenRateSample{
+	sample := snapshot.LiveTokenRateSample{
 		State:                 liveTokenRateStateNoData,
 		Basis:                 liveTokenRateBasis,
 		Source:                liveTokenRateSource,
@@ -285,7 +286,7 @@ func sessionNeedsReviewObservation(role string, observation liveSessionObservati
 	return observation.Freshness == "idle" || observation.Freshness == "stale"
 }
 
-func metricFactsForLiveSession(session LiveSession, observation liveSessionObservation) SessionMetricFacts {
+func metricFactsForLiveSession(session snapshot.LiveSession, observation liveSessionObservation) SessionMetricFacts {
 	role := observeSessionRole(session)
 	processIDs := make([]int, 0, len(session.Processes))
 	for pid := range session.Processes {
@@ -302,7 +303,7 @@ func metricFactsForLiveSession(session LiveSession, observation liveSessionObser
 	}
 }
 
-func metricFactsForSessionSnapshot(session LiveSessionSnapshot) SessionMetricFacts {
+func metricFactsForSessionSnapshot(session snapshot.LiveSessionSnapshot) SessionMetricFacts {
 	return SessionMetricFacts{
 		Role:            session.SessionRole,
 		KnownSession:    true,
@@ -315,7 +316,7 @@ func metricFactsForSessionSnapshot(session LiveSessionSnapshot) SessionMetricFac
 	}
 }
 
-func metricFactsForProcessSessionEvidence(evidence ProcessSessionEvidence) ProcessEvidenceMetricFacts {
+func metricFactsForProcessSessionEvidence(evidence snapshot.ProcessSessionEvidence) ProcessEvidenceMetricFacts {
 	return ProcessEvidenceMetricFacts{
 		Role:           normalizedRole(evidence.Role),
 		RecentMovement: evidence.ActiveBurst,

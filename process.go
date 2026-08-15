@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"context"
 	"os"
 	"os/exec"
@@ -26,7 +27,7 @@ var sessionHintPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)CODEX_THREAD_ID=([0-9a-f-]{8,})`),
 }
 
-func discoverLiveProcesses(ctx context.Context, adapters *codingAgentRegistry) ([]LiveProcess, []string) {
+func discoverLiveProcesses(ctx context.Context, adapters *codingAgentRegistry) ([]snapshot.LiveProcess, []string) {
 	out, err := exec.CommandContext(ctx, "ps", "-axo", "uid=,pid=,ppid=,pcpu=,rss=,etime=,command=").Output()
 	if err != nil {
 		return nil, []string{processDiscoveryFailurePrefix + strings.TrimSpace(err.Error())}
@@ -37,7 +38,7 @@ func discoverLiveProcesses(ctx context.Context, adapters *codingAgentRegistry) (
 		return nil, []string{processDiscoveryFailurePrefix + "no parseable process rows"}
 	}
 	now := time.Now()
-	processes := []LiveProcess{}
+	processes := []snapshot.LiveProcess{}
 	pids := []int{}
 	for _, process := range processTable {
 		if process.UID != os.Getuid() {
@@ -49,7 +50,7 @@ func discoverLiveProcesses(ctx context.Context, adapters *codingAgentRegistry) (
 		}
 		hostApp := inferHostApp(process, processTable)
 		ioSample := sampleProcessIO(process.PID, now)
-		processes = append(processes, LiveProcess{
+		processes = append(processes, snapshot.LiveProcess{
 			PID:                  process.PID,
 			PPID:                 process.PPID,
 			Tool:                 tool,
@@ -89,14 +90,14 @@ func processDiscoveryFailure(notes []string) (string, bool) {
 	return "", false
 }
 
-func cloneLiveProcesses(processes []LiveProcess) []LiveProcess {
+func cloneLiveProcesses(processes []snapshot.LiveProcess) []snapshot.LiveProcess {
 	if len(processes) == 0 {
 		return nil
 	}
-	out := make([]LiveProcess, len(processes))
+	out := make([]snapshot.LiveProcess, len(processes))
 	for i, process := range processes {
 		out[i] = process
-		out[i].SessionFiles = append([]TranscriptFile(nil), process.SessionFiles...)
+		out[i].SessionFiles = append([]snapshot.TranscriptFile(nil), process.SessionFiles...)
 		out[i].SessionHints = append([]string(nil), process.SessionHints...)
 		if process.HostApp != nil {
 			host := *process.HostApp
@@ -170,7 +171,7 @@ func parseProcessTableLine(line string) (processRow, bool) {
 	}, true
 }
 
-func inferHostApp(process processRow, processes map[int]processRow) *HostApp {
+func inferHostApp(process processRow, processes map[int]processRow) *snapshot.HostApp {
 	current := process
 	seen := map[int]struct{}{}
 	for steps := 0; steps < 12; steps++ {
@@ -198,7 +199,7 @@ func inferHostApp(process processRow, processes map[int]processRow) *HostApp {
 	return nil
 }
 
-func hostAppFromCommand(pid int, command string) *HostApp {
+func hostAppFromCommand(pid int, command string) *snapshot.HostApp {
 	bundlePath := appBundlePathFromCommand(command)
 	if bundlePath == "" {
 		return nil
@@ -207,7 +208,7 @@ func hostAppFromCommand(pid int, command string) *HostApp {
 	if name == "" {
 		name = filepath.Base(bundlePath)
 	}
-	return &HostApp{PID: pid, Name: name, BundlePath: bundlePath}
+	return &snapshot.HostApp{PID: pid, Name: name, BundlePath: bundlePath}
 }
 
 func appBundlePathFromCommand(command string) string {
@@ -239,8 +240,8 @@ func appBundlePathFromCommand(command string) string {
 	return ""
 }
 
-func sessionFilesForPIDs(ctx context.Context, pids []int, adapters *codingAgentRegistry) (map[int][]TranscriptFile, []string) {
-	out := map[int][]TranscriptFile{}
+func sessionFilesForPIDs(ctx context.Context, pids []int, adapters *codingAgentRegistry) (map[int][]snapshot.TranscriptFile, []string) {
+	out := map[int][]snapshot.TranscriptFile{}
 	if len(pids) == 0 {
 		return out, nil
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"os"
 	"path/filepath"
 	"slices"
@@ -13,8 +14,8 @@ func TestBuildLiveSessionsTracksMappingEvidence(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
 	tracePath := "fixtures/trace-session.jsonl"
 	fallbackPath := "fixtures/rollout-2026-06-28T10-00-00-fallback-session.jsonl"
-	data := &TranscriptData{
-		Traces: map[string]*SessionTrace{
+	data := &snapshot.TranscriptData{
+		Traces: map[string]*snapshot.SessionTrace{
 			tracePath: {
 				Tool:       "codex",
 				Path:       tracePath,
@@ -26,11 +27,11 @@ func TestBuildLiveSessionsTracksMappingEvidence(t *testing.T) {
 			},
 		},
 	}
-	processes := []LiveProcess{
+	processes := []snapshot.LiveProcess{
 		{
 			PID:          101,
 			Tool:         "codex",
-			SessionFiles: []TranscriptFile{{Tool: "codex", Path: tracePath}},
+			SessionFiles: []snapshot.TranscriptFile{{Tool: "codex", Path: tracePath}},
 		},
 		{
 			PID:          102,
@@ -40,7 +41,7 @@ func TestBuildLiveSessionsTracksMappingEvidence(t *testing.T) {
 		{
 			PID:          103,
 			Tool:         "codex",
-			SessionFiles: []TranscriptFile{{Tool: "codex", Path: fallbackPath, SessionIDHint: "fallback-session"}},
+			SessionFiles: []snapshot.TranscriptFile{{Tool: "codex", Path: fallbackPath, SessionIDHint: "fallback-session"}},
 		},
 	}
 
@@ -80,16 +81,16 @@ func TestBuildLiveSessionsTracksMappingEvidence(t *testing.T) {
 
 func TestBuildLiveSessionsMergesFallbackTranscriptAndMatchingHint(t *testing.T) {
 	fallbackPath := "fixtures/rollout-2026-06-28T10-00-00-fallback-session.jsonl"
-	processes := []LiveProcess{
+	processes := []snapshot.LiveProcess{
 		{
 			PID:          101,
 			Tool:         "codex",
-			SessionFiles: []TranscriptFile{{Tool: "codex", Path: fallbackPath, SessionIDHint: "fallback-session"}},
+			SessionFiles: []snapshot.TranscriptFile{{Tool: "codex", Path: fallbackPath, SessionIDHint: "fallback-session"}},
 			SessionHints: []string{"fallback-session"},
 		},
 	}
 
-	sessions, _ := buildLiveSessionsAt(processes, &TranscriptData{Traces: map[string]*SessionTrace{}}, 90*time.Second, time.Now())
+	sessions, _ := buildLiveSessionsAt(processes, &snapshot.TranscriptData{Traces: map[string]*snapshot.SessionTrace{}}, 90*time.Second, time.Now())
 	if len(sessions) != 1 {
 		t.Fatalf("expected 1 merged live session, got %d", len(sessions))
 	}
@@ -112,8 +113,8 @@ func TestBuildLiveSessionsMergesFallbackTranscriptAndMatchingHint(t *testing.T) 
 func TestBuildLiveSessionsParsedTranscriptIDWinsOverConflictingHint(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
 	tracePath := "fixtures/trace-session.jsonl"
-	data := &TranscriptData{
-		Traces: map[string]*SessionTrace{
+	data := &snapshot.TranscriptData{
+		Traces: map[string]*snapshot.SessionTrace{
 			tracePath: {
 				Tool:       "codex",
 				Path:       tracePath,
@@ -124,11 +125,11 @@ func TestBuildLiveSessionsParsedTranscriptIDWinsOverConflictingHint(t *testing.T
 			},
 		},
 	}
-	processes := []LiveProcess{
+	processes := []snapshot.LiveProcess{
 		{
 			PID:          201,
 			Tool:         "codex",
-			SessionFiles: []TranscriptFile{{Tool: "codex", Path: tracePath}},
+			SessionFiles: []snapshot.TranscriptFile{{Tool: "codex", Path: tracePath}},
 			SessionHints: []string{"conflicting-session"},
 		},
 	}
@@ -165,8 +166,8 @@ func TestBuildLiveSessionsParsedTranscriptIDSuppressesConflictingHintFromSibling
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
 	tracePath := "fixtures/trace-session.jsonl"
 	fallbackPath := "fixtures/rollout-2026-06-28T10-00-00-fallback-session.jsonl"
-	data := &TranscriptData{
-		Traces: map[string]*SessionTrace{
+	data := &snapshot.TranscriptData{
+		Traces: map[string]*snapshot.SessionTrace{
 			tracePath: {
 				Tool:       "codex",
 				Path:       tracePath,
@@ -177,11 +178,11 @@ func TestBuildLiveSessionsParsedTranscriptIDSuppressesConflictingHintFromSibling
 			},
 		},
 	}
-	processes := []LiveProcess{
+	processes := []snapshot.LiveProcess{
 		{
 			PID:  202,
 			Tool: "codex",
-			SessionFiles: []TranscriptFile{
+			SessionFiles: []snapshot.TranscriptFile{
 				{Tool: "codex", Path: tracePath},
 				{Tool: "codex", Path: fallbackPath, SessionIDHint: "fallback-session"},
 			},
@@ -219,16 +220,16 @@ func TestBuildLiveSessionsParsedTranscriptIDSuppressesConflictingHintFromSibling
 
 func TestBuildLiveSessionsPrefersCommandHintOverFilenameFallback(t *testing.T) {
 	fallbackPath := "fixtures/rollout-2026-06-28T10-00-00-fallback-session.jsonl"
-	processes := []LiveProcess{
+	processes := []snapshot.LiveProcess{
 		{
 			PID:          202,
 			Tool:         "codex",
-			SessionFiles: []TranscriptFile{{Tool: "codex", Path: fallbackPath, SessionIDHint: "fallback-session"}},
+			SessionFiles: []snapshot.TranscriptFile{{Tool: "codex", Path: fallbackPath, SessionIDHint: "fallback-session"}},
 			SessionHints: []string{"hint-session"},
 		},
 	}
 
-	sessions, notes := buildLiveSessionsAt(processes, &TranscriptData{Traces: map[string]*SessionTrace{}}, 90*time.Second, time.Now())
+	sessions, notes := buildLiveSessionsAt(processes, &snapshot.TranscriptData{Traces: map[string]*snapshot.SessionTrace{}}, 90*time.Second, time.Now())
 	if len(sessions) != 1 {
 		t.Fatalf("expected 1 live session, got %d", len(sessions))
 	}
@@ -253,7 +254,7 @@ func TestBuildLiveSessionsPrefersCommandHintOverFilenameFallback(t *testing.T) {
 		t.Fatalf("expected fallback conflict note, got %#v", notes)
 	}
 
-	processSnapshots := projectLiveProcessesWithSessions(processes, nil, nil, &TranscriptData{Traces: map[string]*SessionTrace{}})
+	processSnapshots := projectLiveProcessesWithSessions(processes, nil, nil, &snapshot.TranscriptData{Traces: map[string]*snapshot.SessionTrace{}})
 	if len(processSnapshots) != 1 {
 		t.Fatalf("expected 1 process snapshot, got %d", len(processSnapshots))
 	}
@@ -268,8 +269,8 @@ func TestBuildLiveSessionsPrefersCommandHintOverFilenameFallback(t *testing.T) {
 func TestBuildLiveSessionsIncludesRecentTranscriptOnlySubagents(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
 	tracePath := "fixtures/subagent.jsonl"
-	data := &TranscriptData{
-		Traces: map[string]*SessionTrace{
+	data := &snapshot.TranscriptData{
+		Traces: map[string]*snapshot.SessionTrace{
 			tracePath: {
 				Tool:             "trae",
 				Path:             tracePath,
@@ -334,9 +335,9 @@ func TestBuildLiveSessionsIncludesRecentTranscriptOnlySubagents(t *testing.T) {
 func TestBuildLiveSessionsPropagatesHostApps(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
 	tracePath := "fixtures/host-session.jsonl"
-	host := &HostApp{PID: 200, Name: "Terminal", BundlePath: filepath.Join("fixtures", "Terminal.app")}
-	data := &TranscriptData{
-		Traces: map[string]*SessionTrace{
+	host := &snapshot.HostApp{PID: 200, Name: "Terminal", BundlePath: filepath.Join("fixtures", "Terminal.app")}
+	data := &snapshot.TranscriptData{
+		Traces: map[string]*snapshot.SessionTrace{
 			tracePath: {
 				Tool:       "codex",
 				Path:       tracePath,
@@ -348,13 +349,13 @@ func TestBuildLiveSessionsPropagatesHostApps(t *testing.T) {
 			},
 		},
 	}
-	processes := []LiveProcess{
+	processes := []snapshot.LiveProcess{
 		{
 			PID:          501,
 			Tool:         "codex",
 			Command:      `codex --thread-id host-session`,
 			HostApp:      host,
-			SessionFiles: []TranscriptFile{{Tool: "codex", Path: tracePath}},
+			SessionFiles: []snapshot.TranscriptFile{{Tool: "codex", Path: tracePath}},
 		},
 	}
 
@@ -390,8 +391,8 @@ func TestBuildLiveSessionsPropagatesHostApps(t *testing.T) {
 
 func TestBuildLiveSessionsExcludesOldTranscriptOnlySessions(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	data := &TranscriptData{
-		Traces: map[string]*SessionTrace{
+	data := &snapshot.TranscriptData{
+		Traces: map[string]*snapshot.SessionTrace{
 			"fixtures/old.jsonl": {
 				Tool:       "trae",
 				Path:       "fixtures/old.jsonl",
@@ -428,7 +429,7 @@ func TestObserveProjectAttributionUsesTrustedEvidenceOnly(t *testing.T) {
 	}
 	cases := []struct {
 		name           string
-		session        LiveSession
+		session        snapshot.LiveSession
 		wantProject    string
 		wantSource     string
 		wantConfidence string
@@ -436,12 +437,12 @@ func TestObserveProjectAttributionUsesTrustedEvidenceOnly(t *testing.T) {
 	}{
 		{
 			name: "trace project wins",
-			session: LiveSession{
+			session: snapshot.LiveSession{
 				Tool:      "codex",
 				SessionID: "trace-project",
 				Path:      "fixtures/rollout-2026-06-28T10-00-00-trace-project.jsonl",
 				Processes: map[int]struct{}{1: {}},
-				Trace: &SessionTrace{
+				Trace: &snapshot.SessionTrace{
 					Project:       "alpha",
 					ProjectSource: "transcript_cwd",
 					FirstEvent:    now.Add(-2 * time.Minute),
@@ -455,7 +456,7 @@ func TestObserveProjectAttributionUsesTrustedEvidenceOnly(t *testing.T) {
 		},
 		{
 			name: "project root from codex config",
-			session: LiveSession{
+			session: snapshot.LiveSession{
 				Tool:      "codex",
 				SessionID: "root-project",
 				Path:      filepath.Join(projectCodexRoot, "sessions", "root-project.jsonl"),
@@ -468,7 +469,7 @@ func TestObserveProjectAttributionUsesTrustedEvidenceOnly(t *testing.T) {
 		},
 		{
 			name: "project root from codex lane storage",
-			session: LiveSession{
+			session: snapshot.LiveSession{
 				Tool:      "codex",
 				SessionID: "lane-project",
 				Path:      filepath.Join(projectLaneRoot, "events.jsonl"),
@@ -481,7 +482,7 @@ func TestObserveProjectAttributionUsesTrustedEvidenceOnly(t *testing.T) {
 		},
 		{
 			name: "home codex root stays unassigned",
-			session: LiveSession{
+			session: snapshot.LiveSession{
 				Tool:      "codex",
 				SessionID: "home-project",
 				Path:      filepath.Join(homeCodexRoot, "sessions", "home-project.jsonl"),
@@ -494,7 +495,7 @@ func TestObserveProjectAttributionUsesTrustedEvidenceOnly(t *testing.T) {
 		},
 		{
 			name: "claude projects anchor stays unassigned",
-			session: LiveSession{
+			session: snapshot.LiveSession{
 				Tool:      "claude",
 				SessionID: "claude-project",
 				Path:      filepath.Join(claudeProjectsRoot, "events.jsonl"),
@@ -507,7 +508,7 @@ func TestObserveProjectAttributionUsesTrustedEvidenceOnly(t *testing.T) {
 		},
 		{
 			name: "tmp parent stays unassigned",
-			session: LiveSession{
+			session: snapshot.LiveSession{
 				Tool:      "codex",
 				SessionID: "tmp-project",
 				Path:      filepath.Join(os.TempDir(), "rollout-2026-06-28T10-00-00-tmp-project.jsonl"),
@@ -553,7 +554,7 @@ func TestSetTraceProjectPathNormalizesBenchmarkWorkspace(t *testing.T) {
 		"example-case",
 		"workspace",
 	)
-	trace := &SessionTrace{}
+	trace := &snapshot.SessionTrace{}
 	setTraceProjectPath(trace, workspace, "transcript_cwd")
 	if trace.Project != "agentic-controlbook-benchmark" {
 		t.Fatalf("expected benchmark workspace to attribute to outer project, got %q", trace.Project)
@@ -581,7 +582,7 @@ func TestSetTraceProjectPathNormalizesGitWorktree(t *testing.T) {
 		t.Fatalf("write HEAD: %v", err)
 	}
 
-	trace := &SessionTrace{}
+	trace := &snapshot.SessionTrace{}
 	setTraceProjectPath(trace, wtDir, "transcript_cwd")
 	if trace.Project != "flowlens" {
 		t.Fatalf("expected project %q, got %q", "flowlens", trace.Project)
@@ -617,7 +618,7 @@ func TestSetTraceProjectPathKeepsRepoProjectOverLaterScratchCWD(t *testing.T) {
 	}
 	scratch := filepath.Join(os.TempDir(), "flowlens-audit-bea26d8c.RjqnPR")
 
-	trace := &SessionTrace{}
+	trace := &snapshot.SessionTrace{}
 	setTraceProjectPath(trace, wtDir, "transcript_cwd")
 	setTraceProjectPath(trace, scratch, "transcript_cwd")
 
@@ -632,7 +633,7 @@ func TestSetTraceProjectPathKeepsRepoProjectOverLaterScratchCWD(t *testing.T) {
 	}
 
 	// With nothing else known, a scratch cwd is still the only evidence there is.
-	bare := &SessionTrace{}
+	bare := &snapshot.SessionTrace{}
 	setTraceProjectPath(bare, scratch, "transcript_cwd")
 	if bare.Project != "flowlens-audit-bea26d8c.RjqnPR" {
 		t.Fatalf("expected scratch cwd to name the project when nothing else does, got %q", bare.Project)
@@ -640,7 +641,7 @@ func TestSetTraceProjectPathKeepsRepoProjectOverLaterScratchCWD(t *testing.T) {
 
 	// A repo-less cwd outside the temp roots is a real working directory
 	// (agentmux scratch topics), and still corrects a weaker storage-path guess.
-	plain := &SessionTrace{}
+	plain := &snapshot.SessionTrace{}
 	setTraceProjectPath(plain, filepath.Join(root, "topic--launcher--abc"), "transcript_path")
 	setTraceProjectPath(plain, filepath.Join(root, "agentmux", "scratch", "topic--launcher--abc"), "transcript_cwd")
 	if plain.Project != "topic--launcher--abc" {
@@ -671,7 +672,7 @@ func TestSetTraceProjectPathResolvesFileURLWorktreeToItsRepo(t *testing.T) {
 	}
 
 	for _, cwd := range []string{wtDir, "file://" + wtDir, "file://localhost" + wtDir} {
-		trace := &SessionTrace{}
+		trace := &snapshot.SessionTrace{}
 		setTraceProjectPath(trace, cwd, "transcript_cwd")
 		if trace.Project != "flowlens" {
 			t.Fatalf("cwd %q: expected project %q, got %q", cwd, "flowlens", trace.Project)
@@ -685,7 +686,7 @@ func TestSetTraceProjectPathResolvesFileURLWorktreeToItsRepo(t *testing.T) {
 	}
 
 	// A non-file scheme is not a local path and must not be mangled into one.
-	remote := &SessionTrace{}
+	remote := &snapshot.SessionTrace{}
 	setTraceProjectPath(remote, "https://example.com/flowlens/deploy", "transcript_cwd")
 	if remote.Project != "deploy" {
 		t.Fatalf("expected non-file URL to keep its existing basename handling, got %q", remote.Project)
@@ -699,13 +700,13 @@ func TestProjectLiveSessionsExposeFreshnessConfidenceAndProvenance(t *testing.T)
 	if err := os.MkdirAll(filepath.Join(projectCodexRoot, "sessions"), 0o755); err != nil {
 		t.Fatalf("mkdir codex sessions: %v", err)
 	}
-	sessions := []LiveSession{
+	sessions := []snapshot.LiveSession{
 		{
 			Tool:      "codex",
 			SessionID: "trace-session",
 			Path:      "fixtures/trace-session.jsonl",
 			Processes: map[int]struct{}{1: {}},
-			Trace: &SessionTrace{
+			Trace: &snapshot.SessionTrace{
 				Project:       "alpha",
 				ProjectSource: "transcript_cwd",
 				FirstEvent:    now.Add(-10 * time.Minute),
@@ -716,53 +717,53 @@ func TestProjectLiveSessionsExposeFreshnessConfidenceAndProvenance(t *testing.T)
 					now.Add(-30 * time.Second),
 				},
 			},
-			Mapping: LiveSessionMapping{TranscriptPath: true, ParsedTranscriptID: true},
+			Mapping: snapshot.LiveSessionMapping{TranscriptPath: true, ParsedTranscriptID: true},
 		},
 		{
 			Tool:      "claude",
 			SessionID: "hint-session",
 			Path:      "fixtures/hint-session.jsonl",
 			Processes: map[int]struct{}{2: {}},
-			Trace: &SessionTrace{
+			Trace: &snapshot.SessionTrace{
 				Project:       "beta",
 				ProjectSource: "transcript_project",
 				FirstEvent:    now.Add(-5 * time.Minute),
 				LastEvent:     now.Add(-2 * time.Minute),
 			},
-			Mapping: LiveSessionMapping{CommandHint: true},
+			Mapping: snapshot.LiveSessionMapping{CommandHint: true},
 		},
 		{
 			Tool:      "codex",
 			SessionID: "root-session",
 			Path:      filepath.Join(projectCodexRoot, "sessions", "root-session.jsonl"),
 			Processes: map[int]struct{}{3: {}},
-			Mapping:   LiveSessionMapping{TranscriptPath: true, FallbackSessionID: true},
+			Mapping:   snapshot.LiveSessionMapping{TranscriptPath: true, FallbackSessionID: true},
 		},
 		{
 			Tool:      "codex",
 			SessionID: "fallback-session",
 			Path:      filepath.Join(os.TempDir(), "fallback-session.jsonl"),
 			Processes: map[int]struct{}{4: {}},
-			Mapping:   LiveSessionMapping{TranscriptPath: true, FallbackSessionID: true},
+			Mapping:   snapshot.LiveSessionMapping{TranscriptPath: true, FallbackSessionID: true},
 		},
 		{
 			Tool:      "codex",
 			SessionID: "stale-session",
 			Path:      "fixtures/stale-session.jsonl",
 			Processes: map[int]struct{}{5: {}},
-			Trace: &SessionTrace{
+			Trace: &snapshot.SessionTrace{
 				Project:       "gamma",
 				ProjectSource: "transcript_cwd",
 				FirstEvent:    now.Add(-20 * time.Minute),
 				LastEvent:     now.Add(-6 * time.Minute),
 			},
-			Mapping: LiveSessionMapping{TranscriptPath: true, ParsedTranscriptID: true},
+			Mapping: snapshot.LiveSessionMapping{TranscriptPath: true, ParsedTranscriptID: true},
 		},
 	}
 
-	snapshot := projectLiveSessions(sessions, 90*time.Second, now)
+	snap := projectLiveSessions(sessions, 90*time.Second, now)
 
-	traceSession := requireLiveSessionSnapshot(t, snapshot, "trace-session")
+	traceSession := requireLiveSessionSnapshot(t, snap, "trace-session")
 	if traceSession.Freshness != "active" {
 		t.Fatalf("expected active freshness, got %s", traceSession.Freshness)
 	}
@@ -791,7 +792,7 @@ func TestProjectLiveSessionsExposeFreshnessConfidenceAndProvenance(t *testing.T)
 		t.Fatalf("expected high project attribution confidence, got %s", traceSession.ProjectAttributionConfidence)
 	}
 
-	hintSession := requireLiveSessionSnapshot(t, snapshot, "hint-session")
+	hintSession := requireLiveSessionSnapshot(t, snap, "hint-session")
 	if hintSession.Freshness != "idle" {
 		t.Fatalf("expected idle freshness, got %s", hintSession.Freshness)
 	}
@@ -811,7 +812,7 @@ func TestProjectLiveSessionsExposeFreshnessConfidenceAndProvenance(t *testing.T)
 		t.Fatalf("expected transcript_project attribution, got %s", hintSession.ProjectAttributionSource)
 	}
 
-	rootSession := requireLiveSessionSnapshot(t, snapshot, "root-session")
+	rootSession := requireLiveSessionSnapshot(t, snap, "root-session")
 	if rootSession.Project != "agentload" {
 		t.Fatalf("expected config-root fallback project agentload, got %q", rootSession.Project)
 	}
@@ -825,7 +826,7 @@ func TestProjectLiveSessionsExposeFreshnessConfidenceAndProvenance(t *testing.T)
 		t.Fatalf("expected config-root fallback reason, got %#v", rootSession.ProjectAttributionReasons)
 	}
 
-	fallbackSession := requireLiveSessionSnapshot(t, snapshot, "fallback-session")
+	fallbackSession := requireLiveSessionSnapshot(t, snap, "fallback-session")
 	if fallbackSession.Freshness != "unknown" {
 		t.Fatalf("expected unknown freshness without transcript timing, got %s", fallbackSession.Freshness)
 	}
@@ -854,7 +855,7 @@ func TestProjectLiveSessionsExposeFreshnessConfidenceAndProvenance(t *testing.T)
 		t.Fatalf("unexpected fallback provenance: %#v", fallbackSession.Provenance)
 	}
 
-	staleSession := requireLiveSessionSnapshot(t, snapshot, "stale-session")
+	staleSession := requireLiveSessionSnapshot(t, snap, "stale-session")
 	if staleSession.Freshness != "stale" {
 		t.Fatalf("expected stale freshness, got %s", staleSession.Freshness)
 	}
@@ -862,14 +863,14 @@ func TestProjectLiveSessionsExposeFreshnessConfidenceAndProvenance(t *testing.T)
 
 func TestProjectLiveSessionsExposeTokenUsage(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	sessions := []LiveSession{
+	sessions := []snapshot.LiveSession{
 		{
 			Tool:      "codex",
 			SessionID: "token-session",
 			Processes: map[int]struct{}{
 				1: {},
 			},
-			Trace: &SessionTrace{
+			Trace: &snapshot.SessionTrace{
 				Project:       "agentload",
 				ProjectSource: "transcript_cwd",
 				ThreadSource:  "user",
@@ -879,7 +880,7 @@ func TestProjectLiveSessionsExposeTokenUsage(t *testing.T) {
 					now.Add(-2 * time.Minute),
 					now.Add(-30 * time.Second),
 				},
-				TokenUsage: TokenUsage{
+				TokenUsage: snapshot.TokenUsage{
 					InputTokens:              1200,
 					OutputTokens:             340,
 					CacheCreationInputTokens: 80,
@@ -888,12 +889,12 @@ func TestProjectLiveSessionsExposeTokenUsage(t *testing.T) {
 					TotalTokens:              1780,
 				},
 			},
-			Mapping: LiveSessionMapping{TranscriptPath: true, ParsedTranscriptID: true},
+			Mapping: snapshot.LiveSessionMapping{TranscriptPath: true, ParsedTranscriptID: true},
 		},
 	}
 
-	snapshot := projectLiveSessions(sessions, 90*time.Second, now)
-	item := requireLiveSessionSnapshot(t, snapshot, "token-session")
+	snap := projectLiveSessions(sessions, 90*time.Second, now)
+	item := requireLiveSessionSnapshot(t, snap, "token-session")
 	if item.TokenUsage == nil {
 		t.Fatalf("expected token usage")
 	}
@@ -904,65 +905,65 @@ func TestProjectLiveSessionsExposeTokenUsage(t *testing.T) {
 
 func TestBuildProjectFocusAddsAllocationRiskAndConfidenceSummary(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	sessions := []LiveSession{
+	sessions := []snapshot.LiveSession{
 		{
 			Tool:      "codex",
 			SessionID: "alpha-active",
 			Processes: map[int]struct{}{1: {}, 2: {}},
-			Trace: &SessionTrace{
+			Trace: &snapshot.SessionTrace{
 				Project:       "alpha",
 				ProjectSource: "transcript_cwd",
 				ThreadSource:  "user",
 				FirstEvent:    now.Add(-5 * time.Minute),
 				LastEvent:     now.Add(-30 * time.Second),
-				TokenUsage: TokenUsage{
+				TokenUsage: snapshot.TokenUsage{
 					InputTokens:  100,
 					OutputTokens: 40,
 					TotalTokens:  140,
 				},
 			},
-			Mapping: LiveSessionMapping{TranscriptPath: true, ParsedTranscriptID: true},
+			Mapping: snapshot.LiveSessionMapping{TranscriptPath: true, ParsedTranscriptID: true},
 		},
 		{
 			Tool:      "codex",
 			SessionID: "alpha-stale",
 			Processes: map[int]struct{}{3: {}},
-			Trace: &SessionTrace{
+			Trace: &snapshot.SessionTrace{
 				Project:       "alpha",
 				ProjectSource: "transcript_cwd",
 				ThreadSource:  "subagent",
 				FirstEvent:    now.Add(-2 * time.Hour),
 				LastEvent:     now.Add(-10 * time.Minute),
-				TokenUsage: TokenUsage{
+				TokenUsage: snapshot.TokenUsage{
 					InputTokens:  25,
 					OutputTokens: 10,
 					TotalTokens:  35,
 				},
 			},
-			Mapping: LiveSessionMapping{TranscriptPath: true, ParsedTranscriptID: true},
+			Mapping: snapshot.LiveSessionMapping{TranscriptPath: true, ParsedTranscriptID: true},
 		},
 		{
 			Tool:      "claude",
 			SessionID: "beta-active",
 			Processes: map[int]struct{}{4: {}},
-			Trace: &SessionTrace{
+			Trace: &snapshot.SessionTrace{
 				Project:       "beta",
 				ProjectSource: "transcript_cwd",
 				ThreadSource:  "user",
 				FirstEvent:    now.Add(-4 * time.Minute),
 				LastEvent:     now.Add(-1 * time.Minute),
 			},
-			Mapping: LiveSessionMapping{CommandHint: true},
+			Mapping: snapshot.LiveSessionMapping{CommandHint: true},
 		},
 		{
 			Tool:      "codex",
 			SessionID: "beta-unknown",
 			Processes: map[int]struct{}{5: {}},
-			Trace: &SessionTrace{
+			Trace: &snapshot.SessionTrace{
 				Project:       "beta",
 				ProjectSource: "config_root_parent",
 			},
-			Mapping: LiveSessionMapping{TranscriptPath: true, FallbackSessionID: true},
+			Mapping: snapshot.LiveSessionMapping{TranscriptPath: true, FallbackSessionID: true},
 		},
 	}
 
@@ -993,16 +994,16 @@ func TestBuildProjectFocusAddsAllocationRiskAndConfidenceSummary(t *testing.T) {
 	if alpha.ProjectAttributionConfidence != "high" {
 		t.Fatalf("expected alpha project attribution confidence high, got %s", alpha.ProjectAttributionConfidence)
 	}
-	if !slices.Equal(alpha.ConfidenceBreakdown, []ConfidenceCountSnapshot{{Level: "high", Count: 2}}) {
+	if !slices.Equal(alpha.ConfidenceBreakdown, []snapshot.ConfidenceCountSnapshot{{Level: "high", Count: 2}}) {
 		t.Fatalf("unexpected alpha confidence breakdown: %#v", alpha.ConfidenceBreakdown)
 	}
-	if !slices.Equal(alpha.ProjectAttributionSourceSummary, []AttributionSourceCountSnapshot{{Source: "transcript_cwd", Count: 2}}) {
+	if !slices.Equal(alpha.ProjectAttributionSourceSummary, []snapshot.AttributionSourceCountSnapshot{{Source: "transcript_cwd", Count: 2}}) {
 		t.Fatalf("unexpected alpha project attribution summary: %#v", alpha.ProjectAttributionSourceSummary)
 	}
-	if !slices.Equal(alpha.ProvenanceSummary, []ProvenanceCountSnapshot{{Source: "transcript_path", Count: 2}}) {
+	if !slices.Equal(alpha.ProvenanceSummary, []snapshot.ProvenanceCountSnapshot{{Source: "transcript_path", Count: 2}}) {
 		t.Fatalf("unexpected alpha provenance summary: %#v", alpha.ProvenanceSummary)
 	}
-	if alpha.TokenUsage == nil || *alpha.TokenUsage != (TokenUsage{InputTokens: 125, OutputTokens: 50, TotalTokens: 175}) {
+	if alpha.TokenUsage == nil || *alpha.TokenUsage != (snapshot.TokenUsage{InputTokens: 125, OutputTokens: 50, TotalTokens: 175}) {
 		t.Fatalf("unexpected alpha token usage: %+v", alpha.TokenUsage)
 	}
 	if len(alpha.Tools) != 1 || alpha.Tools[0].TokenUsage == nil || *alpha.Tools[0].TokenUsage != *alpha.TokenUsage {
@@ -1034,14 +1035,14 @@ func TestBuildProjectFocusAddsAllocationRiskAndConfidenceSummary(t *testing.T) {
 	if !slices.Contains(beta.ProjectAttributionReasons, "project attribution mixes multiple evidence strengths") {
 		t.Fatalf("expected beta attribution reasons to disclose mixed strength, got %#v", beta.ProjectAttributionReasons)
 	}
-	expectedAttribution := []AttributionSourceCountSnapshot{
+	expectedAttribution := []snapshot.AttributionSourceCountSnapshot{
 		{Source: "transcript_cwd", Count: 1},
 		{Source: "config_root_parent", Count: 1},
 	}
 	if !slices.Equal(beta.ProjectAttributionSourceSummary, expectedAttribution) {
 		t.Fatalf("unexpected beta attribution summary: %#v", beta.ProjectAttributionSourceSummary)
 	}
-	expectedProvenance := []ProvenanceCountSnapshot{
+	expectedProvenance := []snapshot.ProvenanceCountSnapshot{
 		{Source: "transcript_path", Count: 1},
 		{Source: "command_hint", Count: 1},
 		{Source: "fallback_session_id", Count: 1},
@@ -1053,30 +1054,30 @@ func TestBuildProjectFocusAddsAllocationRiskAndConfidenceSummary(t *testing.T) {
 
 func TestBuildProjectFocusKeepsTranscriptProjectAndCWDHighConfidence(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	sessions := []LiveSession{
+	sessions := []snapshot.LiveSession{
 		{
 			Tool:      "codex",
 			SessionID: "alpha-explicit",
 			Processes: map[int]struct{}{1: {}},
-			Trace: &SessionTrace{
+			Trace: &snapshot.SessionTrace{
 				Project:       "alpha",
 				ProjectSource: "transcript_project",
 				FirstEvent:    now.Add(-3 * time.Minute),
 				LastEvent:     now.Add(-45 * time.Second),
 			},
-			Mapping: LiveSessionMapping{TranscriptPath: true, ParsedTranscriptID: true},
+			Mapping: snapshot.LiveSessionMapping{TranscriptPath: true, ParsedTranscriptID: true},
 		},
 		{
 			Tool:      "codex",
 			SessionID: "alpha-cwd",
 			Processes: map[int]struct{}{2: {}},
-			Trace: &SessionTrace{
+			Trace: &snapshot.SessionTrace{
 				Project:       "alpha",
 				ProjectSource: "transcript_cwd",
 				FirstEvent:    now.Add(-6 * time.Minute),
 				LastEvent:     now.Add(-2 * time.Minute),
 			},
-			Mapping: LiveSessionMapping{TranscriptPath: true, ParsedTranscriptID: true},
+			Mapping: snapshot.LiveSessionMapping{TranscriptPath: true, ParsedTranscriptID: true},
 		},
 	}
 
@@ -1092,7 +1093,7 @@ func TestBuildProjectFocusKeepsTranscriptProjectAndCWDHighConfidence(t *testing.
 	if slices.Contains(alpha.ProjectAttributionReasons, "project attribution mixes multiple evidence strengths") {
 		t.Fatalf("expected high-confidence transcript_project + transcript_cwd mix to avoid mixed-strength reason, got %#v", alpha.ProjectAttributionReasons)
 	}
-	if !slices.Equal(alpha.ProjectAttributionSourceSummary, []AttributionSourceCountSnapshot{
+	if !slices.Equal(alpha.ProjectAttributionSourceSummary, []snapshot.AttributionSourceCountSnapshot{
 		{Source: "transcript_project", Count: 1},
 		{Source: "transcript_cwd", Count: 1},
 	}) {
@@ -1102,19 +1103,19 @@ func TestBuildProjectFocusKeepsTranscriptProjectAndCWDHighConfidence(t *testing.
 
 func TestBuildProjectFocusKeepsMappedProcessSeparateFromRecentMovement(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	sessions := []LiveSession{
+	sessions := []snapshot.LiveSession{
 		{
 			Tool:      "codex",
 			SessionID: "process-backed-session",
 			Processes: map[int]struct{}{42: {}},
-			Trace: &SessionTrace{
+			Trace: &snapshot.SessionTrace{
 				Project:       "bench",
 				ProjectSource: "transcript_cwd",
 				ThreadSource:  "user",
 				FirstEvent:    now.Add(-2 * time.Hour),
 				LastEvent:     now.Add(-20 * time.Minute),
 			},
-			Mapping: LiveSessionMapping{TranscriptPath: true, ParsedTranscriptID: true},
+			Mapping: snapshot.LiveSessionMapping{TranscriptPath: true, ParsedTranscriptID: true},
 		},
 	}
 
@@ -1135,7 +1136,7 @@ func TestBuildProjectFocusKeepsMappedProcessSeparateFromRecentMovement(t *testin
 }
 
 func TestBuildCandidateWorkitemsAndCoordinationRisk(t *testing.T) {
-	sessions := []LiveSessionSnapshot{
+	sessions := []snapshot.LiveSessionSnapshot{
 		{
 			Tool:                         "codex",
 			SessionID:                    "alpha-a",
@@ -1202,7 +1203,7 @@ func TestBuildCandidateWorkitemsAndCoordinationRisk(t *testing.T) {
 	if !slices.Contains(alphaWorkitem.ConfidenceReasons, "grouped only by project + tool + freshness bucket") {
 		t.Fatalf("expected conservative grouping reason, got %#v", alphaWorkitem.ConfidenceReasons)
 	}
-	if !slices.Equal(alphaWorkitem.ProvenanceSummary, []ProvenanceCountSnapshot{
+	if !slices.Equal(alphaWorkitem.ProvenanceSummary, []snapshot.ProvenanceCountSnapshot{
 		{Source: "transcript_path", Count: 1},
 		{Source: "command_hint", Count: 1},
 	}) {
@@ -1214,7 +1215,7 @@ func TestBuildCandidateWorkitemsAndCoordinationRisk(t *testing.T) {
 	if !slices.Contains(alphaWorkitem.ProjectAttributionReasons, "project attribution mixes multiple evidence strengths") {
 		t.Fatalf("expected project attribution mix reason, got %#v", alphaWorkitem.ProjectAttributionReasons)
 	}
-	if !slices.Equal(alphaWorkitem.ProjectAttributionSourceSummary, []AttributionSourceCountSnapshot{
+	if !slices.Equal(alphaWorkitem.ProjectAttributionSourceSummary, []snapshot.AttributionSourceCountSnapshot{
 		{Source: "transcript_cwd", Count: 1},
 		{Source: "config_root_parent", Count: 1},
 	}) {
@@ -1222,23 +1223,23 @@ func TestBuildCandidateWorkitemsAndCoordinationRisk(t *testing.T) {
 	}
 
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	processes := []LiveProcessSnapshot{
+	processes := []snapshot.LiveProcessSnapshot{
 		{PID: 1, MappedSessions: 1},
 		{PID: 2, MappedSessions: 0},
 		{PID: 3, MappedSessions: 1},
 	}
-	riskSessions := []LiveSessionSnapshot{
+	riskSessions := []snapshot.LiveSessionSnapshot{
 		{SessionID: "s1", Project: "alpha", Tool: "codex", Freshness: "stale", Confidence: "low"},
 		{SessionID: "s2", Project: "alpha", Tool: "codex", Freshness: "active", Confidence: "high"},
 		{SessionID: "s3", Project: "beta", Tool: "claude", Freshness: "active", Confidence: "medium"},
 		{SessionID: "s4", Project: "gamma", Tool: "codex", Freshness: "idle", Confidence: "low"},
 	}
-	projects := []ProjectSnapshot{
+	projects := []snapshot.ProjectSnapshot{
 		{Project: "alpha", SessionCount: 2, ActiveBurstCount: 1, RecentSessionCount: 2, AttentionSharePct: 34, ProcessCount: 2},
 		{Project: "beta", SessionCount: 1, ActiveBurstCount: 1, RecentSessionCount: 1, AttentionSharePct: 33, ProcessCount: 1},
 		{Project: "gamma", SessionCount: 1, ActiveBurstCount: 0, RecentSessionCount: 0, AttentionSharePct: 33, ProcessCount: 1},
 	}
-	candidateWorkitems := []CandidateWorkitemSnapshot{
+	candidateWorkitems := []snapshot.CandidateWorkitemSnapshot{
 		{Project: "alpha", Tool: "codex", FreshnessBucket: "active", SessionCount: 1, Confidence: "high"},
 		{Project: "alpha", Tool: "codex", FreshnessBucket: "stale", SessionCount: 1, Confidence: "medium"},
 		{Project: "beta", Tool: "claude", FreshnessBucket: "active", SessionCount: 1, Confidence: "high"},
@@ -1249,10 +1250,10 @@ func TestBuildCandidateWorkitemsAndCoordinationRisk(t *testing.T) {
 		riskSessions,
 		projects,
 		candidateWorkitems,
-		CurrentMetrics{SessionConcurrency: 4},
-		HistoricPeaks{
-			SevenDay: PeakWindow{
-				SessionConcurrency: PeakPoint{
+		snapshot.CurrentMetrics{SessionConcurrency: 4},
+		snapshot.HistoricPeaks{
+			SevenDay: snapshot.PeakWindow{
+				SessionConcurrency: snapshot.PeakPoint{
 					Value: 5,
 					At:    now.Add(-time.Hour).Format(time.RFC3339),
 				},
@@ -1316,27 +1317,27 @@ func TestBuildCandidateWorkitemsAndCoordinationRisk(t *testing.T) {
 
 func TestBuildCoordinationRiskAddsAllocationSkewSignal(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	sessions := []LiveSessionSnapshot{
+	sessions := []snapshot.LiveSessionSnapshot{
 		{SessionID: "alpha-codex", Project: "alpha", Tool: "codex", Freshness: "active", Confidence: "high"},
 		{SessionID: "alpha-claude", Project: "alpha", Tool: "claude", Freshness: "active", Confidence: "high"},
 		{SessionID: "beta-codex", Project: "beta", Tool: "codex", Freshness: "idle", Confidence: "high"},
 	}
 	risk := buildCoordinationRisk(
-		[]LiveProcessSnapshot{{PID: 1, MappedSessions: 1}},
+		[]snapshot.LiveProcessSnapshot{{PID: 1, MappedSessions: 1}},
 		sessions,
-		[]ProjectSnapshot{
+		[]snapshot.ProjectSnapshot{
 			{Project: "alpha", SessionCount: 2, ActiveBurstCount: 2, RecentSessionCount: 2, AttentionSharePct: 80, ProcessCount: 4},
 			{Project: "beta", SessionCount: 1, ActiveBurstCount: 1, RecentSessionCount: 1, AttentionSharePct: 20, ProcessCount: 1},
 		},
-		[]CandidateWorkitemSnapshot{
+		[]snapshot.CandidateWorkitemSnapshot{
 			{Project: "alpha", Tool: "codex", FreshnessBucket: "active", SessionCount: 1, Confidence: "high"},
 			{Project: "alpha", Tool: "claude", FreshnessBucket: "active", SessionCount: 1, Confidence: "high"},
 			{Project: "beta", Tool: "codex", FreshnessBucket: "idle", SessionCount: 1, Confidence: "high"},
 		},
-		CurrentMetrics{SessionConcurrency: 3},
-		HistoricPeaks{
-			SevenDay: PeakWindow{
-				SessionConcurrency: PeakPoint{
+		snapshot.CurrentMetrics{SessionConcurrency: 3},
+		snapshot.HistoricPeaks{
+			SevenDay: snapshot.PeakWindow{
+				SessionConcurrency: snapshot.PeakPoint{
 					Value: 10,
 					At:    now.Add(-time.Hour).Format(time.RFC3339),
 				},
@@ -1370,7 +1371,7 @@ func TestBuildCoordinationRiskAddsAllocationSkewSignal(t *testing.T) {
 
 func TestBuildCoordinationRiskCountsMissingTranscriptSessionsInLowConfidenceSignal(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	sessions := []LiveSessionSnapshot{
+	sessions := []snapshot.LiveSessionSnapshot{
 		{SessionID: "alpha-medium-missing", Project: "alpha", Tool: "codex", Freshness: "unknown", Confidence: "medium", MissingTranscript: true},
 		{SessionID: "beta-low-missing", Project: "beta", Tool: "claude", Freshness: "unknown", Confidence: "low", MissingTranscript: true},
 		{SessionID: "alpha-high", Project: "alpha", Tool: "codex", Freshness: "active", Confidence: "high"},
@@ -1378,15 +1379,15 @@ func TestBuildCoordinationRiskCountsMissingTranscriptSessionsInLowConfidenceSign
 	risk := buildCoordinationRisk(
 		nil,
 		sessions,
-		[]ProjectSnapshot{
+		[]snapshot.ProjectSnapshot{
 			{Project: "alpha", SessionCount: 2, ActiveBurstCount: 1, RecentSessionCount: 1, AttentionSharePct: 67, ProcessCount: 2},
 			{Project: "beta", SessionCount: 1, ActiveBurstCount: 0, RecentSessionCount: 0, AttentionSharePct: 33, ProcessCount: 1},
 		},
 		buildCandidateWorkitems(sessions, nil),
-		CurrentMetrics{SessionConcurrency: 3},
-		HistoricPeaks{
-			SevenDay: PeakWindow{
-				SessionConcurrency: PeakPoint{
+		snapshot.CurrentMetrics{SessionConcurrency: 3},
+		snapshot.HistoricPeaks{
+			SevenDay: snapshot.PeakWindow{
+				SessionConcurrency: snapshot.PeakPoint{
 					Value: 5,
 					At:    now.Add(-time.Hour).Format(time.RFC3339),
 				},
@@ -1417,22 +1418,22 @@ func TestBuildCoordinationRiskCountsMissingTranscriptSessionsInLowConfidenceSign
 
 func TestBuildCoordinationRiskIgnoresUnassignedBucketsForProjectSpread(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	sessions := []LiveSessionSnapshot{
+	sessions := []snapshot.LiveSessionSnapshot{
 		{SessionID: "alpha", Project: "alpha", Tool: "codex", Freshness: "active", Confidence: "high"},
 		{SessionID: "tmp", Project: "unassigned", Tool: "claude", Freshness: "active", Confidence: "low"},
 	}
 	risk := buildCoordinationRisk(
 		nil,
 		sessions,
-		[]ProjectSnapshot{
+		[]snapshot.ProjectSnapshot{
 			{Project: "alpha", SessionCount: 1, ActiveBurstCount: 1, RecentSessionCount: 1, AttentionSharePct: 30, ProcessCount: 1},
 			{Project: "unassigned", SessionCount: 1, ActiveBurstCount: 1, RecentSessionCount: 1, AttentionSharePct: 70, ProcessCount: 1},
 		},
 		buildCandidateWorkitems(sessions, nil),
-		CurrentMetrics{SessionConcurrency: 2},
-		HistoricPeaks{
-			SevenDay: PeakWindow{
-				SessionConcurrency: PeakPoint{
+		snapshot.CurrentMetrics{SessionConcurrency: 2},
+		snapshot.HistoricPeaks{
+			SevenDay: snapshot.PeakWindow{
+				SessionConcurrency: snapshot.PeakPoint{
 					Value: 4,
 					At:    now.Add(-time.Hour).Format(time.RFC3339),
 				},
@@ -1466,7 +1467,7 @@ func TestBuildCoordinationRiskIgnoresUnassignedBucketsForProjectSpread(t *testin
 
 func TestBuildCoordinationRiskCountsDuplicateOverlapConservatively(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	sessions := []LiveSessionSnapshot{
+	sessions := []snapshot.LiveSessionSnapshot{
 		{SessionID: "alpha-a", Project: "alpha", Tool: "codex", Freshness: "active", Confidence: "high"},
 		{SessionID: "alpha-b", Project: "alpha", Tool: "codex", Freshness: "active", Confidence: "high"},
 		{SessionID: "alpha-c", Project: "alpha", Tool: "claude", Freshness: "active", Confidence: "high"},
@@ -1478,15 +1479,15 @@ func TestBuildCoordinationRiskCountsDuplicateOverlapConservatively(t *testing.T)
 	risk := buildCoordinationRisk(
 		nil,
 		sessions,
-		[]ProjectSnapshot{
+		[]snapshot.ProjectSnapshot{
 			{Project: "alpha", SessionCount: 5, ActiveBurstCount: 3, AttentionSharePct: 57},
 			{Project: "beta", SessionCount: 2, ActiveBurstCount: 0, AttentionSharePct: 43},
 		},
 		buildCandidateWorkitems(sessions, nil),
-		CurrentMetrics{SessionConcurrency: 7},
-		HistoricPeaks{
-			SevenDay: PeakWindow{
-				SessionConcurrency: PeakPoint{
+		snapshot.CurrentMetrics{SessionConcurrency: 7},
+		snapshot.HistoricPeaks{
+			SevenDay: snapshot.PeakWindow{
+				SessionConcurrency: snapshot.PeakPoint{
 					Value: 10,
 					At:    now.Add(-time.Hour).Format(time.RFC3339),
 				},
@@ -1525,22 +1526,22 @@ func TestBuildCoordinationRiskSummarizesCandidateCoverageAndConfidence(t *testin
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
 	risk := buildCoordinationRisk(
 		nil,
-		[]LiveSessionSnapshot{
+		[]snapshot.LiveSessionSnapshot{
 			{SessionID: "alpha", Project: "alpha", Tool: "codex", Freshness: "active", Confidence: "high"},
 			{SessionID: "beta", Project: "beta", Tool: "claude", Freshness: "active", Confidence: "high"},
 			{SessionID: "gamma", Project: "beta", Tool: "codex", Freshness: "idle", Confidence: "medium"},
 			{SessionID: "tmp", Tool: "codex", Freshness: "unknown", Confidence: "low"},
 		},
 		nil,
-		[]CandidateWorkitemSnapshot{
+		[]snapshot.CandidateWorkitemSnapshot{
 			{Project: "alpha", Tool: "codex", FreshnessBucket: "active", SessionCount: 1, Confidence: "high"},
 			{Project: "beta", Tool: "claude", FreshnessBucket: "active", SessionCount: 2, Confidence: "medium"},
 			{Project: "unassigned", Tool: "codex", FreshnessBucket: "unknown", SessionCount: 1, Confidence: "low"},
 		},
-		CurrentMetrics{SessionConcurrency: 4},
-		HistoricPeaks{
-			SevenDay: PeakWindow{
-				SessionConcurrency: PeakPoint{
+		snapshot.CurrentMetrics{SessionConcurrency: 4},
+		snapshot.HistoricPeaks{
+			SevenDay: snapshot.PeakWindow{
+				SessionConcurrency: snapshot.PeakPoint{
 					Value: 10,
 					At:    now.Add(-time.Hour).Format(time.RFC3339),
 				},
@@ -1559,7 +1560,7 @@ func TestBuildCoordinationRiskSummarizesCandidateCoverageAndConfidence(t *testin
 	if risk.CandidateWorkitemCoveragePct != 75 {
 		t.Fatalf("expected 75.0 candidate coverage, got %.1f", risk.CandidateWorkitemCoveragePct)
 	}
-	if !slices.Equal(risk.CandidateWorkitemConfidenceBreakdown, []ConfidenceCountSnapshot{
+	if !slices.Equal(risk.CandidateWorkitemConfidenceBreakdown, []snapshot.ConfidenceCountSnapshot{
 		{Level: "high", Count: 1},
 		{Level: "medium", Count: 1},
 		{Level: "low", Count: 1},
@@ -1581,20 +1582,20 @@ func TestBuildCoordinationRiskSummarizesCandidateCoverageAndConfidence(t *testin
 
 func TestProjectLiveProcessesAddsRoleEvidenceAndSummaries(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	processes := []LiveProcess{
-		{PID: 101, Tool: "codex", Command: "codex --thread-id main-session", CPUPercent: 2.5, MemoryBytes: 128 * 1024 * 1024, Elapsed: "00:02:00", HostApp: &HostApp{PID: 900, Name: "Terminal", BundlePath: "Terminal.app"}},
-		{PID: 102, Tool: "codex", Command: "codex --thread-id sub-session", CPUPercent: 1.25, MemoryBytes: 64 * 1024 * 1024, HostApp: &HostApp{PID: 900, Name: "Terminal", BundlePath: "Terminal.app"}},
+	processes := []snapshot.LiveProcess{
+		{PID: 101, Tool: "codex", Command: "codex --thread-id main-session", CPUPercent: 2.5, MemoryBytes: 128 * 1024 * 1024, Elapsed: "00:02:00", HostApp: &snapshot.HostApp{PID: 900, Name: "Terminal", BundlePath: "Terminal.app"}},
+		{PID: 102, Tool: "codex", Command: "codex --thread-id sub-session", CPUPercent: 1.25, MemoryBytes: 64 * 1024 * 1024, HostApp: &snapshot.HostApp{PID: 900, Name: "Terminal", BundlePath: "Terminal.app"}},
 		{PID: 103, Tool: "claude", Command: "claude --session-id unknown-session", CPUPercent: 0.5, MemoryBytes: 32 * 1024 * 1024},
 		{PID: 104, Tool: "codex", Command: "codex exec", CPUPercent: 0.75, MemoryBytes: 16 * 1024 * 1024},
 	}
-	sessions := []LiveSession{
+	sessions := []snapshot.LiveSession{
 		{
 			Tool:      "codex",
 			SessionID: "main-session",
 			Processes: map[int]struct{}{
 				101: {},
 			},
-			Trace: &SessionTrace{
+			Trace: &snapshot.SessionTrace{
 				Tool:         "codex",
 				SessionID:    "main-session",
 				Project:      "alpha",
@@ -1602,7 +1603,7 @@ func TestProjectLiveProcessesAddsRoleEvidenceAndSummaries(t *testing.T) {
 				FirstEvent:   now.Add(-2 * time.Minute),
 				LastEvent:    now.Add(-20 * time.Second),
 			},
-			Mapping: LiveSessionMapping{TranscriptPath: true, ParsedTranscriptID: true},
+			Mapping: snapshot.LiveSessionMapping{TranscriptPath: true, ParsedTranscriptID: true},
 		},
 		{
 			Tool:      "codex",
@@ -1610,7 +1611,7 @@ func TestProjectLiveProcessesAddsRoleEvidenceAndSummaries(t *testing.T) {
 			Processes: map[int]struct{}{
 				102: {},
 			},
-			Trace: &SessionTrace{
+			Trace: &snapshot.SessionTrace{
 				Tool:         "codex",
 				SessionID:    "sub-session",
 				Project:      "alpha",
@@ -1618,7 +1619,7 @@ func TestProjectLiveProcessesAddsRoleEvidenceAndSummaries(t *testing.T) {
 				FirstEvent:   now.Add(-2 * time.Minute),
 				LastEvent:    now.Add(-15 * time.Second),
 			},
-			Mapping: LiveSessionMapping{TranscriptPath: true, ParsedTranscriptID: true},
+			Mapping: snapshot.LiveSessionMapping{TranscriptPath: true, ParsedTranscriptID: true},
 		},
 		{
 			Tool:      "claude",
@@ -1626,18 +1627,18 @@ func TestProjectLiveProcessesAddsRoleEvidenceAndSummaries(t *testing.T) {
 			Processes: map[int]struct{}{
 				103: {},
 			},
-			Trace: &SessionTrace{
+			Trace: &snapshot.SessionTrace{
 				Tool:       "claude",
 				SessionID:  "unknown-session",
 				Project:    "beta",
 				FirstEvent: now.Add(-2 * time.Minute),
 				LastEvent:  now.Add(-10 * time.Minute),
 			},
-			Mapping: LiveSessionMapping{CommandHint: true},
+			Mapping: snapshot.LiveSessionMapping{CommandHint: true},
 		},
 	}
 	sessionSnapshots := projectLiveSessions(sessions, 90*time.Second, now)
-	processSnapshots := projectLiveProcessesWithSessions(processes, sessions, sessionSnapshots, &TranscriptData{Traces: map[string]*SessionTrace{}})
+	processSnapshots := projectLiveProcessesWithSessions(processes, sessions, sessionSnapshots, &snapshot.TranscriptData{Traces: map[string]*snapshot.SessionTrace{}})
 
 	mainProcess := requireLiveProcessSnapshot(t, processSnapshots, 101)
 	if mainProcess.DisplayName != "codex" || mainProcess.MainSessions != 1 || mainProcess.SubagentSessions != 0 || mainProcess.UnknownRoleSessions != 0 || mainProcess.MappedActiveSessions != 1 {
@@ -1692,7 +1693,7 @@ func TestProjectLiveProcessesAddsRoleEvidenceAndSummaries(t *testing.T) {
 	}
 }
 
-func requireLiveSession(t *testing.T, sessions []LiveSession, sessionID string) LiveSession {
+func requireLiveSession(t *testing.T, sessions []snapshot.LiveSession, sessionID string) snapshot.LiveSession {
 	t.Helper()
 	for _, session := range sessions {
 		if session.SessionID == sessionID {
@@ -1700,10 +1701,10 @@ func requireLiveSession(t *testing.T, sessions []LiveSession, sessionID string) 
 		}
 	}
 	t.Fatalf("missing live session %s", sessionID)
-	return LiveSession{}
+	return snapshot.LiveSession{}
 }
 
-func requireLiveSessionSnapshot(t *testing.T, sessions []LiveSessionSnapshot, sessionID string) LiveSessionSnapshot {
+func requireLiveSessionSnapshot(t *testing.T, sessions []snapshot.LiveSessionSnapshot, sessionID string) snapshot.LiveSessionSnapshot {
 	t.Helper()
 	for _, session := range sessions {
 		if session.SessionID == sessionID {
@@ -1711,10 +1712,10 @@ func requireLiveSessionSnapshot(t *testing.T, sessions []LiveSessionSnapshot, se
 		}
 	}
 	t.Fatalf("missing live session snapshot %s", sessionID)
-	return LiveSessionSnapshot{}
+	return snapshot.LiveSessionSnapshot{}
 }
 
-func requireLiveProcessSnapshot(t *testing.T, processes []LiveProcessSnapshot, pid int) LiveProcessSnapshot {
+func requireLiveProcessSnapshot(t *testing.T, processes []snapshot.LiveProcessSnapshot, pid int) snapshot.LiveProcessSnapshot {
 	t.Helper()
 	for _, process := range processes {
 		if process.PID == pid {
@@ -1722,10 +1723,10 @@ func requireLiveProcessSnapshot(t *testing.T, processes []LiveProcessSnapshot, p
 		}
 	}
 	t.Fatalf("missing live process snapshot %d", pid)
-	return LiveProcessSnapshot{}
+	return snapshot.LiveProcessSnapshot{}
 }
 
-func requireRuntimeProcessSummary(t *testing.T, items []ProcessRuntimeSummary, key string) ProcessRuntimeSummary {
+func requireRuntimeProcessSummary(t *testing.T, items []snapshot.ProcessRuntimeSummary, key string) snapshot.ProcessRuntimeSummary {
 	t.Helper()
 	for _, item := range items {
 		if item.Key == key {
@@ -1733,10 +1734,10 @@ func requireRuntimeProcessSummary(t *testing.T, items []ProcessRuntimeSummary, k
 		}
 	}
 	t.Fatalf("missing runtime process summary %s", key)
-	return ProcessRuntimeSummary{}
+	return snapshot.ProcessRuntimeSummary{}
 }
 
-func requireHostAppProcessSummary(t *testing.T, items []HostAppProcessSummary, key string) HostAppProcessSummary {
+func requireHostAppProcessSummary(t *testing.T, items []snapshot.HostAppProcessSummary, key string) snapshot.HostAppProcessSummary {
 	t.Helper()
 	for _, item := range items {
 		if item.Key == key {
@@ -1744,10 +1745,10 @@ func requireHostAppProcessSummary(t *testing.T, items []HostAppProcessSummary, k
 		}
 	}
 	t.Fatalf("missing host app process summary %s", key)
-	return HostAppProcessSummary{}
+	return snapshot.HostAppProcessSummary{}
 }
 
-func requireProjectSnapshot(t *testing.T, projects []ProjectSnapshot, projectName string) ProjectSnapshot {
+func requireProjectSnapshot(t *testing.T, projects []snapshot.ProjectSnapshot, projectName string) snapshot.ProjectSnapshot {
 	t.Helper()
 	for _, project := range projects {
 		if project.Project == projectName {
@@ -1755,10 +1756,10 @@ func requireProjectSnapshot(t *testing.T, projects []ProjectSnapshot, projectNam
 		}
 	}
 	t.Fatalf("missing project snapshot %s", projectName)
-	return ProjectSnapshot{}
+	return snapshot.ProjectSnapshot{}
 }
 
-func requireCandidateWorkitem(t *testing.T, items []CandidateWorkitemSnapshot, project, tool, freshness string) CandidateWorkitemSnapshot {
+func requireCandidateWorkitem(t *testing.T, items []snapshot.CandidateWorkitemSnapshot, project, tool, freshness string) snapshot.CandidateWorkitemSnapshot {
 	t.Helper()
 	for _, item := range items {
 		if item.Project == project && item.Tool == tool && item.FreshnessBucket == freshness {
@@ -1766,10 +1767,10 @@ func requireCandidateWorkitem(t *testing.T, items []CandidateWorkitemSnapshot, p
 		}
 	}
 	t.Fatalf("missing candidate workitem for %s/%s/%s", project, tool, freshness)
-	return CandidateWorkitemSnapshot{}
+	return snapshot.CandidateWorkitemSnapshot{}
 }
 
-func requireRiskSignal(t *testing.T, signals []RiskSignalSnapshot, kind string) RiskSignalSnapshot {
+func requireRiskSignal(t *testing.T, signals []snapshot.RiskSignalSnapshot, kind string) snapshot.RiskSignalSnapshot {
 	t.Helper()
 	for _, signal := range signals {
 		if signal.Kind == kind {
@@ -1777,10 +1778,10 @@ func requireRiskSignal(t *testing.T, signals []RiskSignalSnapshot, kind string) 
 		}
 	}
 	t.Fatalf("missing risk signal %s", kind)
-	return RiskSignalSnapshot{}
+	return snapshot.RiskSignalSnapshot{}
 }
 
-func requireNoRiskSignal(t *testing.T, signals []RiskSignalSnapshot, kind string) {
+func requireNoRiskSignal(t *testing.T, signals []snapshot.RiskSignalSnapshot, kind string) {
 	t.Helper()
 	for _, signal := range signals {
 		if signal.Kind == kind {
@@ -1821,8 +1822,8 @@ func TestSessionNeedsReviewObservation(t *testing.T) {
 func TestProjectLiveSessionsComputesNeedsReview(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
 	idleGap := 90 * time.Second
-	mainSession := func(id string, lastEvent time.Time) LiveSession {
-		trace := &SessionTrace{
+	mainSession := func(id string, lastEvent time.Time) snapshot.LiveSession {
+		trace := &snapshot.SessionTrace{
 			Tool:         "claude",
 			SessionID:    id,
 			ThreadSource: "user",
@@ -1832,17 +1833,17 @@ func TestProjectLiveSessionsComputesNeedsReview(t *testing.T) {
 			trace.FirstEvent = lastEvent
 			trace.LastEvent = lastEvent
 		}
-		return LiveSession{
+		return snapshot.LiveSession{
 			Tool:      "claude",
 			SessionID: id,
 			Path:      "fixtures/" + id + ".jsonl",
 			Trace:     trace,
-			Mapping:   LiveSessionMapping{ParsedTranscriptID: true},
+			Mapping:   snapshot.LiveSessionMapping{ParsedTranscriptID: true},
 		}
 	}
 	subSession := mainSession("sub-stale", now.Add(-time.Hour))
 	subSession.Trace.ThreadSource = "subagent"
-	sessions := []LiveSession{
+	sessions := []snapshot.LiveSession{
 		mainSession("main-active", now.Add(-30*time.Second)),
 		mainSession("main-idle", now.Add(-3*time.Minute)),
 		mainSession("main-stale", now.Add(-time.Hour)),
@@ -1861,31 +1862,31 @@ func TestProjectLiveSessionsComputesNeedsReview(t *testing.T) {
 	if len(snapshots) != len(want) {
 		t.Fatalf("expected %d session snapshots, got %d", len(want), len(snapshots))
 	}
-	for _, snapshot := range snapshots {
-		expected, ok := want[snapshot.SessionID]
+	for _, snap := range snapshots {
+		expected, ok := want[snap.SessionID]
 		if !ok {
-			t.Fatalf("unexpected session %q", snapshot.SessionID)
+			t.Fatalf("unexpected session %q", snap.SessionID)
 		}
-		if snapshot.NeedsReview != expected {
-			t.Fatalf("session %q (freshness %q): NeedsReview = %v, want %v", snapshot.SessionID, snapshot.Freshness, snapshot.NeedsReview, expected)
+		if snap.NeedsReview != expected {
+			t.Fatalf("session %q (freshness %q): NeedsReview = %v, want %v", snap.SessionID, snap.Freshness, snap.NeedsReview, expected)
 		}
 	}
 }
 
 func TestAttachProcessResourcesToSessionsDisclosesSharedProcesses(t *testing.T) {
-	sessions := []LiveSessionSnapshot{
+	sessions := []snapshot.LiveSessionSnapshot{
 		{Tool: "claude", SessionID: "shared-1"},
 		{Tool: "claude", SessionID: "shared-2"},
 		{Tool: "claude", SessionID: "shared-3"},
 		{Tool: "codex", SessionID: "solo"},
 	}
-	processes := []LiveProcessSnapshot{
+	processes := []snapshot.LiveProcessSnapshot{
 		{
 			PID:         100,
 			Tool:        "claude",
 			CPUPercent:  12.5,
 			MemoryBytes: 1024,
-			MappedSessionEvidence: []ProcessSessionEvidence{
+			MappedSessionEvidence: []snapshot.ProcessSessionEvidence{
 				{Tool: "claude", SessionID: "shared-1"},
 				{Tool: "claude", SessionID: "shared-2"},
 				{Tool: "claude", SessionID: "shared-3"},
@@ -1896,7 +1897,7 @@ func TestAttachProcessResourcesToSessionsDisclosesSharedProcesses(t *testing.T) 
 			Tool:        "codex",
 			CPUPercent:  3.5,
 			MemoryBytes: 512,
-			MappedSessionEvidence: []ProcessSessionEvidence{
+			MappedSessionEvidence: []snapshot.ProcessSessionEvidence{
 				// Duplicate evidence rows for one session must not double-add.
 				{Tool: "codex", SessionID: "solo"},
 				{Tool: "codex", SessionID: "solo"},
@@ -1905,7 +1906,7 @@ func TestAttachProcessResourcesToSessionsDisclosesSharedProcesses(t *testing.T) 
 	}
 
 	out := attachProcessResourcesToSessions(sessions, processes)
-	byID := map[string]LiveSessionSnapshot{}
+	byID := map[string]snapshot.LiveSessionSnapshot{}
 	for _, session := range out {
 		byID[session.SessionID] = session
 	}
@@ -1928,7 +1929,7 @@ func TestAttachProcessResourcesToSessionsDisclosesSharedProcesses(t *testing.T) 
 }
 
 func TestBuildCandidateWorkitemsDedupesSharedProcessPIDs(t *testing.T) {
-	sessions := []LiveSessionSnapshot{
+	sessions := []snapshot.LiveSessionSnapshot{
 		{Tool: "claude", SessionID: "shared-1", Project: "alpha", Freshness: "active", ProcessCount: 1, Confidence: "high"},
 		{Tool: "claude", SessionID: "shared-2", Project: "alpha", Freshness: "active", ProcessCount: 1, Confidence: "high"},
 		{Tool: "claude", SessionID: "no-pid-evidence", Project: "alpha", Freshness: "active", ProcessCount: 2, Confidence: "high"},

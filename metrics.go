@@ -1,18 +1,19 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"sort"
 	"strconv"
 	"time"
 )
 
-func buildSessionSpans(traces map[string]*SessionTrace, minInterval time.Duration) []Interval {
-	out := make([]Interval, 0, len(traces))
+func buildSessionSpans(traces map[string]*snapshot.SessionTrace, minInterval time.Duration) []snapshot.Interval {
+	out := make([]snapshot.Interval, 0, len(traces))
 	for _, trace := range traces {
 		if trace == nil || trace.FirstEvent.IsZero() {
 			continue
 		}
-		span, ok := normalizedInterval(Interval{
+		span, ok := normalizedInterval(snapshot.Interval{
 			Tool:      trace.Tool,
 			SessionID: trace.SessionID,
 			Path:      trace.Path,
@@ -28,11 +29,11 @@ func buildSessionSpans(traces map[string]*SessionTrace, minInterval time.Duratio
 	return out
 }
 
-func buildBurstSpans(traces map[string]*SessionTrace, idleGap, minInterval time.Duration) []Interval {
+func buildBurstSpans(traces map[string]*snapshot.SessionTrace, idleGap, minInterval time.Duration) []snapshot.Interval {
 	if idleGap <= 0 {
 		idleGap = 90 * time.Second
 	}
-	out := make([]Interval, 0, len(traces))
+	out := make([]snapshot.Interval, 0, len(traces))
 	for _, trace := range traces {
 		if trace == nil || len(trace.EventTimes) == 0 {
 			continue
@@ -45,7 +46,7 @@ func buildBurstSpans(traces map[string]*SessionTrace, idleGap, minInterval time.
 		prev := events[0]
 		for _, ts := range events[1:] {
 			if ts.Sub(prev) > idleGap {
-				span, ok := normalizedInterval(Interval{
+				span, ok := normalizedInterval(snapshot.Interval{
 					Tool:      trace.Tool,
 					SessionID: trace.SessionID,
 					Path:      trace.Path,
@@ -60,7 +61,7 @@ func buildBurstSpans(traces map[string]*SessionTrace, idleGap, minInterval time.
 			}
 			prev = ts
 		}
-		span, ok := normalizedInterval(Interval{
+		span, ok := normalizedInterval(snapshot.Interval{
 			Tool:      trace.Tool,
 			SessionID: trace.SessionID,
 			Path:      trace.Path,
@@ -83,11 +84,11 @@ type sessionDurationMetrics struct {
 	IdleDurationSeconds     int
 }
 
-func buildSessionDurationMetrics(trace *SessionTrace, idleGap, minInterval time.Duration) (sessionDurationMetrics, bool) {
+func buildSessionDurationMetrics(trace *snapshot.SessionTrace, idleGap, minInterval time.Duration) (sessionDurationMetrics, bool) {
 	if trace == nil || trace.FirstEvent.IsZero() {
 		return sessionDurationMetrics{}, false
 	}
-	sessionSpan, ok := normalizedInterval(Interval{
+	sessionSpan, ok := normalizedInterval(snapshot.Interval{
 		Tool:      trace.Tool,
 		SessionID: trace.SessionID,
 		Path:      trace.Path,
@@ -101,7 +102,7 @@ func buildSessionDurationMetrics(trace *SessionTrace, idleGap, minInterval time.
 
 	activeDuration := time.Duration(0)
 	if len(trace.EventTimes) > 0 {
-		for _, span := range buildBurstSpans(map[string]*SessionTrace{trace.Path + "\x00" + trace.SessionID: trace}, idleGap, minInterval) {
+		for _, span := range buildBurstSpans(map[string]*snapshot.SessionTrace{trace.Path + "\x00" + trace.SessionID: trace}, idleGap, minInterval) {
 			activeDuration += span.End.Sub(span.Start)
 		}
 	}
@@ -132,9 +133,9 @@ func wholeSeconds(duration time.Duration) int {
 	return seconds
 }
 
-func normalizedInterval(in Interval, minInterval time.Duration) (Interval, bool) {
+func normalizedInterval(in snapshot.Interval, minInterval time.Duration) (snapshot.Interval, bool) {
 	if in.Start.IsZero() && in.End.IsZero() {
-		return Interval{}, false
+		return snapshot.Interval{}, false
 	}
 	if in.Start.IsZero() {
 		in.Start = in.End
@@ -154,9 +155,9 @@ func normalizedInterval(in Interval, minInterval time.Duration) (Interval, bool)
 	return in, true
 }
 
-func peakConcurrency(intervals []Interval, windowStart, windowEnd time.Time) PeakPoint {
+func peakConcurrency(intervals []snapshot.Interval, windowStart, windowEnd time.Time) snapshot.PeakPoint {
 	if windowStart.IsZero() || windowEnd.IsZero() || !windowEnd.After(windowStart) {
-		return PeakPoint{}
+		return snapshot.PeakPoint{}
 	}
 	type point struct {
 		At    time.Time
@@ -185,7 +186,7 @@ func peakConcurrency(intervals []Interval, windowStart, windowEnd time.Time) Pea
 		)
 	}
 	if len(points) == 0 {
-		return PeakPoint{}
+		return snapshot.PeakPoint{}
 	}
 	sort.Slice(points, func(i, j int) bool {
 		if points[i].At.Equal(points[j].At) {
@@ -194,7 +195,7 @@ func peakConcurrency(intervals []Interval, windowStart, windowEnd time.Time) Pea
 		return points[i].At.Before(points[j].At)
 	})
 	current := 0
-	best := PeakPoint{}
+	best := snapshot.PeakPoint{}
 	for _, p := range points {
 		current += p.Delta
 		if p.Delta > 0 && current > best.Value {
@@ -219,32 +220,32 @@ var defaultTrendSpecs = []trendSpec{
 	{label: "30D", span: 30 * 24 * time.Hour, step: 12 * time.Hour},
 }
 
-func buildTranscriptTrendWindows(data *TranscriptData, now time.Time, sourceLookback time.Duration) TrendSet {
+func buildTranscriptTrendWindows(data *snapshot.TranscriptData, now time.Time, sourceLookback time.Duration) snapshot.TrendSet {
 	if data == nil || now.IsZero() {
-		return TrendSet{}
+		return snapshot.TrendSet{}
 	}
 	configuredSourceFrom := now.Add(-sourceLookback)
 	actualSourceFrom, hasTranscriptEvidence := transcriptEvidenceStart(data, configuredSourceFrom, now)
-	trends := TrendSet{Windows: make([]TrendWindow, 0, len(defaultTrendSpecs))}
+	trends := snapshot.TrendSet{Windows: make([]snapshot.TrendWindow, 0, len(defaultTrendSpecs))}
 	for _, spec := range defaultTrendSpecs {
 		from := now.Add(-spec.span)
 		pointsAt := trendPointTimes(from, now, spec.step)
 		activeBurst := concurrencySeries(data.BurstSpans, pointsAt)
 		sessions := concurrencySeries(data.SessionSpans, pointsAt)
-		window := TrendWindow{
+		window := snapshot.TrendWindow{
 			Range:              spec.label,
 			From:               from.Format(time.RFC3339),
 			To:                 now.Format(time.RFC3339),
 			GranularitySeconds: int(spec.step / time.Second),
 			HistoryComplete:    hasTranscriptEvidence && !actualSourceFrom.After(from),
-			Points:             make([]TrendPoint, 0, len(pointsAt)),
+			Points:             make([]snapshot.TrendPoint, 0, len(pointsAt)),
 		}
 		if hasTranscriptEvidence {
 			window.SourceFrom = actualSourceFrom.Format(time.RFC3339)
 			window.SourceLookbackHours = int(now.Sub(actualSourceFrom) / time.Hour)
 		}
 		for index, at := range pointsAt {
-			point := TrendPoint{
+			point := snapshot.TrendPoint{
 				At: at.Format(time.RFC3339),
 			}
 			// The terminal grid point sits exactly at `now`, and a span ends at
@@ -271,7 +272,7 @@ func buildTranscriptTrendWindows(data *TranscriptData, now time.Time, sourceLook
 	return trends
 }
 
-func transcriptEvidenceStart(data *TranscriptData, configuredSourceFrom, now time.Time) (time.Time, bool) {
+func transcriptEvidenceStart(data *snapshot.TranscriptData, configuredSourceFrom, now time.Time) (time.Time, bool) {
 	if data == nil || now.IsZero() {
 		return time.Time{}, false
 	}
@@ -298,7 +299,7 @@ func transcriptEvidenceStart(data *TranscriptData, configuredSourceFrom, now tim
 		}
 	}
 
-	considerOverlapStarts := func(intervals []Interval) {
+	considerOverlapStarts := func(intervals []snapshot.Interval) {
 		for _, interval := range intervals {
 			start := interval.Start
 			end := interval.End
@@ -333,19 +334,19 @@ func transcriptEvidenceStart(data *TranscriptData, configuredSourceFrom, now tim
 	return earliest, true
 }
 
-func buildRealtimeTrendWindows(samples []TrendPoint, now time.Time) TrendSet {
+func buildRealtimeTrendWindows(samples []snapshot.TrendPoint, now time.Time) snapshot.TrendSet {
 	if now.IsZero() {
-		return TrendSet{}
+		return snapshot.TrendSet{}
 	}
 	normalized := normalizeRuntimeSamples(samples)
 	sourceFrom := time.Time{}
 	if len(normalized) > 0 {
 		sourceFrom = normalized[0].At
 	}
-	trends := TrendSet{Windows: make([]TrendWindow, 0, len(defaultTrendSpecs))}
+	trends := snapshot.TrendSet{Windows: make([]snapshot.TrendWindow, 0, len(defaultTrendSpecs))}
 	for _, spec := range defaultTrendSpecs {
 		from := now.Add(-spec.span)
-		window := TrendWindow{
+		window := snapshot.TrendWindow{
 			Range:              spec.label,
 			From:               from.Format(time.RFC3339),
 			To:                 now.Format(time.RFC3339),
@@ -376,7 +377,7 @@ func trendPointTimes(from, to time.Time, step time.Duration) []time.Time {
 	return points
 }
 
-func concurrencySeries(intervals []Interval, points []time.Time) []int {
+func concurrencySeries(intervals []snapshot.Interval, points []time.Time) []int {
 	values := make([]int, len(points))
 	if len(intervals) == 0 || len(points) == 0 {
 		return values
@@ -432,7 +433,7 @@ func concurrencySeries(intervals []Interval, points []time.Time) []int {
 
 type runtimeTrendSample struct {
 	At    time.Time
-	Point TrendPoint
+	Point snapshot.TrendPoint
 }
 
 const throughputTrendMaxPoints = 240
@@ -453,7 +454,7 @@ type throughputTimedMinute struct {
 	fact ThroughputMinuteFact
 }
 
-func normalizeRuntimeSamples(samples []TrendPoint) []runtimeTrendSample {
+func normalizeRuntimeSamples(samples []snapshot.TrendPoint) []runtimeTrendSample {
 	out := make([]runtimeTrendSample, 0, len(samples))
 	for _, sample := range samples {
 		if !sample.RuntimeSampled {
@@ -475,11 +476,11 @@ func normalizeRuntimeSamples(samples []TrendPoint) []runtimeTrendSample {
 	return out
 }
 
-func bucketRuntimeSamples(samples []runtimeTrendSample, from, to time.Time, step time.Duration) []TrendPoint {
+func bucketRuntimeSamples(samples []runtimeTrendSample, from, to time.Time, step time.Duration) []snapshot.TrendPoint {
 	if len(samples) == 0 || step <= 0 || from.IsZero() || to.IsZero() || !to.After(from) {
 		return nil
 	}
-	out := make([]TrendPoint, 0, len(samples))
+	out := make([]snapshot.TrendPoint, 0, len(samples))
 	lastBucket := -1
 	for _, sample := range samples {
 		if sample.At.Before(from) || sample.At.After(to) {
@@ -507,9 +508,9 @@ func bucketRuntimeSamples(samples []runtimeTrendSample, from, to time.Time, step
 	return out
 }
 
-func buildThroughputTrendWindows(minutes []ThroughputMinuteFact, legacy []LegacyThroughputFact, now time.Time) TrendSet {
+func buildThroughputTrendWindows(minutes []ThroughputMinuteFact, legacy []LegacyThroughputFact, now time.Time) snapshot.TrendSet {
 	if now.IsZero() {
-		return TrendSet{}
+		return snapshot.TrendSet{}
 	}
 	type sourceSeries struct {
 		key          string
@@ -549,19 +550,19 @@ func buildThroughputTrendWindows(minutes []ThroughputMinuteFact, legacy []Legacy
 		})
 	}
 
-	trends := TrendSet{Windows: make([]TrendWindow, 0, len(defaultTrendSpecs))}
+	trends := snapshot.TrendSet{Windows: make([]snapshot.TrendWindow, 0, len(defaultTrendSpecs))}
 	for _, spec := range defaultTrendSpecs {
 		from := now.Add(-spec.span)
-		window := TrendWindow{
+		window := snapshot.TrendWindow{
 			Range:            spec.label,
 			From:             from.Format(time.RFC3339),
 			To:               now.Format(time.RFC3339),
-			ThroughputSeries: make([]ThroughputTrendSeries, 0, len(sources)),
+			ThroughputSeries: make([]snapshot.ThroughputTrendSeries, 0, len(sources)),
 		}
 		for _, source := range sources {
 			rangeSamples := throughputSamplesInRange(source.samples, from, now)
 			points, granularity := timeDistributedThroughputSamples(rangeSamples, throughputTrendMaxPoints)
-			series := ThroughputTrendSeries{
+			series := snapshot.ThroughputTrendSeries{
 				Key:                source.key,
 				Kind:               source.kind,
 				WindowSeconds:      int(source.window / time.Second),
@@ -601,7 +602,7 @@ func rollupThroughputMinutes(minutes []ThroughputMinuteFact, window time.Duratio
 		if index > 0 && timed[index].at.Sub(timed[index-1].at) != throughputMinuteResolution {
 			out = append(out, runtimeTrendSample{
 				At: timed[index-1].at.Add(throughputMinuteResolution),
-				Point: TrendPoint{
+				Point: snapshot.TrendPoint{
 					At:                                 timed[index-1].at.Add(throughputMinuteResolution).Format(time.RFC3339),
 					OutputTokenThroughputState:         liveTokenRateStateNoData,
 					OutputTokenThroughputWindowSeconds: int(window / time.Second),
@@ -620,9 +621,9 @@ func rollupThroughputMinutes(minutes []ThroughputMinuteFact, window time.Duratio
 	return out
 }
 
-func throughputRollupPoint(minutes []throughputTimedMinute, window time.Duration) TrendPoint {
+func throughputRollupPoint(minutes []throughputTimedMinute, window time.Duration) snapshot.TrendPoint {
 	latest := minutes[len(minutes)-1]
-	point := TrendPoint{
+	point := snapshot.TrendPoint{
 		At:                                 latest.at.Format(time.RFC3339),
 		OutputTokenThroughputState:         latest.fact.State,
 		OutputTokenThroughputWindowSeconds: int(window / time.Second),
@@ -669,12 +670,12 @@ func throughputRollupPoint(minutes []throughputTimedMinute, window time.Duration
 			break
 		}
 	}
-	point.OutputTokenProjects = make([]LiveTokenRateProjectSample, 0, len(projectTokens))
+	point.OutputTokenProjects = make([]snapshot.LiveTokenRateProjectSample, 0, len(projectTokens))
 	for project, projectTokens := range projectTokens {
 		if projectTokens <= 0 {
 			continue
 		}
-		point.OutputTokenProjects = append(point.OutputTokenProjects, LiveTokenRateProjectSample{
+		point.OutputTokenProjects = append(point.OutputTokenProjects, snapshot.LiveTokenRateProjectSample{
 			Project:               project,
 			OutputTokensPerSecond: float64(projectTokens) / window.Seconds(),
 			ActiveSessions:        len(projectSessions[project]),
@@ -708,7 +709,7 @@ func legacyThroughputSamples(facts []LegacyThroughputFact) []runtimeTrendSample 
 		if !ok || fact.WindowSeconds <= 0 {
 			continue
 		}
-		point := TrendPoint{
+		point := snapshot.TrendPoint{
 			At:                                 at.Format(time.RFC3339Nano),
 			OutputTokenThroughputState:         fact.State,
 			OutputTokenThroughputWindowSeconds: fact.WindowSeconds,
@@ -719,7 +720,7 @@ func legacyThroughputSamples(facts []LegacyThroughputFact) []runtimeTrendSample 
 			point.HasOutputTokensPerSecond = true
 			point.OutputTokenActiveSessions = fact.ActiveSessions
 			point.HasOutputTokenActiveSessions = true
-			point.OutputTokenProjects = cloneLiveTokenRateProjectSamples(fact.Projects)
+			point.OutputTokenProjects = snapshot.CloneLiveTokenRateProjectSamples(fact.Projects)
 		}
 		out = append(out, runtimeTrendSample{At: at, Point: point})
 	}
@@ -737,7 +738,7 @@ func throughputSamplesInRange(samples []runtimeTrendSample, from, to time.Time) 
 	return filtered
 }
 
-func timeDistributedThroughputSamples(filtered []runtimeTrendSample, maxPoints int) ([]TrendPoint, time.Duration) {
+func timeDistributedThroughputSamples(filtered []runtimeTrendSample, maxPoints int) ([]snapshot.TrendPoint, time.Duration) {
 	if len(filtered) == 0 {
 		return nil, 0
 	}
@@ -772,7 +773,7 @@ func timeDistributedThroughputSamples(filtered []runtimeTrendSample, maxPoints i
 	return throughputTrendPoints(out), step
 }
 
-func summarizeThroughputTrend(samples []runtimeTrendSample, now time.Time, allowCurrent bool) *ThroughputTrendSummary {
+func summarizeThroughputTrend(samples []runtimeTrendSample, now time.Time, allowCurrent bool) *snapshot.ThroughputTrendSummary {
 	rates := make([]float64, 0, len(samples))
 	sum := 0.0
 	maximum := 0.0
@@ -796,7 +797,7 @@ func summarizeThroughputTrend(samples []runtimeTrendSample, now time.Time, allow
 	}
 	sort.Float64s(rates)
 	p95Index := (95*len(rates) + 99) / 100
-	summary := &ThroughputTrendSummary{
+	summary := &snapshot.ThroughputTrendSummary{
 		Max:           maximum,
 		P95:           rates[p95Index-1],
 		Avg:           sum / float64(len(rates)),
@@ -817,8 +818,8 @@ func formatDurationSeconds(duration time.Duration) string {
 	return strconv.Itoa(int(duration / time.Second))
 }
 
-func throughputTrendPoints(samples []runtimeTrendSample) []TrendPoint {
-	points := make([]TrendPoint, 0, len(samples))
+func throughputTrendPoints(samples []runtimeTrendSample) []snapshot.TrendPoint {
+	points := make([]snapshot.TrendPoint, 0, len(samples))
 	for _, sample := range samples {
 		point := sample.Point
 		point.At = sample.At.Format(time.RFC3339Nano)
@@ -844,7 +845,7 @@ func medianTrendSampleInterval(samples []runtimeTrendSample) time.Duration {
 	return intervals[len(intervals)/2]
 }
 
-func sortIntervals(intervals []Interval) {
+func sortIntervals(intervals []snapshot.Interval) {
 	sort.Slice(intervals, func(i, j int) bool {
 		if intervals[i].Start.Equal(intervals[j].Start) {
 			return intervals[i].End.Before(intervals[j].End)

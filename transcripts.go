@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"bufio"
 	"bytes"
 	"context"
@@ -37,7 +38,17 @@ type Observer struct {
 	inflight      map[string]*transcriptScanFlight
 	fileCache     map[string]fileTraceCache
 	processMu     sync.RWMutex
-	lastProcesses []LiveProcess
+	lastProcesses []snapshot.LiveProcess
+}
+
+// transcriptCacheState is Observer-internal: it caches a parsed scan keyed by
+// evidence revision. It lives here rather than in the shared snapshot types
+// because nothing outside this scan path reads it.
+type transcriptCacheState struct {
+	Key              string
+	ExpiresAt        time.Time
+	EvidenceRevision uint64
+	Data             *snapshot.TranscriptData
 }
 
 func newObserver(cfg Config) *Observer {
@@ -58,7 +69,7 @@ func newObserverWithRegistry(cfg Config, adapters *codingAgentRegistry) *Observe
 }
 
 type transcriptCandidate struct {
-	File      TranscriptFile
+	File      snapshot.TranscriptFile
 	ModTime   time.Time
 	Size      int64
 	Priority  bool
@@ -70,23 +81,23 @@ type fileTraceCache struct {
 	ModTime         time.Time
 	Size            int64
 	EndsWithNewline bool
-	Trace           *SessionTrace
-	Traces          []*SessionTrace
+	Trace           *snapshot.SessionTrace
+	Traces          []*snapshot.SessionTrace
 	Err             string
 	RetryAt         time.Time
 }
 
-type transcriptParseFunc func(TranscriptFile) (*SessionTrace, error)
+type transcriptParseFunc func(snapshot.TranscriptFile) (*snapshot.SessionTrace, error)
 
-type transcriptAppendParseFunc func(TranscriptFile, *SessionTrace, int64) (*SessionTrace, error)
+type transcriptAppendParseFunc func(snapshot.TranscriptFile, *snapshot.SessionTrace, int64) (*snapshot.SessionTrace, error)
 
 type transcriptScanFlight struct {
 	done     chan struct{}
-	data     *TranscriptData
+	data     *snapshot.TranscriptData
 	complete bool
 }
 
-func (o *Observer) transcriptData(ctx context.Context, priority []TranscriptFile, now time.Time) (result *TranscriptData, cached bool) {
+func (o *Observer) transcriptData(ctx context.Context, priority []snapshot.TranscriptFile, now time.Time) (result *snapshot.TranscriptData, cached bool) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -149,7 +160,7 @@ func (o *Observer) transcriptData(ctx context.Context, priority []TranscriptFile
 						continue
 					}
 					if data == nil {
-						data = &TranscriptData{Traces: map[string]*SessionTrace{}}
+						data = &snapshot.TranscriptData{Traces: map[string]*snapshot.SessionTrace{}}
 					}
 					data.CoverageIncomplete = true
 					data.Errors = append(data.Errors, "transcript scan remained incomplete after bounded waiter retries")
@@ -161,7 +172,7 @@ func (o *Observer) transcriptData(ctx context.Context, priority []TranscriptFile
 				// cancelled caller returns early with whatever cached data exists.
 				cached := cachedData != nil
 				if cachedData == nil {
-					cachedData = &TranscriptData{Traces: map[string]*SessionTrace{}}
+					cachedData = &snapshot.TranscriptData{Traces: map[string]*snapshot.SessionTrace{}}
 				}
 				cachedData.CoverageIncomplete = true
 				cachedData.Errors = append(cachedData.Errors, fmt.Sprintf("transcript scan wait cancelled: %v", ctx.Err()))
@@ -175,7 +186,7 @@ func (o *Observer) transcriptData(ctx context.Context, priority []TranscriptFile
 	o.mu.Unlock()
 
 	finished := false
-	finish := func(data *TranscriptData, complete bool, revision uint64) {
+	finish := func(data *snapshot.TranscriptData, complete bool, revision uint64) {
 		if data == nil {
 			data = incompleteTranscriptData("transcript scan returned no data")
 		}
@@ -220,7 +231,7 @@ func (o *Observer) transcriptData(ctx context.Context, priority []TranscriptFile
 		MinInterval:        o.cfg.MinInterval,
 	})
 	complete := ctx.Err() == nil && !data.CoverageIncomplete
-	scanRevision := data.evidenceRevision
+	scanRevision := data.EvidenceRevision
 	if complete && o.evidenceIndex != nil {
 		currentRevision := o.evidenceIndex.cacheRevision()
 		if currentRevision != scanRevision {
@@ -229,7 +240,7 @@ func (o *Observer) transcriptData(ctx context.Context, priority []TranscriptFile
 			// coherent evidence revision and must not enter the cache or history.
 			data.CoverageIncomplete = true
 			data.Errors = append(data.Errors, "transcript evidence changed during scan")
-			data.evidenceRevision = currentRevision
+			data.EvidenceRevision = currentRevision
 			complete = false
 		}
 	}
@@ -237,15 +248,15 @@ func (o *Observer) transcriptData(ctx context.Context, priority []TranscriptFile
 	return cloneTranscriptData(data), false
 }
 
-func transcriptDataRevisionValid(observer *Observer, data *TranscriptData) bool {
+func transcriptDataRevisionValid(observer *Observer, data *snapshot.TranscriptData) bool {
 	if data == nil || observer == nil || observer.evidenceIndex == nil {
 		return data != nil
 	}
-	return observer.evidenceIndex.cacheRevision() == data.evidenceRevision
+	return observer.evidenceIndex.cacheRevision() == data.EvidenceRevision
 }
 
-func incompleteTranscriptData(reason string) *TranscriptData {
-	data := &TranscriptData{Traces: map[string]*SessionTrace{}, CoverageIncomplete: true}
+func incompleteTranscriptData(reason string) *snapshot.TranscriptData {
+	data := &snapshot.TranscriptData{Traces: map[string]*snapshot.SessionTrace{}, CoverageIncomplete: true}
 	if strings.TrimSpace(reason) != "" {
 		data.Errors = []string{reason}
 	}
@@ -256,7 +267,7 @@ func incompleteTranscriptData(reason string) *TranscriptData {
 // parser workers and evidence index each contain their own faults, but a future
 // aggregation/helper panic must still release the transcript singleflight and
 // publish an explicit incomplete result instead of poisoning the key.
-func (o *Observer) scanTranscriptsSafely(ctx context.Context, priority []TranscriptFile, opts transcriptScanOptions) (data *TranscriptData) {
+func (o *Observer) scanTranscriptsSafely(ctx context.Context, priority []snapshot.TranscriptFile, opts transcriptScanOptions) (data *snapshot.TranscriptData) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			log.Printf("transcript scan panic recovered: %s\n%s",
@@ -271,7 +282,7 @@ func (o *Observer) scanTranscriptsSafely(ctx context.Context, priority []Transcr
 	return o.scanTranscriptsWithOptions(ctx, priority, opts)
 }
 
-func transcriptCacheKey(roots map[string][]string, priority []TranscriptFile, idleGap, minInterval, lookback time.Duration) string {
+func transcriptCacheKey(roots map[string][]string, priority []snapshot.TranscriptFile, idleGap, minInterval, lookback time.Duration) string {
 	priorityParts := make([]string, 0, len(priority))
 	for _, file := range priority {
 		priorityParts = append(priorityParts, file.Tool+":"+file.Path)
@@ -286,7 +297,7 @@ func transcriptCacheKey(roots map[string][]string, priority []TranscriptFile, id
 	return strings.Join(parts, "\n")
 }
 
-func (o *Observer) scanTranscripts(priority []TranscriptFile, cutoff time.Time, idleGap, minInterval time.Duration) *TranscriptData {
+func (o *Observer) scanTranscripts(priority []snapshot.TranscriptFile, cutoff time.Time, idleGap, minInterval time.Duration) *snapshot.TranscriptData {
 	return o.scanTranscriptsWithOptions(context.Background(), priority, transcriptScanOptions{
 		HistoryCutoff:      cutoff,
 		ForegroundCutoff:   cutoff,
@@ -308,7 +319,7 @@ type transcriptScanOptions struct {
 	MinInterval        time.Duration
 }
 
-func (o *Observer) scanTranscriptsWithOptions(ctx context.Context, priority []TranscriptFile, opts transcriptScanOptions) *TranscriptData {
+func (o *Observer) scanTranscriptsWithOptions(ctx context.Context, priority []snapshot.TranscriptFile, opts transcriptScanOptions) *snapshot.TranscriptData {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -329,8 +340,8 @@ func (o *Observer) scanTranscriptsWithOptions(ctx context.Context, priority []Tr
 			scanned++
 		}
 	}
-	data := &TranscriptData{
-		Traces:                           make(map[string]*SessionTrace, scanned),
+	data := &snapshot.TranscriptData{
+		Traces:                           make(map[string]*snapshot.SessionTrace, scanned),
 		ScannedFiles:                     scanned,
 		DeferredFiles:                    collection.FilteredByCutoff,
 		HistoricalScanDeferred:           opts.DeferHistoryWalk,
@@ -338,7 +349,7 @@ func (o *Observer) scanTranscriptsWithOptions(ctx context.Context, priority []Tr
 		ForegroundScanLookbackSeconds:    int(opts.ForegroundLookback / time.Second),
 		ConfiguredHistoryLookbackSeconds: int(opts.HistoryLookback / time.Second),
 		Errors:                           walkErrors,
-		evidenceRevision:                 collection.Revision,
+		EvidenceRevision:                 collection.Revision,
 		ScanCost:                         collection.ScanCost,
 	}
 
@@ -472,10 +483,10 @@ func (o *Observer) scanTranscriptsWithOptions(ctx context.Context, priority []Tr
 	}
 	if o.evidenceIndex != nil {
 		currentRevision := o.evidenceIndex.cacheRevision()
-		if currentRevision != data.evidenceRevision {
+		if currentRevision != data.EvidenceRevision {
 			data.CoverageIncomplete = true
 			data.Errors = append(data.Errors, "transcript evidence changed during scan")
-			data.evidenceRevision = currentRevision
+			data.EvidenceRevision = currentRevision
 		}
 	}
 	data.SessionSpans = buildSessionSpans(data.Traces, opts.MinInterval)
@@ -560,18 +571,18 @@ func durationSinceCutoff(cutoff time.Time) time.Duration {
 
 type transcriptParseResult struct {
 	Candidate transcriptCandidate
-	Trace     *SessionTrace
-	Traces    []*SessionTrace
+	Trace     *snapshot.SessionTrace
+	Traces    []*snapshot.SessionTrace
 	Err       error
 }
 
 type transcriptAppendCandidate struct {
 	Candidate transcriptCandidate
-	Base      *SessionTrace
+	Base      *snapshot.SessionTrace
 	Offset    int64
 }
 
-func canAppendParseTranscript(adapters *codingAgentRegistry, file TranscriptFile, cached fileTraceCache, candidate transcriptCandidate) bool {
+func canAppendParseTranscript(adapters *codingAgentRegistry, file snapshot.TranscriptFile, cached fileTraceCache, candidate transcriptCandidate) bool {
 	if candidate.Size <= cached.Size || !cached.EndsWithNewline {
 		return false
 	}
@@ -582,7 +593,7 @@ func canAppendParseTranscript(adapters *codingAgentRegistry, file TranscriptFile
 	return ok && parser.CanAppend(file)
 }
 
-func recoverTranscriptParsePanic(scope string, candidate transcriptCandidate, result *transcriptParseResult, fallback *SessionTrace) {
+func recoverTranscriptParsePanic(scope string, candidate transcriptCandidate, result *transcriptParseResult, fallback *snapshot.SessionTrace) {
 	if recovered := recover(); recovered != nil {
 		scope = strings.TrimSpace(scope)
 		// Parser failures are local diagnostics, but their logs can be retained
@@ -617,7 +628,7 @@ func parseTranscriptCandidate(ctx context.Context, adapters *codingAgentRegistry
 		return result
 	}
 	if multi, ok := parser.(interface {
-		ParseSessions(context.Context, TranscriptFile) ([]*SessionTrace, error)
+		ParseSessions(context.Context, snapshot.TranscriptFile) ([]*snapshot.SessionTrace, error)
 	}); ok {
 		result.Traces, result.Err = multi.ParseSessions(ctx, candidate.File)
 		return result
@@ -753,15 +764,15 @@ type transcriptCandidateCollection struct {
 	FilteredByCutoff int
 	Revision         uint64
 	// ScanCost is the index's own measurement of the walk that produced Files.
-	ScanCost TranscriptScanCost
+	ScanCost snapshot.TranscriptScanCost
 }
 
-func collectTranscriptCandidates(ctx context.Context, evidenceIndex *transcriptEvidenceIndex, adapters *codingAgentRegistry, priority []TranscriptFile, historyCutoff, foregroundCutoff time.Time) ([]transcriptCandidate, []string) {
+func collectTranscriptCandidates(ctx context.Context, evidenceIndex *transcriptEvidenceIndex, adapters *codingAgentRegistry, priority []snapshot.TranscriptFile, historyCutoff, foregroundCutoff time.Time) ([]transcriptCandidate, []string) {
 	collection := collectTranscriptCandidatesWithCoverage(ctx, evidenceIndex, adapters, priority, historyCutoff, foregroundCutoff)
 	return collection.Files, collection.Errors
 }
 
-func collectTranscriptCandidatesWithCoverage(ctx context.Context, evidenceIndex *transcriptEvidenceIndex, adapters *codingAgentRegistry, priority []TranscriptFile, historyCutoff, foregroundCutoff time.Time) transcriptCandidateCollection {
+func collectTranscriptCandidatesWithCoverage(ctx context.Context, evidenceIndex *transcriptEvidenceIndex, adapters *codingAgentRegistry, priority []snapshot.TranscriptFile, historyCutoff, foregroundCutoff time.Time) transcriptCandidateCollection {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -774,7 +785,7 @@ func collectTranscriptCandidatesWithCoverage(ctx context.Context, evidenceIndex 
 		priorityKeys[file.Tool+"\x00"+canonicalEvidencePath(file.Path)] = struct{}{}
 	}
 	seen := map[string]transcriptCandidate{}
-	addFile := func(file TranscriptFile, info os.FileInfo) {
+	addFile := func(file snapshot.TranscriptFile, info os.FileInfo) {
 		if file.Path == "" || file.Tool == "" {
 			return
 		}
@@ -863,8 +874,8 @@ func collectTranscriptCandidatesWithCoverage(ctx context.Context, evidenceIndex 
 // because only the reconciling pass measures one and every later snapshot is
 // served from the index. AgedOutFiles comes from the current stats: it
 // describes what the index now holds rather than what the walk cost.
-func transcriptScanCostFrom(indexed transcriptEvidenceSnapshot) TranscriptScanCost {
-	cost := TranscriptScanCost{
+func transcriptScanCostFrom(indexed transcriptEvidenceSnapshot) snapshot.TranscriptScanCost {
+	cost := snapshot.TranscriptScanCost{
 		WalkFresh:    indexed.Stats.Reconciled,
 		AgedOutFiles: indexed.Stats.AgedOutFiles,
 	}
@@ -1130,8 +1141,8 @@ func jsonlLineContainsKey(line []byte, key string) bool {
 		bytes.Contains(line, []byte(raw+` :`))
 }
 
-func parseClaudeTraceTail(file TranscriptFile) (*SessionTrace, error) {
-	trace := &SessionTrace{
+func parseClaudeTraceTail(file snapshot.TranscriptFile) (*snapshot.SessionTrace, error) {
+	trace := &snapshot.SessionTrace{
 		Tool:             "claude",
 		Path:             file.Path,
 		SessionID:        genericTranscriptSessionID(file.Path),
@@ -1148,8 +1159,8 @@ func parseClaudeTraceTail(file TranscriptFile) (*SessionTrace, error) {
 	return nonEmptyTrace(trace), nil
 }
 
-func parseCodexTraceTail(file TranscriptFile) (*SessionTrace, error) {
-	trace := &SessionTrace{
+func parseCodexTraceTail(file snapshot.TranscriptFile) (*snapshot.SessionTrace, error) {
+	trace := &snapshot.SessionTrace{
 		Tool:             "codex",
 		Path:             file.Path,
 		SessionID:        codexTranscriptSessionID(file.Path),
@@ -1165,8 +1176,8 @@ func parseCodexTraceTail(file TranscriptFile) (*SessionTrace, error) {
 	return nonEmptyTrace(trace), nil
 }
 
-func parseTraeTraceTail(file TranscriptFile) (*SessionTrace, error) {
-	trace := &SessionTrace{
+func parseTraeTraceTail(file snapshot.TranscriptFile) (*snapshot.SessionTrace, error) {
+	trace := &snapshot.SessionTrace{
 		Tool:             "trae",
 		Path:             file.Path,
 		SessionID:        genericTranscriptSessionID(file.Path),
@@ -1182,7 +1193,7 @@ func parseTraeTraceTail(file TranscriptFile) (*SessionTrace, error) {
 	return nonEmptyTrace(trace), nil
 }
 
-func validateTranscriptAppend(base *SessionTrace, offset int64) error {
+func validateTranscriptAppend(base *snapshot.SessionTrace, offset int64) error {
 	if base == nil {
 		return fmt.Errorf("missing cached trace for append parse")
 	}
@@ -1192,7 +1203,7 @@ func validateTranscriptAppend(base *SessionTrace, offset int64) error {
 	return nil
 }
 
-func parseClaudeTraceAppend(file TranscriptFile, base *SessionTrace, offset int64) (*SessionTrace, error) {
+func parseClaudeTraceAppend(file snapshot.TranscriptFile, base *snapshot.SessionTrace, offset int64) (*snapshot.SessionTrace, error) {
 	if err := validateTranscriptAppend(base, offset); err != nil {
 		return nil, err
 	}
@@ -1209,7 +1220,7 @@ func parseClaudeTraceAppend(file TranscriptFile, base *SessionTrace, offset int6
 	return nonEmptyTrace(trace), nil
 }
 
-func parseCodexTraceAppend(file TranscriptFile, base *SessionTrace, offset int64) (*SessionTrace, error) {
+func parseCodexTraceAppend(file snapshot.TranscriptFile, base *snapshot.SessionTrace, offset int64) (*snapshot.SessionTrace, error) {
 	if err := validateTranscriptAppend(base, offset); err != nil {
 		return nil, err
 	}
@@ -1226,7 +1237,7 @@ func parseCodexTraceAppend(file TranscriptFile, base *SessionTrace, offset int64
 	return nonEmptyTrace(trace), nil
 }
 
-func parseTraeTraceAppend(file TranscriptFile, base *SessionTrace, offset int64) (*SessionTrace, error) {
+func parseTraeTraceAppend(file snapshot.TranscriptFile, base *snapshot.SessionTrace, offset int64) (*snapshot.SessionTrace, error) {
 	if err := validateTranscriptAppend(base, offset); err != nil {
 		return nil, err
 	}
@@ -1243,8 +1254,8 @@ func parseTraeTraceAppend(file TranscriptFile, base *SessionTrace, offset int64)
 	return nonEmptyTrace(trace), nil
 }
 
-func parseClaudeTrace(path string) (*SessionTrace, error) {
-	trace := &SessionTrace{
+func parseClaudeTrace(path string) (*snapshot.SessionTrace, error) {
+	trace := &snapshot.SessionTrace{
 		Tool:             "claude",
 		Path:             path,
 		SessionID:        genericTranscriptSessionID(path),
@@ -1262,7 +1273,7 @@ func parseClaudeTrace(path string) (*SessionTrace, error) {
 	return nonEmptyTrace(trace), nil
 }
 
-func processClaudeTraceLine(trace *SessionTrace, line []byte) {
+func processClaudeTraceLine(trace *snapshot.SessionTrace, line []byte) {
 	ts := parseTimestampString(jsonStringField(line, "timestamp"))
 	if ts.IsZero() {
 		return
@@ -1303,8 +1314,8 @@ func processClaudeTraceLine(trace *SessionTrace, line []byte) {
 	}
 }
 
-func parseCodexTrace(path string) (*SessionTrace, error) {
-	trace := &SessionTrace{
+func parseCodexTrace(path string) (*snapshot.SessionTrace, error) {
+	trace := &snapshot.SessionTrace{
 		Tool:             "codex",
 		Path:             path,
 		SessionID:        codexTranscriptSessionID(path),
@@ -1321,7 +1332,7 @@ func parseCodexTrace(path string) (*SessionTrace, error) {
 	return nonEmptyTrace(trace), nil
 }
 
-func processCodexTraceLine(trace *SessionTrace, line []byte) {
+func processCodexTraceLine(trace *snapshot.SessionTrace, line []byte) {
 	ts := parseTimestampString(jsonStringField(line, "timestamp"))
 	if ts.IsZero() {
 		return
@@ -1352,8 +1363,8 @@ func processCodexTraceLine(trace *SessionTrace, line []byte) {
 	trace.EventTimes = append(trace.EventTimes, ts)
 }
 
-func parseCodexLaneTrace(eventsPath string) (*SessionTrace, error) {
-	trace := &SessionTrace{
+func parseCodexLaneTrace(eventsPath string) (*snapshot.SessionTrace, error) {
+	trace := &snapshot.SessionTrace{
 		Tool:           "codex",
 		Path:           eventsPath,
 		SessionID:      filepath.Base(filepath.Dir(eventsPath)),
@@ -1439,8 +1450,8 @@ func parseCodexLaneTrace(eventsPath string) (*SessionTrace, error) {
 	return trace, errors.Join(sidecarErrs...)
 }
 
-func parseTraeTrace(path string) (*SessionTrace, error) {
-	trace := &SessionTrace{
+func parseTraeTrace(path string) (*snapshot.SessionTrace, error) {
+	trace := &snapshot.SessionTrace{
 		Tool:             "trae",
 		Path:             path,
 		SessionID:        genericTranscriptSessionID(path),
@@ -1457,7 +1468,7 @@ func parseTraeTrace(path string) (*SessionTrace, error) {
 	return nonEmptyTrace(trace), nil
 }
 
-func processTraeTraceLine(trace *SessionTrace, line []byte) {
+func processTraeTraceLine(trace *snapshot.SessionTrace, line []byte) {
 	ts := parseTimestampString(jsonStringField(line, "timestamp"))
 	if ts.IsZero() {
 		return
@@ -1491,8 +1502,8 @@ func processTraeTraceLine(trace *SessionTrace, line []byte) {
 // newGrokTrace seeds the identity grok encodes into the transcript path: the
 // session directory is the id, and its parent is the percent-encoded working
 // directory. Both are known before a single line is read.
-func newGrokTrace(path string) *SessionTrace {
-	trace := &SessionTrace{
+func newGrokTrace(path string) *snapshot.SessionTrace {
+	trace := &snapshot.SessionTrace{
 		Tool:             "grok",
 		Path:             path,
 		SessionID:        grokTranscriptSessionID(path),
@@ -1504,7 +1515,7 @@ func newGrokTrace(path string) *SessionTrace {
 	return trace
 }
 
-func parseGrokTrace(path string) (*SessionTrace, error) {
+func parseGrokTrace(path string) (*snapshot.SessionTrace, error) {
 	trace := newGrokTrace(path)
 	if err := forEachJSONLLine(path, func(line []byte) bool {
 		processGrokTraceLine(trace, line)
@@ -1516,7 +1527,7 @@ func parseGrokTrace(path string) (*SessionTrace, error) {
 	return nonEmptyTrace(trace), nil
 }
 
-func parseGrokTraceTail(file TranscriptFile) (*SessionTrace, error) {
+func parseGrokTraceTail(file snapshot.TranscriptFile) (*snapshot.SessionTrace, error) {
 	trace := newGrokTrace(file.Path)
 	if err := forEachRecentJSONLTailLine(file.Path, func(line []byte) bool {
 		processGrokTraceLine(trace, line)
@@ -1528,7 +1539,7 @@ func parseGrokTraceTail(file TranscriptFile) (*SessionTrace, error) {
 	return nonEmptyTrace(trace), nil
 }
 
-func parseGrokTraceAppend(file TranscriptFile, base *SessionTrace, offset int64) (*SessionTrace, error) {
+func parseGrokTraceAppend(file snapshot.TranscriptFile, base *snapshot.SessionTrace, offset int64) (*snapshot.SessionTrace, error) {
 	if err := validateTranscriptAppend(base, offset); err != nil {
 		return nil, err
 	}
@@ -1548,7 +1559,7 @@ func parseGrokTraceAppend(file TranscriptFile, base *SessionTrace, offset int64)
 // processGrokTraceLine reads one ACP session-update record. The timestamp is an
 // unquoted epoch-second number rather than the RFC3339 string every other
 // vendor writes, and the session id lives under params.
-func processGrokTraceLine(trace *SessionTrace, line []byte) {
+func processGrokTraceLine(trace *snapshot.SessionTrace, line []byte) {
 	ts := jsonEpochSecondsField(line, "timestamp")
 	if ts.IsZero() {
 		return
@@ -1560,7 +1571,7 @@ func processGrokTraceLine(trace *SessionTrace, line []byte) {
 	trace.EventTimes = append(trace.EventTimes, ts)
 }
 
-func captureTraceRoleMetadata(trace *SessionTrace, line []byte) {
+func captureTraceRoleMetadata(trace *snapshot.SessionTrace, line []byte) {
 	if trace == nil || len(line) == 0 {
 		return
 	}
@@ -1605,7 +1616,7 @@ func captureTraceRoleMetadata(trace *SessionTrace, line []byte) {
 	}
 }
 
-func captureTokenUsage(trace *SessionTrace, line []byte) {
+func captureTokenUsage(trace *snapshot.SessionTrace, line []byte) {
 	if trace == nil || !jsonlLineLooksLikeTokenUsage(line) {
 		return
 	}
@@ -1647,21 +1658,21 @@ func jsonlLineLooksLikeTokenUsage(line []byte) bool {
 	return false
 }
 
-func tokenUsageFromJSONValue(value interface{}) TokenUsage {
-	var out TokenUsage
+func tokenUsageFromJSONValue(value interface{}) snapshot.TokenUsage {
+	var out snapshot.TokenUsage
 	collectTokenUsage(value, &out)
 	return out
 }
 
-func cumulativeTokenUsageFromJSONValue(value interface{}) (TokenUsage, bool) {
-	var out TokenUsage
+func cumulativeTokenUsageFromJSONValue(value interface{}) (snapshot.TokenUsage, bool) {
+	var out snapshot.TokenUsage
 	if collectCumulativeTokenUsage(value, &out) {
 		return out, true
 	}
-	return TokenUsage{}, false
+	return snapshot.TokenUsage{}, false
 }
 
-func collectCumulativeTokenUsage(value interface{}, out *TokenUsage) bool {
+func collectCumulativeTokenUsage(value interface{}, out *snapshot.TokenUsage) bool {
 	switch v := value.(type) {
 	case map[string]interface{}:
 		if total, ok := mapFromKeys(v, "total_token_usage", "totalTokenUsage"); ok {
@@ -1688,7 +1699,7 @@ func collectCumulativeTokenUsage(value interface{}, out *TokenUsage) bool {
 	}
 }
 
-func collectTokenUsage(value interface{}, out *TokenUsage) {
+func collectTokenUsage(value interface{}, out *snapshot.TokenUsage) {
 	switch v := value.(type) {
 	case map[string]interface{}:
 		if usage, ok := directTokenUsage(v); ok {
@@ -1724,8 +1735,8 @@ func shouldInspectTokenUsageChild(key string) bool {
 	}
 }
 
-func directTokenUsage(obj map[string]interface{}) (TokenUsage, bool) {
-	var usage TokenUsage
+func directTokenUsage(obj map[string]interface{}) (snapshot.TokenUsage, bool) {
+	var usage snapshot.TokenUsage
 	found := false
 	if value, ok := intFromKeys(obj, "input_tokens", "inputTokens", "prompt_tokens", "promptTokens", "promptTokenCount", "prompt_token_count"); ok {
 		usage.InputTokens = value
@@ -1835,50 +1846,6 @@ func intFromValue(value interface{}) (int, bool) {
 	}
 }
 
-func (u TokenUsage) Empty() bool {
-	return u.InputTokens <= 0 &&
-		u.OutputTokens <= 0 &&
-		u.CacheCreationInputTokens <= 0 &&
-		u.CacheReadInputTokens <= 0 &&
-		u.ReasoningOutputTokens <= 0 &&
-		u.TotalTokens <= 0
-}
-
-func (u TokenUsage) DerivedTotal() int {
-	return u.InputTokens + u.OutputTokens + u.CacheCreationInputTokens + u.CacheReadInputTokens
-}
-
-func (u *TokenUsage) Add(other TokenUsage) {
-	if u == nil || other.Empty() {
-		return
-	}
-	u.InputTokens += other.InputTokens
-	u.OutputTokens += other.OutputTokens
-	u.CacheCreationInputTokens += other.CacheCreationInputTokens
-	u.CacheReadInputTokens += other.CacheReadInputTokens
-	u.ReasoningOutputTokens += other.ReasoningOutputTokens
-	if other.TotalTokens > 0 {
-		u.TotalTokens += other.TotalTokens
-	} else {
-		u.TotalTokens += other.DerivedTotal()
-	}
-}
-
-func (u *TokenUsage) Max(other TokenUsage) {
-	if u == nil || other.Empty() {
-		return
-	}
-	u.InputTokens = maxInt(u.InputTokens, other.InputTokens)
-	u.OutputTokens = maxInt(u.OutputTokens, other.OutputTokens)
-	u.CacheCreationInputTokens = maxInt(u.CacheCreationInputTokens, other.CacheCreationInputTokens)
-	u.CacheReadInputTokens = maxInt(u.CacheReadInputTokens, other.CacheReadInputTokens)
-	u.ReasoningOutputTokens = maxInt(u.ReasoningOutputTokens, other.ReasoningOutputTokens)
-	u.TotalTokens = maxInt(u.TotalTokens, other.TotalTokens)
-	if u.TotalTokens == 0 {
-		u.TotalTokens = u.DerivedTotal()
-	}
-}
-
 func maxInt(a, b int) int {
 	if b > a {
 		return b
@@ -1898,7 +1865,7 @@ func normalizeSessionRoleSource(raw string) string {
 	}
 }
 
-func setTraceProjectName(trace *SessionTrace, project, source string) {
+func setTraceProjectName(trace *snapshot.SessionTrace, project, source string) {
 	project = trustedTraceProjectName(project)
 	if trace == nil || project == "" {
 		return
@@ -1932,7 +1899,7 @@ func localPathFromFileURL(path string) string {
 	return parsed.Path
 }
 
-func setTraceProjectPath(trace *SessionTrace, path, source string) {
+func setTraceProjectPath(trace *snapshot.SessionTrace, path, source string) {
 	path = localPathFromFileURL(path)
 	repoRoot, worktree, branch := resolveRepoBoundary(path)
 	// An agent that mktemp'd a sandbox mid-session (audit checkout, extracted
@@ -1974,7 +1941,7 @@ func isClaudeActiveType(kind string) bool {
 	}
 }
 
-func finalizeTrace(trace *SessionTrace) {
+func finalizeTrace(trace *snapshot.SessionTrace) {
 	if trace == nil || len(trace.EventTimes) == 0 {
 		return
 	}
@@ -1986,7 +1953,7 @@ func finalizeTrace(trace *SessionTrace) {
 	trace.LastEvent = trace.EventTimes[len(trace.EventTimes)-1]
 }
 
-func nonEmptyTrace(trace *SessionTrace) *SessionTrace {
+func nonEmptyTrace(trace *snapshot.SessionTrace) *snapshot.SessionTrace {
 	if trace == nil || len(trace.EventTimes) == 0 {
 		return nil
 	}
@@ -2341,14 +2308,14 @@ func firstNonZeroTime(values ...time.Time) time.Time {
 	return time.Time{}
 }
 
-func cloneTranscriptData(in *TranscriptData) *TranscriptData {
+func cloneTranscriptData(in *snapshot.TranscriptData) *snapshot.TranscriptData {
 	if in == nil {
 		return nil
 	}
-	out := &TranscriptData{
-		Traces:                           make(map[string]*SessionTrace, len(in.Traces)),
-		SessionSpans:                     append([]Interval(nil), in.SessionSpans...),
-		BurstSpans:                       append([]Interval(nil), in.BurstSpans...),
+	out := &snapshot.TranscriptData{
+		Traces:                           make(map[string]*snapshot.SessionTrace, len(in.Traces)),
+		SessionSpans:                     append([]snapshot.Interval(nil), in.SessionSpans...),
+		BurstSpans:                       append([]snapshot.Interval(nil), in.BurstSpans...),
 		ScannedFiles:                     in.ScannedFiles,
 		ParsedFiles:                      in.ParsedFiles,
 		DeferredFiles:                    in.DeferredFiles,
@@ -2358,7 +2325,7 @@ func cloneTranscriptData(in *TranscriptData) *TranscriptData {
 		ForegroundScanLookbackSeconds:    in.ForegroundScanLookbackSeconds,
 		ConfiguredHistoryLookbackSeconds: in.ConfiguredHistoryLookbackSeconds,
 		Errors:                           append([]string(nil), in.Errors...),
-		evidenceRevision:                 in.evidenceRevision,
+		EvidenceRevision:                 in.EvidenceRevision,
 		ScanCost:                         in.ScanCost,
 	}
 	for path, trace := range in.Traces {
@@ -2372,7 +2339,7 @@ func cloneTranscriptData(in *TranscriptData) *TranscriptData {
 	return out
 }
 
-func cloneSessionTrace(trace *SessionTrace) *SessionTrace {
+func cloneSessionTrace(trace *snapshot.SessionTrace) *snapshot.SessionTrace {
 	if trace == nil {
 		return nil
 	}

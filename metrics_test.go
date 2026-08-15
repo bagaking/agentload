@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"encoding/json"
 	"testing"
 	"time"
@@ -8,7 +9,7 @@ import (
 
 func TestBuildBurstSpansSplitsOnIdleGap(t *testing.T) {
 	base := time.Date(2026, 6, 27, 10, 0, 0, 0, time.UTC)
-	traces := map[string]*SessionTrace{
+	traces := map[string]*snapshot.SessionTrace{
 		"one": {
 			Tool:      "codex",
 			SessionID: "s1",
@@ -37,7 +38,7 @@ func TestBuildBurstSpansSplitsOnIdleGap(t *testing.T) {
 
 func TestPeakConcurrency(t *testing.T) {
 	base := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
-	intervals := []Interval{
+	intervals := []snapshot.Interval{
 		{Start: base, End: base.Add(5 * time.Minute)},
 		{Start: base.Add(2 * time.Minute), End: base.Add(7 * time.Minute)},
 		{Start: base.Add(3 * time.Minute), End: base.Add(4 * time.Minute)},
@@ -54,7 +55,7 @@ func TestPeakConcurrency(t *testing.T) {
 
 func TestConcurrencySeries(t *testing.T) {
 	base := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
-	intervals := []Interval{
+	intervals := []snapshot.Interval{
 		{Start: base.Add(-time.Minute), End: base.Add(2 * time.Minute)},
 		{Start: base.Add(time.Minute), End: base.Add(4 * time.Minute)},
 		{Start: base.Add(4 * time.Minute), End: base.Add(5 * time.Minute)},
@@ -81,7 +82,7 @@ func TestConcurrencySeries(t *testing.T) {
 
 func TestBuildTranscriptTrendWindowsLeavesEmptyCoverageUnsampled(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	trends := buildTranscriptTrendWindows(&TranscriptData{}, now, 7*24*time.Hour)
+	trends := buildTranscriptTrendWindows(&snapshot.TranscriptData{}, now, 7*24*time.Hour)
 	requireExactTrendRanges(t, trends)
 
 	for _, window := range trends.Windows {
@@ -94,7 +95,7 @@ func TestBuildTranscriptTrendWindowsLeavesEmptyCoverageUnsampled(t *testing.T) {
 		if window.SourceLookbackHours != 0 {
 			t.Fatalf("expected %s window to omit source_lookback_hours without transcript evidence, got %d", window.Range, window.SourceLookbackHours)
 		}
-		if countTrendPoints(window.Points, func(point TrendPoint) bool { return point.TranscriptSampled }) != 0 {
+		if countTrendPoints(window.Points, func(point snapshot.TrendPoint) bool { return point.TranscriptSampled }) != 0 {
 			t.Fatalf("expected %s window to leave every bucket unsampled", window.Range)
 		}
 		for _, point := range window.Points {
@@ -107,7 +108,7 @@ func TestBuildTranscriptTrendWindowsLeavesEmptyCoverageUnsampled(t *testing.T) {
 
 func TestBuildTranscriptTrendWindowsMarshalJSONOmitsUnsampledZeroMetrics(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	trends := buildTranscriptTrendWindows(&TranscriptData{}, now, 7*24*time.Hour)
+	trends := buildTranscriptTrendWindows(&snapshot.TranscriptData{}, now, 7*24*time.Hour)
 	requireExactTrendRanges(t, trends)
 
 	var decoded struct {
@@ -134,8 +135,8 @@ func TestBuildTranscriptTrendWindowsMarshalJSONOmitsUnsampledZeroMetrics(t *test
 func TestBuildTranscriptTrendWindowsUsesActualEvidenceStart(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
 	evidenceStart := now.Add(-6 * 24 * time.Hour)
-	data := &TranscriptData{
-		Traces: map[string]*SessionTrace{
+	data := &snapshot.TranscriptData{
+		Traces: map[string]*snapshot.SessionTrace{
 			"one": {
 				Tool:      "codex",
 				SessionID: "s1",
@@ -148,10 +149,10 @@ func TestBuildTranscriptTrendWindowsUsesActualEvidenceStart(t *testing.T) {
 				LastEvent:  evidenceStart.Add(2 * time.Hour),
 			},
 		},
-		SessionSpans: []Interval{
+		SessionSpans: []snapshot.Interval{
 			{Start: evidenceStart, End: evidenceStart.Add(30 * time.Minute)},
 		},
-		BurstSpans: []Interval{
+		BurstSpans: []snapshot.Interval{
 			{Start: evidenceStart, End: evidenceStart.Add(15 * time.Minute)},
 		},
 	}
@@ -182,14 +183,14 @@ func TestBuildTranscriptTrendWindowsLeavesObservationInstantUnsampled(t *testing
 	// Nineteen sessions that are all still running. On disk a live session's
 	// span ends at its last transcript event, so every end is strictly before
 	// now -- which is exactly why the instant `now` cannot be measured.
-	spans := make([]Interval, 0, 19)
+	spans := make([]snapshot.Interval, 0, 19)
 	for i := 0; i < 19; i++ {
-		spans = append(spans, Interval{
+		spans = append(spans, snapshot.Interval{
 			Start: now.Add(-3 * time.Hour),
 			End:   now.Add(-time.Duration(5+i*25) * time.Second),
 		})
 	}
-	data := &TranscriptData{SessionSpans: spans, BurstSpans: spans}
+	data := &snapshot.TranscriptData{SessionSpans: spans, BurstSpans: spans}
 
 	for _, window := range buildTranscriptTrendWindows(data, now, 7*24*time.Hour).Windows {
 		points := window.Points
@@ -222,11 +223,11 @@ func TestBuildTranscriptTrendWindowsLeavesObservationInstantUnsampled(t *testing
 func TestBuildTranscriptTrendWindowsMarksSampledMetricPresence(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
 	evidenceStart := now.Add(-24 * time.Hour)
-	data := &TranscriptData{
-		SessionSpans: []Interval{
+	data := &snapshot.TranscriptData{
+		SessionSpans: []snapshot.Interval{
 			{Start: evidenceStart, End: evidenceStart.Add(30 * time.Minute)},
 		},
-		BurstSpans: []Interval{
+		BurstSpans: []snapshot.Interval{
 			{Start: evidenceStart, End: evidenceStart.Add(15 * time.Minute)},
 		},
 	}
@@ -247,7 +248,7 @@ func TestBuildTranscriptTrendWindowsMarksSampledMetricPresence(t *testing.T) {
 }
 
 func TestTrendPointMarshalJSONKeepsSampledHistoryZeroMetrics(t *testing.T) {
-	point := TrendPoint{
+	point := snapshot.TrendPoint{
 		At:                     time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC).Format(time.RFC3339),
 		ActiveBurstConcurrency: 0,
 		HasActiveBurst:         true,
@@ -275,7 +276,7 @@ func TestTrendPointMarshalJSONKeepsSampledHistoryZeroMetrics(t *testing.T) {
 }
 
 func TestTrendPointMarshalJSONKeepsSampledRuntimeZeroMetrics(t *testing.T) {
-	point := TrendPoint{
+	point := snapshot.TrendPoint{
 		At:                    time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC).Format(time.RFC3339),
 		PIDConcurrency:        0,
 		HasPIDConcurrency:     true,
@@ -309,7 +310,7 @@ func TestTrendPointMarshalJSONKeepsSampledRuntimeZeroMetrics(t *testing.T) {
 }
 
 func TestTrendPointMarshalJSONKeepsSampledThroughputZero(t *testing.T) {
-	point := TrendPoint{
+	point := snapshot.TrendPoint{
 		At:                                 time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC).Format(time.RFC3339),
 		OutputTokensPerSecond:              0,
 		HasOutputTokensPerSecond:           true,
@@ -329,7 +330,7 @@ func TestTrendPointMarshalJSONKeepsSampledThroughputZero(t *testing.T) {
 }
 
 func TestTrendPointMarshalJSONPreservesMissingThroughputRate(t *testing.T) {
-	point := TrendPoint{
+	point := snapshot.TrendPoint{
 		At:                                 time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC).Format(time.RFC3339),
 		OutputTokenThroughputState:         liveTokenRateStateStale,
 		OutputTokenThroughputWindowSeconds: 300,
@@ -343,7 +344,7 @@ func TestTrendPointMarshalJSONPreservesMissingThroughputRate(t *testing.T) {
 }
 
 func TestTrendPointMarshalJSONOmitsMissingSampledHistoryMetric(t *testing.T) {
-	point := TrendPoint{
+	point := snapshot.TrendPoint{
 		At:                     time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC).Format(time.RFC3339),
 		ActiveBurstConcurrency: 0,
 		HasActiveBurst:         true,
@@ -358,7 +359,7 @@ func TestTrendPointMarshalJSONOmitsMissingSampledHistoryMetric(t *testing.T) {
 }
 
 func TestTrendPointMarshalJSONOmitsMissingSampledRuntimeMetric(t *testing.T) {
-	point := TrendPoint{
+	point := snapshot.TrendPoint{
 		At:                   time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC).Format(time.RFC3339),
 		PIDConcurrency:       0,
 		HasPIDConcurrency:    true,
@@ -379,7 +380,7 @@ func TestTrendPointMarshalJSONOmitsMissingSampledRuntimeMetric(t *testing.T) {
 }
 
 func TestTrendPointMarshalJSONCarriesRuntimeBreakdowns(t *testing.T) {
-	point := TrendPoint{
+	point := snapshot.TrendPoint{
 		At:                   time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC).Format(time.RFC3339),
 		PIDConcurrency:       5,
 		HasPIDConcurrency:    true,
@@ -388,11 +389,11 @@ func TestTrendPointMarshalJSONCarriesRuntimeBreakdowns(t *testing.T) {
 		UnmappedProcesses:    1,
 		HasUnmappedProcesses: true,
 		RuntimeSampled:       true,
-		RuntimeProcesses: []ProcessRuntimeSummary{
+		RuntimeProcesses: []snapshot.ProcessRuntimeSummary{
 			{Key: "codex", Tool: "codex", DisplayName: "Codex", PIDCount: 3},
 			{Key: "claude", Tool: "claude", DisplayName: "Claude", PIDCount: 2},
 		},
-		HostAppProcesses: []HostAppProcessSummary{
+		HostAppProcesses: []snapshot.HostAppProcessSummary{
 			{Key: "cursor", Name: "Cursor", PIDCount: 4},
 		},
 	}
@@ -400,14 +401,14 @@ func TestTrendPointMarshalJSONCarriesRuntimeBreakdowns(t *testing.T) {
 	decoded := marshalTrendPointJSON(t, point)
 	requireJSONBool(t, decoded, "runtime_sampled", true)
 	requireJSONInt(t, decoded, "pid_concurrency", 5)
-	var runtime []ProcessRuntimeSummary
+	var runtime []snapshot.ProcessRuntimeSummary
 	if err := json.Unmarshal(decoded["runtime_process_summary"], &runtime); err != nil {
 		t.Fatalf("runtime_process_summary: %v", err)
 	}
 	if len(runtime) != 2 || runtime[0].Tool != "codex" || runtime[0].PIDCount != 3 {
 		t.Fatalf("unexpected runtime_process_summary: %+v", runtime)
 	}
-	var hosts []HostAppProcessSummary
+	var hosts []snapshot.HostAppProcessSummary
 	if err := json.Unmarshal(decoded["host_app_process_summary"], &hosts); err != nil {
 		t.Fatalf("host_app_process_summary: %v", err)
 	}
@@ -419,8 +420,8 @@ func TestTrendPointMarshalJSONCarriesRuntimeBreakdowns(t *testing.T) {
 func TestBuildTranscriptTrendWindowsUsesEvidenceAtConfiguredSourceStart(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
 	evidenceStart := now.Add(-7 * 24 * time.Hour)
-	data := &TranscriptData{
-		Traces: map[string]*SessionTrace{
+	data := &snapshot.TranscriptData{
+		Traces: map[string]*snapshot.SessionTrace{
 			"one": {
 				Tool:      "codex",
 				SessionID: "s1",
@@ -434,11 +435,11 @@ func TestBuildTranscriptTrendWindowsUsesEvidenceAtConfiguredSourceStart(t *testi
 				LastEvent:  now.Add(-2 * time.Hour),
 			},
 		},
-		SessionSpans: []Interval{
+		SessionSpans: []snapshot.Interval{
 			{Start: evidenceStart, End: evidenceStart.Add(20 * time.Minute)},
 			{Start: now.Add(-2 * time.Hour), End: now.Add(-90 * time.Minute)},
 		},
-		BurstSpans: []Interval{
+		BurstSpans: []snapshot.Interval{
 			{Start: evidenceStart, End: evidenceStart.Add(15 * time.Minute)},
 			{Start: now.Add(-2 * time.Hour), End: now.Add(-105 * time.Minute)},
 		},
@@ -465,7 +466,7 @@ func TestBuildTranscriptTrendWindowsUsesEvidenceAtConfiguredSourceStart(t *testi
 	// sits at the observation instant, which no span can overlap, so
 	// buildTranscriptTrendWindows leaves it unsampled rather than reporting 0.
 	// See TestBuildTranscriptTrendWindowsLeavesObservationInstantUnsampled.
-	if countTrendPoints(sevenDay.Points, func(point TrendPoint) bool { return point.TranscriptSampled }) != len(sevenDay.Points)-1 {
+	if countTrendPoints(sevenDay.Points, func(point snapshot.TrendPoint) bool { return point.TranscriptSampled }) != len(sevenDay.Points)-1 {
 		t.Fatalf("expected every 7D bucket before the observation instant to be transcript-sampled")
 	}
 
@@ -475,10 +476,10 @@ func TestBuildTranscriptTrendWindowsUsesEvidenceAtConfiguredSourceStart(t *testi
 	if thirtyDay.HistoryComplete {
 		t.Fatalf("expected 30D window to report partial coverage")
 	}
-	if countTrendPoints(fifteenDay.Points, func(point TrendPoint) bool { return point.TranscriptSampled }) == len(fifteenDay.Points) {
+	if countTrendPoints(fifteenDay.Points, func(point snapshot.TrendPoint) bool { return point.TranscriptSampled }) == len(fifteenDay.Points) {
 		t.Fatalf("expected 15D window to keep buckets before evidence start unsampled")
 	}
-	if countTrendPoints(thirtyDay.Points, func(point TrendPoint) bool { return point.TranscriptSampled }) == len(thirtyDay.Points) {
+	if countTrendPoints(thirtyDay.Points, func(point snapshot.TrendPoint) bool { return point.TranscriptSampled }) == len(thirtyDay.Points) {
 		t.Fatalf("expected 30D window to keep buckets before evidence start unsampled")
 	}
 
@@ -495,8 +496,8 @@ func TestBuildTranscriptTrendWindowsUsesEvidenceAtConfiguredSourceStart(t *testi
 func TestBuildTranscriptTrendWindowsUsesOverlappingSpanCoverageStart(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
 	configuredSourceFrom := now.Add(-7 * 24 * time.Hour)
-	data := &TranscriptData{
-		SessionSpans: []Interval{
+	data := &snapshot.TranscriptData{
+		SessionSpans: []snapshot.Interval{
 			{
 				Start: configuredSourceFrom.Add(-2 * time.Hour),
 				End:   configuredSourceFrom.Add(90 * time.Minute),
@@ -520,8 +521,8 @@ func TestBuildTranscriptTrendWindowsUsesOverlappingSpanCoverageStart(t *testing.
 func TestBuildTranscriptTrendWindowsUsesOverlappingBurstSpanCoverageStart(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
 	configuredSourceFrom := now.Add(-7 * 24 * time.Hour)
-	data := &TranscriptData{
-		BurstSpans: []Interval{
+	data := &snapshot.TranscriptData{
+		BurstSpans: []snapshot.Interval{
 			{
 				Start: configuredSourceFrom.Add(-time.Hour),
 				End:   configuredSourceFrom.Add(45 * time.Minute),
@@ -546,7 +547,7 @@ func TestBuildTranscriptTrendWindowsUsesOverlappingBurstSpanCoverageStart(t *tes
 
 func TestBuildRealtimeTrendWindowsBucketsLatestRuntimeSampleOnly(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
-	samples := []TrendPoint{
+	samples := []snapshot.TrendPoint{
 		{
 			At:                    now.Add(-55 * time.Minute).Format(time.RFC3339),
 			PIDConcurrency:        2,
@@ -570,7 +571,7 @@ func TestBuildRealtimeTrendWindowsBucketsLatestRuntimeSampleOnly(t *testing.T) {
 			UnmappedProcesses:     1,
 			HasUnmappedProcesses:  true,
 			RuntimeSampled:        true,
-			OutputTokenProjects: []LiveTokenRateProjectSample{{
+			OutputTokenProjects: []snapshot.LiveTokenRateProjectSample{{
 				Project:               "must-not-leak",
 				OutputTokensPerSecond: 2,
 			}},
@@ -776,8 +777,8 @@ func TestBuildThroughputTrendWindowsSeparatesLegacySeries(t *testing.T) {
 	rate180 := 3.0
 	rate300 := 2.0
 	legacy := []LegacyThroughputFact{
-		{At: now.Add(-time.Minute).Format(time.RFC3339), State: liveTokenRateStateLive, WindowSeconds: 180, OutputTokensPerSecond: &rate180, Projects: []LiveTokenRateProjectSample{{Project: "alpha", OutputTokensPerSecond: rate180}}},
-		{At: now.Format(time.RFC3339), State: liveTokenRateStateLive, WindowSeconds: 300, OutputTokensPerSecond: &rate300, Projects: []LiveTokenRateProjectSample{{Project: "alpha", OutputTokensPerSecond: rate300}}},
+		{At: now.Add(-time.Minute).Format(time.RFC3339), State: liveTokenRateStateLive, WindowSeconds: 180, OutputTokensPerSecond: &rate180, Projects: []snapshot.LiveTokenRateProjectSample{{Project: "alpha", OutputTokensPerSecond: rate180}}},
+		{At: now.Format(time.RFC3339), State: liveTokenRateStateLive, WindowSeconds: 300, OutputTokensPerSecond: &rate300, Projects: []snapshot.LiveTokenRateProjectSample{{Project: "alpha", OutputTokensPerSecond: rate300}}},
 	}
 	oneDay := requireTrendWindow(t, buildThroughputTrendWindows(nil, legacy, now), "1D")
 	legacy180 := requireThroughputSeries(t, oneDay, "legacy:180")
@@ -794,8 +795,8 @@ func TestBuildThroughputTrendWindowsKeepsDistinctLegacySubsecondPoints(t *testin
 	now := time.Date(2026, 6, 28, 12, 0, 1, 0, time.UTC)
 	rate := 3.0
 	legacy := []LegacyThroughputFact{
-		{At: now.Add(-900 * time.Millisecond).Format(time.RFC3339Nano), State: liveTokenRateStateLive, WindowSeconds: 300, OutputTokensPerSecond: &rate, Projects: []LiveTokenRateProjectSample{}},
-		{At: now.Add(-100 * time.Millisecond).Format(time.RFC3339Nano), State: liveTokenRateStateLive, WindowSeconds: 300, OutputTokensPerSecond: &rate, Projects: []LiveTokenRateProjectSample{}},
+		{At: now.Add(-900 * time.Millisecond).Format(time.RFC3339Nano), State: liveTokenRateStateLive, WindowSeconds: 300, OutputTokensPerSecond: &rate, Projects: []snapshot.LiveTokenRateProjectSample{}},
+		{At: now.Add(-100 * time.Millisecond).Format(time.RFC3339Nano), State: liveTokenRateStateLive, WindowSeconds: 300, OutputTokensPerSecond: &rate, Projects: []snapshot.LiveTokenRateProjectSample{}},
 	}
 	series := requireThroughputSeries(t, requireTrendWindow(t, buildThroughputTrendWindows(nil, legacy, now), "1D"), "legacy:300")
 	if len(series.Points) != 2 || series.Points[0].At == series.Points[1].At {
@@ -831,7 +832,7 @@ func TestBuildThroughputTrendWindowsPreservesMinuteProjectPartitions(t *testing.
 }
 
 func TestTrendPointJSONDoesNotInventMissingProjectPartition(t *testing.T) {
-	point := TrendPoint{
+	point := snapshot.TrendPoint{
 		At:                                 time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC).Format(time.RFC3339),
 		OutputTokensPerSecond:              3,
 		HasOutputTokensPerSecond:           true,
@@ -845,9 +846,9 @@ func TestTrendPointJSONDoesNotInventMissingProjectPartition(t *testing.T) {
 	}
 
 	point.OutputTokensPerSecond = 0
-	point.OutputTokenProjects = []LiveTokenRateProjectSample{}
+	point.OutputTokenProjects = []snapshot.LiveTokenRateProjectSample{}
 	decoded = marshalTrendPointJSON(t, point)
-	var projects []LiveTokenRateProjectSample
+	var projects []snapshot.LiveTokenRateProjectSample
 	if err := json.Unmarshal(decoded["output_token_projects"], &projects); err != nil || projects == nil || len(projects) != 0 {
 		t.Fatalf("measured zero partition = %#v, want empty array", decoded["output_token_projects"])
 	}
@@ -856,20 +857,20 @@ func TestTrendPointJSONDoesNotInventMissingProjectPartition(t *testing.T) {
 func TestMergeRuntimeTrendsMarksSampledMetricPresence(t *testing.T) {
 	generatedAt := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
 	app := &trayApp{}
-	snapshot := Snapshot{
+	snap := snapshot.Snapshot{
 		GeneratedAt: generatedAt.Format(time.RFC3339),
-		Current: CurrentMetrics{
+		Current: snapshot.CurrentMetrics{
 			PIDConcurrency: 0,
 		},
-		Summary: SnapshotSummary{
+		Summary: snapshot.SnapshotSummary{
 			MappingCoveragePct: 0,
 			MappedProcesses:    0,
 			UnmappedProcesses:  0,
 		},
 	}
 
-	snapshot = app.rememberSnapshot(snapshot)
-	oneDay := requireTrendWindow(t, snapshot.RealtimeTrends, "1D")
+	snap = app.rememberSnapshot(snap)
+	oneDay := requireTrendWindow(t, snap.RealtimeTrends, "1D")
 	point := requireTrendPoint(t, oneDay.Points, generatedAt)
 	if !point.RuntimeSampled {
 		t.Fatalf("expected generated runtime sample to be sampled")
@@ -909,7 +910,7 @@ func throughputMinuteFact(at time.Time, tokens int64, project string) Throughput
 	return fact
 }
 
-func countTrendPoints(points []TrendPoint, keep func(TrendPoint) bool) int {
+func countTrendPoints(points []snapshot.TrendPoint, keep func(snapshot.TrendPoint) bool) int {
 	total := 0
 	for _, point := range points {
 		if keep(point) {
@@ -919,7 +920,7 @@ func countTrendPoints(points []TrendPoint, keep func(TrendPoint) bool) int {
 	return total
 }
 
-func requireTrendWindow(t *testing.T, trends TrendSet, label string) *TrendWindow {
+func requireTrendWindow(t *testing.T, trends snapshot.TrendSet, label string) *snapshot.TrendWindow {
 	t.Helper()
 	for i := range trends.Windows {
 		if trends.Windows[i].Range == label {
@@ -930,7 +931,7 @@ func requireTrendWindow(t *testing.T, trends TrendSet, label string) *TrendWindo
 	return nil
 }
 
-func requireThroughputSeries(t *testing.T, window *TrendWindow, key string) *ThroughputTrendSeries {
+func requireThroughputSeries(t *testing.T, window *snapshot.TrendWindow, key string) *snapshot.ThroughputTrendSeries {
 	t.Helper()
 	if window == nil {
 		t.Fatalf("missing trend window for throughput series %s", key)
@@ -944,7 +945,7 @@ func requireThroughputSeries(t *testing.T, window *TrendWindow, key string) *Thr
 	return nil
 }
 
-func requireTrendPoint(t *testing.T, points []TrendPoint, at time.Time) TrendPoint {
+func requireTrendPoint(t *testing.T, points []snapshot.TrendPoint, at time.Time) snapshot.TrendPoint {
 	t.Helper()
 	want := at.Format(time.RFC3339)
 	for _, point := range points {
@@ -953,10 +954,10 @@ func requireTrendPoint(t *testing.T, points []TrendPoint, at time.Time) TrendPoi
 		}
 	}
 	t.Fatalf("missing trend point at %s", want)
-	return TrendPoint{}
+	return snapshot.TrendPoint{}
 }
 
-func requireExactTrendRanges(t *testing.T, trends TrendSet) {
+func requireExactTrendRanges(t *testing.T, trends snapshot.TrendSet) {
 	t.Helper()
 	want := []string{"1D", "3D", "7D", "15D", "30D"}
 	if len(trends.Windows) != len(want) {
@@ -969,7 +970,7 @@ func requireExactTrendRanges(t *testing.T, trends TrendSet) {
 	}
 }
 
-func marshalTrendPointJSON(t *testing.T, point TrendPoint) map[string]json.RawMessage {
+func marshalTrendPointJSON(t *testing.T, point snapshot.TrendPoint) map[string]json.RawMessage {
 	t.Helper()
 	decoded := map[string]json.RawMessage{}
 	mustMarshalAndUnmarshalJSON(t, point, &decoded)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -27,7 +28,7 @@ func TestLoadLocalHistoryStateArchivesColdSamples(t *testing.T) {
 	}
 	var content []byte
 	for i, at := range append(append([]time.Time{}, cold...), hot...) {
-		raw, err := json.Marshal(makeHistorySample(at, CurrentMetrics{PIDConcurrency: i}, SnapshotSummary{}, nil))
+		raw, err := json.Marshal(makeHistorySample(at, snapshot.CurrentMetrics{PIDConcurrency: i}, snapshot.SnapshotSummary{}, nil))
 		if err != nil {
 			t.Fatalf("marshal sample: %v", err)
 		}
@@ -35,7 +36,7 @@ func TestLoadLocalHistoryStateArchivesColdSamples(t *testing.T) {
 	}
 	// Enough stale rows to trip compaction.
 	for i := 0; i < 600; i++ {
-		raw, err := json.Marshal(makeHistorySample(now.Add(-40*24*time.Hour).Add(time.Duration(i)*time.Minute), CurrentMetrics{}, SnapshotSummary{}, nil))
+		raw, err := json.Marshal(makeHistorySample(now.Add(-40*24*time.Hour).Add(time.Duration(i)*time.Minute), snapshot.CurrentMetrics{}, snapshot.SnapshotSummary{}, nil))
 		if err != nil {
 			t.Fatalf("marshal stale sample: %v", err)
 		}
@@ -149,7 +150,7 @@ func TestArchiveAndHotDuplicateIsMergedNotDoubleCounted(t *testing.T) {
 
 	// Simulate the crash window: the archive holds the cold row and the hot file
 	// still holds it too.
-	raw, err := json.Marshal(makeHistorySample(coldAt, CurrentMetrics{PIDConcurrency: 7}, SnapshotSummary{}, nil))
+	raw, err := json.Marshal(makeHistorySample(coldAt, snapshot.CurrentMetrics{PIDConcurrency: 7}, snapshot.SnapshotSummary{}, nil))
 	if err != nil {
 		t.Fatalf("marshal duplicate: %v", err)
 	}
@@ -361,18 +362,18 @@ func TestLifecycleLogCompactionArchivesColdEvents(t *testing.T) {
 // the process rosters, so lifecycle omits them. An aborted snapshot never
 // reaches history, so there they are the only surviving evidence.
 func TestLifecycleKeepsProcessRostersOnlyWhereHistoryHasNone(t *testing.T) {
-	snapshot := Snapshot{
-		RuntimeProcesses: []ProcessRuntimeSummary{{Tool: "claude", PIDCount: 2}},
-		HostAppProcesses: []HostAppProcessSummary{{Name: "agentload", PIDCount: 1}},
+	snap := snapshot.Snapshot{
+		RuntimeProcesses: []snapshot.ProcessRuntimeSummary{{Tool: "claude", PIDCount: 2}},
+		HostAppProcesses: []snapshot.HostAppProcessSummary{{Name: "agentload", PIDCount: 1}},
 	}
 
-	recorded := lifecycleEventFromSnapshot("snapshot_recorded", "", snapshot)
+	recorded := lifecycleEventFromSnapshot("snapshot_recorded", "", snap)
 	if len(recorded.HostAppProcesses) != 0 || len(recorded.RuntimeProcesses) != 0 {
 		t.Fatalf("snapshot_recorded must not repeat rosters history already stores, got %d host / %d runtime",
 			len(recorded.HostAppProcesses), len(recorded.RuntimeProcesses))
 	}
 
-	aborted := lifecycleEventFromSnapshot("snapshot_aborted", "scan cancelled", snapshot)
+	aborted := lifecycleEventFromSnapshot("snapshot_aborted", "scan cancelled", snap)
 	if len(aborted.HostAppProcesses) != 1 || len(aborted.RuntimeProcesses) != 1 {
 		t.Fatalf("snapshot_aborted must keep rosters as the only record, got %d host / %d runtime",
 			len(aborted.HostAppProcesses), len(aborted.RuntimeProcesses))
@@ -401,14 +402,14 @@ func writeHistoryLines(t *testing.T, path string, now time.Time, times []time.Ti
 		content = existing
 	}
 	for i, at := range times {
-		raw, err := json.Marshal(makeHistorySample(at, CurrentMetrics{PIDConcurrency: i}, SnapshotSummary{}, nil))
+		raw, err := json.Marshal(makeHistorySample(at, snapshot.CurrentMetrics{PIDConcurrency: i}, snapshot.SnapshotSummary{}, nil))
 		if err != nil {
 			t.Fatalf("marshal sample: %v", err)
 		}
 		content = append(content, append(raw, '\n')...)
 	}
 	for i := 0; i < stale; i++ {
-		raw, err := json.Marshal(makeHistorySample(now.Add(-40*24*time.Hour).Add(time.Duration(i)*time.Minute), CurrentMetrics{}, SnapshotSummary{}, nil))
+		raw, err := json.Marshal(makeHistorySample(now.Add(-40*24*time.Hour).Add(time.Duration(i)*time.Minute), snapshot.CurrentMetrics{}, snapshot.SnapshotSummary{}, nil))
 		if err != nil {
 			t.Fatalf("marshal stale sample: %v", err)
 		}

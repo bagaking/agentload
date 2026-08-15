@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -54,8 +55,8 @@ func TestLifecycleLogRecordWritesJSONL(t *testing.T) {
 }
 
 func TestLifecycleSnapshotRecordsIncompleteProcessEvidence(t *testing.T) {
-	event := lifecycleEventFromSnapshot("snapshot_aborted", "", Snapshot{
-		ProcessStats: ProcessObservationStats{Incomplete: true, LastKnown: true, Error: "ps failed"},
+	event := lifecycleEventFromSnapshot("snapshot_aborted", "", snapshot.Snapshot{
+		ProcessStats: snapshot.ProcessObservationStats{Incomplete: true, LastKnown: true, Error: "ps failed"},
 	})
 	if event.ProcessStats == nil || !event.ProcessStats.Incomplete || !event.ProcessStats.LastKnown || event.ProcessStats.Error != "ps failed" {
 		t.Fatalf("expected process coverage in lifecycle event, got %+v", event.ProcessStats)

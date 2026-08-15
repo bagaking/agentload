@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"fmt"
 	"sort"
 	"strings"
@@ -12,20 +13,20 @@ import (
 // noticeable part of one rather than at a cost that merely exists.
 const transcriptScanCostWarnMs = 750
 
-func buildDiagnosticsSnapshot(snapshot Snapshot, now time.Time) DiagnosticSnapshot {
-	out := DiagnosticSnapshot{
+func buildDiagnosticsSnapshot(snap snapshot.Snapshot, now time.Time) snapshot.DiagnosticSnapshot {
+	out := snapshot.DiagnosticSnapshot{
 		GeneratedAt: now.Format(time.RFC3339Nano),
 		Export:      diagnosticExportSummary(),
 	}
-	out.AnomalySignals = buildDiagnosticAnomalySignals(snapshot)
-	out.EvidenceGaps = buildDiagnosticEvidenceGaps(snapshot)
-	out.Baselines = buildDiagnosticBaselines(snapshot)
-	out.Capabilities = buildDiagnosticCapabilities(snapshot)
+	out.AnomalySignals = buildDiagnosticAnomalySignals(snap)
+	out.EvidenceGaps = buildDiagnosticEvidenceGaps(snap)
+	out.Baselines = buildDiagnosticBaselines(snap)
+	out.Capabilities = buildDiagnosticCapabilities(snap)
 	return out
 }
 
-func diagnosticExportSummary() DiagnosticExportSummary {
-	return DiagnosticExportSummary{
+func diagnosticExportSummary() snapshot.DiagnosticExportSummary {
+	return snapshot.DiagnosticExportSummary{
 		Endpoint:  "/api/diagnostic-export",
 		Redaction: "sanitized snapshot; local roots, history paths, transcript paths, bundle paths, and command values are omitted or reduced to identity labels",
 		OmittedFields: []string{
@@ -39,14 +40,14 @@ func diagnosticExportSummary() DiagnosticExportSummary {
 	}
 }
 
-func buildDiagnosticExport(snapshot Snapshot, now time.Time) DiagnosticExportSnapshot {
-	if snapshot.Diagnostics.GeneratedAt == "" {
-		snapshot.Diagnostics = buildDiagnosticsSnapshot(snapshot, now)
+func buildDiagnosticExport(snap snapshot.Snapshot, now time.Time) snapshot.DiagnosticExportSnapshot {
+	if snap.Diagnostics.GeneratedAt == "" {
+		snap.Diagnostics = buildDiagnosticsSnapshot(snap, now)
 	}
-	return DiagnosticExportSnapshot{
+	return snapshot.DiagnosticExportSnapshot{
 		FormatVersion: 1,
 		GeneratedAt:   now.Format(time.RFC3339Nano),
-		Snapshot:      snapshot,
+		Snapshot:      snap,
 		OmittedFields: append([]string(nil), diagnosticExportSummary().OmittedFields...),
 		Notes: []string{
 			"Diagnostic export is generated from sanitized local metadata.",
@@ -55,10 +56,10 @@ func buildDiagnosticExport(snapshot Snapshot, now time.Time) DiagnosticExportSna
 	}
 }
 
-func buildDiagnosticAnomalySignals(snapshot Snapshot) []DiagnosticSignalSnapshot {
-	signals := make([]DiagnosticSignalSnapshot, 0, len(snapshot.CoordinationRisk.Signals)+4)
-	for _, risk := range snapshot.CoordinationRisk.Signals {
-		signals = append(signals, DiagnosticSignalSnapshot{
+func buildDiagnosticAnomalySignals(snap snapshot.Snapshot) []snapshot.DiagnosticSignalSnapshot {
+	signals := make([]snapshot.DiagnosticSignalSnapshot, 0, len(snap.CoordinationRisk.Signals)+4)
+	for _, risk := range snap.CoordinationRisk.Signals {
+		signals = append(signals, snapshot.DiagnosticSignalSnapshot{
 			Kind:      risk.Kind,
 			Severity:  normalizeDiagnosticSeverity(risk.Severity),
 			Title:     diagnosticTitleForRisk(risk.Kind),
@@ -67,36 +68,36 @@ func buildDiagnosticAnomalySignals(snapshot Snapshot) []DiagnosticSignalSnapshot
 			Source:    "coordination_risk",
 		})
 	}
-	if snapshot.SystemResources.Supported {
-		if snapshot.SystemResources.CPUPercent >= 85 {
-			signals = append(signals, DiagnosticSignalSnapshot{
+	if snap.SystemResources.Supported {
+		if snap.SystemResources.CPUPercent >= 85 {
+			signals = append(signals, snapshot.DiagnosticSignalSnapshot{
 				Kind:      "system_cpu_pressure",
 				Severity:  "warn",
 				Title:     "High system CPU pressure",
 				Detail:    "Whole-machine CPU is high. This is system context, not agent attribution by itself.",
-				Evidence:  fmt.Sprintf("%.2f%% system CPU", snapshot.SystemResources.CPUPercent),
+				Evidence:  fmt.Sprintf("%.2f%% system CPU", snap.SystemResources.CPUPercent),
 				MetricKey: "system_resources",
 				Source:    "system_resources",
 			})
 		}
-		if snapshot.SystemResources.MemoryUsedPct >= 85 {
-			signals = append(signals, DiagnosticSignalSnapshot{
+		if snap.SystemResources.MemoryUsedPct >= 85 {
+			signals = append(signals, snapshot.DiagnosticSignalSnapshot{
 				Kind:      "system_memory_pressure",
 				Severity:  "warn",
 				Title:     "High memory pressure",
 				Detail:    "Whole-machine memory usage is high. Use the System process rows to find contributing local processes.",
-				Evidence:  fmt.Sprintf("%.2f%% memory used", snapshot.SystemResources.MemoryUsedPct),
+				Evidence:  fmt.Sprintf("%.2f%% memory used", snap.SystemResources.MemoryUsedPct),
 				MetricKey: "system_resources",
 				Source:    "system_resources",
 			})
 		}
-		if snapshot.SystemResources.NetworkPacketIssuePct > 1 {
-			signals = append(signals, DiagnosticSignalSnapshot{
+		if snap.SystemResources.NetworkPacketIssuePct > 1 {
+			signals = append(signals, snapshot.DiagnosticSignalSnapshot{
 				Kind:      "network_packet_issue",
 				Severity:  "info",
 				Title:     "Local network packet issue counter moved",
 				Detail:    "This is a local interface issue rate, not an end-to-end internet packet-loss measurement.",
-				Evidence:  fmt.Sprintf("%.2f%% local packet issue rate", snapshot.SystemResources.NetworkPacketIssuePct),
+				Evidence:  fmt.Sprintf("%.2f%% local packet issue rate", snap.SystemResources.NetworkPacketIssuePct),
 				MetricKey: "system_resources",
 				Source:    "system_resources",
 			})
@@ -106,10 +107,10 @@ func buildDiagnosticAnomalySignals(snapshot Snapshot) []DiagnosticSignalSnapshot
 	return signals
 }
 
-func buildDiagnosticEvidenceGaps(snapshot Snapshot) []DiagnosticSignalSnapshot {
-	gaps := []DiagnosticSignalSnapshot{}
-	if snapshot.ProcessStats.Incomplete {
-		gaps = append(gaps, DiagnosticSignalSnapshot{
+func buildDiagnosticEvidenceGaps(snap snapshot.Snapshot) []snapshot.DiagnosticSignalSnapshot {
+	gaps := []snapshot.DiagnosticSignalSnapshot{}
+	if snap.ProcessStats.Incomplete {
+		gaps = append(gaps, snapshot.DiagnosticSignalSnapshot{
 			Kind:      "process_observation_incomplete",
 			Severity:  "warn",
 			Title:     "Process observation incomplete",
@@ -119,41 +120,41 @@ func buildDiagnosticEvidenceGaps(snapshot Snapshot) []DiagnosticSignalSnapshot {
 			Source:    "process_observer",
 		})
 	}
-	if snapshot.Summary.UnmappedProcesses > 0 {
-		gaps = append(gaps, DiagnosticSignalSnapshot{
+	if snap.Summary.UnmappedProcesses > 0 {
+		gaps = append(gaps, snapshot.DiagnosticSignalSnapshot{
 			Kind:      "unmapped_processes",
 			Severity:  "warn",
 			Title:     "Visible processes without session mapping",
 			Detail:    "These PIDs count as runtime pressure but not confirmed sessions.",
-			Evidence:  fmt.Sprintf("%d unmapped of %d visible PIDs", snapshot.Summary.UnmappedProcesses, snapshot.Current.PIDConcurrency),
+			Evidence:  fmt.Sprintf("%d unmapped of %d visible PIDs", snap.Summary.UnmappedProcesses, snap.Current.PIDConcurrency),
 			MetricKey: "process_pressure",
 			Source:    "live_processes",
 		})
 	}
-	if snapshot.CoordinationRisk.LowConfidenceSessionCount > 0 {
-		gaps = append(gaps, DiagnosticSignalSnapshot{
+	if snap.CoordinationRisk.LowConfidenceSessionCount > 0 {
+		gaps = append(gaps, snapshot.DiagnosticSignalSnapshot{
 			Kind:      "low_confidence_sessions",
 			Severity:  "warn",
 			Title:     "Low-confidence session evidence",
 			Detail:    "Some sessions are present but have weak mapping, timing, or attribution evidence.",
-			Evidence:  fmt.Sprintf("%d low-confidence or missing-transcript sessions", snapshot.CoordinationRisk.LowConfidenceSessionCount),
+			Evidence:  fmt.Sprintf("%d low-confidence or missing-transcript sessions", snap.CoordinationRisk.LowConfidenceSessionCount),
 			MetricKey: "known_sessions",
 			Source:    "live_sessions",
 		})
 	}
-	if snapshot.TranscriptStats.DeferredFiles > 0 || snapshot.TranscriptStats.HistoricalScanDeferred {
-		gaps = append(gaps, DiagnosticSignalSnapshot{
+	if snap.TranscriptStats.DeferredFiles > 0 || snap.TranscriptStats.HistoricalScanDeferred {
+		gaps = append(gaps, snapshot.DiagnosticSignalSnapshot{
 			Kind:      "deferred_transcript_scan",
 			Severity:  "info",
 			Title:     "Transcript scan deferred",
 			Detail:    "Some historical files were deferred, so long-range history can lag behind current evidence.",
-			Evidence:  fmt.Sprintf("%d deferred files", snapshot.TranscriptStats.DeferredFiles),
+			Evidence:  fmt.Sprintf("%d deferred files", snap.TranscriptStats.DeferredFiles),
 			MetricKey: "recent_movement",
 			Source:    "transcript_stats",
 		})
 	}
-	if snapshot.TranscriptStats.ScanCost.AgedOutFiles > 0 {
-		gaps = append(gaps, DiagnosticSignalSnapshot{
+	if snap.TranscriptStats.ScanCost.AgedOutFiles > 0 {
+		gaps = append(gaps, snapshot.DiagnosticSignalSnapshot{
 			Kind:     "evidence_out_of_horizon",
 			Severity: "info",
 			Title:    "Evidence excluded by the history horizon",
@@ -161,37 +162,37 @@ func buildDiagnosticEvidenceGaps(snapshot Snapshot) []DiagnosticSignalSnapshot {
 			// entirely. Without the split, the deferred count above reads as a
 			// much larger gap than it is.
 			Detail:    "These transcripts exist on disk but fall outside the configured history horizon, so they are out of scope rather than a coverage gap.",
-			Evidence:  fmt.Sprintf("%d files older than the history horizon", snapshot.TranscriptStats.ScanCost.AgedOutFiles),
+			Evidence:  fmt.Sprintf("%d files older than the history horizon", snap.TranscriptStats.ScanCost.AgedOutFiles),
 			MetricKey: "recent_movement",
 			Source:    "transcript_stats",
 		})
 	}
 	// A walk is measured once per reconcile and reported until the next one, so
 	// the signal must say the measurement is the last walk, not this pass.
-	if snapshot.TranscriptStats.ScanCost.WalkMeasured && snapshot.TranscriptStats.ScanCost.ElapsedMs >= transcriptScanCostWarnMs {
-		gaps = append(gaps, DiagnosticSignalSnapshot{
+	if snap.TranscriptStats.ScanCost.WalkMeasured && snap.TranscriptStats.ScanCost.ElapsedMs >= transcriptScanCostWarnMs {
+		gaps = append(gaps, snapshot.DiagnosticSignalSnapshot{
 			Kind:      "transcript_scan_expensive",
 			Severity:  "info",
 			Title:     "Evidence walk is expensive",
 			Detail:    "The last full evidence walk took long enough to delay a refresh. Pruned directories show how much the walk already avoids.",
-			Evidence:  fmt.Sprintf("%dms last walk, %d entries visited, %d directories pruned", snapshot.TranscriptStats.ScanCost.ElapsedMs, snapshot.TranscriptStats.ScanCost.VisitedEntries, snapshot.TranscriptStats.ScanCost.PrunedDirectories),
+			Evidence:  fmt.Sprintf("%dms last walk, %d entries visited, %d directories pruned", snap.TranscriptStats.ScanCost.ElapsedMs, snap.TranscriptStats.ScanCost.VisitedEntries, snap.TranscriptStats.ScanCost.PrunedDirectories),
 			MetricKey: "recent_movement",
 			Source:    "transcript_stats",
 		})
 	}
-	if len(snapshot.TranscriptStats.Errors) > 0 {
-		gaps = append(gaps, DiagnosticSignalSnapshot{
+	if len(snap.TranscriptStats.Errors) > 0 {
+		gaps = append(gaps, snapshot.DiagnosticSignalSnapshot{
 			Kind:      "transcript_parse_errors",
 			Severity:  "warn",
 			Title:     "Transcript parse errors",
 			Detail:    "Some local evidence files could not be parsed.",
-			Evidence:  fmt.Sprintf("%d parse errors", len(snapshot.TranscriptStats.Errors)),
+			Evidence:  fmt.Sprintf("%d parse errors", len(snap.TranscriptStats.Errors)),
 			MetricKey: "known_sessions",
 			Source:    "transcript_stats",
 		})
 	}
-	if !snapshot.SystemResources.Supported {
-		gaps = append(gaps, DiagnosticSignalSnapshot{
+	if !snap.SystemResources.Supported {
+		gaps = append(gaps, snapshot.DiagnosticSignalSnapshot{
 			Kind:      "system_resources_unavailable",
 			Severity:  "info",
 			Title:     "System resource sampling unavailable",
@@ -200,19 +201,19 @@ func buildDiagnosticEvidenceGaps(snapshot Snapshot) []DiagnosticSignalSnapshot {
 			Source:    "system_resources",
 		})
 	}
-	if snapshot.SystemResources.Supported && len(snapshot.SystemResources.Notes) > 0 {
-		gaps = append(gaps, DiagnosticSignalSnapshot{
+	if snap.SystemResources.Supported && len(snap.SystemResources.Notes) > 0 {
+		gaps = append(gaps, snapshot.DiagnosticSignalSnapshot{
 			Kind:      "system_resource_sampling_notes",
 			Severity:  "info",
 			Title:     "System resource sampling has caveats",
 			Detail:    "Some whole-machine counters are unavailable or pending. Treat absent rates as unavailable, not zero.",
-			Evidence:  fmt.Sprintf("%d sampler notes", len(snapshot.SystemResources.Notes)),
+			Evidence:  fmt.Sprintf("%d sampler notes", len(snap.SystemResources.Notes)),
 			MetricKey: "system_resources",
 			Source:    "system_resources",
 		})
 	}
-	if snapshot.SystemResources.Supported && snapshot.SystemResources.SampleIntervalSeconds == 0 {
-		gaps = append(gaps, DiagnosticSignalSnapshot{
+	if snap.SystemResources.Supported && snap.SystemResources.SampleIntervalSeconds == 0 {
+		gaps = append(gaps, snapshot.DiagnosticSignalSnapshot{
 			Kind:      "system_resource_rates_pending",
 			Severity:  "info",
 			Title:     "System resource rates need another sample",
@@ -221,13 +222,13 @@ func buildDiagnosticEvidenceGaps(snapshot Snapshot) []DiagnosticSignalSnapshot {
 			Source:    "system_resources",
 		})
 	}
-	if countTokenMeasuredSessions(snapshot.LiveSessions) == 0 && len(snapshot.LiveSessions) > 0 {
-		gaps = append(gaps, DiagnosticSignalSnapshot{
+	if countTokenMeasuredSessions(snap.LiveSessions) == 0 && len(snap.LiveSessions) > 0 {
+		gaps = append(gaps, snapshot.DiagnosticSignalSnapshot{
 			Kind:      "token_usage_unavailable",
 			Severity:  "info",
 			Title:     "Token usage unavailable",
 			Detail:    "No live session currently exposes parsed token usage. This should stay unavailable, not zero.",
-			Evidence:  fmt.Sprintf("%d live sessions without measured token usage", len(snapshot.LiveSessions)),
+			Evidence:  fmt.Sprintf("%d live sessions without measured token usage", len(snap.LiveSessions)),
 			MetricKey: "token_usage",
 			Source:    "live_sessions",
 		})
@@ -236,10 +237,10 @@ func buildDiagnosticEvidenceGaps(snapshot Snapshot) []DiagnosticSignalSnapshot {
 	return gaps
 }
 
-func buildDiagnosticBaselines(snapshot Snapshot) []DiagnosticBaselineSnapshot {
-	mappingValue, mappingStatus := mappingCoverageBaseline(snapshot)
-	measuredTokens := countTokenMeasuredSessions(snapshot.LiveSessions)
-	return []DiagnosticBaselineSnapshot{
+func buildDiagnosticBaselines(snap snapshot.Snapshot) []snapshot.DiagnosticBaselineSnapshot {
+	mappingValue, mappingStatus := mappingCoverageBaseline(snap)
+	measuredTokens := countTokenMeasuredSessions(snap.LiveSessions)
+	return []snapshot.DiagnosticBaselineSnapshot{
 		{
 			Key:       "mapping_coverage",
 			Label:     "PID match coverage",
@@ -251,32 +252,32 @@ func buildDiagnosticBaselines(snapshot Snapshot) []DiagnosticBaselineSnapshot {
 		{
 			Key:       "active_session_ratio",
 			Label:     "Recent movement share",
-			Value:     fmt.Sprintf("%d of %d", snapshot.Current.ActiveBurstConcurrency, snapshot.Current.SessionConcurrency),
-			Status:    recentMovementStatus(snapshot.Current.ActiveBurstConcurrency, snapshot.Current.SessionConcurrency),
+			Value:     fmt.Sprintf("%d of %d", snap.Current.ActiveBurstConcurrency, snap.Current.SessionConcurrency),
+			Status:    recentMovementStatus(snap.Current.ActiveBurstConcurrency, snap.Current.SessionConcurrency),
 			Detail:    "Recent local-log movement compared with known live sessions.",
 			MetricKey: "recent_movement",
 		},
 		{
 			Key:       "low_confidence_sessions",
 			Label:     "Low-confidence sessions",
-			Value:     fmt.Sprintf("%d", snapshot.CoordinationRisk.LowConfidenceSessionCount),
-			Status:    zeroGoodStatus(snapshot.CoordinationRisk.LowConfidenceSessionCount),
+			Value:     fmt.Sprintf("%d", snap.CoordinationRisk.LowConfidenceSessionCount),
+			Status:    zeroGoodStatus(snap.CoordinationRisk.LowConfidenceSessionCount),
 			Detail:    "Sessions with weak mapping or missing transcript timing.",
 			MetricKey: "known_sessions",
 		},
 		{
 			Key:       "token_measured_sessions",
 			Label:     "Measured token sessions",
-			Value:     fmt.Sprintf("%d of %d", measuredTokens, len(snapshot.LiveSessions)),
-			Status:    tokenStatus(measuredTokens, len(snapshot.LiveSessions)),
+			Value:     fmt.Sprintf("%d of %d", measuredTokens, len(snap.LiveSessions)),
+			Status:    tokenStatus(measuredTokens, len(snap.LiveSessions)),
 			Detail:    "Token usage is counted only when parsed usage fields exist and source/confidence marks it measured.",
 			MetricKey: "token_usage",
 		},
 		{
 			Key:       "evidence_walk_cost",
 			Label:     "Evidence walk cost",
-			Value:     scanCostValue(snapshot.TranscriptStats.ScanCost),
-			Status:    scanCostStatus(snapshot.TranscriptStats.ScanCost),
+			Value:     scanCostValue(snap.TranscriptStats.ScanCost),
+			Status:    scanCostStatus(snap.TranscriptStats.ScanCost),
 			Detail:    "Duration of the last full evidence walk. The index reconciles about once per process, so this is the last measured walk, and stays no data until one has run.",
 			MetricKey: "recent_movement",
 		},
@@ -285,14 +286,14 @@ func buildDiagnosticBaselines(snapshot Snapshot) []DiagnosticBaselineSnapshot {
 
 // scanCostValue keeps the zeroing trap in evidence_index.go from surfacing as a
 // measurement: an unmeasured walk has no duration, not a duration of zero.
-func scanCostValue(cost TranscriptScanCost) string {
+func scanCostValue(cost snapshot.TranscriptScanCost) string {
 	if !cost.WalkMeasured {
 		return liveTokenRateStateNoData
 	}
 	return fmt.Sprintf("%dms", cost.ElapsedMs)
 }
 
-func scanCostStatus(cost TranscriptScanCost) string {
+func scanCostStatus(cost snapshot.TranscriptScanCost) string {
 	switch {
 	case !cost.WalkMeasured:
 		return "unavailable"
@@ -303,28 +304,28 @@ func scanCostStatus(cost TranscriptScanCost) string {
 	}
 }
 
-func buildDiagnosticCapabilities(snapshot Snapshot) []DiagnosticCapabilitySnapshot {
+func buildDiagnosticCapabilities(snap snapshot.Snapshot) []snapshot.DiagnosticCapabilitySnapshot {
 	processStatus := "available"
-	if len(snapshot.LiveProcesses) == 0 {
+	if len(snap.LiveProcesses) == 0 {
 		processStatus = "empty"
 	}
 	transcriptStatus := "available"
-	if snapshot.TranscriptStats.ScannedFiles == 0 {
+	if snap.TranscriptStats.ScannedFiles == 0 {
 		transcriptStatus = "empty"
 	}
 	systemStatus := "available"
-	if !snapshot.SystemResources.Supported {
+	if !snap.SystemResources.Supported {
 		systemStatus = "unavailable"
 	}
-	runtimeStatus := snapshot.RuntimeTelemetry.Status
+	runtimeStatus := snap.RuntimeTelemetry.Status
 	if runtimeStatus == "" {
 		runtimeStatus = "not_configured"
 	}
-	runtimeDetail := snapshot.RuntimeTelemetry.Detail
+	runtimeDetail := snap.RuntimeTelemetry.Detail
 	if runtimeDetail == "" {
 		runtimeDetail = "Adapter seam reserved for future local OpenTelemetry or JSONL runtime events."
 	}
-	return []DiagnosticCapabilitySnapshot{
+	return []snapshot.DiagnosticCapabilitySnapshot{
 		{Key: "passive_process_observer", Label: "Passive process observer", Status: processStatus, Detail: "Local visible AI process rows and resource counters."},
 		{Key: "transcript_parser", Label: "Transcript parser", Status: transcriptStatus, Detail: "Local transcript/activity evidence for sessions, roles, timing, and token usage when present."},
 		{Key: "system_resources", Label: "System resource sampler", Status: systemStatus, Detail: "Whole-machine CPU, memory, disk, network, and public thermal-pressure state when available."},
@@ -333,7 +334,7 @@ func buildDiagnosticCapabilities(snapshot Snapshot) []DiagnosticCapabilitySnapsh
 	}
 }
 
-func countTokenMeasuredSessions(sessions []LiveSessionSnapshot) int {
+func countTokenMeasuredSessions(sessions []snapshot.LiveSessionSnapshot) int {
 	count := 0
 	for _, session := range sessions {
 		if hasMeasuredTokenUsage(session) {
@@ -343,19 +344,19 @@ func countTokenMeasuredSessions(sessions []LiveSessionSnapshot) int {
 	return count
 }
 
-func hasMeasuredTokenUsage(session LiveSessionSnapshot) bool {
+func hasMeasuredTokenUsage(session snapshot.LiveSessionSnapshot) bool {
 	return session.TokenUsage != nil &&
 		!session.TokenUsage.Empty() &&
 		strings.EqualFold(strings.TrimSpace(session.TokenUsageSource), "transcript_usage") &&
 		strings.EqualFold(strings.TrimSpace(session.TokenUsageConfidence), "measured")
 }
 
-func mappingCoverageBaseline(snapshot Snapshot) (string, string) {
-	visible := snapshot.Summary.MappedProcesses + snapshot.Summary.UnmappedProcesses
-	if visible == 0 && snapshot.Current.PIDConcurrency == 0 {
+func mappingCoverageBaseline(snap snapshot.Snapshot) (string, string) {
+	visible := snap.Summary.MappedProcesses + snap.Summary.UnmappedProcesses
+	if visible == 0 && snap.Current.PIDConcurrency == 0 {
 		return "no visible PIDs", "empty"
 	}
-	return fmt.Sprintf("%.2f%%", snapshot.Summary.MappingCoveragePct), baselineStatus(snapshot.Summary.MappingCoveragePct, 80, 60)
+	return fmt.Sprintf("%.2f%%", snap.Summary.MappingCoveragePct), baselineStatus(snap.Summary.MappingCoveragePct, 80, 60)
 }
 
 func baselineStatus(value, okAt, warnAt float64) string {
@@ -438,7 +439,7 @@ func diagnosticMetricForRisk(kind string) string {
 	}
 }
 
-func sortDiagnosticSignals(items []DiagnosticSignalSnapshot) {
+func sortDiagnosticSignals(items []snapshot.DiagnosticSignalSnapshot) {
 	sort.SliceStable(items, func(i, j int) bool {
 		if diagnosticSeverityRank(items[i].Severity) != diagnosticSeverityRank(items[j].Severity) {
 			return diagnosticSeverityRank(items[i].Severity) < diagnosticSeverityRank(items[j].Severity)

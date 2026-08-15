@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"bytes"
 	"container/list"
 	"context"
@@ -586,7 +587,7 @@ func TestLiveTokenRateReadAppendKeepsOriginalStateOnScannerError(t *testing.T) {
 	if original.MessageUsage["session-a\x00msg-1"] == nil {
 		t.Fatalf("baseline did not remember the message: %+v", original.MessageUsage)
 	}
-	snapshot := *original.MessageUsage["session-a\x00msg-1"]
+	snap := *original.MessageUsage["session-a\x00msg-1"]
 	orderBefore := liveTokenRateMessageOrderIdentities(&original)
 
 	// A single line past the scanner's token limit makes scanner.Err() report
@@ -609,8 +610,8 @@ func TestLiveTokenRateReadAppendKeepsOriginalStateOnScannerError(t *testing.T) {
 		t.Fatalf("rolled-back offset = %d, want %d", updated.Offset, original.Offset)
 	}
 	usage := original.MessageUsage["session-a\x00msg-1"]
-	if usage == nil || usage.Output != snapshot.Output || !usage.LastSeen.Equal(snapshot.LastSeen) {
-		t.Fatalf("original usage was mutated through the clone: %+v, want %+v", usage, &snapshot)
+	if usage == nil || usage.Output != snap.Output || !usage.LastSeen.Equal(snap.LastSeen) {
+		t.Fatalf("original usage was mutated through the clone: %+v, want %+v", usage, &snap)
 	}
 	if got := liveTokenRateMessageOrderIdentities(&original); !slices.Equal(got, orderBefore) {
 		t.Fatalf("original order changed: %v, want %v", got, orderBefore)
@@ -964,7 +965,7 @@ func TestLiveTokenRateSamplerContinuesAfterPanickingPoll(t *testing.T) {
 
 func TestLiveTokenRateProjectsFromSessionsFailsConflictsToUnassigned(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "session.jsonl")
-	projects := liveTokenRateProjectsFromSessions([]LiveSessionSnapshot{
+	projects := liveTokenRateProjectsFromSessions([]snapshot.LiveSessionSnapshot{
 		{Tool: "codex", Path: path, Project: "project-a"},
 		{Tool: "codex", Path: path, Project: "project-b"},
 	})

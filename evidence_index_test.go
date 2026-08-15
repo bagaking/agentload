@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"context"
 	"fmt"
 	"os"
@@ -340,7 +341,7 @@ func (discovery *flakyTranscriptDiscovery) Discover(ctx context.Context, agentID
 	return discovery.delegate.Discover(ctx, agentID, roots, cutoff)
 }
 
-func (discovery *flakyTranscriptDiscovery) Classify(agentID string, roots []string, path string) (TranscriptFile, bool) {
+func (discovery *flakyTranscriptDiscovery) Classify(agentID string, roots []string, path string) (snapshot.TranscriptFile, bool) {
 	return discovery.delegate.Classify(agentID, roots, path)
 }
 
@@ -378,7 +379,7 @@ func (block *discoveryBlock) wait(ctx context.Context) {
 	}
 }
 
-func (discovery *countingTranscriptDiscovery) Classify(agentID string, roots []string, path string) (TranscriptFile, bool) {
+func (discovery *countingTranscriptDiscovery) Classify(agentID string, roots []string, path string) (snapshot.TranscriptFile, bool) {
 	return discovery.delegate.Classify(agentID, roots, path)
 }
 
@@ -438,7 +439,7 @@ func (discovery *panickingTranscriptDiscovery) Discover(ctx context.Context, age
 	return discovery.delegate.Discover(ctx, agentID, roots, cutoff)
 }
 
-func (discovery *panickingTranscriptDiscovery) Classify(agentID string, roots []string, path string) (TranscriptFile, bool) {
+func (discovery *panickingTranscriptDiscovery) Classify(agentID string, roots []string, path string) (snapshot.TranscriptFile, bool) {
 	return discovery.delegate.Classify(agentID, roots, path)
 }
 
@@ -780,7 +781,7 @@ func TestTranscriptEvidenceIndexSurvivesEntryMissingFileInfo(t *testing.T) {
 	// later snapshot, the watcher mutation path and the reconcile release.
 	badPath := canonicalEvidencePath(filepath.Join(day, "missing-info.jsonl"))
 	index.mu.Lock()
-	index.files[badPath] = discoveredTranscriptFile{File: TranscriptFile{Tool: "codex", Path: badPath}}
+	index.files[badPath] = discoveredTranscriptFile{File: snapshot.TranscriptFile{Tool: "codex", Path: badPath}}
 	index.mu.Unlock()
 
 	got := index.currentSnapshot(cutoff, nil, false)

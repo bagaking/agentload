@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"bufio"
 	"bytes"
 	"encoding/json"
@@ -318,14 +319,14 @@ func (l *lifecycleLog) recordPanic() {
 	}
 }
 
-func lifecycleEventFromSnapshot(event, reason string, snapshot Snapshot) lifecycleEvent {
+func lifecycleEventFromSnapshot(event, reason string, snap snapshot.Snapshot) lifecycleEvent {
 	out := lifecycleEvent{
 		Event:           event,
-		RefreshSlotID:   snapshot.RefreshSlotID,
+		RefreshSlotID:   snap.RefreshSlotID,
 		Reason:          reason,
-		Metrics:         lifecycleMetricsFromSnapshot(snapshot),
-		TranscriptStats: lifecycleTranscriptStatsFromSnapshot(snapshot.TranscriptStats),
-		ProcessStats:    lifecycleProcessStatsFromSnapshot(snapshot.ProcessStats),
+		Metrics:         lifecycleMetricsFromSnapshot(snap),
+		TranscriptStats: lifecycleTranscriptStatsFromSnapshot(snap.TranscriptStats),
+		ProcessStats:    lifecycleProcessStatsFromSnapshot(snap.ProcessStats),
 	}
 	// A recorded snapshot is also appended to history.jsonl, which keeps a strict
 	// superset of these two process rosters, so repeating them here costs ~64% of
@@ -333,13 +334,13 @@ func lifecycleEventFromSnapshot(event, reason string, snapshot Snapshot) lifecyc
 	// out of history (see trayApp.refresh), so for those the rosters are the only
 	// surviving record of what the machine was doing and must stay.
 	if event != "snapshot_recorded" {
-		out.RuntimeProcesses = lifecycleRuntimeProcesses(snapshot.RuntimeProcesses)
-		out.HostAppProcesses = lifecycleHostAppProcesses(snapshot.HostAppProcesses)
+		out.RuntimeProcesses = lifecycleRuntimeProcesses(snap.RuntimeProcesses)
+		out.HostAppProcesses = lifecycleHostAppProcesses(snap.HostAppProcesses)
 	}
 	return out
 }
 
-func lifecycleProcessStatsFromSnapshot(stats ProcessObservationStats) *lifecycleProcessStats {
+func lifecycleProcessStatsFromSnapshot(stats snapshot.ProcessObservationStats) *lifecycleProcessStats {
 	if !stats.Incomplete && !stats.LastKnown && strings.TrimSpace(stats.Error) == "" {
 		return nil
 	}
@@ -350,23 +351,23 @@ func lifecycleProcessStatsFromSnapshot(stats ProcessObservationStats) *lifecycle
 	}
 }
 
-func lifecycleMetricsFromSnapshot(snapshot Snapshot) *lifecycleSnapshotMetrics {
+func lifecycleMetricsFromSnapshot(snap snapshot.Snapshot) *lifecycleSnapshotMetrics {
 	return &lifecycleSnapshotMetrics{
-		PIDConcurrency:         snapshot.Current.PIDConcurrency,
-		SessionConcurrency:     snapshot.Current.SessionConcurrency,
-		ActiveBurstConcurrency: snapshot.Current.ActiveBurstConcurrency,
-		ActiveSessions:         snapshot.Summary.ActiveSessions,
-		IdleSessions:           snapshot.Summary.IdleSessions,
-		MappedProcesses:        snapshot.Summary.MappedProcesses,
-		UnmappedProcesses:      snapshot.Summary.UnmappedProcesses,
-		ProjectCount:           snapshot.Summary.ProjectCount,
-		HotProjectCount:        snapshot.Summary.HotProjectCount,
-		MappingCoveragePct:     snapshot.Summary.MappingCoveragePct,
-		TopProject:             sanitizeProjectNameForClient(snapshot.CoordinationRisk.TopProject),
+		PIDConcurrency:         snap.Current.PIDConcurrency,
+		SessionConcurrency:     snap.Current.SessionConcurrency,
+		ActiveBurstConcurrency: snap.Current.ActiveBurstConcurrency,
+		ActiveSessions:         snap.Summary.ActiveSessions,
+		IdleSessions:           snap.Summary.IdleSessions,
+		MappedProcesses:        snap.Summary.MappedProcesses,
+		UnmappedProcesses:      snap.Summary.UnmappedProcesses,
+		ProjectCount:           snap.Summary.ProjectCount,
+		HotProjectCount:        snap.Summary.HotProjectCount,
+		MappingCoveragePct:     snap.Summary.MappingCoveragePct,
+		TopProject:             sanitizeProjectNameForClient(snap.CoordinationRisk.TopProject),
 	}
 }
 
-func lifecycleTranscriptStatsFromSnapshot(stats TranscriptStats) *lifecycleTranscriptStats {
+func lifecycleTranscriptStatsFromSnapshot(stats snapshot.TranscriptStats) *lifecycleTranscriptStats {
 	return &lifecycleTranscriptStats{
 		ScannedFiles:           stats.ScannedFiles,
 		ParsedFiles:            stats.ParsedFiles,
@@ -379,7 +380,7 @@ func lifecycleTranscriptStatsFromSnapshot(stats TranscriptStats) *lifecycleTrans
 	}
 }
 
-func lifecycleRuntimeProcesses(processes []ProcessRuntimeSummary) []lifecycleRuntimeProcess {
+func lifecycleRuntimeProcesses(processes []snapshot.ProcessRuntimeSummary) []lifecycleRuntimeProcess {
 	out := make([]lifecycleRuntimeProcess, 0, len(processes))
 	for _, process := range processes {
 		out = append(out, lifecycleRuntimeProcess{
@@ -396,7 +397,7 @@ func lifecycleRuntimeProcesses(processes []ProcessRuntimeSummary) []lifecycleRun
 	return out
 }
 
-func lifecycleHostAppProcesses(processes []HostAppProcessSummary) []lifecycleHostAppProcess {
+func lifecycleHostAppProcesses(processes []snapshot.HostAppProcessSummary) []lifecycleHostAppProcess {
 	out := make([]lifecycleHostAppProcess, 0, len(processes))
 	for _, process := range processes {
 		out = append(out, lifecycleHostAppProcess{

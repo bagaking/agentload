@@ -1,7 +1,9 @@
 package main
 
-func defaultMetricRegistry() []MetricRegistryEntry {
-	return []MetricRegistryEntry{
+import "agentload/internal/snapshot"
+
+func defaultMetricRegistry() []snapshot.MetricRegistryEntry {
+	return []snapshot.MetricRegistryEntry{
 		{
 			Key:          "recent_movement",
 			Family:       "workload",

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"os"
 	"path/filepath"
 	"slices"
@@ -371,14 +372,14 @@ func TestExtractSessionHintsIncludesResumeSessionIDs(t *testing.T) {
 func TestResumeSessionHintReachesLiveSessionMapping(t *testing.T) {
 	const sessionID = "abcdef12"
 	now := time.Unix(0, 0).UTC()
-	processes := []LiveProcess{{
+	processes := []snapshot.LiveProcess{{
 		PID:          701,
 		Tool:         "claude",
 		Command:      `claude --resume ` + sessionID,
 		SessionHints: extractSessionHints(`claude --resume ` + sessionID),
 	}}
 
-	sessions, notes := buildLiveSessionsAt(processes, &TranscriptData{Traces: map[string]*SessionTrace{}}, 90*time.Second, now)
+	sessions, notes := buildLiveSessionsAt(processes, &snapshot.TranscriptData{Traces: map[string]*snapshot.SessionTrace{}}, 90*time.Second, now)
 	if len(notes) != 1 || !slices.Contains(notes, "1 live sessions lack transcript timing, so active burst concurrency is conservative.") {
 		t.Fatalf("expected only the untraced-session note, got %#v", notes)
 	}
@@ -430,12 +431,12 @@ func TestRootsFromLiveProcessesCollectsFileAndCommandRoots(t *testing.T) {
 	codexSession := filepath.Join(projectCodexRoot, "sessions", "codex-session.jsonl")
 	claudeSession := filepath.Join(claudeRoot, "projects", "project-a", "events.jsonl")
 	traeSession := filepath.Join(traeRoot, "sessions", "2026", "06", "28", "trae-session.jsonl")
-	processes := []LiveProcess{
+	processes := []snapshot.LiveProcess{
 		{
 			PID:     1,
 			Tool:    "codex",
 			Command: `codexL --home ` + homeCodexRoot + ` as-agent watch`,
-			SessionFiles: []TranscriptFile{
+			SessionFiles: []snapshot.TranscriptFile{
 				{Tool: "codex", Path: codexSession},
 			},
 		},
@@ -443,7 +444,7 @@ func TestRootsFromLiveProcessesCollectsFileAndCommandRoots(t *testing.T) {
 			PID:     2,
 			Tool:    "claude",
 			Command: `claude --config ` + claudeRoot,
-			SessionFiles: []TranscriptFile{
+			SessionFiles: []snapshot.TranscriptFile{
 				{Tool: "claude", Path: claudeSession},
 			},
 		},
@@ -451,7 +452,7 @@ func TestRootsFromLiveProcessesCollectsFileAndCommandRoots(t *testing.T) {
 			PID:     3,
 			Tool:    "trae",
 			Command: `traex --home ` + traeRoot + ` --yolo resume 019f0abc`,
-			SessionFiles: []TranscriptFile{
+			SessionFiles: []snapshot.TranscriptFile{
 				{Tool: "trae", Path: traeSession},
 			},
 		},
@@ -467,7 +468,7 @@ func TestRootsFromLiveProcessesCollectsFileAndCommandRoots(t *testing.T) {
 	if !slices.Equal(roots["trae"], []string{traeRoot}) {
 		t.Fatalf("unexpected trae roots: %#v", roots["trae"])
 	}
-	wantPriority := []TranscriptFile{
+	wantPriority := []snapshot.TranscriptFile{
 		{Tool: "claude", Path: claudeSession},
 		{Tool: "codex", Path: codexSession},
 		{Tool: "trae", Path: traeSession},
@@ -541,7 +542,7 @@ func TestRootsFromLiveProcessesResolvesTranscriptsFromArgvSessionID(t *testing.T
 		}
 	}
 
-	processes := []LiveProcess{
+	processes := []snapshot.LiveProcess{
 		{PID: 1, Tool: "claude", Command: "claude --resume " + claudeSessionID + " --dangerously-skip-permissions"},
 		{PID: 2, Tool: "grok", Command: "grok --resume " + grokSessionID + " --permission-mode bypassPermissions"},
 		// codex and trae pass the session as a bare subcommand argument, which
@@ -557,7 +558,7 @@ func TestRootsFromLiveProcessesResolvesTranscriptsFromArgvSessionID(t *testing.T
 	})
 
 	_, priority := rootsFromLiveProcesses(processes, registry)
-	want := []TranscriptFile{
+	want := []snapshot.TranscriptFile{
 		{Tool: "claude", Path: claudeSession, SessionIDHint: claudeSessionID},
 		{Tool: "codex", Path: codexSession, SessionIDHint: codexSessionID},
 		{Tool: "grok", Path: grokSession, SessionIDHint: grokSessionID},

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"context"
 	"encoding/json"
 	"os"
@@ -113,20 +114,20 @@ func TestHermesAndOpenCodeSQLiteParsers(t *testing.T) {
 
 // parseExtraSessions runs the registry's own parser, so a test exercises the
 // same path production does.
-func parseExtraSessions(t *testing.T, kind, path string) []*SessionTrace {
+func parseExtraSessions(t *testing.T, kind, path string) []*snapshot.SessionTrace {
 	t.Helper()
 	traces, err := extraTranscriptParser{kind: kind}.ParseSessions(
-		context.Background(), TranscriptFile{Tool: kind, Path: path})
+		context.Background(), snapshot.TranscriptFile{Tool: kind, Path: path})
 	if err != nil {
 		t.Fatalf("parse %s sessions: %v", kind, err)
 	}
 	return traces
 }
 
-func parseOneExtraSession(t *testing.T, kind, path string) (*SessionTrace, error) {
+func parseOneExtraSession(t *testing.T, kind, path string) (*snapshot.SessionTrace, error) {
 	t.Helper()
 	traces, err := extraTranscriptParser{kind: kind}.ParseSessions(
-		context.Background(), TranscriptFile{Tool: kind, Path: path})
+		context.Background(), snapshot.TranscriptFile{Tool: kind, Path: path})
 	if err != nil || len(traces) == 0 {
 		return nil, err
 	}
@@ -136,7 +137,7 @@ func parseOneExtraSession(t *testing.T, kind, path string) (*SessionTrace, error
 	return traces[0], err
 }
 
-func traceBySessionID(t *testing.T, traces []*SessionTrace, id string) *SessionTrace {
+func traceBySessionID(t *testing.T, traces []*snapshot.SessionTrace, id string) *snapshot.SessionTrace {
 	t.Helper()
 	for _, trace := range traces {
 		if trace != nil && trace.SessionID == id {
@@ -234,7 +235,7 @@ func TestAgentDatabaseCachesUntilTheWALMoves(t *testing.T) {
 	path := filepath.Join(dir, "state.db")
 	runSQLiteTestSQL(t, path, `PRAGMA journal_mode=WAL; CREATE TABLE sessions (id TEXT PRIMARY KEY, model TEXT, parent_session_id TEXT, started_at REAL, ended_at REAL, input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER, cache_write_tokens INTEGER, reasoning_tokens INTEGER); INSERT INTO sessions VALUES ('h1','model',NULL,1726740000,1726740060,80,20,10,0,5);`)
 
-	file := TranscriptFile{Tool: "hermes", Path: path}
+	file := snapshot.TranscriptFile{Tool: "hermes", Path: path}
 	before, err := agentEvidenceStat(file)
 	if err != nil {
 		t.Fatalf("stat database: %v", err)

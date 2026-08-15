@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"context"
 	"os"
 	"path/filepath"
@@ -94,7 +95,7 @@ func TestParseCodexTraceCapturesTokenUsage(t *testing.T) {
 	if trace == nil {
 		t.Fatalf("expected trace")
 	}
-	want := TokenUsage{
+	want := snapshot.TokenUsage{
 		InputTokens:           23,
 		OutputTokens:          17,
 		CacheReadInputTokens:  9,
@@ -124,7 +125,7 @@ func TestParseCodexTraceCapturesCumulativeTokenUsage(t *testing.T) {
 	if trace == nil {
 		t.Fatalf("expected trace")
 	}
-	want := TokenUsage{
+	want := snapshot.TokenUsage{
 		InputTokens:           180,
 		OutputTokens:          70,
 		CacheReadInputTokens:  40,
@@ -157,7 +158,7 @@ func TestParseCodexLaneTraceCapturesTokenUsage(t *testing.T) {
 	if trace == nil {
 		t.Fatalf("expected trace")
 	}
-	if trace.TokenUsage != (TokenUsage{InputTokens: 10, OutputTokens: 4, TotalTokens: 14}) {
+	if trace.TokenUsage != (snapshot.TokenUsage{InputTokens: 10, OutputTokens: 4, TotalTokens: 14}) {
 		t.Fatalf("unexpected lane token usage: %+v", trace.TokenUsage)
 	}
 }
@@ -255,7 +256,7 @@ func TestParseTranscriptFileTailKeepsHeadMetadata(t *testing.T) {
 		t.Fatalf("write transcript: %v", err)
 	}
 
-	trace, err := newCodexTranscriptParser().ParseTail(TranscriptFile{Tool: "codex", Path: path})
+	trace, err := newCodexTranscriptParser().ParseTail(snapshot.TranscriptFile{Tool: "codex", Path: path})
 	if err != nil {
 		t.Fatalf("parseTranscriptFileTail: %v", err)
 	}
@@ -287,7 +288,7 @@ func TestParseTranscriptFileTailKeepsMetadataAfterLargePreamble(t *testing.T) {
 		t.Fatalf("write transcript: %v", err)
 	}
 
-	trace, err := newCodexTranscriptParser().ParseTail(TranscriptFile{Tool: "codex", Path: path})
+	trace, err := newCodexTranscriptParser().ParseTail(snapshot.TranscriptFile{Tool: "codex", Path: path})
 	if err != nil {
 		t.Fatalf("parseTranscriptFileTail: %v", err)
 	}
@@ -319,7 +320,7 @@ func TestParseTranscriptFileTailKeepsMetadataAfterOversizedPreambleLine(t *testi
 		t.Fatalf("write transcript: %v", err)
 	}
 
-	trace, err := newCodexTranscriptParser().ParseTail(TranscriptFile{Tool: "codex", Path: path})
+	trace, err := newCodexTranscriptParser().ParseTail(snapshot.TranscriptFile{Tool: "codex", Path: path})
 	if err != nil {
 		t.Fatalf("parseTranscriptFileTail: %v", err)
 	}
@@ -485,14 +486,14 @@ func TestTranscriptDataHealthyWaiterRetriesIncompleteFlight(t *testing.T) {
 	key := transcriptCacheKey(observer.adapters.roots(), nil, observer.cfg.IdleGap, observer.cfg.MinInterval, observer.cfg.Lookback)
 	flight := &transcriptScanFlight{
 		done: make(chan struct{}),
-		data: &TranscriptData{
-			Traces: map[string]*SessionTrace{},
+		data: &snapshot.TranscriptData{
+			Traces: map[string]*snapshot.SessionTrace{},
 			Errors: []string{"partial owner result"},
 		},
 	}
 	observer.inflight[key] = flight
 
-	result := make(chan *TranscriptData, 1)
+	result := make(chan *snapshot.TranscriptData, 1)
 	go func() {
 		data, _ := observer.transcriptData(context.Background(), nil, time.Now())
 		result <- data
@@ -627,7 +628,7 @@ func TestPruneFileCacheDropsMissingPaths(t *testing.T) {
 	observer.fileCache[uncandidatedPath] = fileTraceCache{}
 	observer.fileCache[missingPath] = fileTraceCache{}
 
-	observer.pruneFileCache([]transcriptCandidate{{File: TranscriptFile{Tool: "claude", Path: candidatePath}}})
+	observer.pruneFileCache([]transcriptCandidate{{File: snapshot.TranscriptFile{Tool: "claude", Path: candidatePath}}})
 
 	observer.mu.Lock()
 	defer observer.mu.Unlock()
@@ -698,7 +699,7 @@ func TestParseClaudeTraceKeepsSubagentIdentityWhenSidechainBorrowsParentSessionI
 	if trace.ParentThreadID != "parent-session" {
 		t.Fatalf("borrowed sessionId must become the parent link, got %q", trace.ParentThreadID)
 	}
-	if observed := observeSessionRole(LiveSession{Trace: trace}); observed.Role != "subagent" {
+	if observed := observeSessionRole(snapshot.LiveSession{Trace: trace}); observed.Role != "subagent" {
 		t.Fatalf("sidechain transcript must observe as a subagent, got %q", observed.Role)
 	}
 }

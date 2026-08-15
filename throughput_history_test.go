@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"os"
 	"path/filepath"
 	"strings"
@@ -96,7 +97,7 @@ func TestLegacyThroughputMigrationIsBatchedIdempotentAndClearsOldField(t *testin
 			OutputTokenThroughput: &HistoryOutputTokenThroughput{
 				State: liveTokenRateStateLive, WindowSeconds: window,
 				OutputTokensPerSecond: &rate,
-				Projects:              []LiveTokenRateProjectSample{{Project: "alpha", OutputTokensPerSecond: rate}},
+				Projects:              []snapshot.LiveTokenRateProjectSample{{Project: "alpha", OutputTokensPerSecond: rate}},
 			},
 		})
 	}
@@ -159,7 +160,7 @@ func TestLegacyThroughputMigrationRetriesAfterHistoryRewriteFailure(t *testing.T
 			OutputTokenThroughput: &HistoryOutputTokenThroughput{
 				State: liveTokenRateStateLive, WindowSeconds: 300,
 				OutputTokensPerSecond: &rate,
-				Projects:              []LiveTokenRateProjectSample{{Project: "alpha", OutputTokensPerSecond: rate}},
+				Projects:              []snapshot.LiveTokenRateProjectSample{{Project: "alpha", OutputTokensPerSecond: rate}},
 			},
 		}},
 	}
@@ -186,8 +187,8 @@ func TestLegacyThroughputHistoryPreservesDistinctSubsecondTimestamps(t *testing.
 	store := &throughputHistoryStore{path: filepath.Join(t.TempDir(), "throughput.jsonl")}
 	rate := 1.0
 	facts := []LegacyThroughputFact{
-		{At: now.Add(100 * time.Millisecond).Format(time.RFC3339Nano), State: liveTokenRateStateLive, WindowSeconds: 300, OutputTokensPerSecond: &rate, Projects: []LiveTokenRateProjectSample{}},
-		{At: now.Add(900 * time.Millisecond).Format(time.RFC3339Nano), State: liveTokenRateStateLive, WindowSeconds: 300, OutputTokensPerSecond: &rate, Projects: []LiveTokenRateProjectSample{}},
+		{At: now.Add(100 * time.Millisecond).Format(time.RFC3339Nano), State: liveTokenRateStateLive, WindowSeconds: 300, OutputTokensPerSecond: &rate, Projects: []snapshot.LiveTokenRateProjectSample{}},
+		{At: now.Add(900 * time.Millisecond).Format(time.RFC3339Nano), State: liveTokenRateStateLive, WindowSeconds: 300, OutputTokensPerSecond: &rate, Projects: []snapshot.LiveTokenRateProjectSample{}},
 	}
 	if err := store.appendLegacyBatch(facts); err != nil {
 		t.Fatalf("append legacy facts: %v", err)

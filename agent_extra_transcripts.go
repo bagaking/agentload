@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"bufio"
 	"bytes"
 	"context"
@@ -139,16 +140,16 @@ func (d extraTranscriptDiscovery) Discover(ctx context.Context, id string, roots
 	return out
 }
 
-func (d extraTranscriptDiscovery) Classify(id string, roots []string, path string) (TranscriptFile, bool) {
+func (d extraTranscriptDiscovery) Classify(id string, roots []string, path string) (snapshot.TranscriptFile, bool) {
 	if d.kind == "hermes" || d.kind == "opencode" {
 		path = strings.TrimSuffix(path, "-wal")
 	}
 	for _, root := range roots {
 		if rel, ok := relativeEvidencePath(root, path); ok && extraEvidenceRelative(d.kind, rel) {
-			return TranscriptFile{Tool: id, Path: canonicalEvidencePath(path)}, true
+			return snapshot.TranscriptFile{Tool: id, Path: canonicalEvidencePath(path)}, true
 		}
 	}
-	return TranscriptFile{}, false
+	return snapshot.TranscriptFile{}, false
 }
 
 // Process evidence must have a known vendor path. In particular, opening a
@@ -177,7 +178,7 @@ func isHermesEvidencePath(path string) bool {
 	return strings.EqualFold(filepath.Base(path), "state.db")
 }
 
-func isAgentDatabase(file TranscriptFile) bool {
+func isAgentDatabase(file snapshot.TranscriptFile) bool {
 	return (file.Tool == "hermes" || file.Tool == "opencode") && strings.HasSuffix(file.Path, ".db")
 }
 
@@ -189,7 +190,7 @@ type databaseEvidenceInfo struct {
 
 func (i databaseEvidenceInfo) ModTime() time.Time { return i.modified }
 func (i databaseEvidenceInfo) Size() int64        { return i.size }
-func agentEvidenceStat(file TranscriptFile) (os.FileInfo, error) {
+func agentEvidenceStat(file snapshot.TranscriptFile) (os.FileInfo, error) {
 	info, err := os.Stat(file.Path)
 	if err != nil || !isAgentDatabase(file) {
 		return info, err
@@ -210,7 +211,7 @@ func agentEvidenceStat(file TranscriptFile) (os.FileInfo, error) {
 
 type extraTranscriptParser struct{ kind string }
 
-func (p extraTranscriptParser) ParseSessions(ctx context.Context, file TranscriptFile) ([]*SessionTrace, error) {
+func (p extraTranscriptParser) ParseSessions(ctx context.Context, file snapshot.TranscriptFile) ([]*snapshot.SessionTrace, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -224,10 +225,10 @@ func (p extraTranscriptParser) ParseSessions(ctx context.Context, file Transcrip
 	if trace == nil {
 		return nil, err
 	}
-	return []*SessionTrace{trace}, err
+	return []*snapshot.SessionTrace{trace}, err
 }
 
-func parseHermesDatabaseSessions(ctx context.Context, path string) ([]*SessionTrace, error) {
+func parseHermesDatabaseSessions(ctx context.Context, path string) ([]*snapshot.SessionTrace, error) {
 	columns, err := sqliteTableColumns(ctx, path, "sessions")
 	if err != nil {
 		return nil, err
@@ -250,7 +251,7 @@ func parseHermesDatabaseSessions(ctx context.Context, path string) ([]*SessionTr
 	if err != nil || len(rows) == 0 {
 		return nil, err
 	}
-	byID := make(map[string]*SessionTrace, len(rows))
+	byID := make(map[string]*snapshot.SessionTrace, len(rows))
 	for _, row := range rows {
 		byID[row["id"]] = hermesTraceFromRow(path, row)
 	}
@@ -272,7 +273,7 @@ func parseHermesDatabaseSessions(ctx context.Context, path string) ([]*SessionTr
 	if usageColumns, usageErr := sqliteTableColumns(ctx, path, "session_model_usage"); usageErr == nil && len(usageColumns) > 0 {
 		usageRows, queryErr := readSQLiteRows(ctx, path, `SELECT session_id, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens, first_seen, last_seen FROM session_model_usage`)
 		if queryErr == nil {
-			usageBySession := map[string]TokenUsage{}
+			usageBySession := map[string]snapshot.TokenUsage{}
 			for _, row := range usageRows {
 				sid := row["session_id"]
 				if byID[sid] == nil {
@@ -303,8 +304,8 @@ func parseHermesDatabaseSessions(ctx context.Context, path string) ([]*SessionTr
 	return finalizedExtraTraces(byID), nil
 }
 
-func finalizedExtraTraces(byID map[string]*SessionTrace) []*SessionTrace {
-	traces := make([]*SessionTrace, 0, len(byID))
+func finalizedExtraTraces(byID map[string]*snapshot.SessionTrace) []*snapshot.SessionTrace {
+	traces := make([]*snapshot.SessionTrace, 0, len(byID))
 	for _, trace := range byID {
 		finalizeTrace(trace)
 		if nonEmptyTrace(trace) != nil {
@@ -315,15 +316,15 @@ func finalizedExtraTraces(byID map[string]*SessionTrace) []*SessionTrace {
 	return traces
 }
 
-func hermesTraceFromRow(path string, row map[string]string) *SessionTrace {
-	trace := &SessionTrace{Tool: "hermes", Path: path, SessionID: row["id"], IndependentlyRun: row["parent_session_id"] == ""}
+func hermesTraceFromRow(path string, row map[string]string) *snapshot.SessionTrace {
+	trace := &snapshot.SessionTrace{Tool: "hermes", Path: path, SessionID: row["id"], IndependentlyRun: row["parent_session_id"] == ""}
 	if parent := row["parent_session_id"]; parent != "" {
 		trace.ParentThreadID, trace.ThreadSource, trace.RoleHintSource, trace.IndependentlyRun = parent, "subagent", "parent_session_id", false
 	}
 	if start := extraTimeValue(row["started_at"]); !start.IsZero() {
 		trace.EventTimes = append(trace.EventTimes, start)
 	}
-	trace.TokenUsage = TokenUsage{InputTokens: extraIntFromString(row["input_tokens"]), OutputTokens: extraIntFromString(row["output_tokens"]), CacheReadInputTokens: extraIntFromString(row["cache_read_tokens"]), CacheCreationInputTokens: extraIntFromString(row["cache_write_tokens"]), ReasoningOutputTokens: extraIntFromString(row["reasoning_tokens"])}
+	trace.TokenUsage = snapshot.TokenUsage{InputTokens: extraIntFromString(row["input_tokens"]), OutputTokens: extraIntFromString(row["output_tokens"]), CacheReadInputTokens: extraIntFromString(row["cache_read_tokens"]), CacheCreationInputTokens: extraIntFromString(row["cache_write_tokens"]), ReasoningOutputTokens: extraIntFromString(row["reasoning_tokens"])}
 	trace.TokenUsage.ReasoningOutputTokens = min(trace.TokenUsage.ReasoningOutputTokens, trace.TokenUsage.OutputTokens)
 	trace.TokenUsage.OutputTokens -= trace.TokenUsage.ReasoningOutputTokens
 	trace.TokenUsage.TotalTokens = trace.TokenUsage.DerivedTotal() + trace.TokenUsage.ReasoningOutputTokens
@@ -356,12 +357,12 @@ func extraIntFromString(value string) int {
 
 // Current OpenCode uses one shared database; message tokens take precedence
 // over step-finish part tokens, which take precedence over session aggregates.
-func parseOpenCodeDatabaseSessions(ctx context.Context, path string) ([]*SessionTrace, error) {
+func parseOpenCodeDatabaseSessions(ctx context.Context, path string) ([]*snapshot.SessionTrace, error) {
 	rows, err := readSQLiteRows(ctx, path, `SELECT id, session_id, time_created, data FROM message ORDER BY time_created, id`)
 	if err != nil {
 		return nil, err
 	}
-	byID := map[string]*SessionTrace{}
+	byID := map[string]*snapshot.SessionTrace{}
 	messageHasUsage := map[string]bool{}
 	sessionHasUsage := map[string]bool{}
 	messageSessions := map[string]string{}
@@ -380,7 +381,7 @@ func parseOpenCodeDatabaseSessions(ctx context.Context, path string) ([]*Session
 		}
 		trace := byID[sid]
 		if trace == nil {
-			trace = &SessionTrace{Tool: "opencode", Path: path, SessionID: sid}
+			trace = &snapshot.SessionTrace{Tool: "opencode", Path: path, SessionID: sid}
 			byID[sid] = trace
 		}
 		trace.EventTimes = append(trace.EventTimes, at)
@@ -460,7 +461,7 @@ func parseOpenCodeDatabaseSessions(ctx context.Context, path string) ([]*Session
 			trace.ParentThreadID, trace.ThreadSource, trace.RoleHintSource = parent, "subagent", "parent_id"
 		}
 		if !sessionHasUsage[trace.SessionID] {
-			u := TokenUsage{InputTokens: extraIntFromString(row["tokens_input"]), OutputTokens: extraIntFromString(row["tokens_output"]), ReasoningOutputTokens: extraIntFromString(row["tokens_reasoning"]), CacheReadInputTokens: extraIntFromString(row["tokens_cache_read"]), CacheCreationInputTokens: extraIntFromString(row["tokens_cache_write"])}
+			u := snapshot.TokenUsage{InputTokens: extraIntFromString(row["tokens_input"]), OutputTokens: extraIntFromString(row["tokens_output"]), ReasoningOutputTokens: extraIntFromString(row["tokens_reasoning"]), CacheReadInputTokens: extraIntFromString(row["tokens_cache_read"]), CacheCreationInputTokens: extraIntFromString(row["tokens_cache_write"])}
 			u.TotalTokens = u.DerivedTotal() + u.ReasoningOutputTokens
 			trace.TokenUsage = u
 		}
@@ -501,7 +502,7 @@ func readSQLiteRows(ctx context.Context, path, query string) ([]map[string]strin
 	}
 	return out, nil
 }
-func (p extraTranscriptParser) Parse(file TranscriptFile) (*SessionTrace, error) {
+func (p extraTranscriptParser) Parse(file snapshot.TranscriptFile) (*snapshot.SessionTrace, error) {
 	traces, err := p.ParseSessions(context.Background(), file)
 	if len(traces) > 1 {
 		return nil, errors.New("database contains multiple sessions; use ParseSessions")
@@ -511,28 +512,28 @@ func (p extraTranscriptParser) Parse(file TranscriptFile) (*SessionTrace, error)
 	}
 	return traces[0], err
 }
-func (p extraTranscriptParser) ParseTail(file TranscriptFile) (*SessionTrace, error) {
+func (p extraTranscriptParser) ParseTail(file snapshot.TranscriptFile) (*snapshot.SessionTrace, error) {
 	return p.Parse(file)
 }
-func (p extraTranscriptParser) ParseAppend(TranscriptFile, *SessionTrace, int64) (*SessionTrace, error) {
+func (p extraTranscriptParser) ParseAppend(snapshot.TranscriptFile, *snapshot.SessionTrace, int64) (*snapshot.SessionTrace, error) {
 	return nil, errors.New("this store rewrites records; full snapshot required")
 }
-func (p extraTranscriptParser) CanAppend(TranscriptFile) bool { return false }
+func (p extraTranscriptParser) CanAppend(snapshot.TranscriptFile) bool { return false }
 
-func cloneSessionTraces(in []*SessionTrace) []*SessionTrace {
-	out := make([]*SessionTrace, len(in))
+func cloneSessionTraces(in []*snapshot.SessionTrace) []*snapshot.SessionTrace {
+	out := make([]*snapshot.SessionTrace, len(in))
 	for i, t := range in {
 		out[i] = cloneSessionTrace(t)
 	}
 	return out
 }
-func insertSessionTraces(data *TranscriptData, traces []*SessionTrace) {
+func insertSessionTraces(data *snapshot.TranscriptData, traces []*snapshot.SessionTrace) {
 	for _, trace := range traces {
 		if nonEmptyTrace(trace) == nil {
 			continue
 		}
 		key := trace.Path
-		if isAgentDatabase(TranscriptFile{Tool: trace.Tool, Path: trace.Path}) {
+		if isAgentDatabase(snapshot.TranscriptFile{Tool: trace.Tool, Path: trace.Path}) {
 			key += "\x00" + trace.SessionID
 		}
 		data.Traces[key] = cloneSessionTrace(trace)
@@ -654,7 +655,7 @@ func messageTimestamp(m localMessage) time.Time {
 	}
 	return parseTimestampString(m.CreateTime)
 }
-func messageUsage(kind string, m localMessage) TokenUsage {
+func messageUsage(kind string, m localMessage) snapshot.TokenUsage {
 	u := m.Usage
 	if u == nil {
 		u = m.Tokens
@@ -663,9 +664,9 @@ func messageUsage(kind string, m localMessage) TokenUsage {
 		u = m.UsageMetadata
 	}
 	if u == nil {
-		return TokenUsage{}
+		return snapshot.TokenUsage{}
 	}
-	t := TokenUsage{InputTokens: max(0, u.Input), OutputTokens: max(0, u.Output), CacheReadInputTokens: max(0, u.CacheRead), CacheCreationInputTokens: max(0, u.CacheWrite), ReasoningOutputTokens: max(0, max(u.Reasoning, u.ReasoningTokens)), TotalTokens: max(0, u.Total)}
+	t := snapshot.TokenUsage{InputTokens: max(0, u.Input), OutputTokens: max(0, u.Output), CacheReadInputTokens: max(0, u.CacheRead), CacheCreationInputTokens: max(0, u.CacheWrite), ReasoningOutputTokens: max(0, max(u.Reasoning, u.ReasoningTokens)), TotalTokens: max(0, u.Total)}
 	switch kind {
 	case "gemini":
 		if m.UsageMetadata != nil {
@@ -709,8 +710,8 @@ func localMessageRole(m localMessage) string {
 	return role
 }
 
-func parseExtraTraceContext(ctx context.Context, kind string, file TranscriptFile) (*SessionTrace, error) {
-	trace := &SessionTrace{Tool: kind, Path: file.Path, SessionID: genericTranscriptSessionID(file.Path)}
+func parseExtraTraceContext(ctx context.Context, kind string, file snapshot.TranscriptFile) (*snapshot.SessionTrace, error) {
+	trace := &snapshot.SessionTrace{Tool: kind, Path: file.Path, SessionID: genericTranscriptSessionID(file.Path)}
 	messages := map[string]localMessage{}
 	childUsage := map[string]localUsage{}
 	ordinal := 0

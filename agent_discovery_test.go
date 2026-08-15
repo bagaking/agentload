@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"context"
 	"os"
 	"path/filepath"
@@ -29,7 +30,7 @@ func TestRegistryDiscoveryIsInjectedAndPriorityFilesAreDirect(t *testing.T) {
 		context.Background(),
 		evidenceIndex,
 		registry,
-		[]TranscriptFile{{Tool: "test-agent", Path: priorityPath}},
+		[]snapshot.TranscriptFile{{Tool: "test-agent", Path: priorityPath}},
 		time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC),
 		time.Time{},
 	)
@@ -169,19 +170,19 @@ type recordingTranscriptDiscovery struct {
 
 type inertTranscriptParser struct{}
 
-func (inertTranscriptParser) Parse(TranscriptFile) (*SessionTrace, error) {
+func (inertTranscriptParser) Parse(snapshot.TranscriptFile) (*snapshot.SessionTrace, error) {
 	return nil, nil
 }
 
-func (inertTranscriptParser) ParseTail(TranscriptFile) (*SessionTrace, error) {
+func (inertTranscriptParser) ParseTail(snapshot.TranscriptFile) (*snapshot.SessionTrace, error) {
 	return nil, nil
 }
 
-func (inertTranscriptParser) ParseAppend(TranscriptFile, *SessionTrace, int64) (*SessionTrace, error) {
+func (inertTranscriptParser) ParseAppend(snapshot.TranscriptFile, *snapshot.SessionTrace, int64) (*snapshot.SessionTrace, error) {
 	return nil, nil
 }
 
-func (inertTranscriptParser) CanAppend(TranscriptFile) bool {
+func (inertTranscriptParser) CanAppend(snapshot.TranscriptFile) bool {
 	return false
 }
 
@@ -190,8 +191,8 @@ func (d *recordingTranscriptDiscovery) Discover(context.Context, string, []strin
 	return transcriptDiscoveryResult{}
 }
 
-func (*recordingTranscriptDiscovery) Classify(string, []string, string) (TranscriptFile, bool) {
-	return TranscriptFile{}, false
+func (*recordingTranscriptDiscovery) Classify(string, []string, string) (snapshot.TranscriptFile, bool) {
+	return snapshot.TranscriptFile{}, false
 }
 
 func writeDiscoveryFixture(t *testing.T, path string, modTime time.Time) {

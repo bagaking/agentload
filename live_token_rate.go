@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"bufio"
 	"bytes"
 	"container/list"
@@ -143,7 +144,7 @@ func liveTokenRateSessionKey(tool, path string) string {
 	return tool + "\x00" + path
 }
 
-func liveTokenRateProjectsFromSessions(sessions []LiveSessionSnapshot) map[string]string {
+func liveTokenRateProjectsFromSessions(sessions []snapshot.LiveSessionSnapshot) map[string]string {
 	projects := make(map[string]string, len(sessions))
 	for _, session := range sessions {
 		key := liveTokenRateSessionKey(session.Tool, session.Path)
@@ -1128,7 +1129,7 @@ func (sampler *liveTokenRateSampler) publishLocked(now time.Time) {
 	sampler.publishedMu.Unlock()
 }
 
-func (sampler *liveTokenRateSampler) sample(now time.Time) LiveTokenRateSample {
+func (sampler *liveTokenRateSampler) sample(now time.Time) snapshot.LiveTokenRateSample {
 	if now.IsZero() {
 		now = time.Now()
 	}
@@ -1165,13 +1166,13 @@ func (sampler *liveTokenRateSampler) sample(now time.Time) LiveTokenRateSample {
 	return sample
 }
 
-func liveTokenRateProjectSamples(projects map[string]liveTokenRateProjectFacts, window time.Duration) []LiveTokenRateProjectSample {
-	out := make([]LiveTokenRateProjectSample, 0, len(projects))
+func liveTokenRateProjectSamples(projects map[string]liveTokenRateProjectFacts, window time.Duration) []snapshot.LiveTokenRateProjectSample {
+	out := make([]snapshot.LiveTokenRateProjectSample, 0, len(projects))
 	for project, facts := range projects {
 		if facts.TokensInWindow <= 0 {
 			continue
 		}
-		out = append(out, LiveTokenRateProjectSample{
+		out = append(out, snapshot.LiveTokenRateProjectSample{
 			Project:               project,
 			OutputTokensPerSecond: float64(facts.TokensInWindow) / window.Seconds(),
 			ActiveSessions:        len(facts.Sessions),

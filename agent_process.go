@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -52,7 +53,7 @@ type builtinProcessIdentity struct {
 	// transcriptForSessionID is the inverse of sessionIDHint: it turns a session
 	// id read off a process command line back into the transcript on disk. A
 	// vendor leaves it nil when its derived session id is not the argv id.
-	transcriptForSessionID func(roots []string, sessionID string) (TranscriptFile, bool)
+	transcriptForSessionID func(roots []string, sessionID string) (snapshot.TranscriptFile, bool)
 	commandRootPattern     *regexp.Regexp
 }
 
@@ -69,12 +70,12 @@ func (p builtinProcessIdentity) DisplayIdentity(command processCommand) string {
 	return p.agentID
 }
 
-func (p builtinProcessIdentity) TranscriptFileForPath(path string) (TranscriptFile, bool) {
+func (p builtinProcessIdentity) TranscriptFileForPath(path string) (snapshot.TranscriptFile, bool) {
 	path = filepath.Clean(strings.TrimSpace(path))
 	if path == "" || p.transcriptPath == nil || !p.transcriptPath(path) {
-		return TranscriptFile{}, false
+		return snapshot.TranscriptFile{}, false
 	}
-	file := TranscriptFile{Tool: p.agentID, Path: path}
+	file := snapshot.TranscriptFile{Tool: p.agentID, Path: path}
 	if p.sessionIDHint != nil {
 		file.SessionIDHint = p.sessionIDHint(path)
 	}
@@ -88,9 +89,9 @@ func (p builtinProcessIdentity) RootFromTranscriptPath(path string) string {
 	return p.rootFromTranscript(path)
 }
 
-func (p builtinProcessIdentity) TranscriptForSessionID(roots []string, sessionID string) (TranscriptFile, bool) {
+func (p builtinProcessIdentity) TranscriptForSessionID(roots []string, sessionID string) (snapshot.TranscriptFile, bool) {
 	if p.transcriptForSessionID == nil {
-		return TranscriptFile{}, false
+		return snapshot.TranscriptFile{}, false
 	}
 	return p.transcriptForSessionID(roots, sessionID)
 }
@@ -124,7 +125,7 @@ func newClaudeProcessIdentity() agentProcessIdentity {
 		},
 		rootFromTranscript: func(path string) string { return configRootFromPath(path, ".claude") },
 		sessionIDHint:      genericTranscriptSessionID,
-		transcriptForSessionID: func(roots []string, sessionID string) (TranscriptFile, bool) {
+		transcriptForSessionID: func(roots []string, sessionID string) (snapshot.TranscriptFile, bool) {
 			patterns := make([]string, 0, len(roots))
 			for _, root := range roots {
 				patterns = append(patterns, filepath.Join(root, "projects", "*", sessionID+".jsonl"))
@@ -174,7 +175,7 @@ func newCodexProcessIdentity() agentProcessIdentity {
 		},
 		rootFromTranscript: func(path string) string { return configRootFromPath(path, ".codex") },
 		sessionIDHint:      codexTranscriptSessionID,
-		transcriptForSessionID: func(roots []string, sessionID string) (TranscriptFile, bool) {
+		transcriptForSessionID: func(roots []string, sessionID string) (snapshot.TranscriptFile, bool) {
 			patterns := datedRolloutSessionGlobs(roots, "sessions", sessionID)
 			for _, root := range roots {
 				patterns = append(patterns, filepath.Join(root, "archived_sessions", "rollout-*-"+sessionID+".jsonl"))
@@ -300,7 +301,7 @@ func newTraeProcessIdentity() agentProcessIdentity {
 		},
 		rootFromTranscript: traeRootFromPath,
 		sessionIDHint:      genericTranscriptSessionID,
-		transcriptForSessionID: func(roots []string, sessionID string) (TranscriptFile, bool) {
+		transcriptForSessionID: func(roots []string, sessionID string) (snapshot.TranscriptFile, bool) {
 			// sessionIDHint derives the whole filename stem, but the parsed
 			// trace does not keep it: processTraeTraceLine overwrites SessionID
 			// with session_meta's payload.id, which is the bare uuid on the
@@ -326,7 +327,7 @@ func newGrokProcessIdentity() agentProcessIdentity {
 		},
 		rootFromTranscript: func(path string) string { return configRootFromPath(path, ".grok") },
 		sessionIDHint:      grokTranscriptSessionID,
-		transcriptForSessionID: func(roots []string, sessionID string) (TranscriptFile, bool) {
+		transcriptForSessionID: func(roots []string, sessionID string) (snapshot.TranscriptFile, bool) {
 			patterns := make([]string, 0, len(roots))
 			for _, root := range roots {
 				patterns = append(patterns, filepath.Join(root, "sessions", "*", sessionID, grokTranscriptFileName))
@@ -609,9 +610,9 @@ func uuidV7Time(sessionID string) (time.Time, bool) {
 // transcriptFromSessionGlob returns the newest existing file matching one of
 // the patterns. It never constructs a path it has not seen on disk: a session
 // with no transcript resolves to nothing rather than to a plausible guess.
-func transcriptFromSessionGlob(agentID, sessionID string, patterns []string) (TranscriptFile, bool) {
+func transcriptFromSessionGlob(agentID, sessionID string, patterns []string) (snapshot.TranscriptFile, bool) {
 	if !sessionIDPattern.MatchString(sessionID) {
-		return TranscriptFile{}, false
+		return snapshot.TranscriptFile{}, false
 	}
 	newest := ""
 	var newestAt time.Time
@@ -631,7 +632,7 @@ func transcriptFromSessionGlob(agentID, sessionID string, patterns []string) (Tr
 		}
 	}
 	if newest == "" {
-		return TranscriptFile{}, false
+		return snapshot.TranscriptFile{}, false
 	}
-	return TranscriptFile{Tool: agentID, Path: filepath.Clean(newest), SessionIDHint: sessionID}, true
+	return snapshot.TranscriptFile{Tool: agentID, Path: filepath.Clean(newest), SessionIDHint: sessionID}, true
 }

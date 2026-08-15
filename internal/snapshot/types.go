@@ -1,4 +1,14 @@
-package main
+// Package snapshot holds the data types the observer produces and the HTTP
+// layer serves.
+//
+// They live in their own package because the Snapshot tree is deliberately
+// cross-cutting: it embeds nearly every other type, and every other package
+// both produces and consumes parts of it. Distributing these structs into the
+// packages that own their behavior would make those packages import each other
+// in cycles -- the observer needs the metrics types, metrics needs the history
+// types, history needs the observer's. A leaf with no internal imports breaks
+// all of them at once.
+package snapshot
 
 import (
 	"encoding/json"
@@ -434,7 +444,7 @@ func (p TrendPoint) MarshalJSON() ([]byte, error) {
 			payload.OutputTokenActiveSessions = jsonValue(p.OutputTokenActiveSessions)
 		}
 		if p.HasOutputTokensPerSecond && p.OutputTokenProjects != nil {
-			projects := cloneLiveTokenRateProjectSamples(p.OutputTokenProjects)
+			projects := CloneLiveTokenRateProjectSamples(p.OutputTokenProjects)
 			payload.OutputTokenProjects = &projects
 		}
 		payload.OutputTokenThroughputState = p.OutputTokenThroughputState
@@ -443,6 +453,67 @@ func (p TrendPoint) MarshalJSON() ([]byte, error) {
 		payload.ThroughputSampled = jsonValue(true)
 	}
 	return json.Marshal(payload)
+}
+
+func (u TokenUsage) Empty() bool {
+	return u.InputTokens <= 0 &&
+		u.OutputTokens <= 0 &&
+		u.CacheCreationInputTokens <= 0 &&
+		u.CacheReadInputTokens <= 0 &&
+		u.ReasoningOutputTokens <= 0 &&
+		u.TotalTokens <= 0
+}
+
+func (u TokenUsage) DerivedTotal() int {
+	return u.InputTokens + u.OutputTokens + u.CacheCreationInputTokens + u.CacheReadInputTokens
+}
+
+func (u *TokenUsage) Add(other TokenUsage) {
+	if u == nil || other.Empty() {
+		return
+	}
+	u.InputTokens += other.InputTokens
+	u.OutputTokens += other.OutputTokens
+	u.CacheCreationInputTokens += other.CacheCreationInputTokens
+	u.CacheReadInputTokens += other.CacheReadInputTokens
+	u.ReasoningOutputTokens += other.ReasoningOutputTokens
+	if other.TotalTokens > 0 {
+		u.TotalTokens += other.TotalTokens
+	} else {
+		u.TotalTokens += other.DerivedTotal()
+	}
+}
+
+func (u *TokenUsage) Max(other TokenUsage) {
+	if u == nil || other.Empty() {
+		return
+	}
+	u.InputTokens = maxInt(u.InputTokens, other.InputTokens)
+	u.OutputTokens = maxInt(u.OutputTokens, other.OutputTokens)
+	u.CacheCreationInputTokens = maxInt(u.CacheCreationInputTokens, other.CacheCreationInputTokens)
+	u.CacheReadInputTokens = maxInt(u.CacheReadInputTokens, other.CacheReadInputTokens)
+	u.ReasoningOutputTokens = maxInt(u.ReasoningOutputTokens, other.ReasoningOutputTokens)
+	u.TotalTokens = maxInt(u.TotalTokens, other.TotalTokens)
+	if u.TotalTokens == 0 {
+		u.TotalTokens = u.DerivedTotal()
+	}
+}
+
+func maxInt(a, b int) int {
+	if b > a {
+		return b
+	}
+	return a
+}
+
+// CloneLiveTokenRateProjectSamples copies the per-project samples. Exported
+// because both the marshaller here and the history/live paths in the main
+// package need the same copy semantics.
+func CloneLiveTokenRateProjectSamples(projects []LiveTokenRateProjectSample) []LiveTokenRateProjectSample {
+	if projects == nil {
+		return nil
+	}
+	return append([]LiveTokenRateProjectSample{}, projects...)
 }
 
 func jsonValue[T any](v T) *T {
@@ -783,17 +854,11 @@ type TranscriptData struct {
 	// every reconcile and previously discarded it, so "where is the scan
 	// spending itself" was unanswerable from outside.
 	ScanCost TranscriptScanCost
-	// evidenceRevision is internal provenance for cache publication. It is not
+	// EvidenceRevision is provenance for cache publication. It is not
 	// serialized; public callers receive CoverageIncomplete when the revision
-	// changed during collection or parsing.
-	evidenceRevision uint64
-}
-
-type transcriptCacheState struct {
-	Key              string
-	ExpiresAt        time.Time
-	EvidenceRevision uint64
-	Data             *TranscriptData
+	// changed during collection or parsing. Exported only because the scan
+	// that sets it now lives in a different package than the type.
+	EvidenceRevision uint64 `json:"-"`
 }
 
 type LiveProcess struct {

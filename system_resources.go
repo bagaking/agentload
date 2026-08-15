@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"sync"
 	"time"
 )
@@ -52,7 +53,7 @@ var backgroundSystemResourceSampler = struct {
 	running    bool
 	have       bool
 	generation uint64
-	latest     SystemResourceSnapshot
+	latest     snapshot.SystemResourceSnapshot
 	latestAt   time.Time
 	staleAfter time.Duration
 	stop       chan struct{}
@@ -77,7 +78,7 @@ func startSystemResourceSampler(interval time.Duration) {
 	}
 	s.running = true
 	s.have = false
-	s.latest = SystemResourceSnapshot{}
+	s.latest = snapshot.SystemResourceSnapshot{}
 	s.latestAt = time.Time{}
 	s.staleAfter = interval * 3
 	s.generation++
@@ -126,7 +127,7 @@ func releaseSystemResourceSamplerGeneration(generation uint64, done chan struct{
 	if s.running && s.generation == generation && s.done == done {
 		s.running = false
 		s.have = false
-		s.latest = SystemResourceSnapshot{}
+		s.latest = snapshot.SystemResourceSnapshot{}
 		s.latestAt = time.Time{}
 		s.staleAfter = 0
 		s.stop = nil
@@ -139,7 +140,7 @@ func releaseSystemResourceSamplerGeneration(generation uint64, done chan struct{
 	// cannot wipe the new generation's baseline.
 }
 
-func runSystemResourceSample(generation uint64, sample func() SystemResourceSnapshot) {
+func runSystemResourceSample(generation uint64, sample func() snapshot.SystemResourceSnapshot) {
 	if sample == nil {
 		return
 	}
@@ -160,7 +161,7 @@ func invalidateBackgroundSystemResourceSample(generation uint64) {
 	if s.running && s.generation == generation {
 		owned = true
 		s.have = false
-		s.latest = SystemResourceSnapshot{}
+		s.latest = snapshot.SystemResourceSnapshot{}
 		s.latestAt = time.Time{}
 	}
 	s.Unlock()
@@ -176,7 +177,7 @@ func stopSystemResourceSampler() {
 	s.Lock()
 	if !s.running {
 		s.have = false
-		s.latest = SystemResourceSnapshot{}
+		s.latest = snapshot.SystemResourceSnapshot{}
 		s.latestAt = time.Time{}
 		s.staleAfter = 0
 		s.Unlock()
@@ -187,7 +188,7 @@ func stopSystemResourceSampler() {
 	done := s.done
 	s.running = false
 	s.have = false
-	s.latest = SystemResourceSnapshot{}
+	s.latest = snapshot.SystemResourceSnapshot{}
 	s.latestAt = time.Time{}
 	s.staleAfter = 0
 	s.stop = nil
@@ -205,19 +206,19 @@ func stopSystemResourceSampler() {
 	resetSystemResourceDeltaBaseline()
 }
 
-func storeBackgroundSystemResourceSample(generation uint64, snapshot SystemResourceSnapshot) {
+func storeBackgroundSystemResourceSample(generation uint64, snap snapshot.SystemResourceSnapshot) {
 	s := &backgroundSystemResourceSampler
 	s.Lock()
 	defer s.Unlock()
 	if !s.running || s.generation != generation {
 		return
 	}
-	s.latest = snapshot
+	s.latest = snap
 	s.latestAt = time.Now()
 	s.have = true
 }
 
-func latestBackgroundSystemResourceSample() (SystemResourceSnapshot, bool) {
+func latestBackgroundSystemResourceSample() (snapshot.SystemResourceSnapshot, bool) {
 	s := &backgroundSystemResourceSampler
 	s.Lock()
 	defer s.Unlock()
@@ -226,14 +227,14 @@ func latestBackgroundSystemResourceSample() (SystemResourceSnapshot, bool) {
 		staleAfter = systemResourceSampleStaleAfter
 	}
 	if !s.running || !s.have || (!s.latestAt.IsZero() && time.Since(s.latestAt) > staleAfter) {
-		return SystemResourceSnapshot{}, false
+		return snapshot.SystemResourceSnapshot{}, false
 	}
 	return s.latest, true
 }
 
-func sampleSystemResources() SystemResourceSnapshot {
-	if snapshot, ok := latestBackgroundSystemResourceSample(); ok {
-		return snapshot
+func sampleSystemResources() snapshot.SystemResourceSnapshot {
+	if snap, ok := latestBackgroundSystemResourceSample(); ok {
+		return snap
 	}
 	backgroundSystemResourceSampler.Lock()
 	running := backgroundSystemResourceSampler.running
@@ -244,8 +245,8 @@ func sampleSystemResources() SystemResourceSnapshot {
 	return sampleSystemResourcesNow()
 }
 
-func unavailableSystemResourceSnapshot(reason string) SystemResourceSnapshot {
-	return SystemResourceSnapshot{Notes: []string{reason}}
+func unavailableSystemResourceSnapshot(reason string) snapshot.SystemResourceSnapshot {
+	return snapshot.SystemResourceSnapshot{Notes: []string{reason}}
 }
 
 func resetSystemResourceDeltaBaseline() {
@@ -255,11 +256,11 @@ func resetSystemResourceDeltaBaseline() {
 	systemResourceSampler.Unlock()
 }
 
-func sampleSystemResourcesNow() SystemResourceSnapshot {
+func sampleSystemResourcesNow() snapshot.SystemResourceSnapshot {
 	now := time.Now()
 	counters, supported, notes := readSystemResourceCounters()
 	thermalState, thermalStateSupported := readSystemThermalState()
-	snapshot := SystemResourceSnapshot{
+	snap := snapshot.SystemResourceSnapshot{
 		SampledAt:             now.Format(time.RFC3339Nano),
 		Supported:             supported,
 		ThermalState:          thermalState,
@@ -288,10 +289,10 @@ func sampleSystemResourcesNow() SystemResourceSnapshot {
 		Notes:                 append([]string(nil), notes...),
 	}
 	if !thermalStateSupported {
-		snapshot.Notes = append(snapshot.Notes, "Thermal pressure state is unavailable from public macOS process information.")
+		snap.Notes = append(snap.Notes, "Thermal pressure state is unavailable from public macOS process information.")
 	}
 	if !supported {
-		return snapshot
+		return snap
 	}
 
 	systemResourceSampler.Lock()
@@ -301,29 +302,29 @@ func sampleSystemResourcesNow() SystemResourceSnapshot {
 	systemResourceSampler.previous = counters
 	systemResourceSampler.previousAt = now
 	if previousAt.IsZero() {
-		snapshot.Notes = append(snapshot.Notes, "System resource rates need two samples; the next poll will contain CPU and network deltas.")
-		return snapshot
+		snap.Notes = append(snap.Notes, "System resource rates need two samples; the next poll will contain CPU and network deltas.")
+		return snap
 	}
 	interval := now.Sub(previousAt).Seconds()
 	if interval <= 0 {
-		return snapshot
+		return snap
 	}
-	snapshot.SampleIntervalSeconds = interval
-	snapshot.CPUPercent = cpuPercentDelta(previous, counters)
+	snap.SampleIntervalSeconds = interval
+	snap.CPUPercent = cpuPercentDelta(previous, counters)
 	rxBytesDelta := counterDelta(previous.NetworkRxBytes, counters.NetworkRxBytes)
 	txBytesDelta := counterDelta(previous.NetworkTxBytes, counters.NetworkTxBytes)
 	rxPacketDelta := counterDelta(previous.NetworkRxPackets, counters.NetworkRxPackets)
 	txPacketDelta := counterDelta(previous.NetworkTxPackets, counters.NetworkTxPackets)
 	errorDelta := counterDelta(previous.NetworkRxErrors, counters.NetworkRxErrors) + counterDelta(previous.NetworkTxErrors, counters.NetworkTxErrors)
 	dropDelta := counterDelta(previous.NetworkRxDrops, counters.NetworkRxDrops)
-	snapshot.NetworkRxBytesPerSec = float64(rxBytesDelta) / interval
-	snapshot.NetworkTxBytesPerSec = float64(txBytesDelta) / interval
-	snapshot.NetworkRxPacketsPerSec = float64(rxPacketDelta) / interval
-	snapshot.NetworkTxPacketsPerSec = float64(txPacketDelta) / interval
-	snapshot.NetworkErrorPacketsPerSec = float64(errorDelta) / interval
-	snapshot.NetworkDroppedPacketsPerSec = float64(dropDelta) / interval
-	snapshot.NetworkPacketIssuePct = pctFromUint(errorDelta+dropDelta, rxPacketDelta+txPacketDelta+errorDelta+dropDelta)
-	return snapshot
+	snap.NetworkRxBytesPerSec = float64(rxBytesDelta) / interval
+	snap.NetworkTxBytesPerSec = float64(txBytesDelta) / interval
+	snap.NetworkRxPacketsPerSec = float64(rxPacketDelta) / interval
+	snap.NetworkTxPacketsPerSec = float64(txPacketDelta) / interval
+	snap.NetworkErrorPacketsPerSec = float64(errorDelta) / interval
+	snap.NetworkDroppedPacketsPerSec = float64(dropDelta) / interval
+	snap.NetworkPacketIssuePct = pctFromUint(errorDelta+dropDelta, rxPacketDelta+txPacketDelta+errorDelta+dropDelta)
+	return snap
 }
 
 func counterDelta(previous, current uint64) uint64 {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -79,8 +80,8 @@ func selectableRefreshInterval(interval time.Duration) bool {
 	return false
 }
 
-func (c Config) snapshotConfig() SnapshotConfig {
-	return SnapshotConfig{
+func (c Config) snapshotConfig() snapshot.SnapshotConfig {
+	return snapshot.SnapshotConfig{
 		IdleGapSeconds:       int(c.IdleGap / time.Second),
 		MinIntervalSeconds:   int(c.MinInterval / time.Second),
 		LookbackHours:        int(c.Lookback / time.Hour),

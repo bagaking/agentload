@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agentload/internal/snapshot"
 	"encoding/json"
 	"io"
 	"log"
@@ -24,8 +25,8 @@ func TestLocalHistoryStoreAppendsAndReloadsSamples(t *testing.T) {
 	}
 
 	sample := makeHistorySample(now.Add(-2*time.Hour),
-		CurrentMetrics{PIDConcurrency: 4, SessionConcurrency: 3, ActiveBurstConcurrency: 2},
-		SnapshotSummary{
+		snapshot.CurrentMetrics{PIDConcurrency: 4, SessionConcurrency: 3, ActiveBurstConcurrency: 2},
+		snapshot.SnapshotSummary{
 			ActiveSessions:     3,
 			IdleSessions:       1,
 			MappedProcesses:    3,
@@ -85,37 +86,37 @@ func TestLocalHistoryStoreRetainsDistinctSameSecondSamples(t *testing.T) {
 		t.Fatalf("loadLocalHistoryState: %v", err)
 	}
 
-	if err := state.recordSample(historySampleFromSnapshot(Snapshot{
+	if err := state.recordSample(historySampleFromSnapshot(snapshot.Snapshot{
 		GeneratedAt: first.Format(time.RFC3339Nano),
-		Current: CurrentMetrics{
+		Current: snapshot.CurrentMetrics{
 			PIDConcurrency:         2,
 			SessionConcurrency:     1,
 			ActiveBurstConcurrency: 1,
 		},
-		Summary: SnapshotSummary{
+		Summary: snapshot.SnapshotSummary{
 			MappedProcesses:    2,
 			UnmappedProcesses:  0,
 			MappingCoveragePct: 100,
 		},
-		CoordinationRisk: CoordinationRiskSnapshot{
+		CoordinationRisk: snapshot.CoordinationRiskSnapshot{
 			Posture: "steady",
 		},
 	})); err != nil {
 		t.Fatalf("record first same-second sample: %v", err)
 	}
-	if err := state.recordSample(historySampleFromSnapshot(Snapshot{
+	if err := state.recordSample(historySampleFromSnapshot(snapshot.Snapshot{
 		GeneratedAt: second.Format(time.RFC3339Nano),
-		Current: CurrentMetrics{
+		Current: snapshot.CurrentMetrics{
 			PIDConcurrency:         5,
 			SessionConcurrency:     3,
 			ActiveBurstConcurrency: 2,
 		},
-		Summary: SnapshotSummary{
+		Summary: snapshot.SnapshotSummary{
 			MappedProcesses:    4,
 			UnmappedProcesses:  1,
 			MappingCoveragePct: 80,
 		},
-		CoordinationRisk: CoordinationRiskSnapshot{
+		CoordinationRisk: snapshot.CoordinationRiskSnapshot{
 			Posture: "watch",
 		},
 	})); err != nil {
@@ -162,8 +163,8 @@ func TestLocalHistoryStoreIgnoresCorruptAndPartialLines(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "history.jsonl")
 
 	valid := makeHistorySample(now,
-		CurrentMetrics{PIDConcurrency: 2, SessionConcurrency: 1, ActiveBurstConcurrency: 1},
-		SnapshotSummary{MappedProcesses: 2, MappingCoveragePct: 100},
+		snapshot.CurrentMetrics{PIDConcurrency: 2, SessionConcurrency: 1, ActiveBurstConcurrency: 1},
+		snapshot.SnapshotSummary{MappedProcesses: 2, MappingCoveragePct: 100},
 		nil,
 	)
 	raw, err := json.Marshal(valid)
@@ -216,8 +217,8 @@ func TestLoadLocalHistoryStatePreservesConfiguredPathOnReadError(t *testing.T) {
 		t.Fatalf("restore readable history file: %v", err)
 	}
 	if err := state.recordSample(makeHistorySample(now,
-		CurrentMetrics{PIDConcurrency: 1, SessionConcurrency: 1, ActiveBurstConcurrency: 1},
-		SnapshotSummary{MappedProcesses: 1, MappingCoveragePct: 100},
+		snapshot.CurrentMetrics{PIDConcurrency: 1, SessionConcurrency: 1, ActiveBurstConcurrency: 1},
+		snapshot.SnapshotSummary{MappedProcesses: 1, MappingCoveragePct: 100},
 		nil,
 	)); err != nil {
 		t.Fatalf("recordSample after load error: %v", err)
@@ -240,15 +241,15 @@ func TestLocalHistoryStoreRetentionDropsOldSamplesWithoutBackfill(t *testing.T) 
 		t.Fatalf("load history: %v", err)
 	}
 	if err := state.recordSample(makeHistorySample(now.Add(-40*24*time.Hour),
-		CurrentMetrics{PIDConcurrency: 9, SessionConcurrency: 8, ActiveBurstConcurrency: 7},
-		SnapshotSummary{MappedProcesses: 8, UnmappedProcesses: 1, MappingCoveragePct: 88.8},
+		snapshot.CurrentMetrics{PIDConcurrency: 9, SessionConcurrency: 8, ActiveBurstConcurrency: 7},
+		snapshot.SnapshotSummary{MappedProcesses: 8, UnmappedProcesses: 1, MappingCoveragePct: 88.8},
 		nil,
 	)); err != nil {
 		t.Fatalf("record old sample: %v", err)
 	}
 	if err := state.recordSample(makeHistorySample(now.Add(-2*time.Hour),
-		CurrentMetrics{PIDConcurrency: 3, SessionConcurrency: 2, ActiveBurstConcurrency: 1},
-		SnapshotSummary{MappedProcesses: 2, UnmappedProcesses: 1, MappingCoveragePct: 66.6},
+		snapshot.CurrentMetrics{PIDConcurrency: 3, SessionConcurrency: 2, ActiveBurstConcurrency: 1},
+		snapshot.SnapshotSummary{MappedProcesses: 2, UnmappedProcesses: 1, MappingCoveragePct: 66.6},
 		nil,
 	)); err != nil {
 		t.Fatalf("record recent sample: %v", err)
@@ -284,8 +285,8 @@ func TestLoadLocalHistoryStateCompactsFileWithMaterialOverhead(t *testing.T) {
 	var content []byte
 	for i := 0; i < 10; i++ {
 		raw, err := json.Marshal(makeHistorySample(now.Add(-40*24*time.Hour).Add(time.Duration(i)*time.Minute),
-			CurrentMetrics{PIDConcurrency: i},
-			SnapshotSummary{MappedProcesses: i},
+			snapshot.CurrentMetrics{PIDConcurrency: i},
+			snapshot.SnapshotSummary{MappedProcesses: i},
 			nil,
 		))
 		if err != nil {
@@ -294,8 +295,8 @@ func TestLoadLocalHistoryStateCompactsFileWithMaterialOverhead(t *testing.T) {
 		content = append(content, append(raw, '\n')...)
 	}
 	retained := []HistorySample{
-		makeHistorySample(now.Add(-2*time.Hour), CurrentMetrics{PIDConcurrency: 3}, SnapshotSummary{MappedProcesses: 2}, nil),
-		makeHistorySample(now.Add(-time.Hour), CurrentMetrics{PIDConcurrency: 4}, SnapshotSummary{MappedProcesses: 3}, nil),
+		makeHistorySample(now.Add(-2*time.Hour), snapshot.CurrentMetrics{PIDConcurrency: 3}, snapshot.SnapshotSummary{MappedProcesses: 2}, nil),
+		makeHistorySample(now.Add(-time.Hour), snapshot.CurrentMetrics{PIDConcurrency: 4}, snapshot.SnapshotSummary{MappedProcesses: 3}, nil),
 	}
 	for _, sample := range retained {
 		raw, err := json.Marshal(sample)
@@ -349,7 +350,7 @@ func TestLoadLocalHistoryStateKeepsFileWithSmallOverhead(t *testing.T) {
 
 	var content []byte
 	appendSample := func(at time.Time) {
-		raw, err := json.Marshal(makeHistorySample(at, CurrentMetrics{PIDConcurrency: 1}, SnapshotSummary{MappedProcesses: 1}, nil))
+		raw, err := json.Marshal(makeHistorySample(at, snapshot.CurrentMetrics{PIDConcurrency: 1}, snapshot.SnapshotSummary{MappedProcesses: 1}, nil))
 		if err != nil {
 			t.Fatalf("marshal sample: %v", err)
 		}
@@ -413,7 +414,7 @@ func TestHistoryOperationsShareCrossProcessLock(t *testing.T) {
 
 	appendDone := make(chan error, 1)
 	go func() {
-		appendDone <- appendHistorySampleFile(path, makeHistorySample(now, CurrentMetrics{PIDConcurrency: 1}, SnapshotSummary{}, nil))
+		appendDone <- appendHistorySampleFile(path, makeHistorySample(now, snapshot.CurrentMetrics{PIDConcurrency: 1}, snapshot.SnapshotSummary{}, nil))
 	}()
 	select {
 	case err := <-appendDone:
@@ -466,8 +467,8 @@ func TestMergeRuntimeTrendsUsesLoadedHistoryAndCurrentSample(t *testing.T) {
 		t.Fatalf("load history: %v", err)
 	}
 	persisted := makeHistorySample(now.Add(-6*time.Hour),
-		CurrentMetrics{PIDConcurrency: 2, SessionConcurrency: 1, ActiveBurstConcurrency: 1},
-		SnapshotSummary{MappedProcesses: 1, UnmappedProcesses: 1, MappingCoveragePct: 50},
+		snapshot.CurrentMetrics{PIDConcurrency: 2, SessionConcurrency: 1, ActiveBurstConcurrency: 1},
+		snapshot.SnapshotSummary{MappedProcesses: 1, UnmappedProcesses: 1, MappingCoveragePct: 50},
 		[]HistoryProjectSnapshot{{Project: "alpha", SessionCount: 1, ActiveBurstCount: 1, ProcessCount: 2, AttentionSharePct: 100}},
 	)
 	if err := state.recordSample(persisted); err != nil {
@@ -482,36 +483,36 @@ func TestMergeRuntimeTrendsUsesLoadedHistoryAndCurrentSample(t *testing.T) {
 		logger:  log.New(io.Discard, "", 0),
 		history: reloaded,
 	}
-	snapshot := Snapshot{
+	snap := snapshot.Snapshot{
 		GeneratedAt: now.Format(time.RFC3339),
-		Current: CurrentMetrics{
+		Current: snapshot.CurrentMetrics{
 			PIDConcurrency:         5,
 			SessionConcurrency:     4,
 			ActiveBurstConcurrency: 3,
 		},
-		Summary: SnapshotSummary{
+		Summary: snapshot.SnapshotSummary{
 			MappedProcesses:    4,
 			UnmappedProcesses:  1,
 			MappingCoveragePct: 80,
 		},
-		CoordinationRisk: CoordinationRiskSnapshot{
+		CoordinationRisk: snapshot.CoordinationRiskSnapshot{
 			Posture:            "watch",
 			ActiveProjectCount: 1,
 			TopProject:         "alpha",
 		},
-		ProjectFocus: []ProjectSnapshot{
+		ProjectFocus: []snapshot.ProjectSnapshot{
 			{Project: "alpha", SessionCount: 4, ActiveBurstCount: 3, ProcessCount: 5, AttentionSharePct: 100},
 		},
-		RuntimeProcesses: []ProcessRuntimeSummary{
+		RuntimeProcesses: []snapshot.ProcessRuntimeSummary{
 			{Key: "codex", Tool: "codex", DisplayName: "Codex", PIDCount: 3},
 		},
-		HostAppProcesses: []HostAppProcessSummary{
+		HostAppProcesses: []snapshot.HostAppProcessSummary{
 			{Key: "cursor", Name: "Cursor", PIDCount: 5},
 		},
 	}
 
-	snapshot = app.rememberSnapshot(snapshot)
-	oneDay := requireTrendWindow(t, snapshot.RealtimeTrends, "1D")
+	snap = app.rememberSnapshot(snap)
+	oneDay := requireTrendWindow(t, snap.RealtimeTrends, "1D")
 	if len(oneDay.Points) != 2 {
 		t.Fatalf("expected loaded sample plus current sample, got %d points", len(oneDay.Points))
 	}
@@ -526,18 +527,18 @@ func TestMergeRuntimeTrendsUsesLoadedHistoryAndCurrentSample(t *testing.T) {
 	if len(currentPoint.HostAppProcesses) != 1 || currentPoint.HostAppProcesses[0].Name != "Cursor" || currentPoint.HostAppProcesses[0].PIDCount != 5 {
 		t.Fatalf("expected current point host process breakdown, got %+v", currentPoint.HostAppProcesses)
 	}
-	throughput := requireThroughputSeries(t, requireTrendWindow(t, snapshot.ThroughputTrends, "1D"), "minute:300")
+	throughput := requireThroughputSeries(t, requireTrendWindow(t, snap.ThroughputTrends, "1D"), "minute:300")
 	if len(throughput.Points) != 0 || throughput.Summary != nil {
 		t.Fatalf("snapshot refresh invented a persisted throughput minute: %+v", throughput)
 	}
-	if snapshot.History.LoadedSampleCount != 2 {
-		t.Fatalf("expected loaded sample count 2 after current append, got %+v", snapshot.History)
+	if snap.History.LoadedSampleCount != 2 {
+		t.Fatalf("expected loaded sample count 2 after current append, got %+v", snap.History)
 	}
-	if snapshot.History.RetainedSampleCount != 2 {
-		t.Fatalf("expected retained sample count 2, got %+v", snapshot.History)
+	if snap.History.RetainedSampleCount != 2 {
+		t.Fatalf("expected retained sample count 2, got %+v", snap.History)
 	}
-	if snapshot.History.StorePath != path {
-		t.Fatalf("expected history store path %q, got %q", path, snapshot.History.StorePath)
+	if snap.History.StorePath != path {
+		t.Fatalf("expected history store path %q, got %q", path, snap.History.StorePath)
 	}
 }
 
@@ -604,29 +605,29 @@ func TestReplayHelpersUseObservedSamplesOnly(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
 	samples := []HistorySample{
 		makeHistorySample(now.Add(-48*time.Hour),
-			CurrentMetrics{PIDConcurrency: 20, SessionConcurrency: 10, ActiveBurstConcurrency: 9},
-			SnapshotSummary{MappedProcesses: 18, UnmappedProcesses: 2, MappingCoveragePct: 90},
+			snapshot.CurrentMetrics{PIDConcurrency: 20, SessionConcurrency: 10, ActiveBurstConcurrency: 9},
+			snapshot.SnapshotSummary{MappedProcesses: 18, UnmappedProcesses: 2, MappingCoveragePct: 90},
 			[]HistoryProjectSnapshot{{Project: "outside", SessionCount: 10, ActiveBurstCount: 9, ProcessCount: 20, AttentionSharePct: 100}},
 		),
 		makeHistorySample(now.Add(-5*time.Hour),
-			CurrentMetrics{PIDConcurrency: 4, SessionConcurrency: 2, ActiveBurstConcurrency: 1},
-			SnapshotSummary{MappedProcesses: 3, UnmappedProcesses: 1, MappingCoveragePct: 75},
+			snapshot.CurrentMetrics{PIDConcurrency: 4, SessionConcurrency: 2, ActiveBurstConcurrency: 1},
+			snapshot.SnapshotSummary{MappedProcesses: 3, UnmappedProcesses: 1, MappingCoveragePct: 75},
 			[]HistoryProjectSnapshot{
 				{Project: "alpha", SessionCount: 2, ActiveBurstCount: 1, ProcessCount: 2, AttentionSharePct: 70},
 				{Project: "beta", SessionCount: 1, ActiveBurstCount: 1, ProcessCount: 1, AttentionSharePct: 30},
 			},
 		),
 		makeHistorySample(now.Add(-3*time.Hour),
-			CurrentMetrics{PIDConcurrency: 6, SessionConcurrency: 4, ActiveBurstConcurrency: 3},
-			SnapshotSummary{MappedProcesses: 5, UnmappedProcesses: 1, MappingCoveragePct: 83.3},
+			snapshot.CurrentMetrics{PIDConcurrency: 6, SessionConcurrency: 4, ActiveBurstConcurrency: 3},
+			snapshot.SnapshotSummary{MappedProcesses: 5, UnmappedProcesses: 1, MappingCoveragePct: 83.3},
 			[]HistoryProjectSnapshot{
 				{Project: "alpha", SessionCount: 2, ActiveBurstCount: 1, ProcessCount: 2, AttentionSharePct: 40},
 				{Project: "beta", SessionCount: 4, ActiveBurstCount: 3, ProcessCount: 4, AttentionSharePct: 60},
 			},
 		),
 		makeHistorySample(now.Add(-time.Hour),
-			CurrentMetrics{PIDConcurrency: 5, SessionConcurrency: 5, ActiveBurstConcurrency: 2},
-			SnapshotSummary{MappedProcesses: 4, UnmappedProcesses: 1, MappingCoveragePct: 80},
+			snapshot.CurrentMetrics{PIDConcurrency: 5, SessionConcurrency: 5, ActiveBurstConcurrency: 2},
+			snapshot.SnapshotSummary{MappedProcesses: 4, UnmappedProcesses: 1, MappingCoveragePct: 80},
 			[]HistoryProjectSnapshot{
 				{Project: "beta", SessionCount: 5, ActiveBurstCount: 2, ProcessCount: 4, AttentionSharePct: 100},
 			},
@@ -654,7 +655,7 @@ func TestReplayHelpersUseObservedSamplesOnly(t *testing.T) {
 	}
 }
 
-func makeHistorySample(at time.Time, current CurrentMetrics, summary SnapshotSummary, projects []HistoryProjectSnapshot) HistorySample {
+func makeHistorySample(at time.Time, current snapshot.CurrentMetrics, summary snapshot.SnapshotSummary, projects []HistoryProjectSnapshot) HistorySample {
 	return HistorySample{
 		At:      at.Format(time.RFC3339),
 		Current: current,
@@ -678,7 +679,7 @@ func persistedTime(sample HistorySample) time.Time {
 	return t
 }
 
-func requireProjectHeatmapWindow(t *testing.T, heatmaps ProjectHeatmapSet, label string) ProjectHeatmapWindow {
+func requireProjectHeatmapWindow(t *testing.T, heatmaps snapshot.ProjectHeatmapSet, label string) snapshot.ProjectHeatmapWindow {
 	t.Helper()
 	for _, window := range heatmaps.Windows {
 		if window.Range == label {
@@ -686,10 +687,10 @@ func requireProjectHeatmapWindow(t *testing.T, heatmaps ProjectHeatmapSet, label
 		}
 	}
 	t.Fatalf("missing project heatmap window %s", label)
-	return ProjectHeatmapWindow{}
+	return snapshot.ProjectHeatmapWindow{}
 }
 
-func requireProjectHeatmapItem(t *testing.T, items []ProjectHeatmapItem, project string) ProjectHeatmapItem {
+func requireProjectHeatmapItem(t *testing.T, items []snapshot.ProjectHeatmapItem, project string) snapshot.ProjectHeatmapItem {
 	t.Helper()
 	for _, item := range items {
 		if item.Project == project {
@@ -697,5 +698,5 @@ func requireProjectHeatmapItem(t *testing.T, items []ProjectHeatmapItem, project
 		}
 	}
 	t.Fatalf("missing project heatmap item %s", project)
-	return ProjectHeatmapItem{}
+	return snapshot.ProjectHeatmapItem{}
 }
