@@ -2,23 +2,27 @@ package trajectory
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"errors"
 	"os"
 	"time"
 )
 
 type StorageProgress struct {
-	Phase       string `json:"phase"`
-	Records     int64  `json:"records,omitempty"`
-	Total       int64  `json:"total,omitempty"`
-	BytesBefore int64  `json:"bytes_before,omitempty"`
-	BytesAfter  int64  `json:"bytes_after,omitempty"`
-	Digest      string `json:"logical_digest,omitempty"`
-	Input       string `json:"input_identity,omitempty"`
-	StableInput string `json:"persistent_input_identity,omitempty"`
-	InputHash   string `json:"input_sha256,omitempty"`
-	Sources     int64  `json:"source_count,omitempty"`
-	TargetHash  string `json:"target_sha256,omitempty"`
+	Phase        string              `json:"phase"`
+	Records      int64               `json:"records,omitempty"`
+	Total        int64               `json:"total,omitempty"`
+	BytesBefore  int64               `json:"bytes_before,omitempty"`
+	BytesAfter   int64               `json:"bytes_after,omitempty"`
+	Digest       string              `json:"logical_digest,omitempty"`
+	Input        string              `json:"input_identity,omitempty"`
+	StableInput  string              `json:"persistent_input_identity,omitempty"`
+	InputHash    string              `json:"input_sha256,omitempty"`
+	Sources      int64               `json:"source_count,omitempty"`
+	TargetHash   string              `json:"target_sha256,omitempty"`
+	BlockUpgrade *sourceBlockUpgrade `json:"block_upgrade,omitempty"`
+	BlockPacking *sourceBlockPacking `json:"block_packing,omitempty"`
 }
 
 // The CLI holds the history owner lock. The migrator separately holds a
@@ -29,12 +33,44 @@ func OptimizeStorage(ctx context.Context, provider Provider, path string, report
 	s.expectedInputSHA256 = expectedInputSHA256
 	defer s.Close()
 	last := time.Time{}
+	migrated := false
+	// An installed cutover can finish retirement in one open call, without a
+	// pending migration handle. Capture its admission before consuming the seal.
+	for _, suffix := range []string{".source-ready.json", ".source-legacy"} {
+		if _, err := os.Stat(s.path + suffix); err == nil {
+			migrated = true
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+	}
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		err := s.openIndexContext(ctx)
-		if s.sourceMigration != nil {
+		migrated = migrated || s.sourceUpgrade != nil || s.sourceMigration != nil || s.sourcePacking != nil || errors.Is(err, errStorageMigration)
+		if s.sourcePacking != nil && report != nil && time.Since(last) > time.Second {
+			state, _, e := readSourcePacking(ctx, s.sourcePacking, sourcePackingKey)
+			if e != nil {
+				return e
+			}
+			report(StorageProgress{Phase: state.Phase, BlockPacking: &state})
+			last = time.Now()
+		}
+		if s.sourceUpgrade != nil && report != nil && time.Since(last) > time.Second {
+			state, _, e := readSourceBlockUpgrade(ctx, s.sourceUpgrade)
+			if e != nil {
+				return e
+			}
+			info, e := os.Stat(s.sourceUpgrade.path)
+			if e != nil {
+				return e
+			}
+			report(StorageProgress{Phase: state.Phase, Records: state.Records, Total: state.Total, BytesBefore: state.BytesBefore, BytesAfter: info.Size(), Digest: state.Digest})
+			last = time.Now()
+		}
+
+		if s.sourceMigration != nil && s.sourceMigration.shadow != nil {
 			state, _, e := sourceMigrationState(ctx, s.sourceMigration.shadow)
 			if e != nil {
 				return e
@@ -69,6 +105,20 @@ func OptimizeStorage(ctx context.Context, provider Provider, path string, report
 		}
 		break
 	}
+	// Fresh projection migrations append dense blocks into a new table. Keep
+	// their verified cutover seal unchanged; only in-place upgrades leave gaps.
+	var packing *sourceBlockPacking
+	var inPlace bool
+	if err := s.store.db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM meta WHERE key IN ('source-block-upgrade-result','source-block-packing-result'))").Scan(&inPlace); err != nil {
+		return err
+	}
+	if !migrated || inPlace {
+		var err error
+		packing, err = optimizeSourceBlockPacking(ctx, s.store, expectedInputSHA256, migrated, report)
+		if err != nil {
+			return err
+		}
+	}
 	if report != nil {
 		st, _, err := sourceMigrationState(ctx, s.store)
 		if err != nil {
@@ -89,7 +139,19 @@ func OptimizeStorage(ctx context.Context, provider Provider, path string, report
 		if size != info.Size() {
 			return ErrStale
 		}
-		report(StorageProgress{Phase: "ready", Records: st.Records, BytesBefore: st.BytesBefore, BytesAfter: size, Input: st.Input, StableInput: st.InputIdentity, InputHash: st.InputSHA256, Sources: sources, TargetHash: hash})
+		progress := StorageProgress{Phase: "ready", Records: st.Records, BytesBefore: st.BytesBefore, BytesAfter: size, Input: st.Input, StableInput: st.InputIdentity, InputHash: st.InputSHA256, Sources: sources, TargetHash: hash, BlockPacking: packing}
+		var body string
+		err = s.store.db.QueryRowContext(ctx, "SELECT value FROM meta WHERE key='source-block-upgrade-result'").Scan(&body)
+		if err == nil {
+			var upgrade sourceBlockUpgrade
+			if err = json.Unmarshal([]byte(body), &upgrade); err != nil {
+				return err
+			}
+			progress.BlockUpgrade = &upgrade
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		report(progress)
 	}
 	return nil
 }

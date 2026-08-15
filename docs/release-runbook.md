@@ -64,11 +64,14 @@ are retained and accounted for separately. See
 1. Quit the application normally before offline maintenance. One owner holds
    the history path; another installation or development instance must not write
    to it at the same time.
-2. Budget the original index, the sole resumable shadow, journals and system VM
-   together. Each write preserves at least 1 GiB of free disk space. An
+2. Budget the current index, bounded transaction journals and system VM together.
+   Only an older fact/projection migration needs the sole resumable shadow;
+   per-fact block upgrades and leaf packing use the existing database. Each write
+   preserves at least 1 GiB of free disk space. An
    interrupted migration retains its original and committed checkpoint.
 3. Run the built application's `traj compact` command. Repeating the command
-   resumes the same shadow. Legacy recovery that requires a complete original
+   resumes the same migration or in-place checkpoint. Legacy recovery that
+   requires a complete original
    digest accepts `--expected-input-sha256`; use the independently recorded
    digest. CLI details are in the [API reference](api-reference.md).
 4. Require the final `ready` record after complete fact, identity and recovery
@@ -83,6 +86,12 @@ are retained and accounted for separately. See
    and warm CLI/RPC pages, matched raw evidence, explicit counts, archive
    preparation completion and a later 300-second increment window. Record
    final index allocation and maintenance peak separately under `.bagakit/`.
+
+An original-input digest remains bound to its verified cutover receipt. A later
+in-place stage records its own physical input digest separately; a restart must
+not reinterpret the original request as a different stage's file digest. Final
+verification reports actual allocated bytes, including journals. Reusable or
+underfilled pages alone do not establish that space was returned to the disk.
 
 Catalog collection uses one checkpoint snapshot per operation. Removal checks
 reuse that snapshot under the same operation lock and honor request cancellation;

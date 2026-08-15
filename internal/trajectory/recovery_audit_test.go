@@ -8,7 +8,7 @@ import (
 )
 
 func TestTrajectoryRecoveryAuditStaysInSourceQueue(t *testing.T) {
-	s, st := replayFixture(t, "codex", CodexDecoder{}, request(strings.Repeat("prefix ", 24000))+request("middle")+request("last"))
+	s, st := replayFixture(t, "codex", CodexDecoder{}, strings.Repeat(request(strings.Repeat("prefix ", 40000)), 20)+request("middle")+request("last"))
 	var ranges int
 	if err := s.store.db.QueryRow("SELECT count(*) FROM ranges").Scan(&ranges); err != nil || ranges < 2 {
 		t.Fatalf("multiple audit units: %d %v", ranges, err)
@@ -66,7 +66,11 @@ func TestTrajectoryRecoveryCatalogDoesNotRetryUnauthorizedAudit(t *testing.T) {
 }
 
 func TestTrajectoryRecoveryAuditRejectsPreviouslyReadRangeChangeBeforeSeal(t *testing.T) {
-	s, st := replayFixture(t, "codex", CodexDecoder{}, request(strings.Repeat("prefix ", 24000))+request("middle")+request("last"))
+	s, st := replayFixture(t, "codex", CodexDecoder{}, strings.Repeat(request(strings.Repeat("prefix ", 40000)), 20)+request("middle")+request("last"))
+	var ranges int
+	if err := s.store.db.QueryRow("SELECT count(*) FROM ranges").Scan(&ranges); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.store.db.Exec("UPDATE sources SET verified_size=-1,verified_mtime=-1,audit_size=-1,audit_mtime=-1,audit_after=-1"); err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +83,7 @@ func TestTrajectoryRecoveryAuditRejectsPreviouslyReadRangeChangeBeforeSeal(t *te
 	if _, err = s.store.db.Exec("UPDATE ranges SET body=X'00' WHERE start=(SELECT min(start) FROM ranges)"); err != nil {
 		t.Fatal(err)
 	}
-	for n := 0; n < 10 && more && err == nil; n++ {
+	for n := 0; n < ranges && more && err == nil; n++ {
 		more, err = s.PrepareSource(context.Background(), st.Source, func() bool { return true })
 	}
 	if err == nil {

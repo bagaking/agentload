@@ -72,6 +72,7 @@ func (store *throughputHistoryStore) mergeRecoveredMinutes(facts []ThroughputMin
 	store.pruneLocked(now.Add(-historyRetentionWindow))
 	if err == nil {
 		store.lastWriteError = ""
+		store.maintainLocked(now)
 	}
 	return err
 }

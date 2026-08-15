@@ -108,6 +108,18 @@ func (s *Service) closeStores() error {
 		}
 		s.sourceMigration = nil
 	}
+	if s.sourceUpgrade != nil {
+		if err := s.sourceUpgrade.db.Close(); err != nil {
+			result = err
+		}
+		s.sourceUpgrade = nil
+	}
+	if s.sourcePacking != nil {
+		if err := s.sourcePacking.db.Close(); err != nil {
+			result = err
+		}
+		s.sourcePacking = nil
+	}
 	s.closeSearch()
 	if s.store != nil {
 		if err := s.store.db.Close(); err != nil {

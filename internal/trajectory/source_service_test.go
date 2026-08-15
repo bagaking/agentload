@@ -43,7 +43,9 @@ func TestTrajectoryCatalogPruneCancellationPreservesSource(t *testing.T) {
 }
 
 func TestTrajectorySourceAuditResumesAndDoesNotBlessRewrite(t *testing.T) {
-	s, st := replayFixture(t, "codex", CodexDecoder{}, request(strings.Repeat("prefix ", 24000))+request("ordinary middle")+request("final anchor"))
+	// More than the physical byte budget keeps the restart assertion meaningful
+	// when an audit commits several ranges together.
+	s, st := replayFixture(t, "codex", CodexDecoder{}, strings.Repeat(request(strings.Repeat("prefix ", 40000)), 20)+request("ordinary middle")+request("final anchor"))
 	f := newSourceStoreFixture(t)
 	chunks := importFixtureFacts(t, f, st, canonicalFixtureFacts(t, s, st))
 	if len(chunks) < 2 {
@@ -103,6 +105,33 @@ func TestTrajectorySourceAuditResumesAndDoesNotBlessRewrite(t *testing.T) {
 	p, err = f.readiness(context.Background())
 	if err != nil || p[st.ID].verifiedSize != before.verifiedSize || p[st.ID].verifiedMtime != before.verifiedMtime {
 		t.Fatal("failed audit changed proof seal", err)
+	}
+}
+
+func TestTrajectorySourceAuditFailedBatchRetainsCursor(t *testing.T) {
+	s, st := replayFixture(t, "codex", CodexDecoder{}, strings.Repeat(request(strings.Repeat("batch ", 24000)), 9))
+	f := newSourceStoreFixture(t)
+	chunks := importFixtureFacts(t, f, st, canonicalFixtureFacts(t, s, st))
+	if len(chunks) < 3 {
+		t.Fatal("fixture lacks a batch followed by a damaged range")
+	}
+	if _, err := f.db.Exec("UPDATE sources SET verified_size=-1,verified_mtime=-1; UPDATE ranges SET body=x'00' WHERE start=(SELECT max(start) FROM ranges)"); err != nil {
+		t.Fatal(err)
+	}
+	// The initial chain validation rejects corruption before granting any trust.
+	var before, after int64
+	if err := f.db.QueryRow("SELECT audit_after FROM sources").Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.auditSource(context.Background(), st); err == nil {
+		t.Fatal("corrupt range chain accepted")
+	}
+	if err := f.db.QueryRow("SELECT audit_after FROM sources").Scan(&after); err != nil || after != before {
+		t.Fatal("failed audit committed a cursor", before, after, err)
+	}
+	p, err := f.readiness(context.Background())
+	if err != nil || p[st.ID].verifiedSize != -1 {
+		t.Fatal("failed audit published a seal", err)
 	}
 }
 
@@ -317,16 +346,12 @@ func TestTrajectorySourceMigrationMissingSourceKeepsFullFacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var frame []byte
-	if err = m.store.db.QueryRow("SELECT body FROM exceptions").Scan(&frame); err != nil {
-		t.Fatal("missing source fact discarded", err)
-	}
-	raw, err := decodeSourceValue(frame, maxSourceRangeLogicalBytes)
-	if err != nil {
+	var sourceRow int64
+	if err = m.store.db.QueryRow("SELECT rowid FROM sources WHERE id=?", st.ID).Scan(&sourceRow); err != nil {
 		t.Fatal(err)
 	}
-	var saved sourceException
-	if err = json.Unmarshal(raw, &saved); err != nil || !reflect.DeepEqual(saved.Event, &facts[0].event) {
+	saved, err := exceptionAt(context.Background(), m.store.db, sourceRow, facts[0].offset, facts[0].block)
+	if err != nil || !reflect.DeepEqual(saved.Event, &facts[0].event) {
 		t.Fatal("missing source canonical fact changed", err)
 	}
 	q, err := m.Query(context.Background(), snapshot.TrajectorySelector{Text: "useful"})
@@ -387,7 +412,7 @@ func finishSourceFixtureMigration(t *testing.T, m *Service) {
 func verifyStoredFixtureFacts(t *testing.T, m *Service, st *sourceState, facts []sourceFact) {
 	t.Helper()
 	var count, ranges, missing int
-	if err := m.store.db.QueryRow("SELECT count(*) FROM exceptions WHERE source=7").Scan(&count); err != nil || count != len(facts) {
+	if err := m.store.db.QueryRow("SELECT coalesce(sum(records),0) FROM exceptions WHERE source=7").Scan(&count); err != nil || count != len(facts) {
 		t.Fatal("stored canonical cardinality", count, err)
 	}
 	if err := m.store.db.QueryRow("SELECT count(*) FROM ranges WHERE source=7").Scan(&ranges); err != nil || ranges != 0 {
@@ -397,13 +422,8 @@ func verifyStoredFixtureFacts(t *testing.T, m *Service, st *sourceState, facts [
 		t.Fatal("original row was not quarantined", missing, err)
 	}
 	for _, fact := range facts {
-		var body []byte
-		if err := m.store.db.QueryRow("SELECT body FROM exceptions WHERE source=7 AND offset=? AND block=?", fact.offset, fact.block).Scan(&body); err != nil {
-			t.Fatal(err)
-		}
-		raw, err := decodeSourceValue(body, maxSourceRangeLogicalBytes)
-		var saved sourceException
-		if err != nil || json.Unmarshal(raw, &saved) != nil || !reflect.DeepEqual(saved.Event, &fact.event) {
+		saved, err := exceptionAt(context.Background(), m.store.db, 7, fact.offset, fact.block)
+		if err != nil || !reflect.DeepEqual(saved.Event, &fact.event) {
 			t.Fatal("stored complete canonical fact changed", err)
 		}
 	}
@@ -452,7 +472,7 @@ func TestTrajectorySourceMigrationPartialReplayThenWithdrawal(t *testing.T) {
 		t.Fatal("same-file reauthorization reused quarantined generation")
 	}
 	var retained int
-	if err = m.store.db.QueryRow("SELECT count(*) FROM exceptions WHERE source=7").Scan(&retained); err != nil || retained != len(facts) {
+	if err = m.store.db.QueryRow("SELECT coalesce(sum(records),0) FROM exceptions WHERE source=7").Scan(&retained); err != nil || retained != len(facts) {
 		t.Fatal("reauthorization destroyed original canonical evidence", err)
 	}
 }

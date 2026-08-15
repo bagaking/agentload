@@ -1,7 +1,6 @@
 package trajectory
 
 import (
-	"agentload/internal/snapshot"
 	"bufio"
 	"bytes"
 	"context"
@@ -12,6 +11,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"agentload/internal/snapshot"
+	fastjson "github.com/goccy/go-json"
 )
 
 // Anchors describe state before a complete physical line. They do not contain
@@ -58,7 +60,7 @@ func decodeReplayException(value []byte) (snapshot.TrajectoryEvent, error) {
 	var event snapshot.TrajectoryEvent
 	raw, err := decodeStored(value)
 	if err == nil {
-		err = json.Unmarshal(raw, &event)
+		err = fastjson.Unmarshal(raw, &event)
 	}
 	return event, err
 }
@@ -324,7 +326,7 @@ func replaySourceChunkSelected(ctx context.Context, st *sourceState, c replayChu
 					return cov, fmt.Errorf("trajectory event exceeds storage bound")
 				}
 				var canonical snapshot.TrajectoryEvent
-				if err := json.Unmarshal(logical, &canonical); err != nil {
+				if err := fastjson.Unmarshal(logical, &canonical); err != nil {
 					return cov, err
 				}
 				// Encoding may replace an invalid UTF-8 fragment with an escape;

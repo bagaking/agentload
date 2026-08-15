@@ -3,8 +3,9 @@ package trajectory
 import (
 	"container/list"
 	"crypto/sha256"
-	"encoding/json"
 	"slices"
+
+	fastjson "github.com/goccy/go-json"
 )
 
 // Cache sparse anchors only. Every caller still reads the actual SQL bytes
@@ -46,7 +47,7 @@ func (f *sourceStore) decodeRange(body []byte) (sourceRange, error) {
 		return sourceRange{}, err
 	}
 	var value sourceRange
-	if err = json.Unmarshal(raw, &value); err != nil {
+	if err = fastjson.Unmarshal(raw, &value); err != nil {
 		return sourceRange{}, err
 	}
 	entry := cachedRange{hash: hash, value: value, cost: 2*len(raw) + 512}

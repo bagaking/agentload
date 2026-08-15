@@ -1,7 +1,6 @@
 package trajectory
 
 import (
-	"agentload/internal/snapshot"
 	"bufio"
 	"bytes"
 	"context"
@@ -17,6 +16,9 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"agentload/internal/snapshot"
+	fastjson "github.com/goccy/go-json"
 )
 
 type sourceGroup struct {
@@ -257,7 +259,7 @@ func (f *sourceStore) indexSource(ctx context.Context, src Source, maxRecords in
 					return nil, errors.New("native event exceeds canonical bound; source preserved")
 				}
 				var canonical snapshot.TrajectoryEvent
-				if err = json.Unmarshal(raw, &canonical); err != nil {
+				if err = fastjson.Unmarshal(raw, &canonical); err != nil {
 					return nil, err
 				}
 				raw, err = json.Marshal(canonical)

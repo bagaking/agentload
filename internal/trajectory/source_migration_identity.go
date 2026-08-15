@@ -44,6 +44,9 @@ func checkMigrationInput(ctx context.Context, path string, state sourceMigration
 
 func (s *Service) bindMigrationInput(ctx context.Context, run *sourceMigrationRun, state *sourceMigration) error {
 	if state.InputIdentity != "" {
+		if s.expectedInputSHA256 != "" && s.expectedInputSHA256 != state.InputSHA256 {
+			return errors.New("legacy migration input SHA-256 differs; original and shadow preserved")
+		}
 		return checkMigrationInput(ctx, s.path, *state, true)
 	}
 	current, _, err := migrationFileIdentity(s.path)

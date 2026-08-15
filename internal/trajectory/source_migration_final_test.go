@@ -157,13 +157,8 @@ func TestTrajectorySourceFinalRepairPreservesOtherCompletedSources(t *testing.T)
 	}
 	verifyStoredFixtureFacts(t, m, states[0], facts[0])
 	for _, fact := range facts[2] {
-		var body []byte
-		if e = m.store.db.QueryRow("SELECT body FROM exceptions WHERE source=43 AND offset=? AND block=?", fact.offset, fact.block).Scan(&body); e != nil {
-			t.Fatal(e)
-		}
-		raw, e := decodeSourceValue(body, maxSourceRangeLogicalBytes)
-		var got sourceException
-		if e != nil || json.Unmarshal(raw, &got) != nil || !reflect.DeepEqual(got.Event, &fact.event) {
+		got, e := exceptionAt(context.Background(), m.store.db, 43, fact.offset, fact.block)
+		if e != nil || !reflect.DeepEqual(got.Event, &fact.event) {
 			t.Fatal("second source lost canonical DTO", e)
 		}
 	}
@@ -214,13 +209,8 @@ func TestTrajectorySourceFinalCatalogAbsencePrecedesPhysicalRepair(t *testing.T)
 	}
 	verifyStoredFixtureFacts(t, m, states[0], facts[0])
 	for _, fact := range facts[2] {
-		var body []byte
-		if err := m.store.db.QueryRow("SELECT body FROM exceptions WHERE source=43 AND offset=? AND block=?", fact.offset, fact.block).Scan(&body); err != nil {
-			t.Fatal(err)
-		}
-		raw, err := decodeSourceValue(body, maxSourceRangeLogicalBytes)
-		var got sourceException
-		if err != nil || json.Unmarshal(raw, &got) != nil || !reflect.DeepEqual(got.Event, &fact.event) {
+		got, err := exceptionAt(context.Background(), m.store.db, 43, fact.offset, fact.block)
+		if err != nil || !reflect.DeepEqual(got.Event, &fact.event) {
 			t.Fatal("catalog-absent source lost original facts", err)
 		}
 	}

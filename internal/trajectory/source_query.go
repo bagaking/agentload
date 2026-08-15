@@ -344,32 +344,47 @@ func (f *sourceStore) visitSessionWitnesses(ctx context.Context, q snapshot.Traj
 	var readers sync.WaitGroup
 	defer func() { cancel(); readers.Wait() }()
 	const workers = 4
-	pending := make([]chan witness, len(eligible))
-	launch := func(i int) {
-		if i >= len(eligible) {
-			return
-		}
-		pending[i] = make(chan witness, 1)
+	var jobs [workers]chan int
+	var pending [workers]chan witness
+	for worker := 0; worker < min(workers, len(eligible)); worker++ {
+		jobs[worker] = make(chan int, 1)
+		pending[worker] = make(chan witness, 1)
 		readers.Add(1)
-		go func() {
+		go func(worker int) {
 			defer readers.Done()
-			st, p := eligible[i], readiness[eligible[i].ID]
-			result := witness{summary: cachedSession(st)}
-			if st.Generation != "" && p.generation == st.Generation && p.complete && p.count != 0 {
-				result.err = f.walkSourceCandidateRanges(readCtx, st, func(filter *sourceFilter) bool { return filter.maybe(q) }, &p, !q.Count, &q, func(fact sourceFact) error {
-					if !matches(fact.event, q) {
-						return nil
+			for {
+				select {
+				case <-readCtx.Done():
+					return
+				case i := <-jobs[worker]:
+					st, p := eligible[i], readiness[eligible[i].ID]
+					result := witness{summary: cachedSession(st)}
+					if st.Generation != "" && p.generation == st.Generation && p.complete && p.count != 0 {
+						result.err = f.walkSourceCandidateRanges(readCtx, st, func(filter *sourceFilter) bool { return filter.maybe(q) }, &p, !q.Count, &q, func(fact sourceFact) error {
+							if !matches(fact.event, q) {
+								return nil
+							}
+							result.summary.MatchedIDs = []string{fact.event.ID}
+							result.summary.MatchedPreview = matchPreview(fact.event, q)
+							return io.EOF
+						})
+						if errors.Is(result.err, io.EOF) {
+							result.err = nil
+						}
 					}
-					result.summary.MatchedIDs = []string{fact.event.ID}
-					result.summary.MatchedPreview = matchPreview(fact.event, q)
-					return io.EOF
-				})
-				if errors.Is(result.err, io.EOF) {
-					result.err = nil
+					select {
+					case <-readCtx.Done():
+						return
+					case pending[worker] <- result:
+					}
 				}
 			}
-			pending[i] <- result
-		}()
+		}(worker)
+	}
+	launch := func(i int) {
+		if i < len(eligible) {
+			jobs[i%workers] <- i
+		}
 	}
 	for i := 0; i < min(workers, len(eligible)); i++ {
 		launch(i)
@@ -379,7 +394,7 @@ func (f *sourceStore) visitSessionWitnesses(ctx context.Context, q snapshot.Traj
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case result = <-pending[i]:
+		case result = <-pending[i%workers]:
 		}
 		if err := ctx.Err(); err != nil {
 			return err

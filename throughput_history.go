@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -72,6 +73,8 @@ type throughputHistoryStore struct {
 	droppedRecordCount int
 	corruptRecordCount int
 	lastWriteError     string
+	nextMaintenance    time.Time
+	nextColdRoll       time.Time
 }
 
 func throughputHistoryPath(historyPath string) string {
@@ -93,13 +96,12 @@ func loadThroughputHistoryStore(historyPath string, now time.Time) (*throughputH
 	}
 	defer lock.Release()
 	file, err := os.Open(store.path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return store, nil
-		}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return store, err
 	}
-	defer file.Close()
+	if file != nil {
+		defer file.Close()
+	}
 
 	cutoff := now.Add(-historyRetentionWindow)
 	minutes := map[string]ThroughputMinuteFact{}
@@ -120,7 +122,11 @@ func loadThroughputHistoryStore(historyPath string, now time.Time) (*throughputH
 	}
 
 	hotLines := 0
-	scanner := bufio.NewScanner(file)
+	var hotReader io.Reader = strings.NewReader("")
+	if file != nil {
+		hotReader = file
+	}
+	scanner := bufio.NewScanner(hotReader)
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -141,7 +147,7 @@ func loadThroughputHistoryStore(historyPath string, now time.Time) (*throughputH
 	}
 	sortThroughputHistory(store.minutes, store.legacy)
 	if historyFileNeedsCompaction(hotLines, store.hotRecordCount(now)) {
-		if err := compactThroughputHistoryFile(store.path, store.minutes, store.legacy, now); err != nil {
+		if err := maintainThroughputHistoryFile(store.path, now, historyfile.CheckStorageCapacity); err != nil {
 			return store, err
 		}
 	}
@@ -169,7 +175,9 @@ func (store *throughputHistoryStore) consumeThroughputLine(line []byte, cutoff t
 			store.droppedRecordCount++
 			return
 		}
-		minutes[minute.At] = minute
+		if old, exists := minutes[minute.At]; !exists || shouldReplaceThroughputMinute(old, minute) {
+			minutes[minute.At] = minute
+		}
 	case throughputHistoryKindLegacy:
 		fact, at, ok := normalizeLegacyThroughput(record.Legacy)
 		if !ok {
@@ -202,53 +210,6 @@ func (store *throughputHistoryStore) hotRecordCount(now time.Time) int {
 		}
 	}
 	return count
-}
-
-// compactThroughputHistoryFile archives records older than the hot window and
-// then rewrites the hot file with the remainder. The archive is made durable
-// first so a crash in between duplicates a record rather than losing it.
-func compactThroughputHistoryFile(path string, minutes []ThroughputMinuteFact, legacy []LegacyThroughputFact, now time.Time) error {
-	hotCutoff := now.Add(-historyHotWindow)
-	cold := make([]archiveRow, 0, len(minutes)+len(legacy))
-	hotMinutes := make([]ThroughputMinuteFact, 0, len(minutes))
-	hotLegacy := make([]LegacyThroughputFact, 0, len(legacy))
-
-	for i := range minutes {
-		at, err := time.Parse(time.RFC3339, minutes[i].At)
-		if err != nil {
-			continue
-		}
-		if !at.Before(hotCutoff) {
-			hotMinutes = append(hotMinutes, minutes[i])
-			continue
-		}
-		minute := cloneThroughputMinute(minutes[i])
-		raw, err := json.Marshal(throughputHistoryRecord{SchemaVersion: throughputHistorySchemaVersion, Kind: throughputHistoryKindMinute, Minute: &minute})
-		if err != nil {
-			return err
-		}
-		cold = append(cold, archiveRow{At: at, Line: raw})
-	}
-	for i := range legacy {
-		at, ok := parseObservedTime(legacy[i].At)
-		if !ok {
-			continue
-		}
-		if !at.Before(hotCutoff) {
-			hotLegacy = append(hotLegacy, legacy[i])
-			continue
-		}
-		fact := cloneLegacyThroughput(legacy[i])
-		raw, err := json.Marshal(throughputHistoryRecord{SchemaVersion: throughputHistorySchemaVersion, Kind: throughputHistoryKindLegacy, Legacy: &fact})
-		if err != nil {
-			return err
-		}
-		cold = append(cold, archiveRow{At: at, Line: raw})
-	}
-	if err := archiveColdRows(path, cold); err != nil {
-		return err
-	}
-	return rewriteThroughputHistoryFile(path, hotMinutes, hotLegacy)
 }
 
 func normalizeThroughputMinute(raw *ThroughputMinuteFact) (ThroughputMinuteFact, time.Time, bool) {
@@ -349,6 +310,7 @@ func (store *throughputHistoryStore) appendMinute(minute ThroughputMinuteFact, o
 	store.loadedRecordCount++
 	store.lastWriteError = ""
 	store.pruneLocked(observedAt.Add(-historyRetentionWindow))
+	store.maintainLocked(observedAt)
 	return nil
 }
 
@@ -518,55 +480,6 @@ func appendThroughputHistoryRecords(path string, records []throughputHistoryReco
 		return err
 	}
 	return file.Close()
-}
-
-func rewriteThroughputHistoryFile(path string, minutes []ThroughputMinuteFact, legacy []LegacyThroughputFact) error {
-	if strings.TrimSpace(path) == "" {
-		return errors.New("throughput history path is empty")
-	}
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".compact-*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	cleanup := func(err error) error {
-		_ = tmp.Close()
-		_ = os.Remove(tmpPath)
-		return err
-	}
-	writer := bufio.NewWriter(tmp)
-	encoder := json.NewEncoder(writer)
-	for i := range minutes {
-		minute := cloneThroughputMinute(minutes[i])
-		if err := encoder.Encode(throughputHistoryRecord{SchemaVersion: throughputHistorySchemaVersion, Kind: throughputHistoryKindMinute, Minute: &minute}); err != nil {
-			return cleanup(err)
-		}
-	}
-	for i := range legacy {
-		fact := cloneLegacyThroughput(legacy[i])
-		if err := encoder.Encode(throughputHistoryRecord{SchemaVersion: throughputHistorySchemaVersion, Kind: throughputHistoryKindLegacy, Legacy: &fact}); err != nil {
-			return cleanup(err)
-		}
-	}
-	if err := writer.Flush(); err != nil {
-		return cleanup(err)
-	}
-	if err := tmp.Chmod(0o644); err != nil {
-		return cleanup(err)
-	}
-	if err := tmp.Sync(); err != nil {
-		return cleanup(err)
-	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpPath)
-		return err
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		_ = os.Remove(tmpPath)
-		return err
-	}
-	return syncDir(dir)
 }
 
 func cloneThroughputMinute(minute ThroughputMinuteFact) ThroughputMinuteFact {

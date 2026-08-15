@@ -1,11 +1,13 @@
 package trajectory
 
 import (
-	"agentload/internal/snapshot"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"strconv"
+
+	"agentload/internal/snapshot"
+	fastjson "github.com/goccy/go-json"
 )
 
 // API evidence is fully materialized. Physical records inherit equal parent
@@ -54,7 +56,7 @@ func occurrenceID(eventID, entityID, predicate, nativeField string) string {
 	return "occ." + digest([]byte(eventID+"\x00"+entityID+"\x00"+predicate+"\x00"+nativeField))
 }
 
-func encodeEventStored(e snapshot.TrajectoryEvent) ([]byte, error) {
+func marshalEventStored(e snapshot.TrajectoryEvent) ([]byte, int, error) {
 	stored := storedEvent{TrajectoryEvent: e, ID: storedOverride(e.ID, sourceEventID(e.Source)), SessionID: storedOverride(e.SessionID, "s."+e.Source.ID+"."+e.Source.Generation)}
 	for _, o := range e.Entities {
 		item := storedOccurrence{ID: storedOverride(o.ID, occurrenceID(e.ID, o.EntityID, o.Predicate, o.NativeField)), EntityID: storedOverride(o.EntityID, occurrenceEntityID(o.Kind, o.Scope, o.Literal)), EventID: storedOverride(o.EventID, e.ID), SessionID: storedOverride(o.SessionID, e.SessionID), Kind: o.Kind, Literal: o.Literal, Label: storedOverride(o.Label, o.Literal), Scope: storedOverride(o.Scope, "session:"+e.SessionID), Predicate: o.Predicate, NativeField: o.NativeField}
@@ -66,18 +68,26 @@ func encodeEventStored(e snapshot.TrajectoryEvent) ([]byte, error) {
 	}
 	raw, err := json.Marshal(stored)
 	if err != nil {
+		return nil, 0, err
+	}
+	logical, err := json.Marshal(e)
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(logical) > maxStoredValue {
+		return nil, 0, fmt.Errorf("trajectory event exceeds storage bound")
+	}
+	return raw, len(logical), nil
+}
+
+func encodeEventStored(e snapshot.TrajectoryEvent) ([]byte, error) {
+	raw, logicalBytes, err := marshalEventStored(e)
+	if err != nil {
 		return nil, err
 	}
 	encoded, err := encodeStored(raw)
 	if err != nil {
 		return nil, err
-	}
-	logical, err := json.Marshal(e)
-	if err != nil {
-		return nil, err
-	}
-	if len(logical) > maxStoredValue {
-		return nil, fmt.Errorf("trajectory event exceeds storage bound")
 	}
 	// Retain the expanded byte count so query and analysis budgets remain
 	// independent of physical reference factoring and compression.
@@ -93,7 +103,7 @@ func encodeEventStored(e snapshot.TrajectoryEvent) ([]byte, error) {
 		framed[3] = 5
 	}
 	binary.BigEndian.PutUint32(framed[4:8], uint32(len(raw)))
-	binary.BigEndian.PutUint32(framed[8:12], uint32(len(logical)))
+	binary.BigEndian.PutUint32(framed[8:12], uint32(logicalBytes))
 	copy(framed[12:], body)
 	return framed, nil
 }
@@ -104,7 +114,14 @@ func decodeEventStored(value []byte) (snapshot.TrajectoryEvent, error) {
 	if err != nil {
 		return stored.TrajectoryEvent, err
 	}
-	if err = json.Unmarshal(raw, &stored); err != nil {
+	return decodeEventRaw(raw)
+}
+
+// The enclosing exception block already bounds compact JSON expansion. Its
+// envelope may be larger than a legal public event with explicit overrides.
+func decodeEventRaw(raw []byte) (snapshot.TrajectoryEvent, error) {
+	var stored storedEvent
+	if err := fastjson.Unmarshal(raw, &stored); err != nil {
 		return stored.TrajectoryEvent, err
 	}
 	e := stored.TrajectoryEvent

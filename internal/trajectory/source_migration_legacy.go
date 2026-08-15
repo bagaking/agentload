@@ -37,7 +37,7 @@ func (s *Service) migrateDirectLegacy(ctx context.Context) error {
 			r.close()
 			return err
 		}
-		shadow, err := openSourceStore(ctx, s.path+".source-migrating")
+		shadow, err := openMigrationSourceStore(ctx, s.path+".source-migrating")
 		if err != nil {
 			r.close()
 			return err
@@ -49,7 +49,7 @@ func (s *Service) migrateDirectLegacy(ctx context.Context) error {
 		}
 		if !has {
 			original := r.state
-			state = sourceMigration{Version: sourceStoreVersion, Input: directInputIdentity(r), Phase: "legacy-progress", Legacy: &original, BytesBefore: r.state.BytesBefore, FactOffset: -1, FactBlock: -1}
+			state = sourceMigration{Version: sourceMigrationVersion, Input: directInputIdentity(r), Phase: "legacy-progress", Legacy: &original, BytesBefore: r.state.BytesBefore, FactOffset: -1, FactBlock: -1}
 			if err = saveSourceMigration(ctx, shadow, state); err != nil {
 				return err
 			}
@@ -59,7 +59,7 @@ func (s *Service) migrateDirectLegacy(ctx context.Context) error {
 				return err
 			}
 		}
-		if state.Version != sourceStoreVersion || state.Legacy == nil || state.Input != directInputIdentity(r) {
+		if state.Version != sourceMigrationVersion || state.Legacy == nil || state.Input != directInputIdentity(r) {
 			return errors.New("dual migration input changed; originals and shadow preserved")
 		}
 	}
@@ -387,16 +387,8 @@ func (v *directFactVerifier) event(ctx context.Context, id string, offset int64,
 		return snapshot.TrajectoryEvent{}, err
 	}
 	if missing {
-		var body []byte
-		if err := v.run.shadow.db.QueryRowContext(ctx, "SELECT body FROM exceptions WHERE source=? AND offset=? AND block=?", row, offset, block).Scan(&body); err != nil {
-			return snapshot.TrajectoryEvent{}, err
-		}
-		raw, err := decodeSourceValue(body, maxSourceRangeLogicalBytes)
+		e, err := exceptionAt(ctx, v.run.shadow.db, int64(row), offset, block)
 		if err != nil {
-			return snapshot.TrajectoryEvent{}, err
-		}
-		var e sourceException
-		if err = json.Unmarshal(raw, &e); err != nil {
 			return snapshot.TrajectoryEvent{}, err
 		}
 		if e.Event == nil || e.Offset != offset || e.Block != block {
@@ -589,7 +581,7 @@ func (s *Service) finishDirectLegacy(ctx context.Context, state sourceMigration)
 	if err := checkDirectInputIdentities(s.path, state, true); err != nil {
 		return err
 	}
-	f, err := openSourceStore(ctx, s.path)
+	f, err := openMigrationSourceStore(ctx, s.path)
 	if err != nil {
 		return err
 	}

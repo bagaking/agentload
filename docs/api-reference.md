@@ -533,6 +533,32 @@ filters never establish a match; canonical evidence and exact predicates do.
 Unknown recovery metadata and complete original checkpoint frames remain opaque
 recovery evidence. No external compression executable is required.
 
+Cold retained facts use the existing exact event reference codec in independent
+same-source blocks, targeting 16 KiB of encoded JSON expansion and at most 64
+members. Oversized individual facts retain their existing bound. API byte
+budgets count fully materialized events. Queryable exception blocks stay within
+one sparse replay range; suppressed events and explicit foreign or empty
+references remain intact.
+
+Upgrading an existing source-backed store repacks these facts in bounded
+transactions inside the same database. Each batch restores and verifies the
+complete logical records and locators before replacing its old representation
+and committing progress. Cancellation or insufficient capacity retains the
+committed prefix. No whole-store copy is made for this upgrade; unused SQLite
+pages are reclaimed incrementally and actual allocation is reported separately.
+
+Offline maintenance also packs sparse exception leaf pages in bounded,
+recoverable transactions inside the same table. It moves only private row IDs;
+every block field and body is read back before progress commits. Public source
+locators and event IDs remain identical. Full fact and control digests are
+checked before incremental page reclamation. No whole-store copy is created.
+
+Source integrity audits advance in batches of at most 64 physical ranges, with
+a 4 MiB byte target and a 25ms soft admission budget. One oversized range still
+makes progress. One transaction records the verified cursor; a changed file
+identity, size or modification time rejects publication. Cancellation and broken
+range chains retain the existing trust boundary and recovery semantics.
+
 Migration writes one recoverable small shadow. Each bounded write reserves its
 actual data and rollback capacity, keeping at least 1 GiB available. The original
 is read-only until independent fact/metadata checks, target cardinality and a
@@ -541,6 +567,8 @@ the old structure retired. A source that disappears or changes during migration
 retains its original canonical facts in quarantine; it is not made queryable by
 stored paths. The replacement is undergoing acceptance; the installed production
 format and whole-library size must be verified before claiming migration complete.
+The shadow procedure applies to older fact/projection stores; the source-backed
+fact-block upgrade above uses the existing database.
 
 ### Incremental index and vendor coverage
 
@@ -556,6 +584,10 @@ search readiness in bounded batches; progress resumes at committed checkpoints.
 candidate filters. It leaves decoded and searchable fact counts unchanged.
 Background verification resumes per source; unreadable or unauthorized sources
 do not cause repeated whole-catalog scans.
+Continuously appended sources may remain unsealed even after decoded and
+searchable counts catch up. Live acceptance permits only this exact audit gap;
+static fixtures still require a full seal. Neither policy permits source-change
+read errors, missing preparation, different hits or a larger query time budget.
 All configured archived sources are queryable, independent of the resource
 metrics lookback. Historical source states are not capped to a recent 512 files.
 

@@ -37,7 +37,7 @@ type sourceStore struct {
 	rangeBytes      int
 }
 
-const sourceStoreVersion = 2
+const sourceStoreVersion = 3
 const sourceStoreSchema = `
 CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT NOT NULL) WITHOUT ROWID;
 INSERT INTO meta VALUES('revision','0');
@@ -46,10 +46,19 @@ CREATE TABLE sources(rowid INTEGER PRIMARY KEY,id TEXT NOT NULL,generation TEXT 
 CREATE UNIQUE INDEX source_active ON sources(id) WHERE active=1;
 CREATE INDEX sources_retired ON sources(rowid) WHERE active=0 OR missing=1;
 CREATE TABLE ranges(rowid INTEGER PRIMARY KEY,source INTEGER NOT NULL REFERENCES sources(rowid) ON DELETE CASCADE,start INTEGER NOT NULL,end INTEGER NOT NULL,body BLOB NOT NULL,filter BLOB NOT NULL,UNIQUE(source,start));
-CREATE TABLE exceptions(rowid INTEGER PRIMARY KEY,source INTEGER NOT NULL REFERENCES sources(rowid) ON DELETE CASCADE,offset INTEGER NOT NULL,block INTEGER NOT NULL,body BLOB NOT NULL,UNIQUE(source,offset,block));
+CREATE TABLE exceptions(rowid INTEGER PRIMARY KEY,source INTEGER NOT NULL REFERENCES sources(rowid) ON DELETE CASCADE,offset INTEGER NOT NULL,block INTEGER NOT NULL,body BLOB NOT NULL,end_offset INTEGER NOT NULL,end_block INTEGER NOT NULL,records INTEGER NOT NULL,UNIQUE(source,offset,block));
 `
 
 func openSourceStore(ctx context.Context, path string) (*sourceStore, error) {
+	return openSourceStoreFormat(ctx, path, false)
+}
+
+// Only the cutover/upgrade owner may inspect v2 metadata. Public readers never
+// accept the old body representation.
+func openMigrationSourceStore(ctx context.Context, path string) (*sourceStore, error) {
+	return openSourceStoreFormat(ctx, path, true)
+}
+func openSourceStoreFormat(ctx context.Context, path string, migration bool) (*sourceStore, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -110,7 +119,9 @@ func openSourceStore(ctx context.Context, path string) (*sourceStore, error) {
 		if err != nil {
 			return fail(err)
 		}
-	} else if version != sourceStoreVersion {
+	} else if version == 2 && !migration {
+		return fail(errStorageMigration)
+	} else if version != sourceStoreVersion && !(migration && version == 2) {
 		return fail(errors.New("unrecognized trajectory source store version; preserved"))
 	}
 	return &sourceStore{db: db, path: path, checkCapacity: historyfile.CheckStorageCapacity}, nil
@@ -119,7 +130,10 @@ func openSourceStore(ctx context.Context, path string) (*sourceStore, error) {
 // Checksumming even uncompressed frames prevents a damaged candidate/anchor
 // from silently excluding a true event. Decoder allocation is bounded first.
 func encodeSourceValue(raw []byte) ([]byte, error) {
-	body, err := encodeTextStored(string(raw))
+	return encodeSourceValueBounded(raw, maxStoredValue)
+}
+func encodeSourceValueBounded(raw []byte, max int) ([]byte, error) {
+	body, err := encodeTextStoredBounded(string(raw), max)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +150,7 @@ func decodeSourceValue(value []byte, max int) ([]byte, error) {
 	if !bytes.Equal(hash[:], value[:sha256.Size]) || binary.BigEndian.Uint32(body[4:8]) > uint32(max) {
 		return nil, errors.New("invalid source store checksum/length")
 	}
-	return decodeStored(body)
+	return decodeStoredBounded(body, max)
 }
 
 func (f *sourceStore) write(ctx context.Context, additional uint64, apply func(*sql.Tx) error) error {
@@ -312,19 +326,6 @@ type sourceException struct {
 	Event  *snapshot.TrajectoryEvent `json:"event"`
 }
 
-func putSourceException(tx *sql.Tx, source int64, e sourceException) error {
-	raw, err := json.Marshal(e)
-	if err != nil {
-		return err
-	}
-	body, err := encodeSourceValue(raw)
-	if err != nil {
-		return err
-	}
-	_, err = tx.Exec("INSERT INTO exceptions(source,offset,block,body) VALUES(?,?,?,?)", source, e.Offset, e.Block, body)
-	return err
-}
-
 type storedRange struct {
 	row    int64
 	value  sourceRange
@@ -362,7 +363,7 @@ func (f *sourceStore) sourceRanges(ctx context.Context, st *sourceState, after i
 }
 
 func (f *sourceStore) rangeExceptions(ctx context.Context, st *sourceState, start, end int64) ([]sourceException, error) {
-	rows, err := f.db.QueryContext(ctx, "SELECT e.offset,e.block,e.body FROM exceptions e JOIN sources s ON s.rowid=e.source WHERE s.id=? AND s.generation=? AND s.active=1 AND s.missing=0 AND e.offset>=? AND e.offset<? ORDER BY e.offset,e.block", st.ID, st.Generation, start, end)
+	rows, err := f.db.QueryContext(ctx, "SELECT e.offset,e.block,e.end_offset,e.end_block,e.records,e.body FROM exceptions e JOIN sources s ON s.rowid=e.source WHERE s.id=? AND s.generation=? AND s.active=1 AND s.missing=0 AND e.offset>=? AND e.offset<? ORDER BY e.offset,e.block", st.ID, st.Generation, start, end)
 	if err != nil {
 		return nil, err
 	}
@@ -370,28 +371,24 @@ func (f *sourceStore) rangeExceptions(ctx context.Context, st *sourceState, star
 	result := []sourceException{}
 	allocated := 0
 	for rows.Next() {
-		var offset int64
-		var block int
+		var first, last sourcePosition
+		var count int
 		var body []byte
-		var exception sourceException
-		if err = rows.Scan(&offset, &block, &body); err != nil {
+		if err = rows.Scan(&first.Offset, &first.Block, &last.Offset, &last.Block, &count, &body); err != nil {
 			return nil, err
 		}
-		raw, e := decodeSourceValue(body, maxStoredValue)
+		if last.Offset >= end {
+			return nil, ErrStale
+		}
+		facts, logical, e := decodeSourceExceptionBlock(body, first, last, count)
 		if e != nil {
 			return nil, e
 		}
-		allocated += len(raw)
+		allocated += logical
 		if allocated > maxSourceRangeLogicalBytes {
 			return nil, errors.New("source range exceptions exceed bounded read budget; preserved")
 		}
-		if err = json.Unmarshal(raw, &exception); err != nil {
-			return nil, err
-		}
-		if exception.Offset != offset || exception.Block != block {
-			return nil, ErrStale
-		}
-		result = append(result, exception)
+		result = append(result, facts...)
 	}
 	return result, rows.Err()
 }
@@ -672,10 +669,8 @@ func (f *sourceStore) importRange(ctx context.Context, st *sourceState, chunk re
 		if err = putSourceRange(tx, source, value, filter); err != nil {
 			return err
 		}
-		for _, exception := range exceptions {
-			if err = putSourceException(tx, source, exception); err != nil {
-				return err
-			}
+		if err = putSourceExceptions(tx, source, exceptions); err != nil {
+			return err
 		}
 		return finishSourceOperation(ctx, st, sourceFile, before)
 	})

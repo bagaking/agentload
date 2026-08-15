@@ -227,16 +227,8 @@ func TestTrajectorySourceDirectLegacyTwoSourcesOpaqueRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range retained {
-		var frame []byte
-		if err = s.store.db.QueryRow("SELECT body FROM exceptions WHERE source=? AND offset=? AND block=0", row, want.Source.Offset).Scan(&frame); err != nil {
-			t.Fatal(err)
-		}
-		raw, e := decodeSourceValue(frame, maxSourceRangeLogicalBytes)
-		if e != nil {
-			t.Fatal(e)
-		}
-		var saved sourceException
-		if err = json.Unmarshal(raw, &saved); err != nil || saved.Event == nil || !reflect.DeepEqual(*saved.Event, want) {
+		saved, err := exceptionAt(context.Background(), s.store.db, row, want.Source.Offset, 0)
+		if err != nil || saved.Event == nil || !reflect.DeepEqual(*saved.Event, want) {
 			t.Fatal("complete retained DTO differs", err)
 		}
 	}

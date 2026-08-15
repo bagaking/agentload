@@ -626,7 +626,7 @@ func TestTrajectorySearchDoesNotReadCanonicalNonmatches(t *testing.T) {
 		s.opMu.Unlock()
 		t.Fatal("cannot locate negative candidate range", err)
 	}
-	_, err = s.store.db.Exec("INSERT INTO exceptions(source,offset,block,body) SELECT rowid,?,?,? FROM sources WHERE id=? AND generation=?", facts[0].offset, facts[0].block, []byte("malformed unrelated event"), st.ID, st.Generation)
+	_, err = s.store.db.Exec("INSERT INTO exceptions(source,offset,block,body,end_offset,end_block,records) SELECT rowid,?,?,?,-1,-1,1 FROM sources WHERE id=? AND generation=?", facts[0].offset, facts[0].block, []byte("malformed unrelated event"), st.ID, st.Generation)
 	if err != nil {
 		s.opMu.Unlock()
 		t.Fatal(err)

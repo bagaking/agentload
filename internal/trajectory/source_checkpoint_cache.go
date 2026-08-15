@@ -3,8 +3,9 @@ package trajectory
 import (
 	"container/list"
 	"crypto/sha256"
-	"encoding/json"
 	"slices"
+
+	fastjson "github.com/goccy/go-json"
 )
 
 // Cache small recovery metadata, never historical events. SQL rows and their
@@ -52,7 +53,7 @@ func (f *sourceStore) decodeCheckpoint(id string, body []byte, max int) (sourceC
 		return sourceCheckpoint{}, err
 	}
 	var c sourceCheckpoint
-	if err = json.Unmarshal(raw, &c); err != nil {
+	if err = fastjson.Unmarshal(raw, &c); err != nil {
 		return c, err
 	}
 	entry := cachedCheckpoint{id: id, hash: hash, value: c, decodedBytes: len(raw), cost: 2*len(raw) + 1024}

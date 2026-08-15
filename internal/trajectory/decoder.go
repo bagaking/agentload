@@ -1,11 +1,12 @@
 package trajectory
 
 import (
-	"agentload/internal/snapshot"
-	"encoding/json"
 	"regexp"
 	"strings"
 	"time"
+
+	"agentload/internal/snapshot"
+	json "github.com/goccy/go-json"
 )
 
 type DecodeContext struct{ SessionID string }

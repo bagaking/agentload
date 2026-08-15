@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -85,5 +87,56 @@ func TestTrajectoryMaintenanceReportsVerifiedSealBeforeRetirement(t *testing.T) 
 	}
 	if _, err := os.Stat(path + ".source-legacy"); !os.IsNotExist(err) {
 		t.Fatal("completed maintenance retained old layout", err)
+	}
+}
+
+func TestTrajectoryMaintenanceResumesInstalledCutoverWithOriginalInput(t *testing.T) {
+	for _, version := range []int{sourceStoreVersion, 2} {
+		t.Run(fmt.Sprint(version), func(t *testing.T) {
+			fixture, st, facts, path := publishSQLiteRecoveryFixture(t)
+			if version == 2 {
+				downgradeSealedSourceFixture(t, path, path)
+			}
+			input, _, err := sourceFileSeal(context.Background(), path+".source-legacy")
+			if err != nil {
+				t.Fatal(err)
+			}
+			sealed, err := readSourceSeal(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var ready StorageProgress
+			err = OptimizeStorage(context.Background(), fixture.provider, path, func(p StorageProgress) {
+				if p.Phase == "ready" {
+					ready = p
+				}
+			}, input)
+			if err != nil {
+				t.Fatal("correct original request rejected across cutover", err)
+			}
+			if version == sourceStoreVersion {
+				if ready.TargetHash != sealed.Hash || ready.BlockPacking != nil {
+					t.Fatal("dense sealed target unnecessarily rewritten", ready)
+				}
+			} else if ready.BlockUpgrade == nil || ready.BlockUpgrade.InputSHA256 != sealed.Hash || ready.BlockUpgrade.InputSHA256 == input {
+				t.Fatal("upgrade lost distinct physical stage input", ready)
+			}
+			f, err := openSourceStore(context.Background(), path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer f.db.Close()
+			for _, want := range facts {
+				got, err := f.event(context.Background(), st, want.offset, want.block)
+				if err != nil || !reflect.DeepEqual(got, want.event) {
+					t.Fatal("resumed cutover changed complete fact", err)
+				}
+			}
+			for _, suffix := range []string{".source-legacy", ".source-migrating", ".source-ready.json"} {
+				if _, err := os.Stat(path + suffix); !os.IsNotExist(err) {
+					t.Fatal("finished cutover retained obsolete structure", suffix, err)
+				}
+			}
+		})
 	}
 }

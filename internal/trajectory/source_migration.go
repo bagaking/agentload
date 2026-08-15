@@ -17,6 +17,8 @@ import (
 	"time"
 )
 
+const sourceMigrationVersion = 2
+
 type sourceMigration struct {
 	Version            int            `json:"version"`
 	Input              string         `json:"input"`
@@ -131,7 +133,7 @@ func validateSourceMigrationCounts(ctx context.Context, run *sourceMigrationRun,
 		return errors.New("migration target canonical event count differs; originals preserved")
 	}
 	var orphan bool
-	if err := run.shadow.db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM exceptions e JOIN sources s ON s.rowid=e.source WHERE s.missing=0 AND NOT EXISTS(SELECT 1 FROM ranges r WHERE r.source=e.source AND r.start<=e.offset AND r.end>e.offset))").Scan(&orphan); err != nil {
+	if err := run.shadow.db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM exceptions e JOIN sources s ON s.rowid=e.source WHERE s.missing=0 AND NOT EXISTS(SELECT 1 FROM ranges r WHERE r.source=e.source AND r.start<=e.offset AND r.end>e.end_offset))").Scan(&orphan); err != nil {
 		return err
 	}
 	if orphan {
@@ -182,30 +184,28 @@ func countSourceMigrationFacts(ctx context.Context, f *sourceStore) (int64, erro
 	if err != nil {
 		return 0, err
 	}
-	rows, err = f.db.QueryContext(ctx, "SELECT e.offset,e.block,e.body FROM exceptions e JOIN sources s ON s.rowid=e.source WHERE s.missing=1")
+	rows, err = f.db.QueryContext(ctx, "SELECT e.offset,e.block,e.end_offset,e.end_block,e.records,e.body FROM exceptions e JOIN sources s ON s.rowid=e.source WHERE s.missing=1")
 	if err != nil {
 		return 0, err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var offset int64
-		var block int
+		var first, last sourcePosition
+		var count int
 		var body []byte
-		if err = rows.Scan(&offset, &block, &body); err != nil {
+		if err = rows.Scan(&first.Offset, &first.Block, &last.Offset, &last.Block, &count, &body); err != nil {
 			return 0, err
 		}
-		raw, err := decodeSourceValue(body, maxSourceRangeLogicalBytes)
-		if err != nil {
-			return 0, err
+		facts, _, e := decodeSourceExceptionBlock(body, first, last, count)
+		if e != nil {
+			return 0, e
 		}
-		var value sourceException
-		if err = json.Unmarshal(raw, &value); err != nil {
-			return 0, err
+		for _, fact := range facts {
+			if fact.Event == nil {
+				return 0, errors.New("migration target stored fact differs; originals preserved")
+			}
+			total++
 		}
-		if value.Event == nil || value.Offset != offset || value.Block != block {
-			return 0, errors.New("migration target stored fact differs; originals preserved")
-		}
-		total++
 	}
 	return total, rows.Err()
 }
@@ -456,6 +456,10 @@ func sqliteVersion(ctx context.Context, path string) (int, error) {
 // The application authorization inventory, rather than stored paths, chooses
 // which local sources may reconstruct facts. Only one bounded shadow is made.
 func (s *Service) migrateSourceStore(ctx context.Context) error {
+	if err := s.upgradeUnsealedSourceShadow(ctx); err != nil {
+		return err
+	}
+
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -474,8 +478,14 @@ func (s *Service) migrateSourceStore(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if v == sourceStoreVersion {
-		return s.finishSourceCutover(ctx)
+	if v == sourceStoreVersion || v == 2 {
+		if err := s.finishSourceCutover(ctx); err != nil {
+			return err
+		}
+		if v == 2 {
+			return s.upgradeSourceBlocks(ctx, s.path)
+		}
+		return s.resumeSourcePacking(ctx)
 	}
 	if v != factStoreVersion {
 		return errors.New("unrecognized trajectory format; original preserved")
@@ -495,7 +505,7 @@ func (s *Service) migrateSourceStore(ctx context.Context) error {
 			return err
 		}
 		db.SetMaxOpenConns(1)
-		shadow, err := openSourceStore(ctx, s.path+".source-migrating")
+		shadow, err := openMigrationSourceStore(ctx, s.path+".source-migrating")
 		if err != nil {
 			db.Close()
 			return err
@@ -506,13 +516,13 @@ func (s *Service) migrateSourceStore(ctx context.Context) error {
 			return err
 		}
 		if !has {
-			state = sourceMigration{Version: sourceStoreVersion, Input: identity, Phase: "control", BytesBefore: size}
+			state = sourceMigration{Version: sourceMigrationVersion, Input: identity, Phase: "control", BytesBefore: size}
 			err = saveSourceMigration(ctx, shadow, state)
 		}
 		if err != nil {
 			return err
 		}
-		if state.Version != sourceStoreVersion {
+		if state.Version != sourceMigrationVersion {
 			return errors.New("migration input changed; source and shadow preserved")
 		}
 	}
@@ -936,7 +946,7 @@ func (s *Service) finishSourceCutover(ctx context.Context) error {
 		} else if err != nil {
 			return err
 		}
-		f, err := openSourceStore(ctx, s.path)
+		f, err := openMigrationSourceStore(ctx, s.path)
 		if err != nil {
 			return err
 		}
@@ -947,6 +957,9 @@ func (s *Service) finishSourceCutover(ctx context.Context) error {
 		}
 		if !has || state.Phase != "ready" {
 			return errors.New("unreconciled cutover seal; originals preserved")
+		}
+		if s.expectedInputSHA256 != "" && s.expectedInputSHA256 != state.InputSHA256 {
+			return errors.New("cutover input SHA differs; originals preserved")
 		}
 		if state.Legacy != nil {
 			return s.finishDirectLegacy(ctx, state)
@@ -971,7 +984,7 @@ func (s *Service) finishSourceCutover(ctx context.Context) error {
 	} else if err != nil {
 		return err
 	}
-	f, err := openSourceStore(ctx, s.path)
+	f, err := openMigrationSourceStore(ctx, s.path)
 	if err != nil {
 		return err
 	}
@@ -982,6 +995,9 @@ func (s *Service) finishSourceCutover(ctx context.Context) error {
 	}
 	if !has || st.Phase != "ready" {
 		return errors.New("new store is not verified; migration original preserved")
+	}
+	if s.expectedInputSHA256 != "" && s.expectedInputSHA256 != st.InputSHA256 {
+		return errors.New("cutover input SHA differs; originals preserved")
 	}
 	if err = checkSourceCutoverSeal(ctx, s.path, s.path, st); err != nil {
 		return err
@@ -1052,7 +1068,7 @@ func writeSourceCutoverSeal(ctx context.Context, path string, run *sourceMigrati
 	if err != nil {
 		return err
 	}
-	seal := sourceCutoverSeal{Version: sourceStoreVersion, Input: state.Input, Hash: hash, Size: size, Records: state.Records}
+	seal := sourceCutoverSeal{Version: sourceMigrationVersion, Input: state.Input, Hash: hash, Size: size, Records: state.Records}
 	if state.Legacy != nil {
 		seal.ProgressHash = legacyProgressDigest(run.legacy.progress)
 		if previous, e := readSourceSeal(path); e == nil && previous.Input == state.Input {
@@ -1104,7 +1120,7 @@ func checkSourceCutoverSeal(ctx context.Context, path, target string, state sour
 	if err != nil {
 		return err
 	}
-	if seal.Version != sourceStoreVersion || seal.Input != state.Input || seal.Records != state.Records || len(seal.Hash) != 64 {
+	if seal.Version != sourceMigrationVersion || seal.Input != state.Input || seal.Records != state.Records || len(seal.Hash) != 64 {
 		return errors.New("cutover seal identity differs; original preserved")
 	}
 	hash, size, err := sourceFileSeal(ctx, target)
@@ -1175,19 +1191,12 @@ func migrateStoredSource(ctx context.Context, run *sourceMigrationRun, state *so
 		if err != nil {
 			return err
 		}
+		saved := make([]sourceException, 0, len(facts))
 		for _, fact := range facts {
 			event := fact.event
-			// The durable fact write and independently verified progress update
-			// are separate. Replaying the same bounded batch after a crash must
-			// replace only those exact physical keys, never duplicate or purge it.
-			if _, err = tx.ExecContext(ctx, "DELETE FROM exceptions WHERE source=? AND offset=? AND block=?", row, fact.offset, fact.block); err != nil {
-				return err
-			}
-			if err = putSourceException(tx, row, sourceException{fact.offset, fact.block, &event}); err != nil {
-				return err
-			}
+			saved = append(saved, sourceException{fact.offset, fact.block, &event})
 		}
-		return nil
+		return replaceSourceExceptions(tx, row, saved)
 	})
 	if err != nil {
 		return false, err
@@ -1200,16 +1209,8 @@ func migrateStoredSource(ctx context.Context, run *sourceMigrationRun, state *so
 		return false, ErrStale
 	}
 	for i, fact := range original {
-		var frame []byte
-		if err = run.shadow.db.QueryRowContext(ctx, "SELECT body FROM exceptions WHERE source=? AND offset=? AND block=?", row, fact.offset, fact.block).Scan(&frame); err != nil {
-			return false, err
-		}
-		value, err := decodeSourceValue(frame, maxSourceRangeLogicalBytes)
+		saved, err := exceptionAt(ctx, run.shadow.db, row, fact.offset, fact.block)
 		if err != nil {
-			return false, err
-		}
-		var saved sourceException
-		if err = json.Unmarshal(value, &saved); err != nil {
 			return false, err
 		}
 		a, _ := json.Marshal(fact.event)
@@ -1229,7 +1230,7 @@ func migrateStoredSource(ctx context.Context, run *sourceMigrationRun, state *so
 	if err != nil {
 		return false, err
 	}
-	if err = run.shadow.db.QueryRowContext(ctx, "SELECT count(*) FROM exceptions WHERE source=?", row).Scan(&actual); err != nil {
+	if err = run.shadow.db.QueryRowContext(ctx, "SELECT coalesce(sum(records),0) FROM exceptions WHERE source=?", row).Scan(&actual); err != nil {
 		return false, err
 	}
 	if expected != actual {

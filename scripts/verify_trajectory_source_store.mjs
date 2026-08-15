@@ -5,13 +5,14 @@ import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
+import { verifySourceBlockUpgrade } from './verify_trajectory_block_upgrade.mjs';
 import { candidateInputDigest, fileDigest } from './trajectory_acceptance_inputs.mjs';
 
 export function sourceStorageInputDigest(root) {
   const hash = createHash('sha256').update(candidateInputDigest(root));
   for (const path of ['build_macos_app.sh', 'docs/trajectory-requirements.md',
     'docs/api-reference.md', 'scripts/verify_trajectory_source_store.mjs',
-    'scripts/trajectory_acceptance_inputs.mjs']) {
+    'scripts/trajectory_acceptance_inputs.mjs','scripts/verify_trajectory_block_upgrade.mjs']) {
     hash.update(path + '\0').update(readFileSync(join(root, path))).update('\0');
   }
   return hash.digest('hex');
@@ -31,7 +32,7 @@ const sameFile = (a, b) => String(a.dev) === String(b.dev) && String(a.ino) === 
 const canonicalHistory = () => join(homedir(), 'Library/Application Support/AgentLoad/history.jsonl');
 const sessionID = value => typeof value === 'string' && /^s\.[a-f0-9]{16}\.[a-f0-9]{16}$/.test(value);
 const eventID = value => typeof value === 'string' && /^e\.[a-f0-9]{16}\.[a-f0-9]{16}\.[0-9a-z]+\.\d+\.[a-f0-9]{16}$/.test(value);
-export const pageIdentity = (result, {count = false} = {}) => {
+export const pageIdentity = (result, {count = false, allowAuditPending = false} = {}) => {
   requireProof(Array.isArray(result?.sessions) && result.sessions.length > 0 && result.sessions.length <= 20 &&
     new Set(result.sessions.map(s => s.id)).size === result.sessions.length, 'Invalid or duplicated session page.');
   for (const s of result.sessions) {
@@ -40,16 +41,17 @@ export const pageIdentity = (result, {count = false} = {}) => {
       new Set(s.matched_ids).size === s.matched_ids.length && s.matched_ids.every(id => eventID(id) &&
         id.split('.').slice(1,3).join('.') === s.id.slice(2)), 'Malformed matched session/event identities.');
   }
-  verifyCoverage(result.coverage);
+  verifyCoverage(result.coverage, {allowAuditPending});
   return result.sessions.map(s => [s.id, s.matched_count, s.matched_ids]);
 };
 
-export function verifyCoverage(coverage) {
+export function verifyCoverage(coverage, {allowAuditPending = false} = {}) {
   const c = coverage, i = c?.index;
   requireProof(Array.isArray(c?.gaps) && c.gaps.every(g => typeof g === 'string') && i &&
     positive(i.known_sources) && i.decoded_sources === i.known_sources && i.searchable_sources === i.known_sources &&
     nonnegative(i.decoded_events) && i.decoded_events === i.searchable_events &&
-    !c.gaps.some(g => /pending|unavailable|storage_low|unreadable|cancelled|discovery_incomplete/.test(g)),
+    !c.gaps.some(g => !(allowAuditPending && g === 'source_audit_pending') &&
+      /pending|unavailable|storage_low|unreadable|cancelled|discovery_incomplete|source_changed_during_query/.test(g)),
     'Actual query preparation/read coverage is incomplete.');
 }
 
@@ -437,5 +439,6 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
   const root = resolve(import.meta.dirname, '..');
   const path = join(root, '.bagakit/feature-tracker/features/f-22duuagpj/artifacts/storage-source-acceptance.json');
   requireProof(existsSync(path), 'Missing actual installed whole-corpus source-store evidence.');
-  verifySourceStore(root, JSON.parse(readFileSync(path, 'utf8')));
+  const proof=JSON.parse(readFileSync(path,'utf8'));
+  if([2,3].includes(proof.version)) verifySourceBlockUpgrade(root,proof); else verifySourceStore(root,proof);
 }

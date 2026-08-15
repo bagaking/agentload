@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -73,6 +74,25 @@ func archiveMonthFromPath(base, path string) string {
 		return ""
 	}
 	return name
+}
+
+// scanArchivePartition lets typed owners fold revisions without retaining every
+// obsolete line. Missing partitions are empty; incomplete gzip stays an error.
+func scanArchivePartition(path string, consume func(io.Reader) error) error {
+	file, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	reader, err := gzip.NewReader(file)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+	return consume(reader)
 }
 
 // readArchivePartition returns every line the partition holds. A partition that

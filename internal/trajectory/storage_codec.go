@@ -27,8 +27,9 @@ type storedValueReader struct {
 
 var valueReaders = sync.Pool{New: func() any { return new(storedValueReader) }}
 
-func encodeStored(raw []byte) ([]byte, error) {
-	if len(raw) > maxStoredValue {
+func encodeStored(raw []byte) ([]byte, error) { return encodeStoredBounded(raw, maxStoredValue) }
+func encodeStoredBounded(raw []byte, max int) ([]byte, error) {
+	if len(raw) > max {
 		return nil, errors.New("trajectory value exceeds storage bound")
 	}
 	// JSON is the current small-value encoding. Larger incompressible values
@@ -55,18 +56,22 @@ func encodeStored(raw []byte) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-func decodeStored(value []byte) ([]byte, error) {
-	if len(value) > maxStoredValue {
+func decodeStored(value []byte) ([]byte, error) { return decodeStoredBounded(value, maxStoredValue) }
+func decodeStoredBounded(value []byte, max int) ([]byte, error) {
+	if len(value) > max+12 {
 		return nil, errors.New("trajectory value exceeds storage bound")
 	}
 	if len(value) == 0 || value[0] != 0 {
+		if len(value) > max {
+			return nil, errors.New("trajectory value exceeds storage bound")
+		}
 		return value, nil
 	}
 	if len(value) < 8 || !bytes.Equal(value[1:3], valueMagic[1:3]) || value[3] > 5 {
 		return nil, errors.New("invalid trajectory storage frame")
 	}
 	n := int(binary.BigEndian.Uint32(value[4:8]))
-	if n > maxStoredValue {
+	if n > max {
 		return nil, errors.New("invalid trajectory storage length")
 	}
 	start := 8
@@ -126,8 +131,11 @@ func releaseStoredReader(pooled *storedValueReader) {
 }
 
 func encodeTextStored(text string) ([]byte, error) {
+	return encodeTextStoredBounded(text, maxStoredValue)
+}
+func encodeTextStoredBounded(text string, max int) ([]byte, error) {
 	raw := []byte(text)
-	encoded, err := encodeStored(raw)
+	encoded, err := encodeStoredBounded(raw, max)
 	if err != nil {
 		return nil, err
 	}

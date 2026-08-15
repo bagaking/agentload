@@ -19,7 +19,7 @@ import (
 
 func TestStoredMigrationCleanupIsBoundedAndRefusalPreservesCursor(t *testing.T) {
 	f := newSourceStoreFixture(t)
-	state := sourceMigration{Version: sourceStoreVersion, Phase: "sources", Source: 1, Mode: "stored", FactOffset: -1, FactBlock: -1, Records: 123}
+	state := sourceMigration{Version: sourceMigrationVersion, Phase: "sources", Source: 1, Mode: "stored", FactOffset: -1, FactBlock: -1, Records: 123}
 	if err := saveSourceMigration(context.Background(), f, state); err != nil {
 		t.Fatal(err)
 	}

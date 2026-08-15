@@ -167,20 +167,15 @@ func verifyDirectStoredRecovery(t *testing.T, s *Service, events []snapshot.Traj
 	if err := s.store.db.QueryRow("SELECT rowid,missing FROM sources WHERE id=? AND active=1", events[0].Source.ID).Scan(&row, &missing); err != nil || missing != 1 {
 		t.Fatal("original generation not quarantined", err)
 	}
-	if err := s.store.db.QueryRow("SELECT count(*) FROM exceptions WHERE source=?", row).Scan(&count); err != nil || count != len(events) {
+	if err := s.store.db.QueryRow("SELECT coalesce(sum(records),0) FROM exceptions WHERE source=?", row).Scan(&count); err != nil || count != len(events) {
 		t.Fatal("complete exception count differs", count, err)
 	}
 	if err := s.store.db.QueryRow("SELECT count(*) FROM ranges WHERE source=?", row).Scan(&ranges); err != nil || ranges != 0 {
 		t.Fatal("obsolete replay dependencies survive", ranges, err)
 	}
 	for _, want := range events {
-		var body []byte
-		if err := s.store.db.QueryRow("SELECT body FROM exceptions WHERE source=? AND offset=? AND block=?", row, want.Source.Offset, want.Source.Block).Scan(&body); err != nil {
-			t.Fatal(err)
-		}
-		raw, err := decodeSourceValue(body, maxSourceRangeLogicalBytes)
-		var got sourceException
-		if err != nil || json.Unmarshal(raw, &got) != nil || got.Event == nil || !reflect.DeepEqual(*got.Event, want) {
+		got, err := exceptionAt(context.Background(), s.store.db, row, want.Source.Offset, want.Source.Block)
+		if err != nil || got.Event == nil || !reflect.DeepEqual(*got.Event, want) {
 			t.Fatal("preserved original DTO differs", err)
 		}
 	}

@@ -3,6 +3,7 @@ package trajectory
 import (
 	"agentload/internal/historyfile"
 	"context"
+	"time"
 )
 
 // A stable size/mtime pins the entire audit, including across bounded calls.
@@ -38,19 +39,37 @@ func (f *sourceStore) auditSource(ctx context.Context, st *sourceState) (pending
 		}
 		after = -1
 	}
-	ranges, err := f.sourceRanges(ctx, st, after, 1)
-	if err != nil {
-		return true, err
-	}
 	end := int64(0)
-	if len(ranges) > 0 {
+	readBytes := int64(0)
+	deadline := time.Now().Add(25 * time.Millisecond)
+	for visited := 0; visited < 64; visited++ {
+		if visited > 0 && (readBytes >= 4*1024*1024 || !time.Now().Before(deadline)) {
+			break
+		}
+		// Read one range at a time so a large decoder state cannot multiply
+		// resident memory by the batch limit. Only the cursor shares a commit.
+		ranges, err := f.sourceRanges(ctx, st, after, 1)
+		if err != nil {
+			return true, err
+		}
+		if len(ranges) == 0 {
+			if visited == 0 && st.checkpoint.Offset != 0 {
+				return true, ErrStale
+			}
+			break
+		}
 		r := ranges[0].value.Chunk
+		if visited > 0 && readBytes+r.End.Offset-r.Start.Offset > 4*1024*1024 {
+			break
+		}
 		if err = verifyReplayBytes(ctx, file, r); err != nil {
 			return true, err
 		}
 		after, end = r.Start.Offset, r.End.Offset
-	} else if st.checkpoint.Offset != 0 {
-		return true, ErrStale
+		readBytes += r.End.Offset - r.Start.Offset
+		if end == st.checkpoint.Offset {
+			break
+		}
 	}
 	complete := end == st.checkpoint.Offset
 	// Validate the full chain again before publishing trust. A range already

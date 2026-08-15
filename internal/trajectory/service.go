@@ -68,6 +68,8 @@ type Service struct {
 	expectedInputSHA256 string
 	storageReady        bool
 	sourceMigration     *sourceMigrationRun
+	sourceUpgrade       *sourceStore
+	sourcePacking       *sourceStore
 	capacityCheck       func(string, uint64) error
 	storageOffline      bool
 }

@@ -264,8 +264,8 @@ func TestThroughputHistoryArchivesColdRecords(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read archive: %v", err)
 	}
-	if len(archived) != len(cold) {
-		t.Fatalf("expected %d archived records, got %d", len(cold), len(archived))
+	if len(archived) != len(cold)+600 {
+		t.Fatalf("expected %d archived records including facts beyond resident retention, got %d", len(cold)+600, len(archived))
 	}
 
 	reloaded, err := loadThroughputHistoryStore(historyPath, now)

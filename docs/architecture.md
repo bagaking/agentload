@@ -284,7 +284,7 @@ One snapshot build, in order:
    Unavailable metrics stay unavailable; they are never converted to zero
    (`metric_registry.go` documents the missing-state contract per metric).
 
-## 3. Persistence — history JSONL (`history.go`, `throughput_history.go`, `tray.go`)
+## 3. Persistence (`history.go`, `throughput_history.go`, `internal/trajectory`)
 
 - After each refresh, `trayApp.rememberSnapshot` converts the snapshot into a
   `HistorySample` (current metrics, summary, coordination-risk subset, project
@@ -304,13 +304,21 @@ One snapshot build, in order:
   file, so a second app instance cannot append into the file being replaced.
 - `throughput.jsonl`, beside the main history file, uses a versioned envelope
   with `minute_fact` and `legacy_rolling_rate` records. Minute facts are keyed by
-  minute end and retained for 30 days. The sampler passes its observation time
+  minute end; the in-memory view retains 30 days. The sampler passes its
+  observation time
   into the store, so retention uses the same clock as the sampled fact rather
   than an unrelated wall-clock read. `buildThroughputTrendWindows` derives
   independent `minute:60`, `minute:300`, and `minute:900` series, then computes
   `MAX`, nearest-rank `P95`, `AVG`, and fresh `CUR(<window>)` before applying the
   240-point display cap. Any missing minute invalidates the affected rolling
   point and remains a visible gap.
+- Durable throughput history is a revision journal. Startup and continuous
+  maintenance fold identical fact keys, preserve numeric online evidence over
+  session replay, and keep legacy windows separate. Cold facts remain in monthly
+  gzip archives; archives commit before an atomic hot-file replacement. Unknown,
+  corrupt or incomplete records prevent replacement. Maintenance admission is
+  checked at most once per minute, with hourly cold rollover or an 8 MiB hot
+  journal trigger. Retention of the in-memory view does not delete archived facts.
 - Startup migrates old main-history rolling-rate fields in batches of 256 into
   versioned `legacy:<seconds>` series. Appends deduplicate by timestamp and
   window, so a crash is resumable. Only after all batches succeed does an atomic
@@ -339,6 +347,21 @@ One snapshot build, in order:
   `buildProjectHeatmapWindows`; retained throughput facts feed only
   `buildThroughputTrendWindows`. Transcript lanes in `trends` come directly from
   span data, so all sources stay independent.
+
+### Trajectory source index (`internal/trajectory`)
+
+- The Trajectory source-backed SQLite layout stores identities, checkpoints,
+  sparse replay ranges, search candidates and irreproducible exceptions. Current
+  exception blocks use the existing exact reference codec, stay within one source
+  and replay range, and target 16 KiB with at most 64 facts. Public query budgets
+  count materialized DTOs. Missing raw evidence stays missing.
+- Older per-fact exceptions upgrade in bounded transactions inside that same
+  database. Independent full-field readback, logical/control digests, persistent
+  progress and capacity admission protect each replacement. Offline maintenance
+  can also pack sparse leaf pages by moving private row IDs in bounded same-table
+  transactions, then reclaim free pages incrementally. Public locators remain
+  stable; current runtime reads only the current block format. Whole-shadow
+  cutover belongs to older fact/projection migrations, not this in-place upgrade.
 
 ## 4. Delivery (`server.go`, `tray.go`)
 
@@ -424,5 +447,5 @@ One snapshot build, in order:
 | Per-PID disk I/O rates | delta per process-scan batch | `process_io.go` |
 | Main history JSONL append | once per built snapshot | `tray.go`, `history.go` |
 | Throughput minute-fact append | once per fully covered closed minute | `live_token_rate.go`, `throughput_history.go` |
-| History retention / compaction | 30d retention; compaction check at startup load | `history.go`, `throughput_history.go` |
+| History retention / compaction | 30d in-memory retention; history compaction at load; throughput revision folding at load and during operation | `history.go`, `throughput_history.go`, `throughput_maintenance.go` |
 | Tray title/menu/tooltip update | after each background refresh | `tray.go` |
