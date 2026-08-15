@@ -7,6 +7,9 @@ import "context"
 // decides whether another unit may start. Completed ranges and empty ranges
 // are navigation metadata, never newly advertised facts.
 func (f *sourceStore) readinessFacts(ctx context.Context, st *sourceState, p sourceReadiness) (facts []sourceFact, result error) {
+	if err := f.validateRanges(ctx, st); err != nil {
+		return nil, err
+	}
 	file, before, err := openReplaySource(st)
 	if err != nil {
 		return nil, err
@@ -14,12 +17,9 @@ func (f *sourceStore) readinessFacts(ctx context.Context, st *sourceState, p sou
 	defer file.Close()
 	defer func() {
 		if err := finishSourceOperation(ctx, st, file, before); err != nil {
-			facts, result = nil, err
+			facts, result = nil, querySourceReadError(st, file, before, err)
 		}
 	}()
-	if err = f.validateRanges(ctx, st); err != nil {
-		return nil, err
-	}
 	var start int64
 	if err = f.db.QueryRowContext(ctx, "SELECT COALESCE(MAX(r.start),0) FROM ranges r JOIN sources s ON s.rowid=r.source WHERE s.id=? AND s.generation=? AND s.active=1 AND s.missing=0 AND r.start<=?", st.ID, st.Generation, p.offset).Scan(&start); err != nil {
 		return nil, err

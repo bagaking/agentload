@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Search, X, ChevronRight } from "lucide-react";
+import { ArrowLeft, Search, X, ChevronRight, LoaderCircle, SlidersHorizontal, LockKeyhole } from "lucide-react";
 import { accessPreference, querySelector, trajectoryRPC, TrajectoryError, type Access, type AttentionResult, type ContextManifest, type Coverage, type Entity, type Knowledge, type QueryResult, type RelationResult, type Selector, type Slice, type TrajectoryContext, type TrajectorySession } from "./trajectoryApi";
 import { AttentionDetails, ContextDetails, CoverageNotice, EntityDetails, KnowledgeDetails, SourceButton } from "./EvidenceViews";
 import { evidenceLabel } from "./knowledgeLabels";
@@ -54,6 +54,8 @@ function mergePage(previous: QueryResult, next: QueryResult): QueryResult {
 export function KnowledgeView({ t, surfaceVisible }: { t: (key: string) => string; surfaceVisible: boolean }) {
   const [access, setAccess] = useState<Access | null>(null);
   const [query, setQuery] = useState("");
+  const [draft, setDraft] = useState("");
+  const [elapsed, setElapsed] = useState(0);
   const [result, setResult] = useState<QueryResult | null>(null);
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [episode, setEpisode] = useState<Episode | null>(null);
@@ -85,15 +87,23 @@ export function KnowledgeView({ t, surfaceVisible }: { t: (key: string) => strin
   const generation = useRef(0);
   const baseFocus = useRef("");
   const decoder = useRef<TextDecoder | null>(null);
+  const queryStarted = useRef(0);
   const indexPending = Boolean(result?.coverage.gaps.includes("index_pending"));
   const searchIndexPending = Boolean(result?.coverage.gaps.includes("search_index_pending"));
   const pending = Object.values(busy).some(Boolean) || Boolean(access?.enabled && access.authorized && !result && !error);
   const setPending = (key: string, value: boolean) => setBusy(previous => ({ ...previous, [key]: value }));
-  const start = (key: string) => { requests.current.get(key)?.abort(); const controller = new AbortController(); requests.current.set(key, controller); setPending(key, true); return controller; };
-  const failed = (err: unknown) => setError(err instanceof TrajectoryError ? err.code === -32002 || err.code === -32004 ? "source_stale" : err.code === -32602 ? "invalid_query" : err.code === -32009 ? "storage_low" : err.code === -32003 || err.code === 403 ? "access_denied" : err.message : String(err));
+  const start = (key: string) => { requests.current.get(key)?.abort(); const controller = new AbortController(); requests.current.set(key, controller); if (key === "query") { queryStarted.current = performance.now(); setElapsed(0); } setPending(key, true); return controller; };
+  const failed = (err: unknown) => setError(err instanceof TrajectoryError ? err.code === -32002 || err.code === -32004 ? "source_stale" : err.code === -32008 ? "query_timeout" : err.code === -32602 ? "invalid_query" : err.code === -32009 ? "storage_low" : err.code === -32003 || err.code === 403 ? "access_denied" : err.message : String(err));
   const abortDetail = () => { for (const [key, controller] of requests.current) if (key !== "query" && key !== "access") controller.abort(); setBusy(previous => ({ query: previous.query, access: previous.access })); };
 
   useEffect(() => () => { for (const controller of requests.current.values()) controller.abort(); }, []);
+
+  useEffect(() => {
+    if (!busy.query) return;
+    const tick = () => setElapsed((performance.now() - queryStarted.current) / 1000);
+    const timer = window.setInterval(tick, 250);
+    return () => { window.clearInterval(timer); tick(); };
+  }, [busy.query]);
 
   useEffect(() => {
     if (!surfaceVisible) { for (const controller of requests.current.values()) controller.abort(); setBusy({}); return; }
@@ -134,15 +144,9 @@ export function KnowledgeView({ t, surfaceVisible }: { t: (key: string) => strin
         const groups = await hydrate(value, controller.signal);
         if (!controller.signal.aborted && generation.current === current) { setResult(value); setEpisodes(groups); }
       }).catch(err => { if (!controller.signal.aborted && generation.current === current) { failed(err); setResult(null); setEpisodes([]); } }).finally(() => { if (!controller.signal.aborted && generation.current === current) setPending("query", false); });
-    }, query ? 180 : 0);
+    }, 0);
     return () => { clearTimeout(timer); controller.abort(); };
   }, [access?.enabled, access?.authorized, busy.access, query, revision, queryRefresh, surfaceVisible, episode?.id]);
-
-  useEffect(() => {
-    if (episode || !surfaceVisible || !access?.enabled || !access.authorized || busy.query || !indexPending) return;
-    const timer = window.setTimeout(() => setQueryRefresh(value => value + 1), 1000);
-    return () => clearTimeout(timer);
-  }, [surfaceVisible, access?.enabled, access?.authorized, busy.query, indexPending, query, episode?.id]);
 
   useEffect(() => {
     if (!surfaceVisible || !episode || (view !== "insight" && view !== "relations")) return;
@@ -182,7 +186,12 @@ export function KnowledgeView({ t, surfaceVisible }: { t: (key: string) => strin
     return () => { controller.abort(); setPending("graph", false); };
   }, [view, episode?.id, surfaceVisible, graph]);
 
-  const changeQuery = (value: string) => { if (value !== query) { generation.current++; requests.current.get("query")?.abort(); setResult(null); setEpisodes([]); setQuery(value); } };
+  const submitSearch = (value = draft) => {
+    generation.current++; requests.current.get("query")?.abort();
+    setError(""); setResult(null); setEpisodes([]); setQuery(value.trim()); setDraft(value.trim()); setQueryRefresh(previous => previous + 1);
+  };
+  const cancelSearch = () => { generation.current++; requests.current.get("query")?.abort(); setPending("query", false); setError("query_cancelled"); };
+  const clearSearch = () => { submitSearch(""); search.current?.focus(); };
   const setEnabled = async (enabled: boolean) => {
     const controller = start("access"); setError("");
     try { const value = await accessPreference(enabled, controller.signal); if (!controller.signal.aborted) { setAccess(value); setEpisode(null); setSlice(null); setRecord(null); setEntity(null); setNotes([]); setGraph(null); setContexts([]); setAttention(null); setManifest(null); setContextSelection(null); setRaw(null); setResult(null); setEpisodes([]); } }
@@ -261,9 +270,9 @@ export function KnowledgeView({ t, surfaceVisible }: { t: (key: string) => strin
   const selectedEvent = slice?.events.find(event => event.id === selectedID) ?? slice?.events.find(event => event.id === slice.focus_id);
   const queryWords = plainQueryWords(query);
   const searching = Boolean(access?.enabled && access.authorized && busy.query);
-  const badge = <span className="knowledge-sample">{t("knowledgeLocal")}</span>;
+  const badge = <span className="knowledge-sample"><LockKeyhole size={11} />{t("knowledgeLocal")}</span>;
   const ready = (access !== null || Boolean(error)) && !pending && (!episode || view !== "relations" || graphMounted || Boolean(error));
-  const errorKeys: Record<string, string> = { invalid_query: "knowledgeInvalidQuery", source_stale: "knowledgeSourceStale", access_denied: "knowledgeAccessDenied", storage_low: "knowledgeStorageLow" };
+  const errorKeys: Record<string, string> = { invalid_query: "knowledgeInvalidQuery", source_stale: "knowledgeSourceStale", access_denied: "knowledgeAccessDenied", storage_low: "knowledgeStorageLow", query_timeout: "knowledgeSearchTimeout", query_cancelled: "knowledgeSearchCancelled" };
   const inspector = record ? <KnowledgeDetails record={record} onRead={readSource} onPick={id => void pick(id)} t={t} /> : entity ? <EntityDetails entity={entity} onRead={readSource} t={t} /> : <div className="knowledge-inspector recorded"><div className="knowledge-section-heading"><span>{t("knowledgeRecorded")}</span><span>{episode?.agent}</span></div><h3>{selectedEvent?.tool?.name || episode?.session?.last_action || t("knowledgeNoAction")}</h3>{selectedEvent?.text ? <p>{selectedEvent.text}</p> : null}<dl><div><dt>{t("knowledgeScope")}</dt><dd>{episode?.session?.native_id || episode?.id}</dd></div><div><dt>{t("knowledgeLimit")}</dt><dd>{t("knowledgeActualInputUnknown")}</dd></div></dl><button className="knowledge-read-process" type="button" onClick={() => setView("evidence")}>{t("knowledgeReadProcess")}<ChevronRight size={13} /></button></div>;
 
   return <div className={`knowledge-prototype ${episode ? "reading" : "browsing"}`} data-knowledge-ready={ready ? "true" : "false"}>
@@ -293,27 +302,24 @@ export function KnowledgeView({ t, surfaceVisible }: { t: (key: string) => strin
         <p>{t(access.authorized ? "knowledgeEnableDetail" : "knowledgeOpenFromApp")}</p>
         {access.authorized ? <button className="knowledge-read-process" type="button" disabled={pending} onClick={() => void setEnabled(true)}>{t("knowledgeEnable")}</button> : null}
       </div> : <>
-        <div className="knowledge-search"><Search size={17} /><input ref={search} type="search" value={query} aria-label={t("knowledgeSimpleSearch")} placeholder={t("knowledgeSimpleSearch")} onChange={event => changeQuery(event.target.value)} onKeyDown={event => { if (event.key === "Escape") changeQuery(""); if (event.key === "Enter" && !busy.access && episodes[0]) open(episodes[0]); }} />{query ? <button type="button" aria-label={t("knowledgeClear")} onClick={() => { changeQuery(""); search.current?.focus(); }}><X size={14} /></button> : <kbd>↵</kbd>}</div>
+        <form className="knowledge-search" role="search" onSubmit={event => { event.preventDefault(); submitSearch(); }}><Search size={18} /><input ref={search} type="search" value={draft} aria-label={t("knowledgeSimpleSearch")} placeholder={t("knowledgeSimpleSearch")} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); if (busy.query) cancelSearch(); else clearSearch(); } }} />{draft ? <button className="knowledge-clear" type="button" aria-label={t("knowledgeClear")} onClick={clearSearch}><X size={15} /></button> : null}<button className="knowledge-submit" type="submit" disabled={busy.access}>{t("knowledgeSearchSubmit")}<kbd>↵</kbd></button></form>
         <p className="knowledge-search-tip">{t("knowledgePlainSearchHelp")}</p>
-        <details className="knowledge-advanced-search"><summary>{t("knowledgeQueryHelp")}</summary><div className="knowledge-query-help"><p>{t("knowledgeLiveQuerySyntax")}</p><div>{["tool:exec_command", "skill:proxy-debugger predicate:mention", "in:knowledge kind:candidate", "in:knowledge state:withdrawn", "in:contexts context-scope:actual_input"].map(value => <button type="button" key={value} onClick={() => changeQuery(value)}><code>{value}</code></button>)}</div></div></details>
-        {indexPending ? <p className="knowledge-index-progress" role="status">{result?.coverage.gaps.includes("index_storage_pending") ? t("knowledgeStoragePending") : result?.coverage.index ? formatCopy(t(searchIndexPending ? "knowledgeIndexProgress" : "knowledgeDecodeProgress"), { ready: searchIndexPending ? result.coverage.index.searchable_sources : result.coverage.index.decoded_sources, known: result.coverage.index.known_sources }) : t("knowledgeIndexPending")}</p> : searching && !episodes.length ? <div className="knowledge-empty" role="status"><strong>{t("knowledgeSearching")}</strong></div> : null}
-        {episodes.length ? <div className="knowledge-section-heading knowledge-list-heading"><span>{t(query ? "knowledgeRelatedExperiences" : "knowledgeBrowseExperiences")}</span><span role="status">{result?.matched_total !== undefined && querySelectorSafeCollection(query) === "sessions" ? formatCopy(t(indexPending ? "knowledgePreparedCount" : "knowledgePageCount"), { shown: episodes.length, total: result.matched_total }) : formatCopy(t("knowledgeLiveCount"), { count: episodes.length })}</span></div> : null}
-        <div className="knowledge-experiences">{episodes.map(item => <button type="button" className="knowledge-experience" key={item.id} data-session-id={item.id} data-match-event-id={item.eventIDs[0]} onClick={() => open(item)}>
-          <span className="knowledge-result-body"><strong className="knowledge-match-preview" data-matched-preview><HighlightedText text={item.preview || t("knowledgeOpenMatch")} words={queryWords} /></strong><ChevronRight size={15} /></span>
-          <span className="knowledge-result-session">{item.agent}{item.agent ? " · " : ""}{item.title === item.id ? t("knowledgeKindSession") : item.title}</span>
-          <span className="knowledge-experience-meta"><span>{item.knowledge[0] ? `${evidenceLabel(item.knowledge[0].kind, t)} · ${evidenceLabel(item.knowledge[0].state, t)}` : ""}</span><span>{formatCopy(t(querySelectorSafeCollection(query) === "sessions" && item.session?.matched_count != null ? "knowledgeMatchingCount" : "knowledgeReferenceCount"), { count: querySelectorSafeCollection(query) === "sessions" && item.session?.matched_count != null ? item.session.matched_count : item.eventIDs.length })}</span></span>
+        <details className="knowledge-advanced-search"><summary><SlidersHorizontal size={12} />{t("knowledgeQueryHelp")}</summary><div className="knowledge-query-help"><p>{t("knowledgeLiveQuerySyntax")}</p><div>{["role:user", "tool:exec_command", "skill:proxy-debugger predicate:mention", "in:knowledge kind:candidate", "in:contexts context-scope:actual_input"].map(value => <button type="button" key={value} onClick={() => submitSearch(value === "role:user" ? `${draft.replace(/(?:^|\s)role:\S+/g, "").trim()} role:user` : value)}><code>{value}</code></button>)}</div></div></details>
+        {searching ? <div className="knowledge-search-status" role="status"><LoaderCircle size={15} className="knowledge-spinner" /><span>{t("knowledgeSearching")}<time>{elapsed.toFixed(1)}s</time></span><button type="button" className="knowledge-text-button" onClick={cancelSearch}>{t("knowledgeSearchCancel")}</button></div> : null}
+        {episodes.length ? <div className="knowledge-section-heading knowledge-list-heading"><span>{query ? formatCopy(t("knowledgeQueryResults"), { query }) : t("knowledgeBrowseExperiences")}</span><span role="status">{formatCopy(t("knowledgeDisplayedCount"), { count: episodes.length })}{elapsed > 0 ? ` · ${elapsed.toFixed(1)}s` : ""}</span></div> : null}
+        <div className="knowledge-experiences" aria-busy={searching}>{episodes.map(item => <button type="button" className="knowledge-experience" key={item.id} data-session-id={item.id} data-match-event-id={item.eventIDs[0]} onClick={() => open(item)}>
+          <span className="knowledge-result-heading"><span className="knowledge-agent">{item.agent || t("knowledgeKindSession")}</span><strong className="knowledge-result-title">{item.title === item.id ? t("knowledgeKindSession") : item.title}</strong></span>
+          {item.preview ? <span className="knowledge-match-preview" data-matched-preview><HighlightedText text={item.preview} words={queryWords} /></span> : null}
+          <span className="knowledge-experience-meta"><span>{item.knowledge[0] ? `${evidenceLabel(item.knowledge[0].kind, t)} · ${evidenceLabel(item.knowledge[0].state, t)}` : item.session?.matched_count != null ? formatCopy(t("knowledgeMatchingCount"), { count: item.session.matched_count }) : ""}</span><span className="knowledge-open-context">{t(query ? "knowledgeReadContext" : "knowledgeOpenSession")}<ChevronRight size={13} /></span></span>
         </button>)}</div>
         {result && !episodes.length && !busy.query && !indexPending ? <div className="knowledge-empty"><strong>{t("knowledgeNoMatches")}</strong><p>{t("knowledgeEmptyLive")}</p></div> : null}
-        {result?.next ? <button className="knowledge-text-button" type="button" disabled={busy.query} onClick={() => void nextPage()}>{t("knowledgeLater")}</button> : null}
+        {result?.next ? <button className="knowledge-more-results" type="button" disabled={busy.query} onClick={() => void nextPage()}>{t("knowledgeMoreResults")}<ChevronRight size={14} /></button> : null}
+        {indexPending ? <p className="knowledge-index-progress" role="status">{result?.coverage.gaps.includes("index_storage_pending") ? t("knowledgeStoragePending") : result?.coverage.index ? formatCopy(t(searchIndexPending ? "knowledgeIndexProgress" : "knowledgeDecodeProgress"), { ready: searchIndexPending ? result.coverage.index.searchable_sources : result.coverage.index.decoded_sources, known: result.coverage.index.known_sources }) : t("knowledgeIndexPending")}</p> : null}
       </>}
     </>}
     {pending && (episode || Boolean(access?.enabled && access.authorized && !searching)) ? <p className="knowledge-gap" role="status">{t("knowledgeLoading")}</p> : null}
-    {error ? <p className="knowledge-gap" role="alert">{t(errorKeys[error] ?? "knowledgeReadError")}<button type="button" className="knowledge-text-button" onClick={() => { back(); setRevision(value => value + 1); }}>{t("refresh")}</button></p> : null}
+    {error ? <div className="knowledge-search-error" role="alert"><strong>{t(errorKeys[error] ?? "knowledgeReadError")}</strong>{error === "query_timeout" ? <p>{t("knowledgeSearchTimeoutHelp")}</p> : null}<button type="button" className="knowledge-retry" onClick={() => { if (episode) { back(); setRevision(value => value + 1); } else submitSearch(query); }}>{t("knowledgeRetry")}</button></div> : null}
     <CoverageNotice coverage={episode?.session?.coverage || result?.coverage} t={t} />
-    {access?.enabled && access.authorized && !episode ? <div className="knowledge-local-actions"><button type="button" className="knowledge-text-button" onClick={() => setRevision(value => value + 1)} disabled={pending}>{t("refresh")}</button><button type="button" className="knowledge-text-button" onClick={() => void setEnabled(false)} disabled={pending}>{t("knowledgeDisable")}</button></div> : null}
+    {access?.enabled && access.authorized && !episode ? <details className="knowledge-settings"><summary>{t("knowledgeSearchSettings")}</summary><button type="button" className="knowledge-text-button" onClick={() => void setEnabled(false)} disabled={pending}>{t("knowledgeDisable")}</button></details> : null}
   </div>;
-}
-
-function querySelectorSafeCollection(query: string): string | undefined {
-  try { return querySelector(query).collection; } catch { return undefined; }
 }

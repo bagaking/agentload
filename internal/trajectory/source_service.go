@@ -184,6 +184,12 @@ func (s *Service) syncSearchScope(ctx context.Context, states []*sourceState, co
 		}
 		if p.count < st.checkpoint.EventCount {
 			p, err = s.store.advanceReadiness(ctx, st, p)
+			if errors.Is(err, errQuerySourceChanged) {
+				gap(cov, "source_changed_during_query:"+st.ID)
+				batches++
+				s.searchAfter = st.ID
+				continue
+			}
 			if err != nil && !(errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil) {
 				return err
 			}
@@ -193,6 +199,12 @@ func (s *Service) syncSearchScope(ctx context.Context, states []*sourceState, co
 			batches++
 		} else if p.verifiedSize != st.Info.Size() || p.verifiedMtime != st.Info.ModTime().UnixNano() {
 			_, err = s.store.auditSource(budget, st)
+			if errors.Is(err, errQuerySourceChanged) {
+				gap(cov, "source_changed_during_query:"+st.ID)
+				batches++
+				s.searchAfter = st.ID
+				continue
+			}
 			if err != nil && !(errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil) {
 				return err
 			}

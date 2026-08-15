@@ -252,6 +252,10 @@ func replaySourceChunk(ctx context.Context, st *sourceState, c replayChunk, visi
 // finishSourceOperation before publishing any result. Reusing it across ranges
 // avoids re-opening, re-statting and re-reading the same identity anchors.
 func replaySourceChunkFrom(ctx context.Context, st *sourceState, c replayChunk, f *os.File, visit func(snapshot.TrajectoryEvent, int) error) (snapshot.TrajectoryCoverage, error) {
+	return replaySourceChunkSelected(ctx, st, c, f, nil, visit)
+}
+
+func replaySourceChunkSelected(ctx context.Context, st *sourceState, c replayChunk, f *os.File, q *snapshot.TrajectorySelector, visit func(snapshot.TrajectoryEvent, int) error) (snapshot.TrajectoryCoverage, error) {
 	cov := coverage("source:" + st.ID)
 	if err := ctx.Err(); err != nil {
 		return cov, err
@@ -305,7 +309,8 @@ func replaySourceChunkFrom(ctx context.Context, st *sourceState, c replayChunk, 
 		if oversized {
 			gap(&cov, fmt.Sprintf("record_size_limit:L%d", pos.Line))
 		} else {
-			decoded, omissions := shapeRecord(st, pos.Line, pos.Offset, body, &pos.WorkingDirectory)
+			decoded, omissions, skipped := shapeRecordSelected(st, pos.Line, pos.Offset, body, &pos.WorkingDirectory, q)
+			events += skipped
 			for _, omission := range omissions {
 				gap(&cov, omission)
 			}

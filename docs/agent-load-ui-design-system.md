@@ -77,6 +77,15 @@ semantic layer before visual polish is accepted.
 - The first screen leads with search and past episodes, showing the recorded
   outcome in plain language. Group query hits by source episode, not entity
   taxonomy. Query syntax help is optional; conditions still work in the search.
+- Search has one explicit submit action. Typing and incomplete backfill must
+  not start an endless sequence of requests. Waiting shows elapsed time and a
+  cancel action; a timed-out request shows a retry action without implying no
+  matches. Rows show the task title, highlighted source excerpt and a visible
+  action to read surrounding messages. Counts of displayed references are not
+  useful primary search metadata.
+- Keep the first highlighted match near the start of the excerpt so it remains
+  visible within a two-line preview at Popover width. Keyboard hints must retain
+  contrast in both themes, including inside the primary search button.
 - Episode details have one navigation group: details, execution and relations.
   Source lines and event IDs are disclosed in execution. Keep evidence coverage
   and validation limits readable in details.

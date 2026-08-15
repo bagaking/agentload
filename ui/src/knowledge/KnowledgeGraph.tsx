@@ -39,7 +39,9 @@ export function KnowledgeGraph({ graph, knowledge, selectedId, onPick, onRead, o
     return { items: bounded, omitted: Math.max(0, ordered.length - bounded.length) };
   }, [graph, knowledge, t]);
   const ids = new Set(projection.items.map(item => item.id));
-  const nodes: GraphNode[] = projection.items.map((item, index) => ({ id: item.id, type: "evidence", position: { x: (index % 3) * 165, y: Math.floor(index / 3) * 105 }, selected: item.id === selectedId, style: { width: 145 }, data: { item, picked: item.id === selectedId, pick: () => onPick(item.id), label: evidenceLabel(item.kind, t), state: item.status } }));
+  // Dimensions belong to the fixed local layout. Replacing controlled nodes
+  // after an async detail update must not return them to hidden/unmeasured.
+  const nodes: GraphNode[] = projection.items.map((item, index) => ({ id: item.id, type: "evidence", position: { x: (index % 3) * 165, y: Math.floor(index / 3) * 105 }, selected: item.id === selectedId, initialWidth: 145, initialHeight: 88, style: { width: 145, height: 88 }, data: { item, picked: item.id === selectedId, pick: () => onPick(item.id), label: evidenceLabel(item.kind, t), state: item.status } }));
   const edges: Edge[] = [];
   for (const relation of graph.relations) if (relation.status === "resolved") {
     for (const target of relation.target_ids) if (ids.has(relation.from) && ids.has(target)) edges.push({ id: `${relation.id}:${target}`, source: relation.from, target, label: `${evidenceLabel(relation.kind, t)} · ${evidenceLabel(relation.status, t)}`, type: "smoothstep", markerEnd: { type: MarkerType.ArrowClosed, color: "var(--knowledge-edge)" }, style: { stroke: "var(--knowledge-edge)", strokeWidth: 1.3 } });

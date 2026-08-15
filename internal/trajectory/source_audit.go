@@ -8,6 +8,9 @@ import (
 // A stable size/mtime pins the entire audit, including across bounded calls.
 // Only the last verified physical range publishes the negative-filter seal.
 func (f *sourceStore) auditSource(ctx context.Context, st *sourceState) (pending bool, result error) {
+	if err := f.validateRanges(ctx, st); err != nil {
+		return true, err
+	}
 	file, before, err := openReplaySource(st)
 	if err != nil {
 		return true, err
@@ -16,12 +19,9 @@ func (f *sourceStore) auditSource(ctx context.Context, st *sourceState) (pending
 	defer func() {
 		if e := finishSourceOperation(ctx, st, file, before); e != nil {
 			pending = true
-			result = e
+			result = querySourceReadError(st, file, before, e)
 		}
 	}()
-	if err = f.validateRanges(ctx, st); err != nil {
-		return true, err
-	}
 	var size, mtime, after, verifiedSize, verifiedMtime int64
 	err = f.db.QueryRowContext(ctx, "SELECT audit_size,audit_mtime,audit_after,verified_size,verified_mtime FROM sources WHERE id=? AND generation=? AND active=1 AND missing=0", st.ID, st.Generation).Scan(&size, &mtime, &after, &verifiedSize, &verifiedMtime)
 	if err != nil {

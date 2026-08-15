@@ -61,7 +61,7 @@ func TestTrajectoryQueryNativeMetadataBudget(t *testing.T) {
 	if len(seen) != 80 {
 		t.Fatalf("skipped results: %d", len(seen))
 	}
-	r, err := s.Query(context.Background(), snapshot.TrajectorySelector{})
+	r, err := s.Query(context.Background(), snapshot.TrajectorySelector{Count: true})
 	if err != nil {
 		t.Fatal(err)
 	}

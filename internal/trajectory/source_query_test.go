@@ -64,7 +64,7 @@ func (d *witnessDecoder) Decode(raw []byte, ctx DecodeContext) ([]snapshot.Traje
 }
 
 func TestTrajectorySourceQueryWitnessesReadConcurrentlyAndJoinInOrder(t *testing.T) {
-	for _, mode := range []string{"success", "cancel", "replace"} {
+	for _, mode := range []string{"success", "cancel", "replace", "grow", "count-grow"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newSourceStoreFixture(t)
 			var states []*sourceState
@@ -91,7 +91,7 @@ func TestTrajectorySourceQueryWitnessesReadConcurrentlyAndJoinInOrder(t *testing
 			}
 			done := make(chan result, 1)
 			go func() {
-				page, err := f.query(ctx, snapshot.TrajectorySelector{Collection: "sessions", Text: "research", Limit: 4}, states, coverage("test"))
+				page, err := f.query(ctx, snapshot.TrajectorySelector{Collection: "sessions", Text: "research", Limit: 4, Count: mode == "count-grow"}, states, coverage("test"))
 				done <- result{page, err}
 			}()
 			timer := time.NewTimer(3 * time.Second)
@@ -118,6 +118,8 @@ func TestTrajectorySourceQueryWitnessesReadConcurrentlyAndJoinInOrder(t *testing
 					<-done
 					t.Fatal(err)
 				}
+			} else if mode == "grow" || mode == "count-grow" {
+				appendFile(t, states[0].Path, request("uncommitted research tail"))
 			}
 			close(release)
 			r := <-done
@@ -131,6 +133,15 @@ func TestTrajectorySourceQueryWitnessesReadConcurrentlyAndJoinInOrder(t *testing
 				for i, session := range r.page.Sessions {
 					if session.ID != sessionID(states[i]) || session.MatchedCount != nil || len(session.MatchedIDs) != 1 {
 						t.Fatal("completion order changed page identity or count", session)
+					}
+				}
+			} else if mode == "grow" {
+				if r.err != nil || len(r.page.Sessions) != 4 || r.page.Coverage.Complete || !strings.Contains(strings.Join(r.page.Coverage.Gaps, " "), "source_changed_during_query:"+states[0].ID) {
+					t.Fatal("growth discarded verified witnesses or hid its gap", r.page, r.err)
+				}
+				for i, session := range r.page.Sessions {
+					if session.ID != sessionID(states[i+1]) || session.MatchedCount != nil || len(session.MatchedIDs) != 1 {
+						t.Fatal("changed source leaked an identity or changed remaining order", session)
 					}
 				}
 			} else {

@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -200,6 +201,22 @@ func putJSON(bucket *bolt.Bucket, key []byte, value any) error {
 // cachedSource avoids rewriting unchanged archives on each search. Appends
 // expose the committed prefix; replacements never reuse a previous generation.
 func (s *Service) cachedSource(src Source) (*sourceState, bool) {
+	return s.cachedSourceWithVolumes(src, nil)
+}
+
+func (s *Service) cachedSourceWithVolumes(src Source, volumes map[uint64]string) (*sourceState, bool) {
+	id := sourceID(src)
+	if previous, ok := s.checkpointSnapshot[id]; ok && !previous.Missing && previous.Version == projectionVersion && previous.Generation != "" {
+		info, err := os.Stat(src.Path)
+		if err == nil && info.Mode().IsRegular() {
+			if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+				prefix := volumes[uint64(stat.Dev)]
+				if prefix != "" && previous.Identity == prefix+strconv.FormatUint(uint64(stat.Ino), 10) && info.Size() == previous.Size && info.ModTime().UnixNano() == previous.Mtime {
+					return &sourceState{Source: src, ID: id, Generation: previous.Generation, Info: info, owner: s, checkpoint: previous}, previous.Offset < info.Size()
+				}
+			}
+		}
+	}
 	f, err := os.Open(src.Path)
 	if err != nil {
 		return nil, true
@@ -213,7 +230,6 @@ func (s *Service) cachedSource(src Source) (*sourceState, bool) {
 	if err != nil {
 		return nil, true
 	}
-	id := sourceID(src)
 	var previous sourceCheckpoint
 	if s.checkpointSnapshot != nil {
 		var ok bool

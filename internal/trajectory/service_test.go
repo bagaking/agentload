@@ -147,6 +147,24 @@ func TestTrajectoryCancelledCatalogNeverPublishesExactCount(t *testing.T) {
 func request(text string) string {
 	return codexRecord("response_item", map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": text}}})
 }
+
+func TestTrajectoryCatalogDefersEvidenceUntilOpened(t *testing.T) {
+	s, _, _, decoder, _ := indexFixture(t, request("browser")+call("browser-call")+result("browser-call"))
+	prepared := searchTestPreparedQuery(t, s, snapshot.TrajectorySelector{Text: "browser"})
+	before := decoder.calls.Load()
+	page, err := s.Query(context.Background(), snapshot.TrajectorySelector{Limit: 8})
+	if err != nil || len(page.Sessions) != 1 {
+		t.Fatal(page, err)
+	}
+	item := page.Sessions[0]
+	if decoder.calls.Load() != before || item.ID != prepared.Sessions[0].ID || item.Title != "browser" || item.MatchedCount != nil || len(item.MatchedIDs) != 0 || page.MatchedTotal != nil {
+		t.Fatal("catalog read or fabricated matched evidence", item, decoder.calls.Load()-before)
+	}
+	opened, err := s.Get(context.Background(), snapshot.TrajectoryGetParams{ID: item.ID, Around: 3})
+	if err != nil || len(opened.Events) != 3 {
+		t.Fatal("on-demand session evidence missing", opened, err)
+	}
+}
 func call(id string) string {
 	return codexRecord("response_item", map[string]any{"type": "function_call", "name": "exec_command", "call_id": id, "arguments": "{\"cmd\":\"curl --head https://example.test\"}"})
 }

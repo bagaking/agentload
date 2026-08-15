@@ -64,7 +64,7 @@ catch(error){console.log('AGENTLOAD_BROWSER_RESULT:'+JSON.stringify({ok:false,er
 const helpers=`
 async function observe(find){await cdp('Emulation.setFocusEmulationEnabled',{enabled:true});for(let i=0;i<60;i++){const p=await snapshot();if(p.missingFrames.length)throw Error('Incomplete accessibility map');const n=p.nodes.find(find);if(n)return n;await wait(100);}throw Error('Expected UI element missing');}
 async function tab(name){const n=await observe(n=>n.role==='tab'&&n.name===name);await click(n.ref);}
-async function query(value){const input=await observe(n=>n.role==='text input');await fillInput(input.ref,value);await cdp('Emulation.setFocusEmulationEnabled',{enabled:true});await wait(550);}
+async function query(value){const input=await observe(n=>n.role==='text input');await fillInput(input.ref,value);const submit=await observe(n=>n.role==='button'&&/^搜索\\s*↵$/.test(n.name));await click(submit.ref);await cdp('Emulation.setFocusEmulationEnabled',{enabled:true});await wait(100);}
 async function button(name){await click((await observe(n=>n.role==='button'&&n.name===name)).ref);}
 async function settled(){await cdp('Emulation.setFocusEmulationEnabled',{enabled:true});await wait(100);for(let i=0;i<60;i++){if(await js("!!document.querySelector('[data-knowledge-ready=\\\"true\\\"]')"))return;await wait(100);}throw Error('Knowledge surface never became ready');}
 async function back(){await button('返回搜索结果');await settled();}
@@ -156,9 +156,9 @@ try {
  if(!graphUI.nodes.includes(eventID)||!expectedGraph.relations.every(r=>graphUI.relations.some(x=>x.id===r.id&&x.status===r.status)))throw Error('Relation graph differs from native source evidence.');
  browser(`${helpers}await click((await observe(n=>n.role==='button'&&n.name.startsWith('来源证据 · L'))).ref);await settled();return true;`);
  proof.checks.push({path:'native_graph_source',nodes:graphUI.nodes,relations:graphUI.relations});
- const key=browser(`${helpers}await back();const input=await observe(n=>n.role==='text input');await pressKey(input.ref,'Enter');await settled();return await js("!!document.querySelector('#knowledge-detail-panel')");`);
- if(!key)throw Error('Keyboard Enter did not open the first actual result.');
- const invalid=browser(`${helpers}await back();await query('aTermWhichIsAbsentFromThisFixture');await settled();await observe(n=>n.name==='没有找到匹配内容');await query('unsupported:selector');await observe(n=>n.name.includes('查询条件不受支持'));return await js("document.querySelector('[role=alert]')?.textContent.includes('查询条件不受支持')");`);
+ const key=browser(`${helpers}await back();const input=await observe(n=>n.role==='text input');await pressKey(input.ref,'Enter');await settled();return await js("({detail:!!document.querySelector('#knowledge-detail-panel'),matches:document.querySelectorAll('[data-session-id]').length})");`);
+ if(key.detail||!key.matches)throw Error('Enter must submit search without unexpectedly opening a result.');
+ const invalid=browser(`${helpers}await query('aTermWhichIsAbsentFromThisFixture');await settled();await observe(n=>n.name==='没有找到匹配内容');await query('unsupported:selector');await observe(n=>n.name.includes('查询条件不受支持'));return await js("document.querySelector('[role=alert]')?.textContent.includes('查询条件不受支持')");`);
  if(!invalid)throw Error('Unsupported selector alert missing.');
  proof.checks.push({path:'keyboard_empty_invalid'});
  browser(`${helpers}await query('tool:exec_command agent:codex');await settled();return true;`);

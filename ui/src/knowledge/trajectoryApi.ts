@@ -49,7 +49,15 @@ export class TrajectoryError extends Error {
   constructor(message: string, readonly code: number) { super(message); }
 }
 export async function trajectoryRPC<T>(method: string, params: unknown, signal?: AbortSignal): Promise<T> {
-  const response = await fetch("/api/rpc", { method: "POST", headers: headers(), body: JSON.stringify({ jsonrpc: "2.0", id: "popover", method, params }), signal });
+  const counting = method === "traj.query" && typeof params === "object" && params !== null && "count" in params && params.count === true;
+  const timeout = AbortSignal.timeout(counting ? 62000 : 8000);
+  let response: Response;
+  try {
+    response = await fetch("/api/rpc", { method: "POST", headers: headers(), body: JSON.stringify({ jsonrpc: "2.0", id: "popover", method, params }), signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
+  } catch (error) {
+    if (timeout.aborted && !signal?.aborted) throw new TrajectoryError("Request timed out", -32008);
+    throw error;
+  }
   const body = await response.json() as { result?: T; error?: { code: number; message: string } };
   if (!response.ok || body.error) throw new TrajectoryError(body.error?.message ?? `HTTP ${response.status}`, body.error?.code ?? response.status);
   return body.result as T;
@@ -58,7 +66,7 @@ export async function trajectoryRPC<T>(method: string, params: unknown, signal?:
 // This compiles UI syntax into the Go service's selectors; it never evaluates
 // evidence or creates an independent search implementation.
 export function querySelector(input: string): Selector {
-  const selector: Selector = { collection: "sessions", limit: 20 };
+  const selector: Selector = { collection: "sessions", limit: 4 };
   const words: string[] = [];
   const fields: Record<string, keyof Selector> = { in: "collection", tool: "tool", skill: "skill", kind: "kind", state: "state", agent: "agent", session: "session_id", role: "role", actor: "actor_id", "actor-kind": "actor_kind", "relation-kind": "relation_kind", "entity-kind": "entity_kind", entity: "entity_id", predicate: "predicate", context: "context_id", "context-scope": "context_scope" };
   const seen = new Set<string>();

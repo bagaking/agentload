@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,6 +23,22 @@ type sourceReadiness struct {
 	entityGaps    int
 	verifiedSize  int64
 	verifiedMtime int64
+}
+
+// This narrower error concerns the raw file's read window. SQL range damage
+// remains fatal and must never be converted into a successful empty page.
+var errQuerySourceChanged = fmt.Errorf("%w: source changed during evidence read", ErrStale)
+
+func querySourceReadError(st *sourceState, file *os.File, before os.FileInfo, err error) error {
+	if !errors.Is(err, ErrStale) {
+		return err
+	}
+	after, statErr := file.Stat()
+	current, pathErr := os.Stat(st.Path)
+	if statErr == nil && pathErr == nil && os.SameFile(before, after) && os.SameFile(after, current) && after.Size() > before.Size() && current.Size() >= after.Size() {
+		return errQuerySourceChanged
+	}
+	return err
 }
 
 // Only the caller's current provider-authorized states are eligible. Database
@@ -55,10 +72,16 @@ func (f *sourceStore) readinessScope(ctx context.Context, id string) (map[string
 }
 
 func (f *sourceStore) walkSourceCandidates(ctx context.Context, st *sourceState, candidate func(*sourceFilter) bool, ready *sourceReadiness, visit func(sourceFact) error) (result error) {
-	return f.walkSourceCandidateRanges(ctx, st, candidate, ready, false, visit)
+	return f.walkSourceCandidateRanges(ctx, st, candidate, ready, false, nil, visit)
 }
 
-func (f *sourceStore) walkSourceCandidateRanges(ctx context.Context, st *sourceState, candidate func(*sourceFilter) bool, ready *sourceReadiness, witnessOnly bool, visit func(sourceFact) error) (result error) {
+func (f *sourceStore) walkSourceCandidateRanges(ctx context.Context, st *sourceState, candidate func(*sourceFilter) bool, ready *sourceReadiness, witnessOnly bool, nativeSelector *snapshot.TrajectorySelector, visit func(sourceFact) error) (result error) {
+	if !witnessOnly || nativeSelector != nil && !nativeTextCandidate(*nativeSelector) {
+		nativeSelector = nil
+	}
+	if err := f.validateRanges(ctx, st); err != nil {
+		return err
+	}
 	source, before, err := openReplaySource(st)
 	if err != nil {
 		return err
@@ -66,12 +89,9 @@ func (f *sourceStore) walkSourceCandidateRanges(ctx context.Context, st *sourceS
 	defer source.Close()
 	defer func() {
 		if e := finishSourceOperation(ctx, st, source, before); e != nil {
-			result = e
+			result = querySourceReadError(st, source, before, e)
 		}
 	}()
-	if err = f.validateRanges(ctx, st); err != nil {
-		return err
-	}
 	if ready != nil && (!ready.complete || ready.generation != st.Generation || ready.count < 0 || ready.count > st.checkpoint.EventCount) {
 		return ErrStale
 	}
@@ -119,7 +139,7 @@ func (f *sourceStore) walkSourceCandidateRanges(ctx context.Context, st *sourceS
 					return err
 				}
 				if len(exceptions) == 0 {
-					_, err = replaySourceChunkFrom(ctx, st, r.value.Chunk, source, func(e snapshot.TrajectoryEvent, n int) error {
+					_, err = replaySourceChunkSelected(ctx, st, r.value.Chunk, source, nativeSelector, func(e snapshot.TrajectoryEvent, n int) error {
 						if ready != nil && physicalLess(ready.offset, ready.block, e.Source.Offset, e.Source.Block) {
 							return io.EOF
 						}
@@ -222,7 +242,7 @@ func (f *sourceStore) query(ctx context.Context, q snapshot.TrajectorySelector, 
 	pageSessions := []snapshot.TrajectorySession{}
 	if q.Collection == "sessions" {
 		err = f.visitSessionWitnesses(ctx, q, ordered, readiness, func(st *sourceState, summary snapshot.TrajectorySession) error {
-			mergeCoverage(&out.Coverage, st.checkpoint.Coverage)
+			mergeCoverage(&out.Coverage, summary.Coverage)
 			p := readiness[st.ID]
 			if p.generation == st.Generation && p.complete && p.count != 0 && p.entityGaps > 0 && (q.Skill != "" || q.EntityKind != "" || q.EntityID != "" || q.Predicate != "") {
 				gap(&out.Coverage, "entity_coverage_incomplete")
@@ -336,7 +356,7 @@ func (f *sourceStore) visitSessionWitnesses(ctx context.Context, q snapshot.Traj
 			st, p := eligible[i], readiness[eligible[i].ID]
 			result := witness{summary: cachedSession(st)}
 			if st.Generation != "" && p.generation == st.Generation && p.complete && p.count != 0 {
-				result.err = f.walkSourceCandidateRanges(readCtx, st, func(filter *sourceFilter) bool { return filter.maybe(q) }, &p, !q.Count, func(fact sourceFact) error {
+				result.err = f.walkSourceCandidateRanges(readCtx, st, func(filter *sourceFilter) bool { return filter.maybe(q) }, &p, !q.Count, &q, func(fact sourceFact) error {
 					if !matches(fact.event, q) {
 						return nil
 					}
@@ -365,7 +385,12 @@ func (f *sourceStore) visitSessionWitnesses(ctx context.Context, q snapshot.Traj
 			return err
 		}
 		if result.err != nil {
-			return result.err
+			if q.Count || !errors.Is(result.err, errQuerySourceChanged) {
+				return result.err
+			}
+			result.summary.MatchedIDs = []string{}
+			result.summary.MatchedPreview = ""
+			gap(&result.summary.Coverage, "source_changed_during_query:"+st.ID)
 		}
 		if err := visit(st, result.summary); err != nil {
 			if errors.Is(err, io.EOF) {

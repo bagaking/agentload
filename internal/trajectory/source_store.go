@@ -31,6 +31,10 @@ type sourceStore struct {
 	checkpointCache map[string]*list.Element
 	checkpointLRU   list.List
 	checkpointBytes int
+	rangeMu         sync.Mutex
+	rangeCache      map[[sha256.Size]byte]*list.Element
+	rangeLRU        list.List
+	rangeBytes      int
 }
 
 const sourceStoreVersion = 2
@@ -341,11 +345,8 @@ func (f *sourceStore) sourceRanges(ctx context.Context, st *sourceState, after i
 		if err = rows.Scan(&r.row, &start, &end, &body, &bits); err != nil {
 			return nil, err
 		}
-		raw, e := decodeSourceValue(body, 3*maxRecordBytes)
-		if e != nil {
-			return nil, e
-		}
-		if err = json.Unmarshal(raw, &r.value); err != nil {
+		r.value, err = f.decodeRange(body)
+		if err != nil {
 			return nil, err
 		}
 		if r.value.Chunk.Start.Offset != start || r.value.Chunk.End.Offset != end || r.value.Facts < 0 || r.value.LogicalBytes < 0 {
@@ -729,12 +730,8 @@ func (f *sourceStore) checkRangeSequence(ctx context.Context, st *sourceState) e
 		if err = rows.Scan(&start, &end, &body); err != nil {
 			return err
 		}
-		raw, err := decodeSourceValue(body, 3*maxRecordBytes)
+		value, err := f.decodeRange(body)
 		if err != nil {
-			return err
-		}
-		var value sourceRange
-		if err = json.Unmarshal(raw, &value); err != nil {
 			return err
 		}
 		c := value.Chunk

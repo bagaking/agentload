@@ -81,7 +81,9 @@ func appendFile(t *testing.T, path, body string) {
 }
 func queryOne(t *testing.T, s *Service) snapshot.TrajectoryQueryResult {
 	t.Helper()
-	return searchTestPreparedQuery(t, s, snapshot.TrajectorySelector{})
+	// These storage fixtures consume actual event references, not a metadata
+	// catalog. Request the explicit evidence/count path under its current contract.
+	return searchTestPreparedQuery(t, s, snapshot.TrajectorySelector{Count: true})
 }
 
 func TestTrajectoryIndexIncrementalAndRestart(t *testing.T) {
@@ -229,7 +231,7 @@ func TestTrajectoryBoundedRetentionHistoryPaginationAndHugeLine(t *testing.T) {
 func TestTrajectoryIndexRawByteContinuation(t *testing.T) {
 	body := request(strings.Repeat("large evidence ", 600))
 	s, _, _, _, _ := indexFixture(t, body)
-	id := searchTestPreparedQuery(t, s, snapshot.TrajectorySelector{}).Sessions[0].MatchedIDs[0]
+	id := searchTestPreparedQuery(t, s, snapshot.TrajectorySelector{Count: true}).Sessions[0].MatchedIDs[0]
 	offset := 0
 	var raw []byte
 	for {

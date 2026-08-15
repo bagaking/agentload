@@ -1,6 +1,7 @@
 package trajectory
 
 import (
+	"context"
 	"encoding/hex"
 	"errors"
 	"os"
@@ -8,6 +9,40 @@ import (
 	"strings"
 	"syscall"
 )
+
+// Only this inventory call owns the binding between a mount's device number
+// and its freshly measured persistent volume UUID. It never survives a call
+// or grants evidence access; point readers still bind their own descriptor.
+func inventoryVolumeIdentities(ctx context.Context, sources []Source) map[uint64]string {
+	volumes := map[uint64]string{}
+	for _, src := range sources {
+		if ctx.Err() != nil {
+			break
+		}
+		if src.Info == nil || !src.Info.Mode().IsRegular() {
+			continue
+		}
+		st, ok := src.Info.Sys().(*syscall.Stat_t)
+		if !ok || volumes[uint64(st.Dev)] != "" {
+			continue
+		}
+		file, err := os.Open(src.Path)
+		if err != nil {
+			continue
+		}
+		info, err := file.Stat()
+		if err == nil && os.SameFile(src.Info, info) {
+			identity, identityErr := persistentFileIdentity(file, info)
+			if identityErr == nil {
+				if split := strings.LastIndexByte(identity, ':'); split >= 0 {
+					volumes[uint64(st.Dev)] = identity[:split+1]
+				}
+			}
+		}
+		_ = file.Close()
+	}
+	return volumes
+}
 
 func validPersistentIdentity(identity string) bool {
 	parts := strings.Split(identity, ":")

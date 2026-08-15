@@ -207,6 +207,7 @@ func (s *Service) collectSetBudget(ctx context.Context, set SourceSet, prepareBu
 	cached := make([]*sourceState, len(ordered))
 	pending := make([]bool, len(ordered))
 	var cacheReaders sync.WaitGroup
+	volumes := inventoryVolumeIdentities(ctx, set.Sources)
 	const cacheWorkers = 8
 	for worker := range cacheWorkers {
 		cacheReaders.Add(1)
@@ -214,7 +215,7 @@ func (s *Service) collectSetBudget(ctx context.Context, set SourceSet, prepareBu
 			defer cacheReaders.Done()
 			for i := worker; i < len(ordered) && ctx.Err() == nil; i += cacheWorkers {
 				if ordered[i].Decoder != nil {
-					cached[i], pending[i] = s.cachedSource(ordered[i].Source)
+					cached[i], pending[i] = s.cachedSourceWithVolumes(ordered[i].Source, volumes)
 				}
 			}
 		}()
@@ -620,8 +621,8 @@ func matchPreview(e snapshot.TrajectoryEvent, q snapshot.TrajectorySelector) str
 		needle = q.Skill
 	}
 	if words := strings.Fields(needle); len(words) > 0 {
-		if at := strings.Index(strings.ToLower(text), strings.ToLower(words[0])); at > 80 {
-			start := at - 80
+		if at := strings.Index(strings.ToLower(text), strings.ToLower(words[0])); at > 24 {
+			start := at - 24
 			for start > 0 && !utf8.RuneStart(text[start]) {
 				start--
 			}

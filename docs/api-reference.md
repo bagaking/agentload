@@ -343,13 +343,19 @@ Full-text pagination additionally binds the current search-projection revision.
 `next` requires a verified subsequent match; unexamined candidates do not prove
 another page exists.
 
+Ordinary session pages exclude a source that changes during its evidence read
+and report `source_changed_during_query:<id>` in coverage. Other verified matches
+remain usable. Explicit counts fail rather than counting an incomplete source
+set. Stored range corruption and stale pagination remain errors.
+
 The agreed sessions/events query contract prioritizes an accurate result page
 by default, without requiring a whole-library count. Default sessions queries
 scan ordered candidates until enough verified matches plus lookahead are found,
 and return a verified reference and excerpt for each session. They leave
 `matched_count` null instead of scanning all events in each returned session.
 Default events queries likewise verify only through the page and lookahead.
-Unfiltered catalog pages may use known exact event counts. Matching original
+Unfiltered catalog pages return session metadata with empty `matched_ids` and
+null `matched_count`; use session get to read evidence on demand. Matching original
 record identities remain exact. Default requests omit
 `matched_total`, including lists without a text selector: absence means unknown,
 not zero. Only explicit count performs complete per-source existence checks

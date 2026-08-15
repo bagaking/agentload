@@ -23,11 +23,11 @@ func TestTrajectoryIndexAppAccessAndRootWithdrawal(t *testing.T) {
 	// Access/root withdrawal asserts prepared evidence. Cold preparation is
 	// deliberately bounded and may truthfully return index_pending.
 	prepareTrajectoryAppFixture(t, app)
-	q, err := app.trajectory.Query(context.Background(), snapshot.TrajectorySelector{})
-	if err != nil || len(q.Sessions) != 1 {
+	q, err := app.trajectory.Query(context.Background(), snapshot.TrajectorySelector{Collection: "events"})
+	if err != nil || len(q.Events) == 0 {
 		t.Fatal(q, err)
 	}
-	old := q.Sessions[0].MatchedIDs[0]
+	old := q.Events[0].ID
 	if _, err := os.Stat(path); err != nil {
 		t.Fatal("content index absent", err)
 	}

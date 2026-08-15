@@ -63,22 +63,22 @@ func (s *Service) querySessionCatalog(ctx context.Context, q snapshot.Trajectory
 		}
 		if matched >= start && len(out.Sessions) < q.Limit {
 			summary := cachedSession(st)
-			count := st.checkpoint.EventCount
-			summary.MatchedCount = &count
-			facts, err := s.store.take(ctx, st, -1, -1, false, false, 50)
-			for _, fact := range facts {
-				summary.MatchedIDs = append(summary.MatchedIDs, fact.event.ID)
-			}
-
-			if err != nil {
-				if q.Count || ctx.Err() != nil {
+			// An unfiltered catalog page names sessions, not matched records.
+			// Reading history here delays both the list and searches waiting on
+			// this operation. Session get owns the on-demand evidence read.
+			if q.Count {
+				count := st.checkpoint.EventCount
+				summary.MatchedCount = &count
+				facts, err := s.store.take(ctx, st, -1, -1, false, false, 50)
+				if err != nil {
 					return out, err
 				}
-				gap(&out.Coverage, "index_read_failed")
-				continue
-			}
-			if count > len(summary.MatchedIDs) {
-				gap(&summary.Coverage, "matched_reference_limit")
+				for _, fact := range facts {
+					summary.MatchedIDs = append(summary.MatchedIDs, fact.event.ID)
+				}
+				if count > len(summary.MatchedIDs) {
+					gap(&summary.Coverage, "matched_reference_limit")
+				}
 			}
 			mergeCoverage(&out.Coverage, summary.Coverage)
 			out.Sessions = append(out.Sessions, summary)
