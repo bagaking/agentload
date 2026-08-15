@@ -25,8 +25,8 @@ func TestTrajectorySourceQueryDefaultDoesNotCountSessionTail(t *testing.T) {
 	if err != nil || len(page.Sessions) != 1 || page.Sessions[0].MatchedCount != nil || len(page.Sessions[0].MatchedIDs) != 1 {
 		t.Fatal("default did not return an exact witness with unknown count", page, err)
 	}
-	if calls := d.calls.Load(); calls <= 0 || calls >= 1000 {
-		t.Fatal("default decoded the entire matching session", calls)
+	if calls := d.calls.Load(); calls != 1 {
+		t.Fatal("default shaped events after its verified first witness", calls)
 	}
 	wire, err := json.Marshal(page)
 	if err != nil || !strings.Contains(string(wire), `"matched_count":null`) || strings.Contains(string(wire), `"matched_total"`) {

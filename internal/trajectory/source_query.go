@@ -55,6 +55,10 @@ func (f *sourceStore) readinessScope(ctx context.Context, id string) (map[string
 }
 
 func (f *sourceStore) walkSourceCandidates(ctx context.Context, st *sourceState, candidate func(*sourceFilter) bool, ready *sourceReadiness, visit func(sourceFact) error) (result error) {
+	return f.walkSourceCandidateRanges(ctx, st, candidate, ready, false, visit)
+}
+
+func (f *sourceStore) walkSourceCandidateRanges(ctx context.Context, st *sourceState, candidate func(*sourceFilter) bool, ready *sourceReadiness, witnessOnly bool, visit func(sourceFact) error) (result error) {
 	source, before, err := openReplaySource(st)
 	if err != nil {
 		return err
@@ -105,6 +109,27 @@ func (f *sourceStore) walkSourceCandidates(ctx context.Context, st *sourceState,
 					}
 				}
 				continue
+			}
+			if witnessOnly && r.value.Facts == r.value.Chunk.Events && r.value.Chunk.End.Offset-r.value.Chunk.Start.Offset <= replayChunkBytes+maxRecordBytes {
+				// The replay reader verifies all bytes of an immutable snapshot
+				// before shaping a record. A first exact witness needs no DTOs
+				// after it; overrides require the complete canonical merge.
+				exceptions, err := f.rangeExceptions(ctx, st, r.value.Chunk.Start.Offset, r.value.Chunk.End.Offset)
+				if err != nil {
+					return err
+				}
+				if len(exceptions) == 0 {
+					_, err = replaySourceChunkFrom(ctx, st, r.value.Chunk, source, func(e snapshot.TrajectoryEvent, n int) error {
+						if ready != nil && physicalLess(ready.offset, ready.block, e.Source.Offset, e.Source.Block) {
+							return io.EOF
+						}
+						return visit(sourceFact{e.Source.Offset, e.Source.Block, e, n})
+					})
+					if err != nil {
+						return err
+					}
+					continue
+				}
 			}
 			facts, err := f.readRangeFrom(ctx, st, r, source)
 			if err != nil {
@@ -311,7 +336,7 @@ func (f *sourceStore) visitSessionWitnesses(ctx context.Context, q snapshot.Traj
 			st, p := eligible[i], readiness[eligible[i].ID]
 			result := witness{summary: cachedSession(st)}
 			if st.Generation != "" && p.generation == st.Generation && p.complete && p.count != 0 {
-				result.err = f.walkSourceCandidates(readCtx, st, func(filter *sourceFilter) bool { return filter.maybe(q) }, &p, func(fact sourceFact) error {
+				result.err = f.walkSourceCandidateRanges(readCtx, st, func(filter *sourceFilter) bool { return filter.maybe(q) }, &p, !q.Count, func(fact sourceFact) error {
 					if !matches(fact.event, q) {
 						return nil
 					}

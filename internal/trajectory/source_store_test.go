@@ -256,6 +256,18 @@ func TestTrajectorySourceStoreRetainsAddedChangedAndSuppressedFacts(t *testing.T
 		if len(sourceStoreFacts(t, f, st, &q)) != 1 {
 			t.Fatalf("exception absent from candidate index: %+v", q)
 		}
+		q.Collection = "sessions"
+		page, err := f.query(context.Background(), q, []*sourceState{st}, coverage("test"))
+		if err != nil || len(page.Sessions) != 1 || len(page.Sessions[0].MatchedIDs) != 1 || page.Sessions[0].MatchedCount != nil {
+			t.Fatal("default witness bypassed retained canonical exceptions", page, err)
+		}
+		want := facts[0].event.ID
+		if q.Kind == "summary" {
+			want = extra.event.ID
+		}
+		if page.Sessions[0].MatchedIDs[0] != want {
+			t.Fatal("default witness fabricated a replayed replacement", page.Sessions[0])
+		}
 	}
 	q := snapshot.TrajectorySelector{EntityKind: "path", Predicate: "requested_read"}
 	if len(sourceStoreFacts(t, f, st, &q)) != 0 {
