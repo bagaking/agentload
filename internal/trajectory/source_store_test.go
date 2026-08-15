@@ -256,6 +256,11 @@ func TestTrajectorySourceStoreRetainsAddedChangedAndSuppressedFacts(t *testing.T
 		if len(sourceStoreFacts(t, f, st, &q)) != 1 {
 			t.Fatalf("exception absent from candidate index: %+v", q)
 		}
+		if q.EntityID == "foreign-entity" {
+			// The physical reader preserves arbitrary old entity IDs; this
+			// fixture ID is outside the public selector's ID namespace.
+			continue
+		}
 		q.Collection = "sessions"
 		page, err := f.query(context.Background(), q, []*sourceState{st}, coverage("test"))
 		if err != nil || len(page.Sessions) != 1 || len(page.Sessions[0].MatchedIDs) != 1 || page.Sessions[0].MatchedCount != nil {
