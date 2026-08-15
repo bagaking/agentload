@@ -152,6 +152,67 @@ func TestRunCleansUpWhenSystrayReturnsWithoutOnExit(t *testing.T) {
 	}
 }
 
+func TestRunPreparesCatalogBeforePublishingLocalConnection(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "codex")
+	writeDiscoveryFixture(t, filepath.Join(root, "sessions", "session.jsonl"), time.Now())
+	cfg := Config{HistoryFile: filepath.Join(t.TempDir(), "history.jsonl"), CodexRoots: []string{root}}
+	block := &discoveryBlock{entered: make(chan struct{}, 1), release: make(chan struct{})}
+	registry, discovery := countingCodexRegistry(cfg, block)
+	observer := newObserver(cfg)
+	observer.adapters = registry
+	observer.evidenceIndex = newTranscriptEvidenceIndex(registry)
+	observer.evidenceIndex.watcherFactory = func([]string) evidenceWatcher { return newFakeEvidenceWatcher() }
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := newTrayApp(cfg, observer, log.New(io.Discard, "", 0), listener, "http://"+listener.Addr().String(), nil)
+	originalRun := systrayRun
+	nativeReached := make(chan bool, 1)
+	systrayRun = func(func(), func()) {
+		catalog := observer.evidenceIndex.snapshot(context.Background(), time.Time{}, nil)
+		_, receiptErr := os.Stat(filepath.Join(app.trajectoryAccess.root, "instance.json"))
+		nativeReached <- catalog.Complete && len(catalog.Files) == 1 && receiptErr == nil && discovery.callCount() == 1
+	}
+	done := make(chan error, 1)
+	var release sync.Once
+	runDone := false
+	t.Cleanup(func() {
+		release.Do(func() { close(block.release) })
+		if !runDone {
+			select {
+			case <-done:
+			case <-time.After(10 * time.Second):
+				t.Error("startup cleanup did not join app.run")
+			}
+		}
+		systrayRun = originalRun
+	})
+	go func() { done <- app.run() }()
+	select {
+	case <-block.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("startup did not prepare catalog")
+	}
+	_, receiptErr := os.Stat(filepath.Join(app.trajectoryAccess.root, "instance.json"))
+	release.Do(func() { close(block.release) })
+	if !os.IsNotExist(receiptErr) {
+		t.Errorf("local connection published before initial catalog: %v", receiptErr)
+	}
+	select {
+	case err := <-done:
+		runDone = true
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("startup or normal return cleanup stranded")
+	}
+	if !<-nativeReached {
+		t.Fatal("native startup did not share the prepared complete catalog")
+	}
+}
+
 func TestOnExitStillShutsDownWhenAnEarlierStepPanics(t *testing.T) {
 	app, lifecycle := newShutdownTestApp(t)
 	serveErr := make(chan error, 1)

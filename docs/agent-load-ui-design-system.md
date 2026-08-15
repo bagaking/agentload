@@ -65,6 +65,34 @@ semantic layer before visual polish is accepted.
 
 ## Visual Rules
 
+### Trajectory knowledge view
+
+- The Popover knowledge view demonstrates entity search, a bounded relationship
+  graph, scoped experience details and source-evidence reading. Its target
+  workflow lives in [Trajectory product scenario](trajectory-product-scenario.md).
+- Production knowledge results come from the local trajectory service. Missing
+  sources show an empty result or coverage gap; fictional examples never fill
+  that state. Any isolated prototype samples carry sample-data identity and
+  remain separate from live metrics.
+- The first screen leads with search and past episodes, showing the recorded
+  outcome in plain language. Group query hits by source episode, not entity
+  taxonomy. Query syntax help is optional; conditions still work in the search.
+- Episode details have one navigation group: details, execution and relations.
+  Source lines and event IDs are disclosed in execution. Keep evidence coverage
+  and validation limits readable in details.
+- A local graph keeps selection and readable labeled relations stable. Observed
+  and candidate relationships use both visual and text distinctions; uncertain
+  model-input membership remains unknown.
+- Selecting an experience opens its scope, evidence and missing validation.
+  Returning from evidence preserves the selected object and graph context.
+- The knowledge entry follows system and immediately precedes diagnostics
+  in Popover navigation. The operational default remains throughput.
+  The relationship graph opens on demand after selecting an episode.
+- The graph module loads on demand and stops consuming resources when absent.
+  Stable bounded layouts support compact reading without continuous simulation.
+
+### Shared visual rules
+
 - Prefer flat material surfaces over nested card stacks.
 - Keep padding tight enough for repeated operational use.
 - Use thin separators and depth changes; avoid heavy line-box scaffolding and

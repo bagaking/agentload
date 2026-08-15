@@ -39,6 +39,7 @@ type capabilityMatrixRow struct {
 	Evidence       []string                 `json:"evidence,omitempty"`
 	Note           string                   `json:"note,omitempty"`
 	SignalFamilies []capabilitySignalFamily `json:"signal_families,omitempty"`
+	Trajectory     string                   `json:"trajectory"`
 }
 
 type capabilitySignalFamily struct {
@@ -103,8 +104,8 @@ func (r *codingAgentRegistry) capabilitySnapshot() []snapshot.CapabilityMatrixRo
 		for _, family := range families {
 			familyRows = append(familyRows, snapshot.CapabilitySignalFamily{Key: family.Key, State: family.State, Evidence: append([]string(nil), family.Evidence...)})
 		}
-		row := capabilityMatrixRow{Agent: adapter.ID, Process: capabilityState(adapter.Capabilities.Process != nil), Discovery: capabilityState(adapter.Capabilities.Discovery != nil), Transcript: capabilityState(adapter.Capabilities.Transcript != nil), Usage: capabilityState(adapter.Capabilities.Usage != nil), Evidence: append([]string(nil), adapter.Evidence...), Note: adapter.Note, SignalFamilies: families}
-		rows = append(rows, snapshot.CapabilityMatrixRow{Agent: row.Agent, Process: row.Process, Discovery: row.Discovery, Transcript: row.Transcript, Usage: row.Usage, Evidence: row.Evidence, Note: row.Note, SignalFamilies: familyRows})
+		row := capabilityMatrixRow{Agent: adapter.ID, Process: capabilityState(adapter.Capabilities.Process != nil), Discovery: capabilityState(adapter.Capabilities.Discovery != nil), Transcript: capabilityState(adapter.Capabilities.Transcript != nil), Usage: capabilityState(adapter.Capabilities.Usage != nil), Trajectory: capabilityState(adapter.Capabilities.Trajectory != nil), Evidence: append([]string(nil), adapter.Evidence...), Note: adapter.Note, SignalFamilies: families}
+		rows = append(rows, snapshot.CapabilityMatrixRow{Agent: row.Agent, Process: row.Process, Discovery: row.Discovery, Transcript: row.Transcript, Usage: row.Usage, Trajectory: row.Trajectory, Evidence: row.Evidence, Note: row.Note, SignalFamilies: familyRows})
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Agent < rows[j].Agent })
 	return rows
@@ -133,6 +134,7 @@ func (r *codingAgentRegistry) capabilityMatrix() []capabilityMatrixRow {
 			Discovery:      capabilityState(adapter.Capabilities.Discovery != nil),
 			Transcript:     capabilityState(adapter.Capabilities.Transcript != nil),
 			Usage:          capabilityState(adapter.Capabilities.Usage != nil),
+			Trajectory:     capabilityState(adapter.Capabilities.Trajectory != nil),
 			Evidence:       append([]string(nil), adapter.Evidence...),
 			Note:           adapter.Note,
 			SignalFamilies: signalFamilies(adapter),
@@ -149,8 +151,8 @@ func renderCapabilityMatrixMarkdown(rows []capabilityMatrixRow) string {
 	b.WriteString(capabilityMatrixBeginMarker)
 	b.WriteString("\n")
 	b.WriteString("<!-- Generated from defaultCodingAgentRegistry by TestCapabilityMatrixDocMatchesTheRegistry. Do not edit by hand. -->\n\n")
-	b.WriteString("| Agent | Process identity | Evidence discovery | Transcript evidence | Output usage | Evidence read |\n")
-	b.WriteString("| --- | --- | --- | --- | --- | --- |\n")
+	b.WriteString("| Agent | Process identity | Evidence discovery | Transcript evidence | Output usage | Trajectory | Evidence read |\n")
+	b.WriteString("| --- | --- | --- | --- | --- | --- | --- |\n")
 	for _, row := range rows {
 		evidence := "none"
 		if len(row.Evidence) > 0 {
@@ -160,8 +162,8 @@ func renderCapabilityMatrixMarkdown(rows []capabilityMatrixRow) string {
 			}
 			evidence = strings.Join(quoted, "<br>")
 		}
-		b.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s |\n",
-			row.Agent, row.Process, row.Discovery, row.Transcript, row.Usage, evidence))
+		b.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s | %s |\n",
+			row.Agent, row.Process, row.Discovery, row.Transcript, row.Usage, row.Trajectory, evidence))
 	}
 	notes := make([]string, 0, len(rows))
 	for _, row := range rows {

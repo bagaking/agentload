@@ -57,6 +57,11 @@
 @property (nonatomic, copy)   NSString *popoverOrigin;
 @property (nonatomic, copy)   NSString *statusClickFallbackURL;
 @property (nonatomic, assign) BOOL cookieReady;
+@property (nonatomic, assign) BOOL contentReady;
+@property (nonatomic, assign) BOOL paintWasWarm;
+@property (nonatomic, assign) NSTimeInterval paintStarted;
+@property (nonatomic, assign) NSUInteger paintGeneration;
+@property (nonatomic, assign) NSTimeInterval showRequestedAt;
 @property (nonatomic, assign) BOOL hasLastStatusClickPoint;
 @property (nonatomic, assign) CGFloat width;
 @property (nonatomic, assign) CGFloat height;
@@ -108,7 +113,16 @@
     web.navigationDelegate = self;
     web.UIDelegate = self;
     web.wantsLayer = YES;
-    web.layer.backgroundColor = [NSColor clearColor].CGColor;
+    // Keep a real surface before WebKit produces its first page layer. A clear
+    // backing exposes the desktop through the entire panel during startup.
+    // Only the clipped corners stay transparent; the page owns its theme once
+    // it renders, including the light theme.
+    NSColor *startupBackground = [NSColor colorWithSRGBRed:7.0/255.0
+        green:10.0/255.0 blue:14.0/255.0 alpha:1.0];
+    web.layer.backgroundColor = startupBackground.CGColor;
+    if (@available(macOS 12.0, *)) {
+        web.underPageBackgroundColor = startupBackground;
+    }
     web.layer.cornerRadius = 12.0;
     web.layer.masksToBounds = YES;
     web.layer.opaque = NO;
@@ -466,18 +480,26 @@
     self.dashboardURL = url ? [url copy] : nil;
 }
 
-- (void)loadAndShow:(NSString *)url {
+- (void)loadHidden:(NSString *)url {
+    [self setupIfNeeded];
     NSURL *u = [NSURL URLWithString:url];
     if (u == nil) return;
-    [self ensureApplicationCanPresentUI];
     self.popoverOrigin = [self originForURL:u];
     if (![self.loadedURL isEqualToString:url]) {
+        self.contentReady = NO;
         NSURLRequest *req = [NSURLRequest requestWithURL:u
             cachePolicy:NSURLRequestUseProtocolCachePolicy
             timeoutInterval:8.0];
         self.loadedURL = [url copy];
         [self.webView loadRequest:req];
     }
+}
+
+- (void)loadAndShow:(NSString *)url {
+    [self loadHidden:url];
+    self.paintGeneration++;
+    self.paintStarted = self.showRequestedAt;
+    self.paintWasWarm = self.contentReady;
     [self positionPanelAnchored];
     if (!self.panel.isVisible) {
         // LaunchAgent-started CLI binaries are registered as background-only
@@ -493,6 +515,7 @@
 }
 
 - (void)showURL:(NSString *)url {
+    self.showRequestedAt = NSProcessInfo.processInfo.systemUptime;
     if (NSClassFromString(@"WKWebView") == nil) return;
     [self setupIfNeeded];
 
@@ -500,6 +523,8 @@
     // tear monitoring down explicitly so a closed popover doesn't keep an
     // NSEvent handler alive in the background.
     if (self.panel.isVisible) {
+        self.paintStarted=0;
+        self.paintGeneration++;
         [self stopCloseMonitoring];
         [self notifyPopoverHidden];
         [self.panel orderOut:nil];
@@ -535,6 +560,8 @@
 }
 
 - (void)hide {
+    self.paintStarted = 0;
+    self.paintGeneration++;
     [self stopCloseMonitoring];
     if (self.panel != nil && self.panel.isVisible) {
         [self notifyPopoverHidden];
@@ -543,14 +570,19 @@
 }
 
 - (void)notifyPopoverShown {
-    [self.webView evaluateJavaScript:@"window.dispatchEvent(new Event('agentLoadPopoverShown'));" completionHandler:nil];
+    [self.webView evaluateJavaScript:[NSString stringWithFormat:@"window.agentLoadPaintGeneration=%lu;window.dispatchEvent(new Event('agentLoadPopoverShown')); if(document.documentElement.dataset.meaningfulReady==='true'){const generation=%lu;requestAnimationFrame(()=>requestAnimationFrame(()=>{if(document.documentElement.dataset.meaningfulReady==='true' && window.agentLoadPaintGeneration===generation)window.webkit.messageHandlers.agentLoadAction.postMessage({action:'popover_paint',generation});}));}",(unsigned long)self.paintGeneration,(unsigned long)self.paintGeneration] completionHandler:nil];
 }
 
 - (void)notifyPopoverHidden {
-    [self.webView evaluateJavaScript:@"window.dispatchEvent(new Event('agentLoadPopoverHidden'));" completionHandler:nil];
+    [self.webView evaluateJavaScript:@"window.agentLoadPaintGeneration=0;window.dispatchEvent(new Event('agentLoadPopoverHidden'));" completionHandler:nil];
 }
 
 #pragma mark - WKNavigationDelegate
+
+- (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
+    if (self.panel.isVisible) [self notifyPopoverShown];
+    else [self notifyPopoverHidden];
+}
 
 - (NSString *)originForURL:(NSURL *)url {
     if (url == nil || url.scheme.length == 0 || url.host.length == 0) return nil;
@@ -642,6 +674,20 @@
         }
         if (![action isKindOfClass:[NSString class]]) return;
 
+        if ([action isEqualToString:@"content_ready"]) {
+            self.contentReady = [body isKindOfClass:[NSDictionary class]] && [[(NSDictionary *)body objectForKey:@"ready"] boolValue];
+            return;
+        }
+        if ([action isEqualToString:@"popover_paint"]) {
+            NSUInteger generation=[body isKindOfClass:[NSDictionary class]] ? [[(NSDictionary *)body objectForKey:@"generation"] unsignedIntegerValue] : 0;
+            if (self.panel.isVisible && self.contentReady && self.paintStarted > 0 && generation==self.paintGeneration) {
+                double ms = (NSProcessInfo.processInfo.systemUptime-self.paintStarted)*1000.0;
+                self.paintStarted = 0;
+                agentLoadPopoverPainted(ms, self.paintWasWarm ? 1 : 0);
+            }
+            return;
+        }
+
         if ([action isEqualToString:@"close"]) {
             [self hide];
             return;
@@ -676,6 +722,13 @@ void agentLoadPopoverShow(const char *url) {
     NSString *u = (url != NULL) ? [NSString stringWithUTF8String:url] : @"";
     dispatch_async(dispatch_get_main_queue(), ^{
         [[AgentLoadMenubarPopover shared] showURL:u];
+    });
+}
+
+void agentLoadPopoverPrepare(const char *url) {
+    NSString *u = (url != NULL) ? [NSString stringWithUTF8String:url] : @"";
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[AgentLoadMenubarPopover shared] loadHidden:u];
     });
 }
 
@@ -778,4 +831,3 @@ int agentLoadStatusBoxIsAvailable(void) {
     NSStatusItem *item = (NSStatusItem *)value;
     return (item.button != nil) ? 1 : 0;
 }
-

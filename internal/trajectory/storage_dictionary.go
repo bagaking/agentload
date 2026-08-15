@@ -1,0 +1,10 @@
+package trajectory
+
+// storageDictionaryV1 is immutable public schema/protocol vocabulary. Never
+// regenerate it from runtime types or private sessions. A future dictionary
+// requires new frame kinds and a verified migration; zlib verifies its ID.
+const storageDictionaryV1 = `"id":"","session_id":"","native_id":"","native_envelope_id":"","protocol_role":"","turn_id":"","timestamp":null,"role":"","actor":null,"id":"","kind":"","evidence":null,"sender":null,"actor":null,"native_field":"","recipients":[],"relations":[],"kind":"","target":null,"kind":"","id":"","source_id":"","generation":"","session_native_id":"","agent":"","native_field":"","branch":null,"id":"","native_field":"","workspace":null,"path":"","native_field":"","context":null,"native_id":"","revision":"","native_field":"","membership_complete":false,"completeness_native_field":"","attention":null,"request_id":"","request_id_field":"","response_to_id":"","response_to_field":"","outcome_field":"","entities":[],"id":"","entity_id":"","event_id":"","session_id":"","kind":"","literal":"","label":"","scope":"","predicate":"","native_field":"","source":null,"id":"","generation":"","line":null,"offset":null,"length":null,"block":null,"digest":"","native_type":"","entity_coverage":null,"complete":false,"scope":"","gaps":[],"omitted":null,"index":null,"known_sources":null,"decoded_sources":null,"searchable_sources":null,"decoded_events":null,"searchable_events":null,"kind":"","text":"","tool":null,"name":"","call_id":"","arguments":[],"outcome":"","pair_id":"","usage":null,"scope":"","scope_id":"","aggregation":"","counters":{},"models":{},"source":null,"raw":"","omissions":[],"user","assistant","tool","system","unknown","human","agent","text","reasoning","tool_call","tool_result","summary","codex","claude","grok","trae","session","recorded","actual_input","native_field","response_item","event_msg","function_call","function_call_output","exec_command","thinking","permission_request","tool_error","input_tokens","output_tokens","cached_input_tokens"`
+
+var storageDictionary = []byte(storageDictionaryV1)
+
+const storageCodecVersion = "3"

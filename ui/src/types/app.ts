@@ -2,7 +2,7 @@ import type { LiveSession } from "./snapshot";
 
 export type Theme = "dark" | "light";
 export type RailTab = "projects" | "sessions" | "processes";
-export type PopoverView = "throughput" | "activity" | "online" | "system" | "diagnostics";
+export type PopoverView = "throughput" | "activity" | "online" | "system" | "diagnostics" | "knowledge";
 
 export type Selection =
   | { type: "overview"; id: "overview" }

@@ -2,12 +2,14 @@
 
 This guidebook is the reading map for the shared knowledge root.
 
-## Read First
+## Read When Needed
 
-- `must-guidebook.md`
-- `must-authority.md`
-- `must-sop.md`
-- `must-recall.md`
+- Read `must-authority.md` when the task needs shared-knowledge ownership or
+  publication rules.
+- Read `must-sop.md` when the task needs maintenance routes or shared
+  directives.
+- Read `must-recall.md` when the task needs prior decisions or facts.
+- Read deeper topic pages only after the task identifies a relevant topic.
 
 ## Shared Root
 
@@ -43,3 +45,5 @@ This guidebook is the reading map for the shared knowledge root.
 - `docs/notes-reusable-items-knowledge.md` — Reusable Items - Knowledge
 - `docs/privacy-local-observation.md` — Privacy: Local Observation Draft
 - `docs/release-runbook.md` — Release Runbook
+- `docs/trajectory-product-scenario.md` — Trajectory 知识工作区
+- `docs/trajectory-requirements.md` — Agent Load Trajectory Requirements

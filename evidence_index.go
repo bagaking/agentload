@@ -39,10 +39,9 @@ type transcriptEvidenceSnapshot struct {
 	// LastWalk is the most recent pass that actually walked the tree, kept so
 	// the scan cost stays answerable between reconciles. Zero until one runs.
 	LastWalk transcriptEvidenceIndexStats
-	// FilteredByCutoff counts files the index holds -- so within the history
-	// horizon -- that the foreground cutoff excluded from Files. These are the
-	// genuinely deferred ones: in scope, on disk, and not scanned this pass.
-	// Files the walk never admitted are outside the horizon, not a gap.
+	// FilteredByCutoff counts held files excluded by this consumer's window.
+	// It is a filtering diagnostic, not a sampling gap: a history cutoff may
+	// exclude complete known archives that are outside the consumer's scope.
 	FilteredByCutoff int
 	// Revision identifies the exact index state represented by Files. Consumers
 	// compare it after parsing so a watcher mutation cannot be published as a
@@ -63,12 +62,14 @@ type transcriptEvidenceIndex struct {
 	mutations         map[string]transcriptEvidenceMutation
 	rootsKey          string
 	coverageCutoff    time.Time
+	archiveRequested  bool
 	initialized       bool
 	complete          bool
 	reconcileRequired bool
 	reconciling       chan struct{}
 	gapGeneration     uint64
 	revision          uint64
+	onEvidenceChange  func()
 	errors            []string
 	lastStats         transcriptEvidenceIndexStats
 	// lastWalk retains the newest stats that came from a real walk. lastStats is
@@ -108,6 +109,34 @@ func canonicalEvidencePath(path string) string {
 		path = resolved
 	}
 	return filepath.Clean(path)
+}
+
+// Each inventory resolves a successful parent once. Leaves are still checked
+// freshly; links and failures retain the full standard-library path resolution.
+func canonicalEvidenceInventoryPath(path string, parents map[string]string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return canonicalEvidencePath(path)
+	}
+	dir := filepath.Dir(absolute)
+	parent, known := parents[dir]
+	if !known {
+		parent, err = filepath.EvalSymlinks(dir)
+		if err != nil {
+			return canonicalEvidencePath(absolute)
+		}
+		parents[dir] = parent
+	}
+	physical := filepath.Join(parent, filepath.Base(absolute))
+	info, err := os.Lstat(physical)
+	if err != nil || info.Mode()&os.ModeSymlink != 0 {
+		return canonicalEvidencePath(absolute)
+	}
+	return physical
 }
 
 func (index *transcriptEvidenceIndex) start() {
@@ -293,8 +322,14 @@ func (index *transcriptEvidenceIndex) snapshot(ctx context.Context, cutoff time.
 	reportGap := false
 	for {
 		index.mu.Lock()
-		needsReconcile := !index.initialized || index.reconcileRequired ||
-			(!cutoff.IsZero() && (index.coverageCutoff.IsZero() || cutoff.Before(index.coverageCutoff)))
+		walkCutoff := cutoff
+		if index.archiveRequested {
+			walkCutoff = time.Time{}
+		}
+		// A zero cutoff requests the whole archive. Once that wider catalog is
+		// known, a recent resource window only filters it; it must not walk again.
+		widensCoverage := !index.coverageCutoff.IsZero() && (walkCutoff.IsZero() || walkCutoff.Before(index.coverageCutoff))
+		needsReconcile := !index.initialized || index.reconcileRequired || widensCoverage
 		if !needsReconcile {
 			index.mu.Unlock()
 			break
@@ -333,7 +368,7 @@ func (index *transcriptEvidenceIndex) snapshot(ctx context.Context, cutoff time.
 				index.releaseReconcileFlight(flight)
 			}()
 			runBackgroundStep("transcript evidence reconciliation", func() {
-				committed = index.reconcileLocked(ctx, cutoff, flight, rootsKey, gapGeneration)
+				committed = index.reconcileLocked(ctx, walkCutoff, flight, rootsKey, gapGeneration)
 			})
 		}()
 		if !committed {
@@ -354,6 +389,18 @@ func (index *transcriptEvidenceIndex) snapshot(ctx context.Context, cutoff time.
 	return snap
 }
 
+// A content consumer needs the whole metadata catalog. Declare that scope before
+// samplers start, so their shorter windows filter one walk rather than starting
+// successive recent/history/archive walks. This never reads session bodies.
+func (index *transcriptEvidenceIndex) requestArchiveCoverage() {
+	if index == nil {
+		return
+	}
+	index.mu.Lock()
+	index.archiveRequested = true
+	index.mu.Unlock()
+}
+
 // reconcileLocked runs one full reconciliation and commits it, reporting whether
 // the commit happened. The caller publishes `flight` before calling and releases
 // it when this returns false, so an aborted attempt never leaves waiters stuck.
@@ -362,8 +409,12 @@ func (index *transcriptEvidenceIndex) reconcileLocked(ctx context.Context, cutof
 	discovered := index.adapters.discoverTranscripts(ctx, cutoff)
 	elapsed := time.Since(started)
 	nextFiles := make(map[string]discoveredTranscriptFile, len(discovered.Files))
+	parents := map[string]string{}
 	for _, file := range discovered.Files {
-		path := canonicalEvidencePath(file.File.Path)
+		if ctx.Err() != nil {
+			break
+		}
+		path := canonicalEvidenceInventoryPath(file.File.Path, parents)
 		if path == "" || file.Info == nil || !index.adapters.hasTranscript(file.File.Tool) {
 			continue
 		}
@@ -593,6 +644,14 @@ func (index *transcriptEvidenceIndex) recordWatchBatch(batch evidenceWatchBatch)
 	if index == nil {
 		return
 	}
+	defer func() {
+		index.mu.Lock()
+		wake := index.onEvidenceChange
+		index.mu.Unlock()
+		if wake != nil {
+			wake()
+		}
+	}()
 	if !batch.Complete {
 		index.markGap("transcript evidence watcher reported incomplete coverage")
 	}
@@ -613,6 +672,14 @@ func (index *transcriptEvidenceIndex) recordWatchBatch(batch evidenceWatchBatch)
 		}
 		index.applyMutation(path, mutation)
 	}
+}
+
+// The tray's trajectory service shares the registry watcher. Notification is
+// a wake hint outside the index lock and never reads transcript content.
+func (index *transcriptEvidenceIndex) setEvidenceChangeCallback(wake func()) {
+	index.mu.Lock()
+	index.onEvidenceChange = wake
+	index.mu.Unlock()
 }
 
 func (index *transcriptEvidenceIndex) applyMutation(path string, mutation transcriptEvidenceMutation) {
@@ -640,6 +707,15 @@ func (index *transcriptEvidenceIndex) applyMutation(path string, mutation transc
 func (index *transcriptEvidenceIndex) markGap(reason string) {
 	index.mu.Lock()
 	index.markGapLocked(reason)
+	index.mu.Unlock()
+}
+
+// An audit requests the existing adapter-owned walk without inventing an
+// observation failure. It catches files omitted by watcher delivery.
+func (index *transcriptEvidenceIndex) requestReconcile() {
+	index.mu.Lock()
+	index.reconcileRequired = true
+	index.gapGeneration++
 	index.mu.Unlock()
 }
 

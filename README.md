@@ -2,7 +2,9 @@
 
 Agent Load is a local macOS menu bar monitor for AI agent activity. It tracks
 visible local AI processes, maps them to known sessions when local evidence is
-available, and serves a dashboard for current load and recent trends.
+available, and serves a dashboard for current load and recent trends. Its local
+knowledge workspace searches recorded agent work and opens the evidence behind
+each match.
 
 ## Run
 
@@ -12,6 +14,31 @@ go run .
 
 The app listens on `127.0.0.1:8642` by default and falls back to a random local
 port when that address is busy.
+
+## Find past agent work
+
+Open **Knowledge** in the popover and explicitly enable content access. Search
+an ordinary word such as `Proxy`, or use `tool:exec_command` or
+`skill:proxy-debugger`. Select a matching passage to read its surrounding
+execution; Context, local knowledge records, and a scoped relationship graph
+are available when needed. Results come from local source logs, and the UI
+shows when historical indexing is still incomplete.
+
+The same executable also provides a CLI while the app is running. After a
+local app build, for example:
+
+```sh
+./dist/"Agent Load.app"/Contents/MacOS/agentload traj access on
+./dist/"Agent Load.app"/Contents/MacOS/agentload traj query sessions --text Proxy --format json
+./dist/"Agent Load.app"/Contents/MacOS/agentload traj query events --tool exec_command --format json
+./dist/"Agent Load.app"/Contents/MacOS/agentload traj get EVENT_ID --around 3 --raw --format json
+./dist/"Agent Load.app"/Contents/MacOS/agentload traj access off
+```
+
+Use an `EVENT_ID` returned by the query. Content access is local and can be
+turned off again; queries, evidence reads, and annotations require it. See the
+[knowledge workflow](docs/trajectory-product-scenario.md) and
+[API reference](docs/api-reference.md) for selectors, pagination, and watch.
 
 ## Configuration
 

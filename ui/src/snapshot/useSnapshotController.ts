@@ -30,7 +30,7 @@ export function useSnapshotController({
   const lastSnapshotETagRef = useRef("");
   const lastSnapshotReceivedAtRef = useRef(0);
   const snapshotRef = useRef<Snapshot | null>(null);
-  const popoverVisibleRef = useRef(true);
+  const popoverVisibleRef = useRef(!window.webkit?.messageHandlers?.agentLoadAction);
   const fetchInFlightRef = useRef<Promise<void> | null>(null);
   const refreshTimerRef = useRef<number | null>(null);
   const pendingRetryRef = useRef<number | null>(null);
@@ -71,10 +71,10 @@ export function useSnapshotController({
         // observer keeps the scan flight alive and a short retry will pick up
         // the complete evidence once it is ready.
         setSnapshotPending(true);
-        if (pendingRetryRef.current === null) {
+        if (pendingRetryRef.current === null && surfaceVisible(view, popoverVisibleRef.current)) {
           pendingRetryRef.current = window.setTimeout(() => {
             pendingRetryRef.current = null;
-            void fetchSnapshot("initial").catch(() => undefined);
+            if (surfaceVisible(view, popoverVisibleRef.current)) void fetchSnapshot("initial").catch(() => undefined);
           }, 2_000);
         }
         return;
@@ -199,7 +199,9 @@ export function useSnapshotController({
 
   useEffect(() => {
     const refreshIfStale = () => {
-      if (!refreshInterval || !surfaceVisible(view, popoverVisibleRef.current)) return;
+      if (!surfaceVisible(view,popoverVisibleRef.current))return;
+      if(!snapshotRef.current || snapshotPending){void fetchSnapshot("initial").catch(()=>undefined);return;}
+      if(!refreshInterval)return;
       const staleAfter = Math.max(DEFAULT_REFRESH_INTERVAL_MS, refreshInterval);
       if (!snapshotRef.current || Date.now() - lastSnapshotReceivedAtRef.current >= staleAfter) {
         void refreshAutomatically();
@@ -216,6 +218,7 @@ export function useSnapshotController({
     };
     const onPopoverHidden = () => {
       popoverVisibleRef.current = false;
+      if (pendingRetryRef.current !== null) { window.clearTimeout(pendingRetryRef.current); pendingRetryRef.current=null; }
       setSurfaceVersion((value) => value + 1);
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
@@ -226,7 +229,7 @@ export function useSnapshotController({
       window.removeEventListener("agentLoadPopoverShown", onPopoverShown);
       window.removeEventListener("agentLoadPopoverHidden", onPopoverHidden);
     };
-  }, [refreshAutomatically, refreshInterval, view]);
+  }, [fetchSnapshot, snapshotPending, refreshAutomatically, refreshInterval, view]);
 
   useEffect(() => {
     const shouldMarkReaderEvent = (event: Event) => {

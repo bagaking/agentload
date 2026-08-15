@@ -2,6 +2,7 @@ package main
 
 import (
 	"agentload/internal/snapshot"
+	"agentload/internal/trajectory"
 	"bytes"
 	"context"
 	"fmt"
@@ -12,7 +13,9 @@ import (
 	"net"
 	"net/http"
 	"os/exec"
+	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -24,16 +27,20 @@ import (
 const trayShutdownTimeout = 5 * time.Second
 
 type trayApp struct {
-	cfg           Config
-	observer      *Observer
-	logger        *log.Logger
-	server        *http.Server
-	listener      net.Listener
-	baseURL       string
-	popoverURL    string
-	dashboardURL  string
-	liveTokenRate *liveTokenRateSampler
-	lifecycle     *lifecycleLog
+	cfg              Config
+	observer         *Observer
+	logger           *log.Logger
+	server           *http.Server
+	listener         net.Listener
+	baseURL          string
+	popoverURL       string
+	dashboardURL     string
+	liveTokenRate    *liveTokenRateSampler
+	lifecycle        *lifecycleLog
+	trajectory       *trajectory.Service
+	trajectoryAccess *trajectoryAccess
+	archiveWake      chan struct{}
+	archiveDone      chan struct{}
 
 	stopCh    chan struct{}
 	refreshCh chan struct{}
@@ -134,6 +141,17 @@ func newTrayApp(cfg Config, observer *Observer, logger *log.Logger, listener net
 		shutdownCancel:    shutdownCancel,
 		history:           history,
 		throughputHistory: throughputHistory,
+		archiveWake:       make(chan struct{}, 1),
+	}
+	a.trajectoryAccess = newTrajectoryAccess(cfg.HistoryFile, a.baseURL)
+	if observer != nil {
+		observer.evidenceIndex.requestArchiveCoverage()
+	}
+	a.popoverURL += "#trajectory=" + a.trajectoryAccess.token
+	a.dashboardURL += "#trajectory=" + a.trajectoryAccess.token
+	a.trajectory = trajectory.NewPersistent(a.trajectorySources, filepath.Join(a.trajectoryAccess.root, "trajectory.sqlite"))
+	if observer != nil && observer.evidenceIndex != nil {
+		observer.evidenceIndex.setEvidenceChangeCallback(a.notifyArchive)
 	}
 	a.server = &http.Server{
 		Handler: a.handler(),
@@ -142,8 +160,22 @@ func newTrayApp(cfg Config, observer *Observer, logger *log.Logger, listener net
 }
 
 func (a *trayApp) run() error {
-	startSystemResourceSampler(systemResourceSampleInterval)
 	a.observer.evidenceIndex.start()
+	// Own the initial whole-catalog walk before short resource samplers can
+	// become its owner and cancel it midway. Publish the local connection only
+	// after this bounded metadata preparation; transcript bodies remain lazy.
+	catalogCtx, cancelCatalog := context.WithTimeout(a.refreshContext(), 6*time.Second)
+	a.observer.evidenceIndex.snapshot(catalogCtx, time.Time{}, nil)
+	cancelCatalog()
+	if a.trajectoryAccess != nil {
+		if err := a.trajectoryAccess.publishInstance(); err != nil {
+			a.observer.evidenceIndex.stopIndex()
+			return err
+		}
+		defer a.trajectoryAccess.removeInstance()
+	}
+	startSystemResourceSampler(systemResourceSampleInterval)
+	a.startArchiveRecovery(a.refreshContext())
 	if a.liveTokenRate != nil {
 		a.liveTokenRate.start(liveTokenRateSampleInterval)
 	}
@@ -342,7 +374,7 @@ func (a *trayApp) onReady() {
 	a.mFocus.Disable()
 	a.mPeak = systray.AddMenuItem("Peaks will appear after the first refresh.", "")
 	a.mPeak.Disable()
-	a.mMeta = systray.AddMenuItem("Opening dashboard on "+a.dashboardURL, "")
+	a.mMeta = systray.AddMenuItem("Opening dashboard on "+a.baseURL+"/dashboard", "")
 	a.mMeta.Disable()
 	systray.AddSeparator()
 	a.mOpenDashboard = systray.AddMenuItem("Open Dashboard", "Open the detailed local dashboard")
@@ -351,8 +383,36 @@ func (a *trayApp) onReady() {
 	a.mQuit = systray.AddMenuItem("Quit", "Quit Agent Load")
 
 	if nativePopoverSupported() {
+		paintQueue := make(chan lifecycleEvent, 32)
+		paintDone := a.registerLoopDone(false)
+		go func() {
+			defer close(paintDone)
+			for {
+				select {
+				case event := <-paintQueue:
+					a.recordLifecycle(event)
+				case <-a.stopCh:
+					for {
+						select {
+						case event := <-paintQueue:
+							a.recordLifecycle(event)
+						default:
+							return
+						}
+					}
+				}
+			}
+		}()
+		nativePopoverSetPaintCallback(func(ms float64, warm bool) {
+			event := lifecycleEvent{Event: "popover_paint", Extra: map[string]string{"milliseconds": strconv.FormatFloat(ms, 'f', 3, 64), "warm": strconv.FormatBool(warm), "boundary": "native_show_request_to_ready_two_animation_frames"}}
+			select {
+			case paintQueue <- event:
+			default:
+			} // bounded telemetry; never block AppKit
+		})
 		nativePopoverConfigureDashboard(a.dashboardURL)
 		nativePopoverInstallStatusClickFallback(a.popoverURL)
+		nativePopoverPrepare(a.popoverURL)
 	} else {
 		systray.SetTooltip("Agent Load: native popover unavailable, click opens dashboard")
 	}
@@ -392,6 +452,7 @@ func (a *trayApp) onExit() {
 }
 
 func (a *trayApp) performShutdown() {
+	nativePopoverSetPaintCallback(nil)
 	var shutdownErr error
 	runBackgroundStep("tray shutdown begin", func() {
 		a.recordLifecycle(lifecycleEvent{Event: "shutdown_begin"})
@@ -413,6 +474,7 @@ func (a *trayApp) performShutdown() {
 	// closure rather than passed as a method value, so resolving the receiver is
 	// contained too.
 	runBackgroundStep("tray shutdown popover", func() {
+		nativePopoverSetPaintCallback(nil)
 		nativePopoverHide()
 		nativePopoverInstallStatusClickFallback("")
 		nativePopoverConfigureDashboard("")
@@ -436,6 +498,15 @@ func (a *trayApp) performShutdown() {
 		}
 	})
 	runBackgroundStep("tray shutdown evidence index", func() {
+		if a.observer != nil && a.observer.evidenceIndex != nil {
+			a.observer.evidenceIndex.setEvidenceChangeCallback(nil)
+		}
+		if a.archiveDone != nil {
+			<-a.archiveDone
+		}
+		if a.trajectory != nil {
+			_ = a.trajectory.Close()
+		}
 		if a.observer != nil && a.observer.evidenceIndex != nil {
 			a.observer.evidenceIndex.stopIndex()
 		}

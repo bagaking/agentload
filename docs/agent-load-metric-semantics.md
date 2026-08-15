@@ -69,7 +69,8 @@ semantic layer says so.
   capacity depends on the 300-second window and contributing sessions, not the
   number of token updates inside that window.
 - A newly discovered token source establishes a baseline without replaying
-  history. Counter resets, file replacement or truncation, and collection gaps
+  history into current TPS. Archive replay independently restores retained history
+  from native usage timestamps and counts. Counter resets, file replacement or truncation, and collection gaps
   longer than the rate window also rebaseline without producing a current event.
 - Project output-throughput rows are partitions of the same sampled events used
   by the aggregate. Conflicting or absent project attribution stays under
@@ -113,6 +114,29 @@ semantic layer says so.
   token partitions, and hashed contributing-session identities. A pointer-valued
   token count keeps measured zero distinct from missing coverage. Snapshot
   refresh cadence never controls minute-fact density.
+- Startup archive recovery and live append collection share adapter discovery,
+  native usage decoders, counter/message transitions, and token partition rules.
+  Replay persists per-source checkpoints and message maxima; it does not read
+  cleaned trajectory text to infer counts. Detailed trajectory normalization is
+  a separate projection of the same authorized source inventory.
+- Replay restores closed minute facts in the retained 30-day window at their
+  native times, with `origin: "session_replay"` and `coverage: "partial"`.
+  First cumulative counters establish baselines; resets, missing timestamps,
+  future timestamps outside accepted skew, and half-written records do not
+  manufacture throughput. It never injects old output into the current rate.
+- Recovered positive output is a lower bound: an archived file does not prove
+  that every producer was recorded. Missing intervals and a zero lower bound
+  remain gaps. CPU, RSS, and other absent measurements cannot be reconstructed
+  from usage logs. A directory audit repairs discovery omissions, not absent
+  evidence inside an already lost record.
+- The source replay ledger commits usage state, message deduplication, minute
+  contributions and its complete-record offset together. Repeated scans and
+  restarts replace the same derived minute keys rather than add the full source
+  totals again. Replay may replace its own older projection or a non-numeric
+  minute; numeric online facts are retained, including their partial qualifier,
+  because old aggregate facts cannot prove per-token overlap. They are never
+  summed with reconstructed totals. A later online fact can replace a replay
+  fact for the same minute. Updated history is projected on snapshot refresh.
 - The semantic layer derives trailing `1m`, `5m`, and `15m` rates by summing the
   required consecutive minute facts once and dividing by the selected wall-time
   window. It also unions hashed identities for exact contributing-session counts.

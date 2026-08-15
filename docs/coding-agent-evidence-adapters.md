@@ -46,18 +46,18 @@ slot. A nil slot renders `unsupported` — never an inferred parity.
 <!-- BEGIN GENERATED CAPABILITY MATRIX -->
 <!-- Generated from defaultCodingAgentRegistry by TestCapabilityMatrixDocMatchesTheRegistry. Do not edit by hand. -->
 
-| Agent | Process identity | Evidence discovery | Transcript evidence | Output usage | Evidence read |
-| --- | --- | --- | --- | --- | --- |
-| claude | supported | supported | supported | supported | `projects/**/*.jsonl` |
-| codex | supported | supported | supported | supported | `sessions/YYYY/MM/DD/rollout-*.jsonl` |
-| cursor | unsupported | unsupported | unsupported | unsupported | none |
-| gemini | supported | supported | supported | supported | `tmp/**/chats/session-*.json(l)`<br>`antigravity-cli/brain/<session>/.system_generated/logs/transcript.jsonl` |
-| grok | supported | supported | supported | supported | `sessions/<cwd>/<session>/updates.jsonl` |
-| hermes | supported | supported | supported | unsupported | `state.db (read-only)` |
-| openclaw | supported | supported | supported | supported | `agents/*/sessions/*.jsonl` |
-| opencode | supported | supported | supported | unsupported | `storage/message/**`<br>`storage/*.db` |
-| pi | supported | supported | supported | supported | `agent/sessions/**.jsonl`<br>`agent/session-artifacts/**.jsonl` |
-| trae | supported | supported | supported | supported | `sessions/**/*.jsonl` |
+| Agent | Process identity | Evidence discovery | Transcript evidence | Output usage | Trajectory | Evidence read |
+| --- | --- | --- | --- | --- | --- | --- |
+| claude | supported | supported | supported | supported | supported | `projects/**/*.jsonl` |
+| codex | supported | supported | supported | supported | supported | `sessions/YYYY/MM/DD/rollout-*.jsonl` |
+| cursor | unsupported | unsupported | unsupported | unsupported | unsupported | none |
+| gemini | supported | supported | supported | supported | unsupported | `tmp/**/chats/session-*.json(l)`<br>`antigravity-cli/brain/<session>/.system_generated/logs/transcript.jsonl` |
+| grok | supported | supported | supported | supported | supported | `sessions/<cwd>/<session>/updates.jsonl` |
+| hermes | supported | supported | supported | unsupported | unsupported | `state.db (read-only)` |
+| openclaw | supported | supported | supported | supported | unsupported | `agents/*/sessions/*.jsonl` |
+| opencode | supported | supported | supported | unsupported | unsupported | `storage/message/**`<br>`storage/*.db` |
+| pi | supported | supported | supported | supported | unsupported | `agent/sessions/**.jsonl`<br>`agent/session-artifacts/**.jsonl` |
+| trae | supported | supported | supported | supported | supported | `sessions/**/*.jsonl` |
 
 - **cursor**: host-app ancestry only: CLI transcripts carry no timestamp or token field, and IDE per-message counters are all zero
 - **gemini**: the antigravity root carries created_at but no token field of any kind, so it contributes session spans only
@@ -279,3 +279,21 @@ tests.
   evidence.
 - Replacing local evidence truth with cloud APIs or optional telemetry.
 - Keeping the previous dispatch structure as a compatibility layer.
+
+## Trajectory content adapters
+
+Trajectory access is separate from metric evidence and requires the local content
+preference and instance capability. The registry publishes its decoder slot;
+source coverage additionally reports unsupported records and missing fields.
+
+| Agent | Recorded trajectory shape | Supported projections | Remains unknown without additional evidence |
+| --- | --- | --- | --- |
+| Codex | rollout JSONL envelopes | Messages, visible reasoning, native calls/results, lifecycle records and summaries | Unrecorded actors, delivery, full model input and causal explanation |
+| Claude | project JSONL messages and content blocks | Ordered text/thinking/tool blocks, separate native envelope/message IDs, summaries, explicit compaction and message usage | Approval from configuration alone, actor identity from protocol role |
+| Trae | response envelopes; version 1 append history mutations | Recorded items, commit/turn/call IDs, visible reasoning and supported usage fields | History replacement as new execution, unsupported communication and world-state records |
+| Grok | ACP `updates.jsonl` session updates | Text/thought chunks, calls/updates/results, recaps and per-turn usage observations | Separate diagnostic streams, unidentified senders, delegation and actual model-input membership |
+
+Usage observations retain their scope and replacement semantics. Model breakdowns
+are descriptive; they are never added again to their parent counters. Missing
+counters remain absent. Unknown native records remain addressable evidence with
+coverage gaps, rather than becoming guessed states or identities.

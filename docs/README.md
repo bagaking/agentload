@@ -10,6 +10,8 @@ This page is the taxonomy index for the `docs/` directory, grouped by audience.
 - [agent-load-ui-design-system.md](agent-load-ui-design-system.md): design system for the popover/dashboard UI surfaces.
 - [agent-load-diagnostic-intelligence-architecture.md](agent-load-diagnostic-intelligence-architecture.md): architecture of the diagnostics, prediction, and safe-export surface.
 - [neutral-observation-principles.md](neutral-observation-principles.md): principles for neutral, evidence-based local observation.
+- [trajectory-requirements.md](trajectory-requirements.md): accepted local trajectory model, interfaces, evidence boundaries, and implementation requirements.
+- [trajectory-product-scenario.md](trajectory-product-scenario.md): real query, knowledge, Context, relationship, and source-reading workflow in the Popover.
 - [agent-load-parity-checklist.md](agent-load-parity-checklist.md): point-in-time parity audit checklist with repo-local evidence citations.
 - [release-runbook.md](release-runbook.md): local packaging, signing modes, and the future notarization/Sparkle path.
 

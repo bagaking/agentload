@@ -1,13 +1,24 @@
 package main
 
 import (
+	"agentload/internal/historyfile"
+	"context"
+	"errors"
 	"flag"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "traj" {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		code := runTrajectoryCLIContext(ctx, os.Args[2:], os.Stdout, os.Stderr)
+		stop()
+		os.Exit(code)
+	}
 	cfg := defaultConfig()
 
 	listen := flag.String("listen", envOr("AGENTLOAD_LISTEN_ADDR", cfg.ListenAddr), "listen address")
@@ -26,6 +37,15 @@ func main() {
 	cfg.TranscriptCacheTTL = *cacheTTL
 	cfg.RefreshInterval = normalizeRefreshInterval(*refreshInterval)
 	cfg.HistoryFile = resolveHistoryFile(*historyFile)
+	owner, err := historyfile.TryAcquire(cfg.HistoryFile + ".owner")
+	if errors.Is(err, historyfile.ErrLocked) {
+		log.Print("Agent Load is already running for this history")
+		return
+	}
+	if err != nil {
+		log.Fatalf("cannot reserve Agent Load history: %v", err)
+	}
+	defer owner.Release()
 	lifecycle := newLifecycleLog(cfg.HistoryFile)
 	defer lifecycle.recordPanic()
 

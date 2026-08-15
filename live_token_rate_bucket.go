@@ -14,48 +14,10 @@ type liveTokenRateBucketKey struct {
 type liveTokenRateBucketAccumulator map[liveTokenRateBucketKey]int64
 
 func (buckets liveTokenRateBucketAccumulator) add(event liveTokenRateEvent, now time.Time) {
-	if event.Tokens <= 0 || now.IsZero() {
+	if now.IsZero() {
 		return
 	}
-	start, end := event.observedWindow()
-	if start.IsZero() || end.IsZero() {
-		return
-	}
-	cutoff := now.Add(-liveTokenRateWindow)
-	latest := now.Add(liveTokenRateFutureSkew)
-	if end.Before(cutoff) || start.After(latest) {
-		return
-	}
-	tokens := liveTokenRateEventTokensInWindow(event, now, liveTokenRateWindow, liveTokenRateFutureSkew)
-	if tokens <= 0 {
-		return
-	}
-	if !end.After(start) {
-		buckets.addTokens(start, event.Session, tokens)
-		return
-	}
-	if start.Before(cutoff) {
-		start = cutoff
-	}
-	if end.After(latest) {
-		end = latest
-	}
-	duration := end.Sub(start)
-	if duration <= 0 {
-		buckets.addTokens(start, event.Session, tokens)
-		return
-	}
-	assigned := int64(0)
-	for bucketStart := start.Truncate(liveTokenRateBucketWidth); bucketStart.Before(end); bucketStart = bucketStart.Add(liveTokenRateBucketWidth) {
-		bucketEnd := bucketStart.Add(liveTokenRateBucketWidth)
-		overlapEnd := bucketEnd
-		if overlapEnd.After(end) {
-			overlapEnd = end
-		}
-		cumulative := liveTokenRateProportionalTokens(tokens, overlapEnd.Sub(start), duration)
-		buckets.addTokens(bucketStart, event.Session, cumulative-assigned)
-		assigned = cumulative
-	}
+	partitionOutputUsage(event, now.Add(-liveTokenRateWindow), now.Add(liveTokenRateFutureSkew), liveTokenRateBucketWidth, func(at time.Time, tokens int64) { buckets.addTokens(at, event.Session, tokens) })
 }
 
 func (buckets liveTokenRateBucketAccumulator) addTokens(at time.Time, session string, tokens int64) {

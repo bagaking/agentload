@@ -62,6 +62,7 @@ type CapabilityMatrixRow struct {
 	Evidence       []string                 `json:"evidence,omitempty"`
 	Note           string                   `json:"note,omitempty"`
 	SignalFamilies []CapabilitySignalFamily `json:"signal_families,omitempty"`
+	Trajectory     string                   `json:"trajectory"`
 }
 
 type CapabilitySignalFamily struct {

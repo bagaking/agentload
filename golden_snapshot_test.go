@@ -43,6 +43,7 @@ var goldenVolatileFields = []*regexp.Regexp{
 // values are blanked: every key is still compared, so a field the refactor
 // drops still fails the gate.
 var goldenHostNumber = regexp.MustCompile(`("(?:cpu_percent|load_average_\d+|memory_[a-z_]+|disk_[a-z_]+|network_[a-z_]+)":\s*)-?\d+(?:\.\d+)?`)
+var goldenHostThermal = regexp.MustCompile(`("thermal_state":\s*)"[^"]*"`)
 
 // goldenTempRoot matches t.TempDir(). Host prefix and per-run name are
 // replaced so the fixture is not a machine path; only the leaf shape stays.
@@ -57,6 +58,7 @@ func normalizeGoldenSnapshot(raw []byte) []byte {
 	})
 	out = goldenTempRoot.ReplaceAll(out, []byte("/<tmp>/"))
 	out = goldenHostNumber.ReplaceAll(out, []byte(`${1}"<host>"`))
+	out = goldenHostThermal.ReplaceAll(out, []byte(`${1}"<host>"`))
 	return out
 }
 
@@ -98,6 +100,17 @@ func hermeticGoldenObserver(t *testing.T) *Observer {
 func TestSnapshotMatchesGolden(t *testing.T) {
 	observer := hermeticGoldenObserver(t)
 	got := observer.Snapshot(context.Background())
+	// A sub-millisecond walk omits elapsed_ms; a slower host includes it.
+	// Freeze only this measured clock value so both the field and its display
+	// remain in the shape fixture, independent of machine load.
+	if got.TranscriptStats.ScanCost.WalkMeasured {
+		got.TranscriptStats.ScanCost.ElapsedMs = 1
+		for i := range got.Diagnostics.Baselines {
+			if got.Diagnostics.Baselines[i].Key == "evidence_walk_cost" {
+				got.Diagnostics.Baselines[i].Value = "1ms"
+			}
+		}
+	}
 
 	encoded, err := json.MarshalIndent(got, "", "  ")
 	if err != nil {

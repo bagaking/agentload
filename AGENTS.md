@@ -38,6 +38,13 @@ trend charts, hover panels, and detail inspectors. The contracts live in
 - 和用户讨论过的内容，要及时更新到需求文档，并尽量用贴近用户原始说法的
   表述方式。
 
+## Research Material Boundary
+
+Keep research reports, reference-project comparisons, source evidence, and
+research experiments under the Git-ignored `.bagakit/` directory. Formal
+documentation records project requirements and accepted decisions. Keep
+reference-project analysis and attribution in research material.
+
 The managed block below applies only when the bagakit tooling is installed.
 <!-- BAGAKIT:LIVING-KNOWLEDGE:START -->
 This is a managed block for `bagakit-living-knowledge`. Do not hand-edit the

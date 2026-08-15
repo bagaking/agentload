@@ -343,7 +343,6 @@ func (o *Observer) scanTranscriptsWithOptions(ctx context.Context, priority []sn
 	data := &snapshot.TranscriptData{
 		Traces:                           make(map[string]*snapshot.SessionTrace, scanned),
 		ScannedFiles:                     scanned,
-		DeferredFiles:                    collection.FilteredByCutoff,
 		HistoricalScanDeferred:           opts.DeferHistoryWalk,
 		CoverageIncomplete:               !collection.Complete,
 		ForegroundScanLookbackSeconds:    int(opts.ForegroundLookback / time.Second),
@@ -758,11 +757,7 @@ type transcriptCandidateCollection struct {
 	Files    []transcriptCandidate
 	Errors   []string
 	Complete bool
-	// FilteredByCutoff counts files the collection cutoff excluded before they
-	// became candidates. They are deferred just like a candidate marked
-	// Deferred, and are counted so the reported gap matches the real one.
-	FilteredByCutoff int
-	Revision         uint64
+	Revision uint64
 	// ScanCost is the index's own measurement of the walk that produced Files.
 	ScanCost snapshot.TranscriptScanCost
 }
@@ -830,17 +825,9 @@ func collectTranscriptCandidatesWithCoverage(ctx context.Context, evidenceIndex 
 		}
 	}
 
-	// The walk counts every file the cutoff excluded, but a priority file is
-	// re-admitted afterwards and does get scanned, so it is not a gap.
-	deferredByCutoff := indexed.FilteredByCutoff
-	for _, candidate := range seen {
-		if candidate.Priority && candidate.ModTime.Before(foregroundCutoff) {
-			deferredByCutoff--
-		}
-	}
-	if deferredByCutoff < 0 {
-		deferredByCutoff = 0
-	}
+	// The index cutoff here is the history horizon. Excluded archives are out of
+	// scope, not deferred work. addFile marks only in-horizon, non-priority files
+	// outside the foreground window as Deferred; scan counts those candidates.
 	files := make([]transcriptCandidate, 0, len(seen))
 	for _, file := range seen {
 		files = append(files, file)
@@ -861,12 +848,11 @@ func collectTranscriptCandidatesWithCoverage(ctx context.Context, evidenceIndex 
 		return files[i].File.Tool < files[j].File.Tool
 	})
 	return transcriptCandidateCollection{
-		Files:            files,
-		Errors:           scanErrors,
-		Complete:         indexed.Complete && ctx.Err() == nil,
-		FilteredByCutoff: deferredByCutoff,
-		Revision:         indexed.Revision,
-		ScanCost:         transcriptScanCostFrom(indexed),
+		Files:    files,
+		Errors:   scanErrors,
+		Complete: indexed.Complete && ctx.Err() == nil,
+		Revision: indexed.Revision,
+		ScanCost: transcriptScanCostFrom(indexed),
 	}
 }
 

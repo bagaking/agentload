@@ -45,6 +45,33 @@ func TestTranscriptEvidenceIndexReconcilesOnceThenAppliesDirtyPaths(t *testing.T
 	}
 }
 
+func TestTranscriptEvidenceIndexArchiveWidensRecentCoverageOnce(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	root := filepath.Join(t.TempDir(), ".codex")
+	for _, at := range []time.Time{now, now.Add(-365 * 24 * time.Hour)} {
+		path := filepath.Join(root, "sessions", at.Format("2006"), at.Format("01"), at.Format("02"), "session.jsonl")
+		writeDiscoveryFixture(t, path, at)
+	}
+	registry, discovery := countingCodexRegistry(Config{CodexRoots: []string{root}}, nil)
+	index := newTranscriptEvidenceIndex(registry)
+	recent := now.Add(-7 * 24 * time.Hour)
+	if got := index.snapshot(context.Background(), recent, nil); len(got.Files) != 1 {
+		t.Fatalf("recent resource window: %+v", got)
+	}
+	if got := index.snapshot(context.Background(), time.Time{}, nil); len(got.Files) != 2 || !got.Stats.Reconciled {
+		t.Fatalf("archive did not widen: %+v", got)
+	}
+	if got := index.snapshot(context.Background(), recent, nil); len(got.Files) != 1 || got.Stats.Reconciled {
+		t.Fatalf("resource semantics or warm catalog changed: %+v", got)
+	}
+	if got := index.snapshot(context.Background(), time.Time{}, nil); len(got.Files) != 2 || got.Stats.Reconciled {
+		t.Fatalf("warm archive repeated discovery: %+v", got)
+	}
+	if discovery.callCount() != 2 {
+		t.Fatalf("wanted recent plus one archive discovery, got %d", discovery.callCount())
+	}
+}
+
 func TestScanCostSurvivesAWarmPassWithoutClaimingItWalked(t *testing.T) {
 	// The index reconciles about once per process, so the walk cost has to
 	// outlive the pass that measured it or it is unobservable in practice.
@@ -1045,4 +1072,141 @@ func TestStopIndexStillAwaitsWatcherExitWhenStopPanics(t *testing.T) {
 		t.Fatal("stopIndex returned without awaiting the watcher goroutine's exit")
 	}
 	waitForIndexRunning(t, index, false)
+}
+
+func TestCanonicalEvidenceInventoryKeepsPhysicalIdentityAndFallbacks(t *testing.T) {
+	root := t.TempDir()
+	first, second := filepath.Join(root, "first"), filepath.Join(root, "second")
+	for _, dir := range []string{first, second} {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "session.jsonl"), []byte("{}\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	alias, leaf, dangling, cycle := filepath.Join(root, "alias"), filepath.Join(root, "leaf.jsonl"), filepath.Join(root, "dangling.jsonl"), filepath.Join(root, "cycle")
+	for _, pair := range [][2]string{{first, alias}, {filepath.Join(second, "session.jsonl"), leaf}, {filepath.Join(root, "absent"), dangling}, {cycle, cycle}} {
+		if err := os.Symlink(pair[0], pair[1]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	parents := map[string]string{}
+	for _, path := range []string{filepath.Join(first, "session.jsonl"), filepath.Join(alias, "session.jsonl"), leaf, dangling, filepath.Join(alias, "absent.jsonl"), filepath.Join(cycle, "session.jsonl"), ""} {
+		if got, want := canonicalEvidenceInventoryPath(path, parents), canonicalEvidencePath(path); got != want {
+			t.Fatalf("physical identity for %q: got %q want %q", path, got, want)
+		}
+	}
+	if got := canonicalEvidenceInventoryPath(filepath.Join(alias, "session.jsonl"), parents); got != canonicalEvidencePath(filepath.Join(first, "session.jsonl")) {
+		t.Fatal("alias did not collapse", got)
+	}
+	if err := os.Remove(alias); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(second, alias); err != nil {
+		t.Fatal(err)
+	}
+	if got := canonicalEvidenceInventoryPath(filepath.Join(alias, "session.jsonl"), map[string]string{}); got != canonicalEvidencePath(filepath.Join(second, "session.jsonl")) {
+		t.Fatal("new inventory reused redirected parent", got)
+	}
+	if err := os.Remove(leaf); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(first, "session.jsonl"), leaf); err != nil {
+		t.Fatal(err)
+	}
+	if got := canonicalEvidenceInventoryPath(leaf, parents); got != canonicalEvidencePath(filepath.Join(first, "session.jsonl")) {
+		t.Fatal("leaf retarget not observed", got)
+	}
+	if err := os.Remove(filepath.Join(first, "session.jsonl")); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := canonicalEvidenceInventoryPath(leaf, parents), canonicalEvidencePath(leaf); got != want {
+		t.Fatal("deleted target fallback changed", got, want)
+	}
+}
+
+func TestTranscriptEvidenceIndexCancellationStopsDiscoveredFilePostprocessing(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	root := filepath.Join(t.TempDir(), "codex")
+	day := filepath.Join(root, "sessions", now.Format("2006"), now.Format("01"), now.Format("02"))
+	writeDiscoveryFixture(t, filepath.Join(day, "session.jsonl"), now)
+	block := &discoveryBlock{entered: make(chan struct{}, 1), release: make(chan struct{}), after: true}
+	registry, _ := countingCodexRegistry(Config{CodexRoots: []string{root}}, block)
+	index := newTranscriptEvidenceIndex(registry)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan transcriptEvidenceSnapshot, 1)
+	go func() { done <- index.snapshot(ctx, time.Time{}, nil) }()
+	select {
+	case <-block.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("discovery did not reach completed-file boundary")
+	}
+	cancel()
+	select {
+	case got := <-done:
+		if got.Complete || len(got.Files) != 0 {
+			t.Fatalf("cancelled inventory processed remaining files: %+v", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancelled inventory did not finish")
+	}
+	close(block.release)
+	recovered := index.snapshot(context.Background(), time.Time{}, nil)
+	if recovered.Complete || !recovered.Stats.Reconciled || len(recovered.Files) != 1 || len(recovered.Errors) == 0 {
+		t.Fatalf("cancelled inventory did not recover with an honest gap: %+v", recovered)
+	}
+	stable := index.snapshot(context.Background(), time.Time{}, nil)
+	if !stable.Complete || stable.Stats.Reconciled || len(stable.Files) != 1 || len(stable.Errors) != 0 {
+		t.Fatalf("cancelled inventory did not become complete after recovery: %+v", stable)
+	}
+}
+
+func TestTranscriptEvidenceIndexArchiveScopeAvoidsSuccessiveWindowWalks(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	root := filepath.Join(t.TempDir(), "codex")
+	day := filepath.Join(root, "sessions", now.Format("2006"), now.Format("01"), now.Format("02"))
+	writeDiscoveryFixture(t, filepath.Join(day, "recent.jsonl"), now)
+	writeDiscoveryFixture(t, filepath.Join(day, "old.jsonl"), now.Add(-48*time.Hour))
+	registry, discovery := countingCodexRegistry(Config{CodexRoots: []string{root}}, nil)
+	index := newTranscriptEvidenceIndex(registry)
+	index.requestArchiveCoverage()
+	recent := index.snapshot(context.Background(), now.Add(-time.Hour), nil)
+	if !recent.Complete || !recent.Stats.Reconciled || len(recent.Files) != 1 || recent.FilteredByCutoff != 1 || recent.LastWalk.AgedOutFiles != 0 {
+		t.Fatalf("archive walk changed recent-window coverage: %+v", recent)
+	}
+	history := index.snapshot(context.Background(), now.Add(-24*time.Hour), nil)
+	if !history.Complete || history.Stats.Reconciled || len(history.Files) != 1 || history.FilteredByCutoff != 1 {
+		t.Fatalf("history window repeated or lost filtering: %+v", history)
+	}
+	archive := index.snapshot(context.Background(), time.Time{}, nil)
+	if !archive.Complete || archive.Stats.Reconciled || len(archive.Files) != 2 || archive.FilteredByCutoff != 0 || discovery.callCount() != 1 {
+		t.Fatalf("full archive repeated walk or lost old source: %+v", archive)
+	}
+}
+
+func TestTranscriptArchiveCatalogDoesNotTurnHistoryExclusionsIntoDeferredFiles(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	root := filepath.Join(t.TempDir(), "codex")
+	day := filepath.Join(root, "sessions", now.Format("2006"), now.Format("01"), now.Format("02"))
+	writeDiscoveryFixture(t, filepath.Join(day, "recent.jsonl"), now)
+	writeDiscoveryFixture(t, filepath.Join(day, "old.jsonl"), now.Add(-48*time.Hour))
+	observer := newObserver(Config{CodexRoots: []string{root}})
+	observer.evidenceIndex.requestArchiveCoverage()
+	opts := transcriptScanOptions{
+		HistoryCutoff: now.Add(-24 * time.Hour), ForegroundCutoff: now.Add(-time.Hour),
+		HistoryLookback: 24 * time.Hour, ForegroundLookback: time.Hour,
+		IdleGap: 90 * time.Second, MinInterval: 15 * time.Second,
+	}
+	first := observer.scanTranscriptsWithOptions(context.Background(), nil, opts)
+	if first.ScannedFiles != 1 || first.DeferredFiles != 0 {
+		t.Fatalf("out-of-history archive reported a sampling gap: %+v", first)
+	}
+	writeDiscoveryFixture(t, filepath.Join(day, "history.jsonl"), now.Add(-12*time.Hour))
+	observer.evidenceIndex.requestReconcile()
+	second := observer.scanTranscriptsWithOptions(context.Background(), nil, opts)
+	if second.ScannedFiles != 1 || second.DeferredFiles != 1 {
+		t.Fatalf("in-history, out-of-foreground source lost its deferred coverage: %+v", second)
+	}
 }

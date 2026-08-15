@@ -14,7 +14,35 @@ package main
 */
 import "C"
 
-import "unsafe"
+import (
+	"sync"
+	"unsafe"
+)
+
+var popoverPaintMu sync.RWMutex
+var popoverPaintCallback func(float64, bool)
+
+func nativePopoverSetPaintCallback(callback func(float64, bool)) {
+	popoverPaintMu.Lock()
+	defer popoverPaintMu.Unlock()
+	popoverPaintCallback = callback
+}
+
+//export agentLoadPopoverPainted
+func agentLoadPopoverPainted(milliseconds C.double, warm C.int) {
+	popoverPaintMu.RLock()
+	defer popoverPaintMu.RUnlock()
+	callback := popoverPaintCallback
+	if callback != nil {
+		callback(float64(milliseconds), warm != 0)
+	}
+}
+
+func nativePopoverPrepare(url string) {
+	cs := C.CString(url)
+	defer C.free(unsafe.Pointer(cs))
+	C.agentLoadPopoverPrepare(cs)
+}
 
 // nativePopoverConfigureDashboard registers the loopback dashboard URL the
 // popover can hand to NSWorkspace when the embedded HTML triggers the explicit

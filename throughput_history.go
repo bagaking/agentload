@@ -40,6 +40,7 @@ type ThroughputMinuteFact struct {
 	// measured from a subset of eligible transcripts is a lower bound, and
 	// persisting it as an exact number would launder away that qualifier.
 	Coverage      string                        `json:"coverage,omitempty"`
+	Origin        string                        `json:"origin,omitempty"` // session_replay or the online collector
 	OutputTokens  *int64                        `json:"output_tokens,omitempty"`
 	SessionHashes []string                      `json:"session_hashes,omitempty"`
 	Projects      []ThroughputMinuteProjectFact `json:"projects"`
@@ -330,7 +331,9 @@ func (store *throughputHistoryStore) appendMinute(minute ThroughputMinuteFact, o
 	}
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	if index := searchThroughputMinute(store.minutes, normalized.At); index < len(store.minutes) && store.minutes[index].At == normalized.At {
+	index := searchThroughputMinute(store.minutes, normalized.At)
+	exists := index < len(store.minutes) && store.minutes[index].At == normalized.At
+	if exists && store.minutes[index].Origin != "session_replay" {
 		return nil
 	}
 	record := throughputHistoryRecord{SchemaVersion: throughputHistorySchemaVersion, Kind: throughputHistoryKindMinute, Minute: &normalized}
@@ -338,9 +341,10 @@ func (store *throughputHistoryStore) appendMinute(minute ThroughputMinuteFact, o
 		store.lastWriteError = err.Error()
 		return err
 	}
-	index := searchThroughputMinute(store.minutes, normalized.At)
-	store.minutes = append(store.minutes, ThroughputMinuteFact{})
-	copy(store.minutes[index+1:], store.minutes[index:])
+	if !exists {
+		store.minutes = append(store.minutes, ThroughputMinuteFact{})
+		copy(store.minutes[index+1:], store.minutes[index:])
+	}
 	store.minutes[index] = normalized
 	store.loadedRecordCount++
 	store.lastWriteError = ""

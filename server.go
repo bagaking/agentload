@@ -40,6 +40,8 @@ func (a *trayApp) handler() http.Handler {
 	mux.HandleFunc("/dashboard", a.handleDashboardPage)
 	mux.HandleFunc("/assets/", a.handleUIAsset)
 	mux.HandleFunc("/api/snapshot", a.handleSnapshotAPI)
+	mux.HandleFunc("/api/rpc", a.handleTrajectoryRPC)
+	mux.HandleFunc("/api/trajectory/access", a.handleTrajectoryAccess)
 	mux.HandleFunc("/api/capabilities", a.handleCapabilitiesAPI)
 	mux.HandleFunc("/api/system-resources", a.handleSystemResourcesAPI)
 	mux.HandleFunc("/api/live-token-rate", a.handleLiveTokenRateAPI)
@@ -213,15 +215,22 @@ func (a *trayApp) handlePopoverPage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	setLocalUIContentPolicy(w)
 	serveEmbeddedFile(w, r, "ui/dist/index.html", "text/html; charset=utf-8", true)
 }
 
 func (a *trayApp) handleDashboardPage(w http.ResponseWriter, r *http.Request) {
+	setLocalUIContentPolicy(w)
 	if r.URL.Path != "/dashboard" {
 		http.NotFound(w, r)
 		return
 	}
 	serveEmbeddedFile(w, r, "ui/dist/index.html", "text/html; charset=utf-8", true)
+}
+
+func setLocalUIContentPolicy(w http.ResponseWriter) {
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'")
+	w.Header().Set("Referrer-Policy", "no-referrer")
 }
 
 func (a *trayApp) handleUIAsset(w http.ResponseWriter, r *http.Request) {

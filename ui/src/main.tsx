@@ -1,7 +1,8 @@
+import "./knowledge/trajectoryApi";
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
-import { Activity, ArrowUpRight, Bot, CheckCircle2, ChevronDown, Copy, Cpu, ExternalLink, FolderGit2, Gauge, GitBranch, Info, Languages, Layers, Moon, Pause, PauseCircle, Radar, RefreshCw, Search, Server, Sun, Terminal, TrendingUp, X, XCircle } from "lucide-react";
+import { Activity, ArrowUpRight, BookOpen, Bot, CheckCircle2, ChevronDown, Copy, Cpu, ExternalLink, FolderGit2, Gauge, GitBranch, Info, Languages, Layers, Moon, Pause, PauseCircle, Radar, RefreshCw, Search, Server, Sun, Terminal, TrendingUp, X, XCircle } from "lucide-react";
 import { copy, type Lang } from "./i18n";
 import { buildToolSessionGroups, confidenceLabel, freshnessLabel, groupSessionsByWorktree, hiddenToolSessionCount, mappingMethodLabel, normalizedRole, orderedProjects, projectEvidenceItems, roleLabel, sessionEvidenceItems, sessionIdentity, sessionsForProject, tokenUsageProvenanceLabel, toolBadgeLabel, toolDisplayName, toolIconName } from "./lib/activityModel";
 import { activeWindowLabel, buildRailItems, coordinationPostureLabel, currentMeaningLead, currentMeaningPoints, dashboardProjectMeta, deferredScanValue, mappingHealthText, metricState, primaryEvidenceNote, statusTone, transcriptScanNote, transcriptScanSummary } from "./lib/dashboardModel";
@@ -42,9 +43,14 @@ const SystemResourceDeck = React.lazy(async () => {
   return { default: module.SystemResourceDeck };
 });
 
+const KnowledgeWorkspace = React.lazy(async () => {
+  const module = await import("./knowledge/KnowledgeView");
+  return { default: module.KnowledgeView };
+});
+
 const BRAND_NAME = "Agent Load";
 const INSPECTOR_INITIAL_LIMIT = 12;
-const POPOVER_VIEWS: readonly PopoverView[] = ["throughput", "activity", "online", "system", "diagnostics"];
+const POPOVER_VIEWS: readonly PopoverView[] = ["throughput", "activity", "online", "system", "knowledge", "diagnostics"];
 const PROCESS_LEDGER_INITIAL_LIMIT = 40;
 type ProcessFilter =
   | { kind: "all"; id: "all" }
@@ -60,6 +66,7 @@ type HoverDetailState = { detail: HoverDetailPayload; visible: boolean };
 
 declare global {
   interface Window {
+    agentLoadPaintGeneration?: number;
     webkit?: {
       messageHandlers?: {
         agentLoadAction?: { postMessage: (body: unknown) => void };
@@ -76,13 +83,34 @@ function App() {
   const [railTab, setRailTab] = useState<RailTab>("projects");
   const [query, setQuery] = useState("");
   const [selection, setSelection] = useState<Selection>({ type: "overview", id: "overview" });
-  const [popoverView, setPopoverView] = useState<PopoverView>("throughput");
+  const [popoverView, setPopoverView] = useState<PopoverView>(() => {
+    const requested = new URLSearchParams(window.location.search).get("view");
+    return POPOVER_VIEWS.includes(requested as PopoverView) ? requested as PopoverView : "throughput";
+  });
   const [trendRange, setTrendRange] = useState<TrendRange>("1D");
   const [trendSelection, setTrendSelection] = useState<Record<TrendLane, string | undefined>>({ history: undefined, runtime: undefined, throughput: undefined });
   const shellRef = useRef<HTMLDivElement | null>(null);
   const popoverResizeRequestRef = useRef<(() => void) | null>(null);
   const { snapshot, snapshotPending, error, refreshing, refreshInterval, refreshSnapshot, chooseRefreshInterval, isSurfaceVisible, surfaceVisible } = useSnapshotController({ view, popoverView, shellRef });
   const liveTokenRate = useLiveTokenRate(surfaceVisible);
+
+  useEffect(() => {
+    let first=0,second=0;
+    const notify=()=>{
+      const ready=popoverView==='knowledge' ? Boolean(document.querySelector('[data-knowledge-ready="true"]')) : Boolean(snapshot && !snapshotPending);
+      document.documentElement.dataset.meaningfulReady=String(ready);
+      const host=window.webkit?.messageHandlers?.agentLoadAction;
+      host?.postMessage({action:"content_ready",ready});
+      window.cancelAnimationFrame(first);window.cancelAnimationFrame(second);
+      const generation=window.agentLoadPaintGeneration;
+      if(!ready || !generation)return;
+      first=window.requestAnimationFrame(()=>{second=window.requestAnimationFrame(()=>{if(document.documentElement.dataset.meaningfulReady==='true' && window.agentLoadPaintGeneration===generation)host?.postMessage({action:"popover_paint",generation})})});
+    };
+    const observer=new MutationObserver(notify);
+    if(shellRef.current)observer.observe(shellRef.current,{subtree:true,attributes:true,childList:true,attributeFilter:['data-knowledge-ready']});
+    notify();
+    return ()=>{observer.disconnect();window.cancelAnimationFrame(first);window.cancelAnimationFrame(second)};
+  },[snapshot,snapshotPending,popoverView]);
 
   const t = useCallback((key: string) => copy[lang][key] || copy.en[key] || key, [lang]);
   useEffect(() => {
@@ -296,6 +324,16 @@ function PopoverSurface({
   }, [clearHoverDetailTimer, popoverView, snapshot?.generated_at, snapshot?.refresh_slot_id]);
   useEffect(() => () => clearHoverDetailTimer(), [clearHoverDetailTimer]);
 
+  if (popoverView === "knowledge") return (
+    <main className="popover-surface">
+      <div className="popover-current-surface"><div className="popover-current-scroll">
+        <ErrorBanner t={t} error={error} compact />
+        <section className="popover-view-panel knowledge" id="popover-panel-knowledge" role="tabpanel" aria-labelledby="popover-view-knowledge">
+          <React.Suspense fallback={<PanelLoading t={t} icon={<BookOpen size={15} />} />}><KnowledgeWorkspace t={t} surfaceVisible={surfaceVisible} /></React.Suspense>
+        </section>
+      </div></div>
+    </main>
+  );
   if (!snapshot) return <EmptySurface t={t} compact error={error} pending={snapshotPending} />;
   return (
     <main className="popover-surface">
@@ -560,7 +598,7 @@ function PopoverFooter({
               onClick={() => setPopoverView(view)}
               title={reviewTitle || t(view)}
             >
-              {view === "throughput" ? <Gauge size={13} /> : view === "activity" ? <TrendingUp size={13} /> : view === "online" ? <Activity size={13} /> : view === "system" ? <Server size={13} /> : <Radar size={13} />}
+              {view === "knowledge" ? <BookOpen size={13} /> : view === "throughput" ? <Gauge size={13} /> : view === "activity" ? <TrendingUp size={13} /> : view === "online" ? <Activity size={13} /> : view === "system" ? <Server size={13} /> : <Radar size={13} />}
               <span>{t(view)}</span>
               {showReviewBadge ? <strong className="view-attention-count" aria-label={reviewTitle}>{reviewCount}</strong> : null}
             </button>

@@ -1,6 +1,7 @@
 package historyfile
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 
@@ -14,7 +15,20 @@ type Lock struct {
 	file *os.File
 }
 
+var ErrLocked = errors.New("history is already owned by another Agent Load instance")
+
 func Acquire(path string) (*Lock, error) {
+	return acquire(path, unix.LOCK_EX)
+}
+
+// TryAcquire reserves a runtime owner without waiting behind another process.
+// The OS releases the lock on exit, including crashes; the file is not a PID
+// receipt and must stay at a stable inode while other processes check it.
+func TryAcquire(path string) (*Lock, error) {
+	return acquire(path, unix.LOCK_EX|unix.LOCK_NB)
+}
+
+func acquire(path string, flags int) (*Lock, error) {
 	dir := filepath.Dir(path)
 	if dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -25,8 +39,11 @@ func Acquire(path string) (*Lock, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := unix.Flock(int(file.Fd()), unix.LOCK_EX); err != nil {
+	if err := unix.Flock(int(file.Fd()), flags); err != nil {
 		_ = file.Close()
+		if errors.Is(err, unix.EWOULDBLOCK) {
+			return nil, ErrLocked
+		}
 		return nil, err
 	}
 	return &Lock{file: file}, nil

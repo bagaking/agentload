@@ -1205,7 +1205,8 @@
             "runtime telemetry is opt-in"
           ]
         }
-      ]
+      ],
+      "trajectory": "supported"
     },
     {
       "agent": "codex",
@@ -1267,7 +1268,8 @@
             "runtime telemetry is opt-in"
           ]
         }
-      ]
+      ],
+      "trajectory": "supported"
     },
     {
       "agent": "cursor",
@@ -1327,7 +1329,8 @@
             "runtime telemetry is opt-in"
           ]
         }
-      ]
+      ],
+      "trajectory": "unsupported"
     },
     {
       "agent": "gemini",
@@ -1391,7 +1394,8 @@
             "runtime telemetry is opt-in"
           ]
         }
-      ]
+      ],
+      "trajectory": "unsupported"
     },
     {
       "agent": "grok",
@@ -1454,7 +1458,8 @@
             "runtime telemetry is opt-in"
           ]
         }
-      ]
+      ],
+      "trajectory": "supported"
     },
     {
       "agent": "hermes",
@@ -1517,7 +1522,8 @@
             "runtime telemetry is opt-in"
           ]
         }
-      ]
+      ],
+      "trajectory": "unsupported"
     },
     {
       "agent": "openclaw",
@@ -1579,7 +1585,8 @@
             "runtime telemetry is opt-in"
           ]
         }
-      ]
+      ],
+      "trajectory": "unsupported"
     },
     {
       "agent": "opencode",
@@ -1643,7 +1650,8 @@
             "runtime telemetry is opt-in"
           ]
         }
-      ]
+      ],
+      "trajectory": "unsupported"
     },
     {
       "agent": "pi",
@@ -1706,7 +1714,8 @@
             "runtime telemetry is opt-in"
           ]
         }
-      ]
+      ],
+      "trajectory": "unsupported"
     },
     {
       "agent": "trae",
@@ -1768,7 +1777,8 @@
             "runtime telemetry is opt-in"
           ]
         }
-      ]
+      ],
+      "trajectory": "supported"
     }
   ],
   "diagnostics": {
@@ -1870,7 +1880,7 @@
       {
         "key": "evidence_walk_cost",
         "label": "Evidence walk cost",
-        "value": "0ms",
+        "value": "1ms",
         "status": "observed",
         "detail": "Duration of the last full evidence walk. The index reconciles about once per process, so this is the last measured walk, and stays no data until one has run.",
         "metric_key": "recent_movement"
@@ -1952,7 +1962,8 @@
     "scan_cost": {
       "walk_measured": true,
       "walk_fresh": true,
-      "measured_at": "<instant>"
+      "measured_at": "<instant>",
+      "elapsed_ms": "<duration>"
     }
   },
   "project_focus": [],
@@ -1982,7 +1993,7 @@
   "system_resources": {
     "sampled_at": "<instant>",
     "supported": true,
-    "thermal_state": "nominal",
+    "thermal_state": "<host>",
     "thermal_state_supported": true,
     "cpu_percent": "<host>",
     "load_average_1": "<host>",

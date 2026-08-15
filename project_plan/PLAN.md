@@ -50,6 +50,45 @@ agentload 要成为本地 AI coding agent 监控品类里**最全面、最舒服
 - 该指令触发了当日的全量审计与在途 hardening workflow（范围见 CURRENT.md「执行状态」），并直接导出 M01 的「先加固、后功能」（hardening-before-features）决策：在当前平铺 root Go package 与约 3,000 行 main.tsx 之上叠功能会放大所有后续估算（judge 合议确认）。
 - 「理解项目」也导出了本 project_plan 的建立：先锁定方向（本文件），再执行。
 
+### 1.3 Trajectory 演进方向
+
+> "我们的目标是, 推进 Agent load 向 traj 方向演化"
+
+解读：向会话行为轨迹演进是已确认方向。用户后续确认完整实施计划，当前模型、接口和证据边界以 Trajectory Requirements 为准；任务复盘导出另属未来范围。
+
+> "另外, 是否应该在这一步就建模 "人与 agent" 和 "agent 与 agent" 的不同对话模式, 以及 context 如何索引等问题 (不研究这些, 我担心 traj 太表面)"
+
+解读：人与 Agent、Agent 与 Agent 共用参与者、协议角色和有来源的交流关系；两者不压成互斥模式。Context 区分会话归档、实际输入、workspace 和检索窗口；缺少原生身份或输入成员时保持未知。既有能耗、popover、隐私和指标契约继续有效，切片和索引按批准预算验收。
+
+> "可以有更加优雅简洁的设计吗, 然后应该是 jsonrpc 打底, 同时支持 cli 和 http api, 并由 api 接入 popover 对吗"
+
+解读：Trajectory 采用统一 Go 服务和 loopback HTTP 上的 JSON-RPC，CLI 与 Popover 共用 `query / get / watch / annotate`。筛选与读取视图按同一合同解释，查询分页与增量游标分开；方法、参数和限制见 API Reference。
+
+> "有些光通过 session 分析不出来吧?"
+
+解读：RSI 希望消费的信息与被动 session 读取实际能提供的事实须分别建模。渐进读取、证据与展示分离、统一查询服务和显式关系属于当前合同。历史配置、权限、产物、外部评测和真实模型输入各需独立证据；不从 session 文本补造。实验执行、策略更新与回放属于外部改进器。
+
+> "可以完善文档, 然后在 popover 上先把最终场景做出来, 这样方便日后锁定目标"
+
+解读：先通过交互原型锁定目标，再按用户确认替换为真实服务。当前体验为 Query → 经历 → 详情/过程/Context/关系/知识 → 来源；知识提炼与验证保留独立状态。生产界面不混入示例数据，体验合同见 [Trajectory 知识工作区](../docs/trajectory-product-scenario.md)。
+
+> "目前 demo 似乎没看到 query?"
+
+解读：Query 必须有明确入口和可执行的筛选条件。演示结果需呈现来源会话、行号与轨迹片段，支持阅读证据和定位关系图；仅有实体名称搜索框不足以说明该能力。
+
+> "界面设计不够优雅, 应该更加的简约, 直击要害, 优化后再打开看看吧"
+
+解读：首屏先呈现搜索及经历的实际结果；详情、过程与关系按需展开。合并同一会话的实体命中，收起查询语法和来源 ID，保留条件查询、来源证据与不确定性。
+
+> "知识的按钮往后挪到 \"诊断\" 之前"；"创建 bagakit-feature-tracker，来彻底实现这个功能"
+
+解读：知识入口位于系统之后、诊断之前；默认视图保持吞吐。已创建 `trajectory-knowledge` Feature（`f-22duuagpj`），将真实轨迹查询、协作和 Context、知识候选与关系图纳入可验收实施计划。用户随后确认“按计划完整实现”；先闭环 Codex query/get，再展开其余真实能力。示例原型不作为实现完成的证据。
+
+项目自身的目标、接受的模型和证据边界集中记录于
+[Trajectory Requirements](../docs/trajectory-requirements.md)。没有原生依据的
+Task/Run、实际输入与身份继续留白；实施和验收状态由 Feature Tracker 管理。
+参考项目比较与调研证据只保存在 Git-ignored `.bagakit/` 中。
+
 ## 2. 5W1H：为什么做这个项目、这个目标
 
 - **Why**：AI coding agent 已成日常并发工作负载（调研见 DOCREF_004：20+ 并发 agent 的真实诉求），但监督手段落后——用户的头号焦虑是配额、灾难场景是失控烧钱、日常痛点是「哪个 agent 在等我」。品类内竞品或外推造假（被打上 misleading 烙印）、或单一 vendor、或被第一方吸收（opcode 之死）。「诚实 + 广度 + 注意力路由」的位置空着。

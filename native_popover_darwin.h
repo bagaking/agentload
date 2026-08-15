@@ -18,6 +18,10 @@ void agentLoadPopoverConfigureDashboard(const char *url);
 // implements click-to-toggle behavior.
 void agentLoadPopoverShow(const char *url);
 
+// Prepare the same native surface while hidden; never enables content access.
+void agentLoadPopoverPrepare(const char *url);
+void agentLoadPopoverPainted(double milliseconds, int warm);
+
 // agentLoadPopoverInstallStatusClickFallback installs a native click monitor that
 // toggles the popover when Control Center status-item replicas do not invoke
 // the systray tap callback. Pass an empty URL to remove the monitor.

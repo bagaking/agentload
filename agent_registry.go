@@ -2,6 +2,7 @@ package main
 
 import (
 	"agentload/internal/snapshot"
+	"agentload/internal/trajectory"
 	"context"
 	"fmt"
 	"path/filepath"
@@ -36,6 +37,7 @@ type agentCapabilities struct {
 	Discovery  transcriptDiscoveryCapability
 	Transcript agentTranscriptParser
 	Usage      agentOutputUsageDecoder
+	Trajectory trajectory.Decoder
 }
 
 type codingAgentAdapter struct {
@@ -121,6 +123,7 @@ func defaultCodingAgentRegistry(cfg Config) *codingAgentRegistry {
 				Discovery:  claudeTranscriptDiscovery{},
 				Transcript: newClaudeTranscriptParser(),
 				Usage:      newClaudeOutputUsageDecoder(),
+				Trajectory: trajectory.ClaudeDecoder{},
 			},
 		},
 		codingAgentAdapter{
@@ -132,6 +135,7 @@ func defaultCodingAgentRegistry(cfg Config) *codingAgentRegistry {
 				Discovery:  codexTranscriptDiscovery{},
 				Transcript: newCodexTranscriptParser(),
 				Usage:      newCodexOutputUsageDecoder(),
+				Trajectory: trajectory.CodexDecoder{},
 			},
 		},
 		codingAgentAdapter{
@@ -143,6 +147,7 @@ func defaultCodingAgentRegistry(cfg Config) *codingAgentRegistry {
 				Discovery:  traeTranscriptDiscovery{},
 				Transcript: newTraeTranscriptParser(),
 				Usage:      newTraeOutputUsageDecoder(),
+				Trajectory: trajectory.TraeDecoder{},
 			},
 		},
 		codingAgentAdapter{
@@ -155,6 +160,7 @@ func defaultCodingAgentRegistry(cfg Config) *codingAgentRegistry {
 				Discovery:  grokTranscriptDiscovery{},
 				Transcript: newGrokTranscriptParser(),
 				Usage:      newGrokOutputUsageDecoder(),
+				Trajectory: trajectory.GrokDecoder{},
 			},
 		},
 		codingAgentAdapter{

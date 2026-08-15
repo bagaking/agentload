@@ -87,7 +87,7 @@ func TestCapabilityMatrixReportsNilSlotsAsUnsupported(t *testing.T) {
 	}
 
 	markdown := renderCapabilityMatrixMarkdown(rows)
-	if !strings.Contains(markdown, "| identity-only | unsupported | unsupported | unsupported | unsupported | none |") {
+	if !strings.Contains(markdown, "| identity-only | unsupported | unsupported | unsupported | unsupported | unsupported | none |") {
 		t.Fatalf("expected the bare adapter rendered as unsupported, got:\n%s", markdown)
 	}
 	if !strings.Contains(markdown, "host-app ancestry only") {

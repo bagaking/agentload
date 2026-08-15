@@ -46,7 +46,7 @@ process and transcript evidence alone.
   be collapsed by default so multiple explanatory paragraphs do not stack in
   the first reading pass.
 
-## Role And Attention Inference
+## Role And Resource Attention Inference
 
 Main-agent vs subagent classification is an inference over evidence:
 
@@ -60,7 +60,7 @@ The UI may use this to separate human interaction entry points from derived
 execution sessions. It must not treat either category as inherently better or
 worse.
 
-Attention routing is a separate observed state, not a judgment about agent
+Resource attention routing is a separate observed state, not a judgment about agent
 quality. The current three-state slice is:
 
 - `working`: a mapped session has recent transcript movement inside the
@@ -86,6 +86,80 @@ mix of main-agent entries, subagent sessions, and unknown-role sessions. Product
 surfaces should show project activity counts together with this per-project role
 mix, and reserve per-session role labels for session rows or expandable
 session-level detail.
+
+## Trajectory Attention Evidence
+
+The private trajectory API exposes a separate evidence projection through
+`traj.query` with `collection: attention`, and `traj.get` with
+`view: attention` on a returned session or event ID. Its rules are versioned as
+`native-attention-v1`. Content opt-in and the local instance capability are
+required. This projection does not change the resource `working`,
+`needs_review`, and `unknown` rules above or enter public diagnostic exports.
+
+Keep these dimensions independent:
+
+| Dimension | Meaning |
+| --- | --- |
+| `progress` | Observed lifecycle boundaries for each recorded turn ID. A turn can be `open_observed`, `closed_observed`, `aborted_observed`, or `unknown`; overall lifecycle coverage is `observed`, `partial`, or `unknown`. |
+| `interventions` | Recorded permission/input requests, repeated-error candidates, and question hints, each with its own status and navigable source evidence. |
+| `coverage` | Source gaps, unavailable references, scan or retention limits, and omitted projection details. |
+| `liveness` | Always `unknown`. Historical transcript evidence does not establish current execution. |
+
+Concurrent turns and an open approval can coexist. A missing approval
+reference does not erase independently recorded turn boundaries. Missing turn
+IDs, ambiguous lifecycle boundaries, and source gaps remain explicit. An
+unclosed tool call or a quiet log never establishes ongoing execution or
+confirmed stuck state. `latest_action` identifies the latest tool observation
+in available indexed evidence; read it with the reported coverage.
+
+### Permission And Input Requests
+
+An explicit request can produce `waiting_permission` or `waiting_input` with
+`open_observed` status. Closure requires exactly one recorded request and one
+response with the same native request reference in the same session and
+intervention family. The native identifier field family must also match:
+equal string values in `request_id` and `approval_id` do not establish a pair.
+Record adjacency, the response's own event ID, and a tool call ID cannot supply
+a missing request reference.
+
+Missing IDs, duplicate requests/responses, or a response without an observed
+request remain `unknown`. Source or request-ledger gaps make the intervention
+`unavailable`. Every retained reason carries an event ID and source locator
+that can be read through the evidence API.
+
+### Repeated Error Candidate
+
+The published rule is **three distinct native call IDs among the last twenty
+observed tool actions**, for the same recorded tool and turn. Only explicit
+native error outcomes count. Outcome observation order determines recovery,
+including when concurrent calls complete in a different order from launch.
+
+The candidate clears when:
+
+- an explicit native `not_error` or `completed` outcome is observed for that
+  tool and turn;
+- the next observed action for that tool has a different recorded turn scope;
+- enough older errors leave the twenty-action window.
+
+Missing or ambiguous call identities cannot be counted as additional attempts.
+A newer action with unavailable scope makes an older candidate unavailable.
+Tool output prose, including an apparent exit code, does not supply an error
+or recovery flag. A successful tool outcome does not close a turn or prove the
+task complete. The result is `stuck_candidate`, never confirmed stuck or agent
+quality judgment.
+
+### Ending Question Hint
+
+The final original assistant text ending in `?` or `？` produces only
+`question_hint` with `hint` status. Display cleaning does not determine this
+fact. An ending question alone does not establish `waiting_input`; that reason
+requires an explicit recorded input request.
+
+Queries may filter interventions by kind, state, and recorded tool. Combined
+predicates must match the same intervention, and bounded projections retain a
+matching reason. Unsupported text, actor, entity, relationship, and context
+predicates are rejected explicitly. Full transport contracts live in
+[API reference](api-reference.md).
 
 ## Project-First Tree
 

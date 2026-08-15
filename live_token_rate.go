@@ -738,9 +738,7 @@ func liveTokenRateReadAppend(path string, tracked liveTokenRateTrackedFile, info
 		if observation.Cumulative {
 			tokens = 0
 			if tracked.TotalInitialized && observation.OutputTokens > tracked.LastTotal && !observation.At.Before(tracked.LastTotalAt) {
-				buckets.add(newLiveTokenRateIntervalEvent(
-					tracked.LastTotalAt, observation.At, observation.OutputTokens-tracked.LastTotal, session,
-				), now)
+				buckets.add(outputUsageEvent(observation, tracked.LastTotal, tracked.LastTotalAt, tracked.TotalInitialized, session), now)
 				if latestEvent.IsZero() || observation.At.After(latestEvent) {
 					latestEvent = observation.At
 				}
@@ -868,7 +866,7 @@ func liveTokenRateMessageDelta(tracked *liveTokenRateTrackedFile, identity strin
 	previous, seen := tracked.MessageUsage[identity]
 	delta := output
 	if seen && previous != nil {
-		delta = max(int64(0), output-previous.Output)
+		delta = outputUsageEvent(liveTokenRateObservation{OutputTokens: output}, previous.Output, time.Time{}, true, "").Tokens
 		output = max(output, previous.Output)
 	}
 	liveTokenRateRememberMessage(tracked, identity, output, now)
