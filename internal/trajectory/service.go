@@ -52,23 +52,24 @@ type sourceState struct {
 // Service owns identity, evidence reading and query meaning; transports do not
 // parse logs. Sources are supplied by the application's adapter registry.
 type Service struct {
-	opMu               sync.Mutex
-	path               string
-	temporary          bool
-	store              *sourceStore
-	checkpointSnapshot map[string]sourceCheckpoint
-	search             *searchIndex
-	annotationDB       *bolt.DB
-	provider           Provider
-	watch              *watchState
-	prepareAfter       string
-	searchAfter        string
-	storageCheck       func(string) error
-	checkpointsReady   bool
-	storageReady       bool
-	sourceMigration    *sourceMigrationRun
-	capacityCheck      func(string, uint64) error
-	storageOffline     bool
+	opMu                sync.Mutex
+	path                string
+	temporary           bool
+	store               *sourceStore
+	checkpointSnapshot  map[string]sourceCheckpoint
+	search              *searchIndex
+	annotationDB        *bolt.DB
+	provider            Provider
+	watch               *watchState
+	prepareAfter        string
+	searchAfter         string
+	storageCheck        func(string) error
+	checkpointsReady    bool
+	expectedInputSHA256 string
+	storageReady        bool
+	sourceMigration     *sourceMigrationRun
+	capacityCheck       func(string, uint64) error
+	storageOffline      bool
 }
 
 func New(provider Provider) *Service {

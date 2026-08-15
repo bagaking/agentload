@@ -105,7 +105,7 @@ func (f *sourceStore) advanceReadiness(ctx context.Context, st *sourceState, p s
 	if p.count >= st.checkpoint.EventCount {
 		return p, nil
 	}
-	facts, err := f.take(ctx, st, p.offset, p.block, false, false, searchBatchEvents)
+	facts, err := f.readinessFacts(ctx, st, p)
 	if err != nil {
 		return p, err
 	}
@@ -113,8 +113,8 @@ func (f *sourceStore) advanceReadiness(ctx context.Context, st *sourceState, p s
 		return p, ErrStale
 	}
 	bytes := 0
-	for _, fact := range facts {
-		if bytes > 0 && bytes+fact.size > searchBatchBytes {
+	for i, fact := range facts {
+		if i >= searchBatchEvents || bytes > 0 && bytes+fact.size > searchBatchBytes {
 			break
 		}
 		bytes += fact.size
@@ -127,8 +127,14 @@ func (f *sourceStore) advanceReadiness(ctx context.Context, st *sourceState, p s
 	if p.count > st.checkpoint.EventCount {
 		return p, ErrStale
 	}
-	err = f.write(ctx, 128*1024, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, "UPDATE sources SET search_count=?,search_offset=?,search_block=?,search_entity_gaps=? WHERE id=? AND generation=? AND active=1 AND missing=0", p.count, p.offset, p.block, p.entityGaps, st.ID, st.Generation)
+	if err = ctx.Err(); err != nil {
+		return p, err
+	}
+	// The read quantum bounds verification. Once verified, preserve this one
+	// bounded frontier even if its deadline expires during the durable commit.
+	commitCtx := context.WithoutCancel(ctx)
+	err = f.write(commitCtx, 128*1024, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(commitCtx, "UPDATE sources SET search_count=?,search_offset=?,search_block=?,search_entity_gaps=? WHERE id=? AND generation=? AND active=1 AND missing=0", p.count, p.offset, p.block, p.entityGaps, st.ID, st.Generation)
 		return err
 	})
 	return p, err
@@ -164,7 +170,7 @@ func (s *Service) syncSearchScope(ctx context.Context, states []*sourceState, co
 			continue
 		}
 		if p.count < st.checkpoint.EventCount {
-			p, err = s.store.advanceReadiness(budget, st, p)
+			p, err = s.store.advanceReadiness(ctx, st, p)
 			if err != nil && !(errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil) {
 				return err
 			}

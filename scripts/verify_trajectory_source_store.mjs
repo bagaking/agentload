@@ -211,7 +211,9 @@ export function verifySourceStore(root, p) {
     maintenance.originals_preserved_until_verified === true && maintenance.runtime_owner_enforced === true &&
     maintenance.history_file === history && maintenance.database_path === database &&
     maintenance.input_identity === corpus.input_identity &&
-    JSON.stringify(maintenance.arguments) === JSON.stringify(['traj','compact','--history-file',history]) &&
+    [ ['traj','compact','--history-file',history],
+      ['traj','compact','--history-file',history,'--expected-input-sha256',corpus.file.sha256]
+    ].some(args => JSON.stringify(maintenance.arguments) === JSON.stringify(args)) &&
     timestamp(maintenance.started_at) >= timestamp(corpus.at) && timestamp(maintenance.finished_at) >= timestamp(maintenance.started_at),
     'Actual resumable, exclusive and preserving maintenance evidence incomplete.');
   const progress = receipt(maintenance.progress).trim().split('\n').filter(Boolean).map(JSON.parse);
@@ -223,6 +225,9 @@ export function verifySourceStore(root, p) {
     ready.target_sha256 === maintenance.target_file.sha256 && sealed.records === ready.records &&
     sealed.source_count === ready.source_count && ready.source_count === corpus.sources.length &&
     sealed.input_identity === ready.input_identity && ready.input_identity === corpus.input_identity &&
+    sealed.input_sha256 === corpus.file.sha256 && ready.input_sha256 === corpus.file.sha256 &&
+    /^volume-v1:[a-f0-9]{32}:\d+:\d+:\d+$/.test(ready.persistent_input_identity) &&
+    sealed.persistent_input_identity === ready.persistent_input_identity &&
     ready.records === corpus.events && ready.bytes_before === corpus.bytes &&
     maintenance.target_file.bytes === ready.bytes_after,
     'Original and independently verified full-corpus cardinalities differ.');
@@ -250,7 +255,9 @@ export function verifySourceStore(root, p) {
       db.prepare('PRAGMA foreign_key_check').all().length === 0, 'Actual SQLite integrity check failed.');
     const state = JSON.parse(db.prepare("SELECT value FROM meta WHERE key='source_migration'").get()?.value ?? '{}');
     requireProof(state.version === 2 && state.phase === 'ready' && state.input === maintenance.input_identity &&
-      state.records === ready.records && state.bytes_before === ready.bytes_before,
+      state.records === ready.records && state.bytes_before === ready.bytes_before &&
+      state.input_identity === ready.persistent_input_identity && state.input_sha256 === corpus.file.sha256 &&
+      state.identities_complete === true,
       'Maintenance and committed migration state differ.');
     const ids = new Set(db.prepare('SELECT id FROM sources').all().map(s=>s.id));
     sourceCount = ids.size;

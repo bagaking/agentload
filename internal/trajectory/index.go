@@ -41,6 +41,7 @@ type sourceCheckpoint struct {
 	WorkingDirectory string                      `json:"working_directory,omitempty"`
 	Generation       string                      `json:"generation"`
 	Identity         string                      `json:"identity"`
+	PendingIdentity  string                      `json:"pending_identity,omitempty"`
 	Prefix           []byte                      `json:"prefix"`
 	Size             int64                       `json:"size"`
 	Mtime            int64                       `json:"mtime"`
@@ -199,8 +200,17 @@ func putJSON(bucket *bolt.Bucket, key []byte, value any) error {
 // cachedSource avoids rewriting unchanged archives on each search. Appends
 // expose the committed prefix; replacements never reuse a previous generation.
 func (s *Service) cachedSource(src Source) (*sourceState, bool) {
-	info, err := os.Stat(src.Path)
+	f, err := os.Open(src.Path)
+	if err != nil {
+		return nil, true
+	}
+	defer f.Close()
+	info, err := f.Stat()
 	if err != nil || !info.Mode().IsRegular() {
+		return nil, true
+	}
+	identity, err := persistentFileIdentity(f, info)
+	if err != nil {
 		return nil, true
 	}
 	id := sourceID(src)
@@ -219,7 +229,7 @@ func (s *Service) cachedSource(src Source) (*sourceState, bool) {
 		}
 	}
 
-	if err != nil || previous.Missing || previous.Version != projectionVersion || previous.Generation == "" || previous.Identity != statIdentity(info) || info.Size() < previous.Size {
+	if err != nil || previous.Missing || previous.Version != projectionVersion || previous.Generation == "" || previous.Identity != identity || info.Size() < previous.Size {
 		return nil, true
 	}
 	unchanged := info.Size() == previous.Size && info.ModTime().UnixNano() == previous.Mtime
@@ -227,11 +237,6 @@ func (s *Service) cachedSource(src Source) (*sourceState, bool) {
 		if info.Size() == previous.Size {
 			return nil, true
 		}
-		f, err := os.Open(src.Path)
-		if err != nil {
-			return nil, true
-		}
-		defer f.Close()
 		prefix := make([]byte, len(previous.Prefix))
 		n, _ := f.ReadAt(prefix, 0)
 		if n != len(prefix) || !bytes.Equal(prefix, previous.Prefix) {

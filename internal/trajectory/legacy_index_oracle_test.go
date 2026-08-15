@@ -200,6 +200,9 @@ func legacyOracleFor(t *testing.T, st *sourceState) *factStore {
 	}
 	t.Cleanup(func() { legacyFixtureOracles.Delete(key); _ = f.db.Close() })
 	seed := st.checkpoint
+	// The frozen writer receives the public generation as input, while its
+	// private physical identity retains the old mount-number representation.
+	seed.Identity = statIdentity(st.Info)
 	seed.Offset, seed.Line, seed.EventCount = 0, 0, 0
 	seed.WorkingDirectory = ""
 	seed.SessionTitle, seed.SessionNativeID, seed.LastAction = "", "", ""

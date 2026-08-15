@@ -72,7 +72,11 @@ func openReplaySource(st *sourceState) (*os.File, os.FileInfo, error) {
 		return nil, nil, ErrStale
 	}
 	info, err := f.Stat()
-	if err != nil || !info.Mode().IsRegular() || !os.SameFile(st.Info, info) || statIdentity(info) != st.checkpoint.Identity || info.Size() < st.checkpoint.Offset {
+	identity := ""
+	if err == nil {
+		identity, err = persistentFileIdentity(f, info)
+	}
+	if err != nil || !info.Mode().IsRegular() || !os.SameFile(st.Info, info) || identity != st.checkpoint.Identity || info.Size() < st.checkpoint.Offset {
 		_ = f.Close()
 		return nil, nil, ErrStale
 	}

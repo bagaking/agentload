@@ -469,7 +469,7 @@ func TestTrajectorySearchSessionPageReferencesStayBoundedAndExact(t *testing.T) 
 
 func TestTrajectorySearchExactCountsBoundedReferencesAndPagination(t *testing.T) {
 	s, _ := fixture(t, request("Unrelated title")+strings.Repeat(request(strings.Repeat("prefix ", 100)+"hit-needle"), 73))
-	sessions := searchTestQuery(t, s, snapshot.TrajectorySelector{Text: "hit-needle"})
+	sessions := searchTestPreparedQuery(t, s, snapshot.TrajectorySelector{Text: "hit-needle"})
 	if len(sessions.Sessions) != 1 {
 		t.Fatal(sessions)
 	}

@@ -15,15 +15,18 @@ type StorageProgress struct {
 	BytesAfter  int64  `json:"bytes_after,omitempty"`
 	Digest      string `json:"logical_digest,omitempty"`
 	Input       string `json:"input_identity,omitempty"`
+	StableInput string `json:"persistent_input_identity,omitempty"`
+	InputHash   string `json:"input_sha256,omitempty"`
 	Sources     int64  `json:"source_count,omitempty"`
 	TargetHash  string `json:"target_sha256,omitempty"`
 }
 
 // The CLI holds the history owner lock. The migrator separately holds a
 // read-only original lock and never manufactures a second whole shadow.
-func OptimizeStorage(ctx context.Context, provider Provider, path string, report func(StorageProgress)) error {
+func OptimizeStorage(ctx context.Context, provider Provider, path string, report func(StorageProgress), expectedInputSHA256 string) error {
 	s := NewPersistent(provider, path)
 	s.storageOffline = true
+	s.expectedInputSHA256 = expectedInputSHA256
 	defer s.Close()
 	last := time.Time{}
 	for {
@@ -41,7 +44,7 @@ func OptimizeStorage(ctx context.Context, provider Provider, path string, report
 				size = info.Size()
 			}
 			if report != nil && (state.Phase == "ready" || time.Since(last) > time.Second) {
-				progress := StorageProgress{Phase: state.Phase, Records: state.Records, BytesBefore: state.BytesBefore, BytesAfter: size, Input: state.Input}
+				progress := StorageProgress{Phase: state.Phase, Records: state.Records, BytesBefore: state.BytesBefore, BytesAfter: size, Input: state.Input, StableInput: state.InputIdentity, InputHash: state.InputSHA256}
 				if state.Phase == "ready" {
 					// A verified seal is observable before retirement, even when
 					// the last bounded batch completes within the progress interval.
@@ -86,7 +89,7 @@ func OptimizeStorage(ctx context.Context, provider Provider, path string, report
 		if size != info.Size() {
 			return ErrStale
 		}
-		report(StorageProgress{Phase: "ready", Records: st.Records, BytesBefore: st.BytesBefore, BytesAfter: size, Input: st.Input, Sources: sources, TargetHash: hash})
+		report(StorageProgress{Phase: "ready", Records: st.Records, BytesBefore: st.BytesBefore, BytesAfter: size, Input: st.Input, StableInput: st.InputIdentity, InputHash: st.InputSHA256, Sources: sources, TargetHash: hash})
 	}
 	return nil
 }

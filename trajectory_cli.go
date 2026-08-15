@@ -112,11 +112,12 @@ func runTrajectoryCompactCLI(ctx context.Context, args []string, out, errOut io.
 	fs := flag.NewFlagSet("agentload traj compact", flag.ContinueOnError)
 	fs.SetOutput(errOut)
 	history := fs.String("history-file", envOr("AGENTLOAD_HISTORY_FILE", defaultHistoryFile()), "local history to optimize while its app is stopped")
+	expectedInput := fs.String("expected-input-sha256", "", "previously recorded full input digest for a legacy checkpoint after remount")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() != 0 {
-		fmt.Fprintln(errOut, "compact accepts only --history-file")
+		fmt.Fprintln(errOut, "compact accepts --history-file and --expected-input-sha256")
 		return 2
 	}
 	owner, err := historyfile.TryAcquire(*history + ".owner")
@@ -130,7 +131,7 @@ func runTrajectoryCompactCLI(ctx context.Context, args []string, out, errOut io.
 	cfg.HistoryFile = *history
 	local := &trayApp{cfg: cfg, observer: newObserver(cfg)}
 	defer local.observer.evidenceIndex.stopIndex()
-	err = trajectory.OptimizeStorage(ctx, local.archiveSources, filepath.Join(trajectoryRoot(*history), "trajectory.sqlite"), func(progress trajectory.StorageProgress) { _ = encoder.Encode(progress) })
+	err = trajectory.OptimizeStorage(ctx, local.archiveSources, filepath.Join(trajectoryRoot(*history), "trajectory.sqlite"), func(progress trajectory.StorageProgress) { _ = encoder.Encode(progress) }, *expectedInput)
 	if err != nil {
 		fmt.Fprintln(errOut, "local index optimization incomplete; committed recovery state retained:", err)
 		return 1

@@ -486,6 +486,14 @@ acquires the same history ownership lock and refuses a running instance. Its
 NDJSON progress reports bounded metadata and source copy, verification, and
 cutover with aggregate counters. Cancellation retains committed progress.
 
+Persistent source identity uses the macOS volume UUID and inode. For an old
+migration checkpoint whose mount device number changed and which predates an
+input digest, `--expected-input-sha256 HEX` supplies the previously recorded full
+original database digest. Maintenance verifies the entire original before
+binding its persistent identity; a mismatch preserves the original and shadow.
+The original input marker remains the recovery namespace. This option does not
+enable content access or bypass source/range verification.
+
 This operation preserves source sessions, all searchable text, event IDs,
 generations, preparation checkpoints, and annotations. The accepted replacement
 uses one private SQLite store for source metadata, sparse physical ranges,

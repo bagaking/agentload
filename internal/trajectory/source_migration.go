@@ -18,31 +18,36 @@ import (
 )
 
 type sourceMigration struct {
-	Version      int            `json:"version"`
-	Input        string         `json:"input"`
-	Phase        string         `json:"phase"`
-	Source       int64          `json:"source"`
-	Anchor       replayAnchor   `json:"anchor"`
-	Metadata     []byte         `json:"metadata,omitempty"`
-	Control      string         `json:"control,omitempty"`
-	ControlSet   bool           `json:"control_set,omitempty"`
-	MetadataSet  bool           `json:"metadata_set,omitempty"`
-	Mode         string         `json:"mode,omitempty"`
-	FactOffset   int64          `json:"fact_offset"`
-	FactBlock    int            `json:"fact_block"`
-	Records      int64          `json:"records"`
-	BytesBefore  int64          `json:"bytes_before"`
-	RepairReturn int64          `json:"repair_return,omitempty"`
-	RepairPhase  string         `json:"repair_phase,omitempty"`
-	Legacy       *factMigration `json:"legacy,omitempty"`
+	Version            int            `json:"version"`
+	Input              string         `json:"input"`
+	InputIdentity      string         `json:"input_identity,omitempty"`
+	InputSHA256        string         `json:"input_sha256,omitempty"`
+	IdentityAfter      int64          `json:"identity_after,omitempty"`
+	IdentitiesComplete bool           `json:"identities_complete,omitempty"`
+	Phase              string         `json:"phase"`
+	Source             int64          `json:"source"`
+	Anchor             replayAnchor   `json:"anchor"`
+	Metadata           []byte         `json:"metadata,omitempty"`
+	Control            string         `json:"control,omitempty"`
+	ControlSet         bool           `json:"control_set,omitempty"`
+	MetadataSet        bool           `json:"metadata_set,omitempty"`
+	Mode               string         `json:"mode,omitempty"`
+	FactOffset         int64          `json:"fact_offset"`
+	FactBlock          int            `json:"fact_block"`
+	Records            int64          `json:"records"`
+	BytesBefore        int64          `json:"bytes_before"`
+	RepairReturn       int64          `json:"repair_return,omitempty"`
+	RepairPhase        string         `json:"repair_phase,omitempty"`
+	Legacy             *factMigration `json:"legacy,omitempty"`
 }
 
 type sourceMigrationRun struct {
-	old          *factStore
-	shadow       *sourceStore
-	legacy       *factMigrationReader
-	ids          []string
-	decodedFacts int64 // migration cost; no event payloads are retained here
+	old           *factStore
+	shadow        *sourceStore
+	legacy        *factMigrationReader
+	ids           []string
+	inputVerified bool
+	decodedFacts  int64 // migration cost; no event payloads are retained here
 }
 
 type sourceCutoverSeal struct {
@@ -507,7 +512,7 @@ func (s *Service) migrateSourceStore(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if state.Version != sourceStoreVersion || state.Input != identity {
+		if state.Version != sourceStoreVersion {
 			return errors.New("migration input changed; source and shadow preserved")
 		}
 	}
@@ -516,24 +521,38 @@ func (s *Service) migrateSourceStore(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	identity, _, err := migrationFileIdentity(s.path)
-	if err != nil {
+	if !run.inputVerified {
+		if state.Phase == "ready" {
+			if _, e := os.Stat(s.path + ".source-ready.json"); e == nil {
+				if e = checkSourceCutoverSeal(ctx, s.path, s.path+".source-migrating", state); e != nil {
+					return e
+				}
+			} else if os.IsNotExist(e) {
+				// No old seal proves control/metadata/stored facts. Binding a
+				// physical identity cannot substitute for their full recheck.
+				if e = restartUnsealedSourceMigration(ctx, run.shadow, &state); e != nil {
+					return e
+				}
+			} else {
+				return e
+			}
+		}
+		if err = s.bindMigrationInput(ctx, run, &state); err != nil {
+			return err
+		}
+		run.inputVerified = true
+	}
+	if err = checkMigrationInput(ctx, s.path, state, false); err != nil {
 		return err
 	}
-	if identity != state.Input {
-		return errors.New("migration input changed; source and shadow preserved")
+	if !state.IdentitiesComplete && state.RepairReturn == 0 {
+		return s.upgradeMigrationIdentities(ctx, run, &state)
 	}
 	if state.Phase == "ready" {
 		if _, err = os.Stat(s.path + ".source-ready.json"); os.IsNotExist(err) {
 			// Both restarted and current owners recover cancellation between the
 			// ready row and external seal by repeating bounded verification.
-			state.Phase = "control"
-			state.Control, state.ControlSet = "", false
-			state.Metadata, state.MetadataSet = nil, false
-			state.Source, state.Records = 0, 0
-			state.Anchor, state.Mode = replayAnchor{}, ""
-			state.FactOffset, state.FactBlock = -1, -1
-			if err = saveSourceMigration(ctx, run.shadow, state); err != nil {
+			if err = restartUnsealedSourceMigration(ctx, run.shadow, &state); err != nil {
 				return err
 			}
 		} else if err != nil {
@@ -725,6 +744,11 @@ func (s *Service) migrateSourceFacts(ctx context.Context, run *sourceMigrationRu
 			}
 			continue
 		}
+		if saved, has, e := run.shadow.checkpoint(ctx, id); e != nil {
+			return e
+		} else if has && saved.Generation == generation {
+			cp = saved
+		}
 		info, err := os.Stat(src.Path)
 		if err != nil {
 			if !os.IsNotExist(err) {
@@ -737,6 +761,25 @@ func (s *Service) migrateSourceFacts(ctx context.Context, run *sourceMigrationRu
 				return e
 			}
 			return errStorageMigration
+		}
+		if legacyFileIdentity(cp.Identity, info) {
+			bound, e := run.shadow.upgradeFileIdentity(ctx, src, cp, info, false, 8*1024*1024, deadline)
+			if errors.Is(e, errStorageMigration) {
+				return e
+			}
+			if e != nil {
+				if errors.Is(e, ErrStale) && !checkpointLegacyAnchorsMatch(src, cp, info) {
+					if e = enterStoredMigration(ctx, run, &state, row); e != nil {
+						return e
+					}
+					if e = saveSourceMigration(ctx, run.shadow, state); e != nil {
+						return e
+					}
+					return errStorageMigration
+				}
+				return e
+			}
+			cp = bound
 		}
 		st := &sourceState{Source: src, ID: id, Generation: generation, Info: info, checkpoint: cp}
 		if state.Anchor.Offset < cp.Offset {
@@ -824,12 +867,9 @@ func (s *Service) installSourceMigration(ctx context.Context, st sourceMigration
 	if st.Legacy != nil {
 		return s.installDirectLegacy(ctx, st)
 	}
-	identity, _, err := migrationFileIdentity(s.path)
+	err := checkMigrationInput(ctx, s.path, st, true)
 	if err != nil {
 		return err
-	}
-	if identity != st.Input {
-		return errors.New("migration original changed before cutover; preserved")
 	}
 	if err = ctx.Err(); err != nil {
 		return err
@@ -942,12 +982,8 @@ func (s *Service) finishSourceCutover(ctx context.Context) error {
 	if err = checkSourceCutoverSeal(ctx, s.path, s.path, st); err != nil {
 		return err
 	}
-	identity, _, err := migrationFileIdentity(backup)
-	if err != nil {
+	if err = checkMigrationInput(ctx, backup, st, true); err != nil {
 		return err
-	}
-	if identity != st.Input {
-		return errors.New("migration original identity differs; preserved")
 	}
 	var integrity string
 	if err = f.db.QueryRowContext(ctx, "PRAGMA quick_check").Scan(&integrity); err != nil {

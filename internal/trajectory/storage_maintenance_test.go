@@ -61,7 +61,7 @@ func TestTrajectoryMaintenanceReportsVerifiedSealBeforeRetirement(t *testing.T) 
 		if progress.Input != input || progress.TargetHash != hex.EncodeToString(hash[:]) || progress.Sources != 1 || progress.Records != int64(len(facts)) {
 			t.Fatalf("seal does not identify independently verified target: %+v", progress)
 		}
-	})
+	}, "")
 	if err != nil {
 		t.Fatal(err)
 	}

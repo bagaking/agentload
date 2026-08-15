@@ -82,7 +82,8 @@ func (f *sourceStore) sourceTail(ctx context.Context, st *sourceState) (*sourceG
 }
 
 func checkpointSourceMatch(file *os.File, info os.FileInfo, c sourceCheckpoint) bool {
-	if c.Missing || c.Generation == "" || c.Identity != statIdentity(info) || info.Size() < c.Size {
+	identity, err := persistentFileIdentity(file, info)
+	if err != nil || c.Missing || c.Generation == "" || c.Identity != identity || info.Size() < c.Size {
 		return false
 	}
 	if info.Size() == c.Size && info.ModTime().UnixNano() != c.Mtime {
@@ -145,6 +146,21 @@ func (f *sourceStore) indexSource(ctx context.Context, src Source, maxRecords in
 	if !ok {
 		previous = sourceCheckpoint{}
 	}
+	if ok && !previous.Missing {
+		if err = validateCheckpointIdentity(previous); err != nil {
+			return nil, err
+		}
+	}
+	identity, err := persistentFileIdentity(file, info)
+	if err != nil {
+		return nil, err
+	}
+	if ok && legacyFileIdentity(previous.Identity, info) && previous.Identity != identity && checkpointLegacyAnchorsMatch(src, previous, info) {
+		previous, err = f.upgradeFileIdentity(ctx, src, previous, info, true, maxBytes, deadline)
+		if err != nil {
+			return nil, err
+		}
+	}
 	same := checkpointSourceMatch(file, info, previous)
 	if same && previous.Version != projectionVersion {
 		return nil, errors.New("source parser version requires lossless migration; preserved")
@@ -162,8 +178,8 @@ func (f *sourceStore) indexSource(ctx context.Context, src Source, maxRecords in
 	if !same {
 		prefix := make([]byte, min(256, int(info.Size())))
 		_, _ = file.ReadAt(prefix, 0)
-		generation := digest([]byte(statIdentity(info) + ":" + string(prefix) + ":" + strconv.FormatInt(info.ModTime().UnixNano(), 10) + ":" + previous.Generation))
-		current = sourceCheckpoint{Version: projectionVersion, Identity: statIdentity(info), Prefix: prefix, Generation: generation, Coverage: coverage("source:" + id)}
+		generation := digest([]byte(identity + ":" + string(prefix) + ":" + strconv.FormatInt(info.ModTime().UnixNano(), 10) + ":" + previous.Generation))
+		current = sourceCheckpoint{Version: projectionVersion, Identity: identity, Prefix: prefix, Generation: generation, Coverage: coverage("source:" + id)}
 	}
 	st := &sourceState{Source: src, ID: id, Generation: current.Generation, Info: info, checkpoint: current}
 	var group sourceGroup
