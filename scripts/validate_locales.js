@@ -23,6 +23,8 @@ const dynamicKeyPatterns = [
   { prefix: "diagnosticEvolution", suffix: "Hypothesis" },
   { prefix: "diagnosticEvolution", suffix: "Experiment" },
   { prefix: "diagnosticEvolution", suffix: "Verification" },
+  { prefix: "diagnosticEvolution", suffix: "Baseline" },
+  { prefix: "diagnosticEvolution", suffix: "StopCondition" },
   { prefix: "diagnosticEvolution", suffix: "Evidence" },
 ];
 

@@ -36,6 +36,30 @@ func TestEveryDiagnosticBaselineReachesThePanel(t *testing.T) {
 	}
 }
 
+// TestDiagnosticLossLedgerKeepsIndependentRows pins the P0 ledger contract at
+// the view-model boundary. The two transcript rows must stay separate: one is
+// an in-scope scan delay and the other is an explicit history boundary.
+func TestDiagnosticLossLedgerKeepsIndependentRows(t *testing.T) {
+	model := readUISource(t, diagnosticModelPath)
+	for _, key := range []string{
+		"unmapped_pid",
+		"low_confidence_sessions",
+		"deferred_transcript_scan",
+		"token_coverage",
+		"evidence_walk_cost",
+		"evidence_out_of_horizon",
+	} {
+		if !strings.Contains(model, `"`+key+`"`) {
+			t.Errorf("loss ledger row %q is not projected by %s", key, diagnosticModelPath)
+		}
+	}
+	for _, state := range []string{"measured", "partial", "unavailable", "out_of_scope"} {
+		if !strings.Contains(model, `"`+state+`"`) {
+			t.Errorf("loss ledger state %q is not represented by %s", state, diagnosticModelPath)
+		}
+	}
+}
+
 // TestEveryDiagnosticSignalKindHasLocalizedCopy pins the other half of the same
 // hazard. The UI throws away the Go-side Title/Detail and looks up
 // diagnosticSignal<Kind>Title/Detail instead, so a signal kind with no copy

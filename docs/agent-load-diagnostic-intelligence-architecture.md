@@ -26,9 +26,13 @@ explain this truth; they must not invent or hide it.
   summary, and hover detail.
 - Trend: sampled history/runtime trend analysis and selected-window drilldown.
 - System: current whole-machine resources and process evidence groups.
-- Diagnostics: anomaly/prediction-safe signals, evidence gaps, metric semantic
-  readout, collector capability, optional runtime telemetry state, and safe
-  diagnostic export.
+- Diagnostics: a first-screen situation map for recent movement, known sessions,
+  visible processes, PID mapping, and token coverage; a six-row loss ledger for
+  attribution gaps, coverage delay, scan cost, and history-boundary facts; then
+  reviewable optimization experiments with an explicit baseline, hypothesis,
+  verification, and stop condition. Anomaly/prediction-safe signals, evidence
+  gaps, collector capability, optional runtime telemetry state, and safe
+  diagnostic export remain below that reading flow.
 
 Prediction/anomaly and safe export belong only to Diagnostics. Other evidence
 improvements should fold into the existing Online, Trend, System, Project,
@@ -44,6 +48,12 @@ Session, and Process surfaces.
 - Token usage is measured only when local usage fields exist. Missing token
   usage stays unavailable; do not infer zero from CPU, memory, elapsed time, or
   process count.
+- The loss ledger keeps deferred files and files outside the configured history
+  horizon as separate states. Its rows carry the current value, evidence
+  family, scope or denominator, freshness, state, source, and next inspection
+  direction. These rows are display projections of existing baselines,
+  evidence gaps, transcript scan cost, and metric keys; they are not a second
+  metric semantic layer.
 - Diagnostic export must omit raw prompts, absolute paths, full command
   arguments, environment variables, transcript paths, and bundle paths. It may
   include sanitized identity labels and documented missing-state fields.

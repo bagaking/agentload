@@ -155,10 +155,12 @@ semantic layer before visual polish is accepted.
   issue/evidence/source/next-check language. Backend diagnostic keys may appear
   only as hidden titles or export evidence; visible source badges should prefer
   localized source names over raw codes such as parser or risk ids.
-- Diagnostics layout should use a small set of reusable planes: an evidence
-  strip, a priority-check table, an evidence-chain map, and a safe-export
-  boundary. Avoid one-off diagnostic cards that repeat the same visual frame or
-  make the page feel generated rather than deliberately instrumented.
+- Diagnostics layout should use a small set of reusable planes: a situation map,
+  a fixed loss ledger, an optimization experiment queue, the priority checks and
+  evidence-chain map, and a safe-export boundary. The loss ledger keeps current
+  value, evidence family, scope, freshness, state, source, and next check in
+  the same row. Avoid one-off diagnostic cards that repeat the same visual frame
+  or make the page feel generated rather than deliberately instrumented.
 - Compact diagnostics must preserve first-screen audit density. The evidence
   strip should stay horizontal in the popover whenever labels and numbers can
   still fit; move explanatory badges into the heading or table chrome instead

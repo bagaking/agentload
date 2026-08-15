@@ -144,12 +144,12 @@ function buildEvolutionRows(t: Translate, insights: DiagnosticEvolutionInsight[]
     return {
       key,
       title: evolutionText(t, key, "Title", insight.title || humanizeKey(key)),
-      baseline: evolutionText(t, key, "Baseline", insight.baseline || t("unavailable")),
+      baseline: evolutionText(t, key, "Baseline", insight.baseline || t("unavailable"), insight),
       hypothesis: evolutionText(t, key, "Hypothesis", insight.hypothesis || t("unavailable")),
       evidence: evolutionEvidenceText(t, key, insight),
       experiment: evolutionText(t, key, "Experiment", insight.experiment || t("unavailable")),
       verification: evolutionText(t, key, "Verification", insight.verification || t("unavailable")),
-      stopCondition: evolutionText(t, key, "StopCondition", insight.stop_condition || t("unavailable")),
+      stopCondition: evolutionText(t, key, "StopCondition", insight.stop_condition || t("unavailable"), insight),
       metric: metricKeyLabel(t, insight.metric_key, humanizeKey(insight.metric_key || "evidence")),
       status: evolutionStatusLabel(t, insight.status),
       tone: evolutionTone(insight.status),
@@ -166,9 +166,10 @@ function evolutionEvidenceText(t: Translate, key: string, insight: DiagnosticEvo
   return template.replace(/\{([a-z0-9_]+)\}/gi, (_, name: string) => String(insight.evidence_values?.[name] ?? `{${name}}`));
 }
 
-function evolutionText(t: Translate, key: string, suffix: string, fallback: string): string {
+function evolutionText(t: Translate, key: string, suffix: string, fallback: string, insight?: DiagnosticEvolutionInsight): string {
   const translated = t(`diagnosticEvolution${normalizeI18nKey(key)}${suffix}`);
-  return translated.startsWith("diagnosticEvolution") ? fallback : translated;
+  const value = translated.startsWith("diagnosticEvolution") ? fallback : translated;
+  return value.replace(/\{([a-z0-9_]+)\}/gi, (_, name: string) => String(insight?.evidence_values?.[name] ?? `{${name}}`));
 }
 
 function evolutionStatusLabel(t: Translate, status?: string): string {
@@ -202,11 +203,13 @@ export function diagnosticOmittedFieldLabel(t: Translate, value: string): string
 // never a bare number: a zero the observer measured and a zero that means "we
 // could not look" are different facts and must not render alike.
 function buildSituationMap(t: Translate, snapshot: Snapshot): SituationMapCard[] {
-  const summary = snapshot.summary ?? {};
-  const current = snapshot.current ?? {};
-  const stats = snapshot.transcript_stats ?? {};
-  const processesMeasured = !snapshot.process_stats?.incomplete;
-  const sessionsMeasured = (stats.parsed_files ?? 0) > 0 || (current.session_concurrency ?? 0) > 0;
+  const current = snapshot.current;
+  const stats = snapshot.transcript_stats;
+  const baselines = new Map((snapshot.diagnostics?.baselines ?? []).map((baseline) => [baseline.key, baseline]));
+  const processesMeasured = snapshot.process_stats !== undefined && !snapshot.process_stats.incomplete;
+  const sessionsMeasured = snapshot.live_sessions !== undefined || (stats?.parsed_files ?? 0) > 0 || (current?.session_concurrency ?? 0) > 0;
+  const processState = (value: number | undefined): DiagnosticState => value === undefined ? "unavailable" : snapshot.process_stats?.incomplete ? "partial" : processesMeasured ? "measured" : "unavailable";
+  const sessionState = (value: number | undefined): DiagnosticState => value === undefined ? "unavailable" : sessionsMeasured ? "measured" : "unavailable";
 
   const card = (
     key: string,
@@ -228,39 +231,37 @@ function buildSituationMap(t: Translate, snapshot: Snapshot): SituationMapCard[]
     card(
       "visible_processes",
       t("diagnosticSituationVisibleProcesses"),
-      processesMeasured ? String(current.pid_concurrency ?? 0) : t("diagnosticNoData"),
+      current?.pid_concurrency === undefined ? t("diagnosticNoData") : String(current.pid_concurrency),
       t("diagnosticSourceLiveProcesses"),
-      processesMeasured ? "measured" : "unavailable",
+      processState(current?.pid_concurrency),
     ),
     card(
       "known_sessions",
       t("diagnosticSituationKnownSessions"),
-      sessionsMeasured ? String(current.session_concurrency ?? 0) : t("diagnosticNoData"),
+      current?.session_concurrency === undefined ? t("diagnosticNoData") : String(current.session_concurrency),
       t("diagnosticSourceLiveSessions"),
-      sessionsMeasured ? "measured" : "unavailable",
+      sessionState(current?.session_concurrency),
     ),
     card(
       "recent_movement",
       t("diagnosticSituationRecentMovement"),
-      sessionsMeasured ? String(current.active_burst_concurrency ?? 0) : t("diagnosticNoData"),
+      current?.active_burst_concurrency === undefined ? t("diagnosticNoData") : String(current.active_burst_concurrency),
       t("diagnosticSourceLiveSessions"),
-      sessionsMeasured ? "measured" : "unavailable",
+      sessionState(current?.active_burst_concurrency),
     ),
     card(
       "pid_mapping",
       t("diagnosticSituationPidMapping"),
-      processesMeasured ? `${summary.mapped_processes ?? 0} / ${(summary.mapped_processes ?? 0) + (summary.unmapped_processes ?? 0)}` : t("diagnosticNoData"),
+      diagnosticBaselineValue(t, baselines.get("mapping_coverage")),
       t("diagnosticSourceLiveProcesses"),
-      processesMeasured ? "measured" : "unavailable",
+      baselineState(baselines.get("mapping_coverage")),
     ),
     card(
       "token_coverage",
       t("diagnosticSituationTokenCoverage"),
-      // Deferred files are outside this pass's scope rather than missing, so
-      // the state says out_of_scope instead of claiming an incomplete reading.
-      String(stats.parsed_files ?? 0),
-      t("diagnosticSourceTranscriptStats"),
-      (stats.deferred_files ?? 0) > 0 ? "partial" : sessionsMeasured ? "measured" : "unavailable",
+      diagnosticBaselineValue(t, baselines.get("token_measured_sessions")),
+      t("diagnosticSourceLiveSessions"),
+      baselineState(baselines.get("token_measured_sessions")),
     ),
   ];
 }
@@ -270,55 +271,80 @@ function buildSituationMap(t: Translate, snapshot: Snapshot): SituationMapCard[]
 // step would be. It is the panel's honesty surface: a row here is a known
 // blind spot, not a failure.
 function buildLossLedger(t: Translate, snapshot: Snapshot): LossLedgerRow[] {
-  const summary = snapshot.summary ?? {};
-  const stats = snapshot.transcript_stats ?? {};
-  const cost = stats.scan_cost;
-  const rows: LossLedgerRow[] = [];
+  const summary = snapshot.summary;
+  const stats = snapshot.transcript_stats;
+  const cost = stats?.scan_cost;
+  const baselines = new Map((snapshot.diagnostics?.baselines ?? []).map((baseline) => [baseline.key, baseline]));
+  const current = snapshot.current;
+  const generated = snapshot.diagnostics?.generated_at || snapshot.generated_at;
+  const sampleFreshness = generated ? formatDateTime(generated) : t("diagnosticFreshUnavailable");
+  const visible = current?.pid_concurrency;
+  const known = current?.session_concurrency;
+  const processState: DiagnosticState = summary === undefined || visible === undefined ? "unavailable" : snapshot.process_stats?.incomplete ? "partial" : "measured";
+  const lowState: DiagnosticState = snapshot.coordination_risk === undefined || known === undefined ? "unavailable" : "measured";
+  const deferredFiles = stats?.deferred_files;
+  const deferredState: DiagnosticState = stats === undefined || deferredFiles === undefined || (stats.coverage_incomplete === true && deferredFiles === 0 && !stats.historical_scan_deferred) ? "unavailable" : deferredFiles > 0 || stats.historical_scan_deferred ? "partial" : "measured";
+  const deferredCurrent = stats === undefined || deferredFiles === undefined || (stats.coverage_incomplete === true && deferredFiles === 0 && !stats.historical_scan_deferred) ? t("unavailable") : deferredFiles > 0 ? formatCount(deferredFiles) : stats.historical_scan_deferred ? t("diagnosticPending") : formatCount(deferredFiles);
+  const walkState: DiagnosticState = cost?.walk_measured === true && cost.elapsed_ms !== undefined ? "measured" : "unavailable";
+  const agedState: DiagnosticState = cost?.walk_measured !== true || cost.aged_out_files === undefined ? "unavailable" : cost.aged_out_files > 0 ? "out_of_scope" : "measured";
+  const token = baselines.get("token_measured_sessions");
+  return [
+    ledgerRow(t, "unmapped_pid", t("diagnosticLossUnmappedPidTitle"), summary?.unmapped_processes === undefined ? t("unavailable") : formatCount(summary.unmapped_processes), metricKeyLabel(t, "process_pressure", "process_pressure"), visible === undefined ? t("unavailable") : `${formatCount(visible)} ${t("diagnosticScopeVisiblePids")}`, sampleFreshness, processState, t("diagnosticSourceLiveProcesses"), t("diagnosticNextStepInspect"), toneFromState(processState)),
+    ledgerRow(t, "low_confidence_sessions", t("diagnosticLossLowConfidenceTitle"), snapshot.coordination_risk?.low_confidence_session_count === undefined ? t("unavailable") : formatCount(snapshot.coordination_risk.low_confidence_session_count), metricKeyLabel(t, "known_sessions", "known_sessions"), known === undefined ? t("unavailable") : `${formatCount(known)} ${t("diagnosticScopeKnownSessions")}`, sampleFreshness, lowState, t("diagnosticSourceLiveSessions"), t("diagnosticNextStepInspect"), toneFromState(lowState)),
+    ledgerRow(t, "deferred_transcript_scan", t("diagnosticLossDeferredTitle"), deferredCurrent, metricKeyLabel(t, "recent_movement", "recent_movement"), transcriptScope(t, stats), sampleFreshness, deferredState, t("diagnosticSourceTranscriptStats"), t("diagnosticNextStepRefresh"), toneFromState(deferredState)),
+    ledgerRow(t, "token_coverage", t("diagnosticLossTokenTitle"), diagnosticBaselineValue(t, token), metricKeyLabel(t, "token_usage", "token_usage"), baselineScope(t, token), sampleFreshness, baselineState(token), t("diagnosticSourceLiveSessions"), t("diagnosticNextStepInspect"), toneFromState(baselineState(token))),
+    ledgerRow(t, "evidence_walk_cost", t("diagnosticLossWalkTitle"), walkCurrent(t, cost), metricKeyLabel(t, "recent_movement", "recent_movement"), walkScope(t, cost), cost?.measured_at ? formatDateTime(cost.measured_at) : sampleFreshness, walkState, t("diagnosticSourceTranscriptStats"), t("diagnosticNextStepRefresh"), toneFromState(walkState)),
+    ledgerRow(t, "evidence_out_of_horizon", t("diagnosticLossOutOfScopeTitle"), agedCurrent(t, cost), metricKeyLabel(t, "recent_movement", "recent_movement"), historyScope(t, stats), cost?.measured_at ? formatDateTime(cost.measured_at) : sampleFreshness, agedState, t("diagnosticSourceTranscriptStats"), t("diagnosticNextStepHorizon"), toneFromState(agedState)),
+  ];
+}
 
-  const push = (
-    key: string,
-    title: string,
-    current: string,
-    evidenceFamily: string,
-    scope: string,
-    state: DiagnosticState,
-    source: string,
-    nextStep: string,
-  ) => {
-    rows.push({
-      key,
-      title,
-      current,
-      evidenceFamily,
-      scope,
-      freshness: stats.cached ? t("diagnosticPending") : diagnosticStateLabel(t, "measured"),
-      state,
-      stateLabel: diagnosticStateLabel(t, state),
-      source,
-      nextStep,
-      tone: toneFromState(state),
-    });
-  };
+function ledgerRow(t: Translate, key: string, title: string, current: string, evidenceFamily: string, scope: string, freshness: string, state: DiagnosticState, source: string, nextStep: string, tone: DiagnosticTone): LossLedgerRow {
+  return { key, title, current, evidenceFamily, scope, freshness, state, stateLabel: diagnosticStateLabel(t, state), source, nextStep, tone };
+}
 
-  const unmapped = summary.unmapped_processes ?? 0;
-  if (unmapped > 0) {
-    push("unmapped_pid", t("diagnosticLossUnmappedPidTitle"), String(unmapped), metricKeyLabel(t, "process_pressure", "process_pressure"),
-      t("diagnosticScopeVisiblePids"), "partial", t("diagnosticSourceLiveProcesses"), t("diagnosticNextStepInspect"));
-  }
-  const deferred = stats.deferred_files ?? 0;
-  if (deferred > 0) {
-    push("deferred", t("diagnosticLossDeferredTitle"), String(deferred), metricKeyLabel(t, "recent_movement", "recent_movement"),
-      t("diagnosticScopeForegroundFiles"), "out_of_scope", t("diagnosticSourceTranscriptStats"), t("diagnosticNextStepRefresh"));
-  }
-  if (cost && (cost.aged_out_files ?? 0) > 0) {
-    push("out_of_scope", t("diagnosticLossOutOfScopeTitle"), String(cost.aged_out_files), metricKeyLabel(t, "recent_movement", "recent_movement"),
-      t("diagnosticScopeHistoryHorizon"), "out_of_scope", t("diagnosticSourceTranscriptStats"), t("diagnosticNextStepHorizon"));
-  }
-  if (!cost?.walk_measured) {
-    push("walk", t("diagnosticLossWalkTitle"), t("diagnosticNoData"), metricKeyLabel(t, "recent_movement", "recent_movement"),
-      t("diagnosticScopeVisitedEntries"), "unavailable", t("diagnosticSourceTranscriptStats"), t("diagnosticNextStepRefresh"));
-  }
-  return rows;
+function baselineState(baseline?: DiagnosticBaseline): DiagnosticState {
+  const value = String(baseline?.value || "").trim();
+  const status = String(baseline?.status || "").toLowerCase();
+  if (!baseline || !value || value === "no_data" || status === "unavailable" || status === "empty") return "unavailable";
+  const ratio = value.match(/([0-9]+)\s+of\s+([0-9]+)/i);
+  if (status === "partial" || (ratio && ratio[1] !== ratio[2])) return "partial";
+  return "measured";
+}
+
+function transcriptScope(t: Translate, stats?: Snapshot["transcript_stats"]): string {
+  if (!stats) return t("unavailable");
+  if (stats.coverage_incomplete === true && (stats.scanned_files ?? 0) === 0 && (stats.deferred_files ?? 0) === 0) return t("unavailable");
+  const eligible = (stats.scanned_files ?? 0) + (stats.deferred_files ?? 0);
+  return `${formatCount(eligible)} ${t("diagnosticScopeForegroundFiles")}`;
+}
+
+function historyScope(t: Translate, stats?: Snapshot["transcript_stats"]): string {
+  if (!stats) return t("unavailable");
+  const seconds = stats.configured_history_lookback_seconds;
+  return seconds && seconds > 0 ? `${formatDuration(seconds)} ${t("diagnosticScopeHistoryHorizon")}` : t("diagnosticScopeHistoryHorizon");
+}
+
+function baselineScope(t: Translate, baseline?: DiagnosticBaseline): string {
+  const ratio = String(baseline?.value || "").match(/([0-9]+)\s+of\s+([0-9]+)/i);
+  return ratio ? `${ratio[2]} ${t("diagnosticScopeKnownSessions")}` : t("unavailable");
+}
+
+function walkCurrent(t: Translate, cost?: TranscriptScanCost): string {
+  return cost?.walk_measured === true && cost.elapsed_ms !== undefined ? `${formatCount(cost.elapsed_ms)}ms` : t("unavailable");
+}
+
+function walkScope(t: Translate, cost?: TranscriptScanCost): string {
+  return cost?.walk_measured === true && cost.visited_entries !== undefined ? `${formatCount(cost.visited_entries)} ${t("diagnosticScopeVisitedEntries")}` : t("unavailable");
+}
+
+function agedCurrent(t: Translate, cost?: TranscriptScanCost): string {
+  return cost?.walk_measured === true && cost.aged_out_files !== undefined ? `${formatCount(cost.aged_out_files)} ${t("diagnosticScopeFiles")}` : t("unavailable");
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds >= 86400) return `${Math.round(seconds / 86400)}d`;
+  if (seconds >= 3600) return `${Math.round(seconds / 3600)}h`;
+  return `${Math.round(seconds / 60)}m`;
 }
 
 function diagnosticStateLabel(t: Translate, state: DiagnosticState): string {
