@@ -22,10 +22,15 @@ func (f *sourceStore) auditSource(ctx context.Context, st *sourceState) (pending
 	if err = f.validateRanges(ctx, st); err != nil {
 		return true, err
 	}
-	var size, mtime, after int64
-	err = f.db.QueryRowContext(ctx, "SELECT audit_size,audit_mtime,audit_after FROM sources WHERE id=? AND generation=? AND active=1 AND missing=0", st.ID, st.Generation).Scan(&size, &mtime, &after)
+	var size, mtime, after, verifiedSize, verifiedMtime int64
+	err = f.db.QueryRowContext(ctx, "SELECT audit_size,audit_mtime,audit_after,verified_size,verified_mtime FROM sources WHERE id=? AND generation=? AND active=1 AND missing=0", st.ID, st.Generation).Scan(&size, &mtime, &after, &verifiedSize, &verifiedMtime)
 	if err != nil {
 		return true, err
+	}
+	// A completed audit is idempotent. Do not read past its final cursor and
+	// mistake the absence of another range for a changed source.
+	if verifiedSize == before.Size() && verifiedMtime == before.ModTime().UnixNano() {
+		return false, nil
 	}
 	if size != before.Size() || mtime != before.ModTime().UnixNano() {
 		after = -1

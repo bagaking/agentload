@@ -80,6 +80,9 @@ func TestTrajectorySourceAuditResumesAndDoesNotBlessRewrite(t *testing.T) {
 		t.Fatal("resumed audit did not seal current source", err)
 	}
 	before := p[st.ID]
+	if more, err = f.auditSource(context.Background(), st); err != nil || more {
+		t.Fatal("completed audit was not idempotent", more, err)
+	}
 	body, err := os.ReadFile(st.Path)
 	if err != nil {
 		t.Fatal(err)
