@@ -56,6 +56,104 @@ func TestEveryDiagnosticSignalKindHasLocalizedCopy(t *testing.T) {
 	}
 }
 
+// TestEveryDiagnosticSignalSourceHasLocalizedCopy is the source-side twin of the
+// kind gate above. diagnosticSourceLabel looks up diagnosticSource<Source>Label
+// and falls back to humanizing the raw identifier, so a source with no copy
+// prints "process observer" in the Japanese and Chinese pages too -- quietly,
+// because the fallback always produces something that looks like a word.
+func TestEveryDiagnosticSignalSourceHasLocalizedCopy(t *testing.T) {
+	copyKeys := i18nKeysPerLocale(t)
+	for _, source := range diagnosticSignalSources(t) {
+		key := "diagnosticSource" + normalizeDiagnosticKindForI18n(source) + "Label"
+		for locale, keys := range copyKeys {
+			if !keys[key] {
+				t.Errorf("signal source %q has no label copy in locale %d (want key %q in %s)",
+					source, locale, key, i18nPath)
+			}
+		}
+	}
+}
+
+// TestEveryRiskSignalKindCarriesAMetricFamily gates the join that the evolution
+// cards rest on.
+//
+// buildDiagnosticEvolutionInsights and buildDiagnosticAnomalySignals both write
+// a metric_key, and buildEvolutionRows pairs an insight with a signal by
+// comparing the two for equality. diagnosticMetricForRisk is the only thing
+// standing between a risk kind and that join, and it was a switch whose default
+// returned "" -- so a kind that was renamed at the emission site (observer.go
+// emits duplicate_overlap_candidates; the switch still read duplicate_overlap)
+// silently lost its family, and every signal built from it became unjoinable
+// and unlabelled. Nothing failed: "" is a legal value for an omitempty field.
+//
+// Both lists are scanned from source. A hand-kept list here would need the same
+// edit as the rename it exists to catch.
+func TestEveryRiskSignalKindCarriesAMetricFamily(t *testing.T) {
+	families := map[string]bool{}
+	for _, entry := range defaultMetricRegistry() {
+		families[entry.Key] = true
+	}
+	for _, kind := range riskSignalKinds(t) {
+		metric := diagnosticMetricForRisk(kind)
+		if metric == "" {
+			t.Errorf("risk kind %q maps to no metric family.\n"+
+				"diagnosticMetricForRisk must name one, or the signal reaches the panel with an\n"+
+				"empty metric_key: it cannot join an evolution insight and its evidence column\n"+
+				"falls back to a humanized identifier.", kind)
+			continue
+		}
+		if !families[metric] {
+			t.Errorf("risk kind %q maps to metric family %q, which defaultMetricRegistry does not define.\n"+
+				"A family outside the registry has no semantic definition to be read against.", kind, metric)
+		}
+	}
+}
+
+// riskSignalKinds scans the kinds observer.go actually emits into
+// CoordinationRisk.Signals. It deliberately reads only observer.go: those are
+// the kinds that flow through diagnosticMetricForRisk.
+func riskSignalKinds(t *testing.T) []string {
+	t.Helper()
+	raw, err := os.ReadFile("observer.go")
+	if err != nil {
+		t.Fatalf("read observer.go: %v", err)
+	}
+	pattern := regexp.MustCompile(`RiskSignalSnapshot\{\s*Kind:\s*"([a-z0-9_]+)"`)
+	matches := pattern.FindAllStringSubmatch(string(raw), -1)
+	if len(matches) < 5 {
+		t.Fatalf("found only %d risk signal kinds in observer.go -- the scan pattern has drifted", len(matches))
+	}
+	kinds := make([]string, 0, len(matches))
+	for _, match := range matches {
+		kinds = append(kinds, match[1])
+	}
+	return kinds
+}
+
+// diagnosticSignalSources scans the Source values diagnostics.go attaches to
+// signals, for the same reason diagnosticSignalKinds scans kinds.
+func diagnosticSignalSources(t *testing.T) []string {
+	t.Helper()
+	raw, err := os.ReadFile("diagnostics.go")
+	if err != nil {
+		t.Fatalf("read diagnostics.go: %v", err)
+	}
+	pattern := regexp.MustCompile(`Source:\s*"([a-z0-9_]+)"`)
+	seen := map[string]bool{}
+	sources := []string{}
+	for _, match := range pattern.FindAllStringSubmatch(string(raw), -1) {
+		if seen[match[1]] {
+			continue
+		}
+		seen[match[1]] = true
+		sources = append(sources, match[1])
+	}
+	if len(sources) < 5 {
+		t.Fatalf("found only %d signal sources in diagnostics.go -- the scan pattern has drifted", len(sources))
+	}
+	return sources
+}
+
 // diagnosticSignalKinds reads the kinds straight out of the source rather than
 // from a hand-kept list here: a list would need editing by the same change that
 // adds a kind, which is exactly the step this test exists to not rely on.

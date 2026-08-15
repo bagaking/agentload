@@ -1777,6 +1777,7 @@
       {
         "key": "evidence_boundary",
         "title": "Repair the evidence boundary first",
+        "baseline": "Current snapshot: 0 low-confidence sessions and 3 unmapped processes.",
         "hypothesis": "Weak attribution can make an agent change look better or worse than the evidence supports.",
         "evidence": "0 low-confidence sessions; 3 unmapped processes",
         "evidence_key": "evidence_boundary",
@@ -1786,7 +1787,12 @@
         },
         "experiment": "Use the session and process inspectors to resolve one unmapped or low-confidence item before changing prompts or delegation rules.",
         "verification": "Confirm the next snapshot has stronger mapping evidence; do not treat missing evidence as a zero outcome.",
+        "stop_condition": "Stop if the next snapshot is partial or the item cannot be resolved from local evidence.",
         "metric_key": "process_pressure",
+        "signal_kinds": [
+          "low_confidence_sessions",
+          "unmapped_processes"
+        ],
         "confidence": "observed",
         "status": "needs_review"
       }

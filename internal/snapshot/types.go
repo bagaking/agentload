@@ -218,15 +218,22 @@ type DiagnosticSnapshot struct {
 type DiagnosticEvolutionInsight struct {
 	Key            string         `json:"key"`
 	Title          string         `json:"title"`
+	Baseline       string         `json:"baseline"`
 	Hypothesis     string         `json:"hypothesis"`
 	Evidence       string         `json:"evidence"`
 	EvidenceKey    string         `json:"evidence_key,omitempty"`
 	EvidenceValues map[string]int `json:"evidence_values,omitempty"`
 	Experiment     string         `json:"experiment"`
 	Verification   string         `json:"verification"`
+	StopCondition  string         `json:"stop_condition"`
 	MetricKey      string         `json:"metric_key,omitempty"`
-	Confidence     string         `json:"confidence"`
-	Status         string         `json:"status"`
+	// SignalKinds names the signals this insight is actually built from, so the
+	// panel can show where its numbers came from. MetricKey is a semantic family
+	// and is far coarser: several unrelated signals share one family, so joining
+	// on it pointed an insight at signals that report different counters.
+	SignalKinds []string `json:"signal_kinds,omitempty"`
+	Confidence  string   `json:"confidence"`
+	Status      string   `json:"status"`
 }
 
 type DiagnosticSignalSnapshot struct {

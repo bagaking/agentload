@@ -61,15 +61,19 @@ func buildDiagnosticEvolutionInsights(snap snapshot.Snapshot) []snapshot.Diagnos
 		insights = append(insights, snapshot.DiagnosticEvolutionInsight{
 			Key:            "session_hygiene",
 			Title:          "Review session hygiene",
+			Baseline:       fmt.Sprintf("Current snapshot: %d stale sessions and %d sessions started in the recent window.", risk.StaleSessionCount, risk.ChurnSessionCount),
 			Hypothesis:     "Long-lived or rapidly accumulating sessions may be carrying stale context into later work.",
 			Evidence:       fmt.Sprintf("%d stale sessions; %d sessions started in the recent window", risk.StaleSessionCount, risk.ChurnSessionCount),
 			EvidenceKey:    "session_hygiene",
 			EvidenceValues: map[string]int{"count_a": risk.StaleSessionCount, "count_b": risk.ChurnSessionCount},
 			Experiment:     "Review one stale session and one recent session; close or summarize the stale context before the next task.",
 			Verification:   "On the next refresh, confirm stale-session count and recent-session movement separately.",
+			StopCondition:  "Stop if the comparable task has no stale-session evidence or if the next refresh is incomplete.",
 			MetricKey:      "known_sessions",
-			Confidence:     "observed",
-			Status:         "needs_review",
+			// The same two counters observer.go turns into these signals.
+			SignalKinds: []string{"sessions_without_recent_event", "recent_sessions"},
+			Confidence:  "observed",
+			Status:      "needs_review",
 		})
 	}
 	if risk.DuplicateOverlapSuspicionCount > 0 || risk.ProjectSpreadCount > 1 {
@@ -87,13 +91,16 @@ func buildDiagnosticEvolutionInsights(snap snapshot.Snapshot) []snapshot.Diagnos
 		insights = append(insights, snapshot.DiagnosticEvolutionInsight{
 			Key:            "coordination_shape",
 			Title:          "Test coordination shape",
+			Baseline:       coordinationShapeBaseline(risk.DuplicateOverlapSuspicionCount, risk.ProjectSpreadCount),
 			Hypothesis:     "Overlapping sessions or wide project spread may be adding coordination cost.",
 			Evidence:       coordinationShapeEvidence(risk.DuplicateOverlapSuspicionCount, risk.ProjectSpreadCount),
 			EvidenceKey:    evidenceKey,
 			EvidenceValues: map[string]int{"count_a": risk.DuplicateOverlapSuspicionCount, "count_b": risk.ProjectSpreadCount},
 			Experiment:     "Run the next comparable task with one explicit owner and one bounded subagent branch.",
 			Verification:   "Compare the next run's session count, overlap evidence, and review outcome; Agent Load does not infer outcome quality.",
+			StopCondition:  "Stop if the next run changes task scope, evidence coverage, or review criteria.",
 			MetricKey:      "role_matrix",
+			SignalKinds:    []string{"duplicate_overlap_candidates", "project_spread"},
 			Confidence:     "observed",
 			Status:         "needs_review",
 		})
@@ -102,13 +109,16 @@ func buildDiagnosticEvolutionInsights(snap snapshot.Snapshot) []snapshot.Diagnos
 		insights = append(insights, snapshot.DiagnosticEvolutionInsight{
 			Key:            "evidence_boundary",
 			Title:          "Repair the evidence boundary first",
+			Baseline:       fmt.Sprintf("Current snapshot: %d low-confidence sessions and %d unmapped processes.", risk.LowConfidenceSessionCount, snap.Summary.UnmappedProcesses),
 			Hypothesis:     "Weak attribution can make an agent change look better or worse than the evidence supports.",
 			Evidence:       fmt.Sprintf("%d low-confidence sessions; %d unmapped processes", risk.LowConfidenceSessionCount, snap.Summary.UnmappedProcesses),
 			EvidenceKey:    "evidence_boundary",
 			EvidenceValues: map[string]int{"count_a": risk.LowConfidenceSessionCount, "count_b": snap.Summary.UnmappedProcesses},
 			Experiment:     "Use the session and process inspectors to resolve one unmapped or low-confidence item before changing prompts or delegation rules.",
 			Verification:   "Confirm the next snapshot has stronger mapping evidence; do not treat missing evidence as a zero outcome.",
+			StopCondition:  "Stop if the next snapshot is partial or the item cannot be resolved from local evidence.",
 			MetricKey:      "process_pressure",
+			SignalKinds:    []string{"low_confidence_sessions", "unmapped_processes"},
 			Confidence:     "observed",
 			Status:         "needs_review",
 		})
@@ -117,18 +127,24 @@ func buildDiagnosticEvolutionInsights(snap snapshot.Snapshot) []snapshot.Diagnos
 		insights = append(insights, snapshot.DiagnosticEvolutionInsight{
 			Key:            "baseline_review",
 			Title:          "Capture a baseline before changing the agent",
+			Baseline:       fmt.Sprintf("Current snapshot: %d live sessions across %d projects.", snap.Current.SessionConcurrency, risk.ActiveProjectCount),
 			Hypothesis:     "Current evidence does not identify a specific coordination or attribution problem.",
 			Evidence:       fmt.Sprintf("%d live sessions; %d projects; no current RSI trigger", snap.Current.SessionConcurrency, risk.ActiveProjectCount),
 			EvidenceKey:    "baseline_review",
 			EvidenceValues: map[string]int{"count_a": snap.Current.SessionConcurrency, "count_b": risk.ActiveProjectCount},
 			Experiment:     "Choose one repeatable task and record its session shape, token usage, and review result before changing the agent setup.",
 			Verification:   "Compare the next run with this baseline using the same task and review criteria.",
+			StopCondition:  "Stop if the task or review criteria cannot be held constant for the comparison.",
 			MetricKey:      "known_sessions",
 			Confidence:     "observed",
 			Status:         "baseline",
 		})
 	}
 	return insights
+}
+
+func coordinationShapeBaseline(overlaps, projects int) string {
+	return fmt.Sprintf("Current snapshot: %d overlap suspicions across %d active projects.", overlaps, projects)
 }
 
 // coordinationShapeEvidence is the untranslated fallback for the same rule the
@@ -144,7 +160,8 @@ func coordinationShapeEvidence(overlaps, projects int) string {
 	}
 }
 
-func diagnosticExportSummary() snapshot.DiagnosticExportSummary {	return snapshot.DiagnosticExportSummary{
+func diagnosticExportSummary() snapshot.DiagnosticExportSummary {
+	return snapshot.DiagnosticExportSummary{
 		Endpoint:  "/api/diagnostic-export",
 		Redaction: "sanitized snapshot; local roots, history paths, transcript paths, bundle paths, and command values are omitted or reduced to identity labels",
 		OmittedFields: []string{
@@ -542,13 +559,33 @@ func diagnosticTitleForRisk(kind string) string {
 	}
 }
 
+// diagnosticMetricForRisk names the semantic family each coordination-risk kind
+// is read against. Every kind observer.go emits must appear here:
+// TestEveryRiskSignalKindCarriesAMetricFamily fails otherwise, because an empty
+// metric_key costs the signal both its evidence label and its join to the
+// evolution insight built on the same counter.
+//
+// Families follow docs/agent-load-metric-semantics.md, not convenience:
+//   - recent_movement is decided by transcript event age and nothing else, so
+//     only the two kinds that count event ages belong to it.
+//   - known_sessions covers session-evidence quality and session counts.
+//   - role_matrix covers how sessions distribute across projects and lanes.
+//   - process_pressure covers visible PIDs.
 func diagnosticMetricForRisk(kind string) string {
 	switch strings.TrimSpace(kind) {
 	case "unmatched_processes":
 		return "process_pressure"
-	case "low_confidence_mapping":
+	case "low_confidence_mapping", "candidate_workitem_coverage":
 		return "known_sessions"
-	case "duplicate_overlap", "project_spread":
+	// Both read a transcript event age against a window: one counts sessions
+	// whose last event is older than the stale threshold, the other counts
+	// sessions whose first event landed inside the recent window.
+	case "sessions_without_recent_event", "recent_sessions":
+		return "recent_movement"
+	// Spread, overlap, peak ratio and top-project share all describe how known
+	// sessions distribute across projects and lanes, which is the role matrix's
+	// subject -- not how many PIDs are visible and not how recently logs moved.
+	case "project_spread", "duplicate_overlap_candidates", "observed_peak_ratio", "top_project_share":
 		return "role_matrix"
 	default:
 		return ""

@@ -130,13 +130,18 @@ export type DiagnosticSnapshot = {
 export type DiagnosticEvolutionInsight = {
   key?: string;
   title?: string;
+  baseline?: string;
   hypothesis?: string;
   evidence?: string;
   evidence_key?: string;
   evidence_values?: Record<string, number>;
   experiment?: string;
   verification?: string;
+  stop_condition?: string;
   metric_key?: string;
+  // The signal kinds this insight is built from. metric_key is the semantic
+  // family the numbers belong to; this is where they came from.
+  signal_kinds?: string[];
   confidence?: string;
   status?: string;
 };
