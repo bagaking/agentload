@@ -7,8 +7,105 @@ import (
 	"os"
 	"reflect"
 	"sort"
+	"sync/atomic"
 	"testing"
+	"time"
 )
+
+type pageCountDecoder struct {
+	calls   atomic.Int64
+	entered chan<- struct{}
+	release <-chan struct{}
+}
+
+func (d *pageCountDecoder) Decode(raw []byte, ctx DecodeContext) ([]snapshot.TrajectoryEvent, error) {
+	if d.calls.Add(1) == 3 && d.entered != nil {
+		// Both physical records were decoded for the discovery witness. Hold
+		// the first record of the subsequent exact count until readers join.
+		d.entered <- struct{}{}
+		<-d.release
+	}
+	return (CodexDecoder{}).Decode(raw, ctx)
+}
+
+func TestTrajectorySourceQueryPageCountsJoinBeforePublication(t *testing.T) {
+	for _, mode := range []string{"success", "cancel", "replace"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newSourceStoreFixture(t)
+			var states []*sourceState
+			entered, release := make(chan struct{}, 6), make(chan struct{})
+			for i := 0; i < 6; i++ {
+				d := &pageCountDecoder{}
+				s, st := replayFixture(t, "codex", d, request("research first")+request("research second"))
+				importFixtureFacts(t, f, st, canonicalFixtureFacts(t, s, st))
+				d.calls.Store(0)
+				d.entered, d.release = entered, release
+				states = append(states, st)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			type result struct {
+				page snapshot.TrajectoryQueryResult
+				err  error
+			}
+			done := make(chan result, 1)
+			go func() {
+				page, err := f.query(ctx, snapshot.TrajectorySelector{Collection: "sessions", Text: "research", Limit: 6}, states, coverage("test"))
+				done <- result{page, err}
+			}()
+			timer := time.NewTimer(3 * time.Second)
+			defer timer.Stop()
+			for i := 0; i < 4; i++ {
+				select {
+				case <-entered:
+				case <-timer.C:
+					close(release)
+					<-done
+					t.Fatal("selected session counts were serialized")
+				}
+			}
+			select {
+			case <-entered:
+				close(release)
+				<-done
+				t.Fatal("more than four source readers ran concurrently")
+			case <-done:
+				close(release)
+				t.Fatal("page published before all exact readers joined")
+			default:
+			}
+			if mode == "cancel" {
+				cancel()
+			} else if mode == "replace" {
+				if err := os.WriteFile(states[0].Path, []byte(request("changed body")), 0600); err != nil {
+					close(release)
+					<-done
+					t.Fatal(err)
+				}
+			}
+			close(release)
+			r := <-done
+			if mode == "success" {
+				if r.err != nil || len(r.page.Sessions) != 6 {
+					t.Fatal("concurrent counts failed", r.page, r.err)
+				}
+				for _, session := range r.page.Sessions {
+					if session.MatchedCount != 2 || len(session.MatchedIDs) != 2 {
+						t.Fatal("count or canonical references changed", session)
+					}
+				}
+			} else {
+				want := ErrStale
+				if mode == "cancel" {
+					want = context.Canceled
+				}
+				if !errors.Is(r.err, want) || len(r.page.Sessions) != 0 || len(r.page.Events) != 0 || r.page.Next != "" || r.page.MatchedTotal != nil {
+					t.Fatal("failed reader leaked a partial page", r.page, r.err)
+				}
+			}
+		})
+	}
+}
 
 func TestTrajectorySourceQueryExactPagesCountAndScope(t *testing.T) {
 	f := newSourceStoreFixture(t)
@@ -56,11 +153,13 @@ func TestTrajectorySourceQueryExactPagesCountAndScope(t *testing.T) {
 		t.Fatal("explicit event count changed", all, err)
 	}
 	q.Agent = "claude"
+	q.Collection = "sessions"
 	none, err := f.query(context.Background(), q, states, coverage("current authorized sources"))
-	if err != nil || *none.MatchedTotal != 0 || len(none.Events) != 0 {
+	if err != nil || *none.MatchedTotal != 0 || len(none.Sessions) != 0 || none.Sessions == nil {
 		t.Fatal("vendor scope leaked", none, err)
 	}
 	q.Agent = ""
+	q.Collection = "events"
 	current, err := f.query(context.Background(), q, states[2:3], coverage("restricted provider"))
 	if err != nil || *current.MatchedTotal != 1 {
 		t.Fatal("withdrawn sources influenced count", current, err)
@@ -87,8 +186,9 @@ func TestTrajectorySourceQueryDefaultStopsBeforeUnneededHistoricalBody(t *testin
 		t.Fatal("default visited an unnecessary old body", page, err)
 	}
 	q.Count = true
-	if _, err = f.query(context.Background(), q, states, coverage("current authorized sources")); !errors.Is(err, ErrStale) {
-		t.Fatal("count silently skipped a changed prepared source", err)
+	failed, err := f.query(context.Background(), q, states, coverage("current authorized sources"))
+	if !errors.Is(err, ErrStale) || len(failed.Sessions) != 0 || failed.MatchedTotal != nil {
+		t.Fatal("count skipped a changed source or published discovery witnesses", failed, err)
 	}
 }
 

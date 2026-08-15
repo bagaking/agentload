@@ -9,6 +9,9 @@ import (
 )
 
 type DecodeContext struct{ SessionID string }
+
+// Decode must allow concurrent calls across sources. Built-in decoders keep
+// record state local to the call; shared instrumentation must synchronize it.
 type Decoder interface {
 	Decode([]byte, DecodeContext) ([]snapshot.TrajectoryEvent, error)
 }

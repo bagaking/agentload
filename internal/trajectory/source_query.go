@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 type sourceReadiness struct {
@@ -192,6 +193,8 @@ func (f *sourceStore) query(ctx context.Context, q snapshot.TrajectorySelector, 
 		}
 	}
 	matched := 0
+	var pageSources []*sourceState
+	pageSessions := []snapshot.TrajectorySession{}
 	for _, st := range ordered {
 		if err = ctx.Err(); err != nil {
 			return out, err
@@ -214,19 +217,10 @@ func (f *sourceStore) query(ctx context.Context, q snapshot.TrajectorySelector, 
 				return nil
 			}
 			if q.Collection == "sessions" {
-				summary.MatchedCount++
-				if matched >= start && len(out.Sessions) < q.Limit {
-					if len(summary.MatchedIDs) < 50 {
-						summary.MatchedIDs = append(summary.MatchedIDs, e.ID)
-					}
-					if summary.MatchedCount == 1 {
-						summary.MatchedPreview = matchPreview(e, q)
-					}
-				} else {
-					// For an off-page source only an exact existence witness is
-					// needed. readRange completed validation before this callback.
-					return io.EOF
-				}
+				// Discover page membership before doing the full counts. The
+				// range and final file checks still validate this witness.
+				summary.MatchedCount = 1
+				return io.EOF
 			} else {
 				if matched >= start && len(out.Events) < q.Limit {
 					preview := matchPreview(e, q)
@@ -249,11 +243,9 @@ func (f *sourceStore) query(ctx context.Context, q snapshot.TrajectorySelector, 
 			return out, err
 		}
 		if q.Collection == "sessions" && summary.MatchedCount > 0 {
-			if matched >= start && len(out.Sessions) < q.Limit {
-				if summary.MatchedCount > len(summary.MatchedIDs) {
-					gap(&summary.Coverage, "matched_reference_limit")
-				}
-				out.Sessions = append(out.Sessions, summary)
+			if matched >= start && len(pageSources) < q.Limit {
+				pageSessions = append(pageSessions, summary)
+				pageSources = append(pageSources, st)
 			}
 			matched++
 		}
@@ -264,8 +256,67 @@ func (f *sourceStore) query(ctx context.Context, q snapshot.TrajectorySelector, 
 	if err = ctx.Err(); err != nil {
 		return out, err
 	}
+	if q.Collection == "sessions" {
+		if err = f.completeSessionPage(ctx, q, pageSources, readiness, pageSessions); err != nil {
+			return snapshot.TrajectoryQueryResult{}, err
+		}
+		out.Sessions = pageSessions
+	}
 	if q.Count {
 		out.MatchedTotal = &matched
 	}
 	return out, boundQueryPage(&out, prefix, start, matched)
+}
+
+// Only selected page members are counted in parallel. Discovery remains ordered
+// and stops at the verified lookahead, so speculative historical reads cannot
+// introduce errors or extend the default query's evidence scope.
+func (f *sourceStore) completeSessionPage(ctx context.Context, q snapshot.TrajectorySelector, states []*sourceState, readiness map[string]sourceReadiness, sessions []snapshot.TrajectorySession) error {
+	errs := make([]error, len(states))
+	var readers sync.WaitGroup
+	const workers = 4
+	for worker := 0; worker < min(workers, len(states)); worker++ {
+		readers.Add(1)
+		go func() {
+			defer readers.Done()
+			for i := worker; i < len(states) && ctx.Err() == nil; i += workers {
+				st := states[i]
+				p := readiness[st.ID]
+				summary := cachedSession(st)
+				err := f.walkSourceCandidates(ctx, st, func(filter *sourceFilter) bool { return filter.maybe(q) }, &p, func(fact sourceFact) error {
+					if !matches(fact.event, q) {
+						return nil
+					}
+					summary.MatchedCount++
+					if len(summary.MatchedIDs) < 50 {
+						summary.MatchedIDs = append(summary.MatchedIDs, fact.event.ID)
+					}
+					if summary.MatchedCount == 1 {
+						summary.MatchedPreview = matchPreview(fact.event, q)
+					}
+					return nil
+				})
+				if err == nil && summary.MatchedCount == 0 {
+					err = ErrStale
+				}
+				errs[i] = err
+				if err == nil {
+					if summary.MatchedCount > len(summary.MatchedIDs) {
+						gap(&summary.Coverage, "matched_reference_limit")
+					}
+					sessions[i] = summary
+				}
+			}
+		}()
+	}
+	readers.Wait()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

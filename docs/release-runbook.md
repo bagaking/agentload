@@ -89,6 +89,12 @@ reuse that snapshot under the same operation lock and honor request cancellation
 they do not decode every checkpoint again before a query can read its evidence.
 Background preparation reads readiness for its selected source. It does not
 reload the whole catalog's readiness for every individual source in the queue.
+Session search discovers ordered matches through the requested page and verified
+lookahead before counting matches in the selected sessions. Up to four source
+readers perform those exact counts concurrently; each retains the existing raw
+range, prepared frontier and final file checks. Readers join before publication,
+and a failed check or cancellation discards the page. Historical sources outside
+the page and lookahead are not read unless an explicit count requires them.
 
 On restart, archive discovery includes local sessions written while Agent Load
 was stopped. Background preparation shares the online decoder, normalization
