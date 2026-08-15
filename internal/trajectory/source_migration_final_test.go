@@ -179,6 +179,119 @@ func TestTrajectorySourceFinalRepairPreservesOtherCompletedSources(t *testing.T)
 	}
 }
 
+func TestTrajectorySourceFinalCatalogAbsencePrecedesPhysicalRepair(t *testing.T) {
+	m, states, facts, _, _ := completedMigrationFixture(t)
+	shadow := m.sourceMigration.shadow
+	stable := stableMigrationRows(t, shadow.db)
+	// Both sources require repair. Catalog absence can be established without
+	// opening earlier sources whose physical identity still needs checking.
+	f, err := os.OpenFile(states[0].Path, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.WriteString(request("changed after verified copy"))
+	closeErr := f.Close()
+	if err != nil || closeErr != nil {
+		t.Fatal(err, closeErr)
+	}
+	if err := os.Remove(states[2].Path); err != nil {
+		t.Fatal(err)
+	}
+	provider := m.provider
+	m.provider = func(ctx context.Context) SourceSet {
+		set := provider(ctx)
+		set.Sources = set.Sources[:2]
+		return set
+	}
+	var invalidated *migrationSourceInvalidated
+	err = m.validateMigrationSources(context.Background(), shadow)
+	if !errors.As(err, &invalidated) || invalidated.row != 43 {
+		t.Fatal("catalog absence did not precede repeated physical checks", err)
+	}
+	finishSourceFixtureMigration(t, m)
+	if stableMigrationRows(t, m.store.db) != stable {
+		t.Fatal("catalog repair rewrote the unchanged source")
+	}
+	verifyStoredFixtureFacts(t, m, states[0], facts[0])
+	for _, fact := range facts[2] {
+		var body []byte
+		if err := m.store.db.QueryRow("SELECT body FROM exceptions WHERE source=43 AND offset=? AND block=?", fact.offset, fact.block).Scan(&body); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := decodeSourceValue(body, maxSourceRangeLogicalBytes)
+		var got sourceException
+		if err != nil || json.Unmarshal(raw, &got) != nil || !reflect.DeepEqual(got.Event, &fact.event) {
+			t.Fatal("catalog-absent source lost original facts", err)
+		}
+	}
+}
+
+func TestTrajectorySourceFinalAbsentCorruptCheckpointIsNotRepair(t *testing.T) {
+	for _, damage := range []string{"frame", "generation", "version"} {
+		t.Run(damage, func(t *testing.T) {
+			m, _, _, path, _ := completedMigrationFixture(t)
+			shadow := m.sourceMigration.shadow
+			state, _, err := sourceMigrationState(context.Background(), shadow)
+			if err != nil {
+				t.Fatal(err)
+			}
+			state.Phase = "sources"
+			if err := saveSourceMigration(context.Background(), shadow, state); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Remove(path + ".source-ready.json"); err != nil {
+				t.Fatal(err)
+			}
+			provider := m.provider
+			m.provider = func(ctx context.Context) SourceSet {
+				set := provider(ctx)
+				set.Sources = set.Sources[:2]
+				return set
+			}
+			var body []byte
+			if err := shadow.db.QueryRow("SELECT checkpoint FROM sources WHERE rowid=43").Scan(&body); err != nil {
+				t.Fatal(err)
+			}
+			raw, err := decodeSourceValue(body, maxSourceRangeLogicalBytes)
+			var cp sourceCheckpoint
+			if err != nil || json.Unmarshal(raw, &cp) != nil {
+				t.Fatal(err)
+			}
+			switch damage {
+			case "frame":
+				body = []byte("invalid frame")
+			case "generation":
+				cp.Generation = "corrupt"
+			case "version":
+				cp.Version = -1
+			}
+			if damage != "frame" {
+				raw, _ = json.Marshal(cp)
+				body, err = encodeSourceValue(raw)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := shadow.db.Exec("UPDATE sources SET checkpoint=? WHERE rowid=43", body); err != nil {
+				t.Fatal(err)
+			}
+			var invalidated *migrationSourceInvalidated
+			err = m.validateMigrationSources(context.Background(), shadow)
+			if err == nil || errors.As(err, &invalidated) {
+				t.Fatal("damaged absent checkpoint gained repair authority", err)
+			}
+			err = m.migrateSourceStore(context.Background())
+			if err == nil || errors.Is(err, errStorageMigration) || errors.As(err, &invalidated) {
+				t.Fatal("damaged absent checkpoint became repair authority", err)
+			}
+			after, _, err := sourceMigrationState(context.Background(), shadow)
+			if err != nil || !reflect.DeepEqual(state, after) {
+				t.Fatal("damaged absent checkpoint advanced migration", after, err)
+			}
+		})
+	}
+}
+
 func TestTrajectorySourceFinalCorruptCheckpointIsNotSourceRepair(t *testing.T) {
 	for _, field := range []string{"generation", "identity", "prefix"} {
 		t.Run(field, func(t *testing.T) { finalCorruptCheckpoint(t, field) })

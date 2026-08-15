@@ -34,6 +34,53 @@ func (s *Service) validateMigrationSources(ctx context.Context, f *sourceStore) 
 			allowed[sourceID(src)] = src
 		}
 	}
+	// Repair authoritative catalog absences before repeating physical checks
+	// on earlier, still-present sources. This changes only repair order; once
+	// no such source remains, every replay dependency is checked below.
+	rows, err := f.db.QueryContext(ctx, "SELECT rowid,id FROM sources WHERE active=1 AND missing=0 ORDER BY rowid")
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var row int64
+		var id string
+		if err = rows.Scan(&row, &id); err != nil {
+			break
+		}
+		if _, ok := allowed[id]; !ok {
+			rows.Close()
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			// Absence cannot turn a damaged checkpoint into repair authority.
+			// Check only the selected row here; its unavailable raw cannot be
+			// opened, and all remaining replay dependencies are checked below.
+			var generation string
+			var body []byte
+			if err := f.db.QueryRowContext(ctx, "SELECT generation,checkpoint FROM sources WHERE rowid=?", row).Scan(&generation, &body); err != nil {
+				return err
+			}
+			raw, err := decodeSourceValue(body, maxSourceRangeLogicalBytes)
+			if err != nil {
+				return err
+			}
+			var cp sourceCheckpoint
+			if err := json.Unmarshal(raw, &cp); err != nil {
+				return err
+			}
+			if cp.Generation != generation || cp.Version != projectionVersion {
+				return ErrStale
+			}
+			return &migrationSourceInvalidated{row}
+		}
+	}
+	if err == nil {
+		err = rows.Err()
+	}
+	rows.Close()
+	if err != nil {
+		return err
+	}
 	after := int64(0)
 	for {
 		rows, err := f.db.QueryContext(ctx, "SELECT rowid,id,generation,checkpoint,verified_size,verified_mtime FROM sources WHERE rowid>? AND active=1 AND missing=0 ORDER BY rowid LIMIT 64", after)
