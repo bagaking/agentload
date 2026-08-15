@@ -192,6 +192,7 @@ meta:
 
 - **M01 地基已按实测边界收口**：`internal/snapshot`、registry/semantic guards、golden gate、可重复质量门脚本和 UI fast-path chunks 已落地；三包拆分没有被强行制造，原因与退出边界记录在 `M01_S02`。
 - **当前主线：`M03_S01` attention vertical slice**——后端已输出 `working` / `needs_review` / `unknown` 三态，popover 已有 needs-you evidence strip；下一步是用真实 watcher 事件验证延迟、误报和 CPU。
+- **2026-09-22 `M02_S05.008.FIX` 已收口**：D-029 缺陷族的三处存活实例已修。（a）`diagnosticMetricForRisk` 对着一个已改名的 kind 留了死分支，9 个 risk kind 中 7 个带空语义族到达前端；（b）`process_observer` 的 Source 标签三语全缺，中日页面显示英文；（c）**evolution 卡片的「证据来源」行用语义族相等做关联，实测指向了它从未读过的两条记录**——改为由生产端显式声明 `SignalKinds`。三道新门两道首跑即红，第三道已变异验证（注入历史上真实出现过的笔误即红）。四门全绿＋渲染层三语实测（真实后端函数 × 实机快照 × 真实组件，未走 `go:embed` 装载这一环，原因见 D-032 附带三）。遗留：能力矩阵的 `quota_windows` / `consented_telemetry` 两列对 9 个 adapter 恒定，待与用户确认是删列还是改呈现。
 - **`M02_S05.007.FIX` 已收口**：五门全绿 + 装机渲染层实测（两种 scan_cost 状态 × 三语），最终装机 `2026.09.21.010319` 已核对 bundle hash 与 HEAD 一致。
 - M01 已完成本轮收口；`M01_S03` 的重型模块 lazy chunks 与 attention strip 已进入当前构建，原生首绘实测仍作为独立性能验证项保留。
 - **2026-09-22 本轮收口**：需求池 review 的 1/2/3 已落地。M01 的可重复质量门脚本为 `scripts/quality_gate.sh`；M03 attention slice 已进入 snapshot 与 popover；M02_S01 能力矩阵已覆盖 7 个 signal family、4 个状态，并由 snapshot、`/api/capabilities`、诊断面和生成文档共用 registry projection。冷启动证据扫描不再把不完整空快照伪装成“暂无采样”，前端会显示“正在采集本地采样”并自动重试。当前安装版本为 `2026.09.22.020409`；真实 watcher 延迟/误报/CPU 与 native popover 首绘仍是后续实测项。
@@ -235,6 +236,7 @@ meta:
 | `M02_S05.005.PERF.history_archive_compression.md` | 历史压缩：2 天热明文 + 按月 gzip 冷归档（109.5MB→12.26MB，零行丢失）；lifecycle 保留缺口与三处持久性/权限欠账 |
 | `M02_S05.006.RSI.scan_cost_and_absorbed_items.md` | 扫描开销诊断面（把索引已测未用的走查数据接上）+ 三个吸收项：删 agent DB 缓存旁路、删 4 个 test-only wrapper、Antigravity 以 timeline 档接入 |
 | `M02_S05.007.FIX.diagnostics_surface_orphaned_evidence.md` | 诊断页把 `evidence_walk_cost` / `low_confidence_sessions` 算完即丢的修复，+ 两道「后端算了前端没渲染」的门禁 |
+| `M02_S05.008.FIX.diagnostic_signal_provenance.md` | 信号语义族的死分支、`process_observer` 三语缺文案、evolution 卡片凭空造血缘的修复，+ 三道不维护清单的门禁 |
 | `M03_S01.attention_state_engine.md` | 证据化会话 attention states 引擎 |
 | `M03_S02.needs_you_triage_and_tray.md` | needs-you 分诊面、菜单栏 glyph、tray i18n |
 | `M03_S03.one_keystroke_actions.md` | 一次按键动作：跳转/检视/续跑/显式停止 |
