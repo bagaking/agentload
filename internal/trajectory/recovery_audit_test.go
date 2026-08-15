@@ -64,3 +64,29 @@ func TestTrajectoryRecoveryCatalogDoesNotRetryUnauthorizedAudit(t *testing.T) {
 		t.Fatal("incomplete discovery invented removal")
 	}
 }
+
+func TestTrajectoryRecoveryAuditRejectsPreviouslyReadRangeChangeBeforeSeal(t *testing.T) {
+	s, st := replayFixture(t, "codex", CodexDecoder{}, request(strings.Repeat("prefix ", 24000))+request("middle")+request("last"))
+	if _, err := s.store.db.Exec("UPDATE sources SET verified_size=-1,verified_mtime=-1,audit_size=-1,audit_mtime=-1,audit_after=-1"); err != nil {
+		t.Fatal(err)
+	}
+	more, err := s.PrepareSource(context.Background(), st.Source, func() bool { return true })
+	if err != nil || !more {
+		t.Fatal("expected unfinished audit", more, err)
+	}
+	// Damage the range that the prior unit already checked. Later units must
+	// not seal the source merely because their own bytes and chain are valid.
+	if _, err = s.store.db.Exec("UPDATE ranges SET body=X'00' WHERE start=(SELECT min(start) FROM ranges)"); err != nil {
+		t.Fatal(err)
+	}
+	for n := 0; n < 10 && more && err == nil; n++ {
+		more, err = s.PrepareSource(context.Background(), st.Source, func() bool { return true })
+	}
+	if err == nil {
+		t.Fatal("corrupted prior range was accepted at audit seal", more)
+	}
+	ready, readErr := s.store.readinessScope(context.Background(), st.ID)
+	if readErr != nil || ready[st.ID].verifiedMtime != -1 {
+		t.Fatal("failed audit published source trust", ready, readErr)
+	}
+}

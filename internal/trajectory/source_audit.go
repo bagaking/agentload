@@ -8,7 +8,7 @@ import (
 // A stable size/mtime pins the entire audit, including across bounded calls.
 // Only the last verified physical range publishes the negative-filter seal.
 func (f *sourceStore) auditSource(ctx context.Context, st *sourceState) (pending bool, result error) {
-	if err := f.validateRanges(ctx, st); err != nil {
+	if err := f.validateCheckpoint(ctx, st); err != nil {
 		return true, err
 	}
 	file, before, err := openReplaySource(st)
@@ -30,9 +30,12 @@ func (f *sourceStore) auditSource(ctx context.Context, st *sourceState) (pending
 	// A completed audit is idempotent. Do not read past its final cursor and
 	// mistake the absence of another range for a changed source.
 	if verifiedSize == before.Size() && verifiedMtime == before.ModTime().UnixNano() {
-		return false, nil
+		return false, f.checkRangeSequence(ctx, st)
 	}
-	if size != before.Size() || mtime != before.ModTime().UnixNano() {
+	if size != before.Size() || mtime != before.ModTime().UnixNano() || after < 0 {
+		if err = f.checkRangeSequence(ctx, st); err != nil {
+			return true, err
+		}
 		after = -1
 	}
 	ranges, err := f.sourceRanges(ctx, st, after, 1)
@@ -50,6 +53,13 @@ func (f *sourceStore) auditSource(ctx context.Context, st *sourceState) (pending
 		return true, ErrStale
 	}
 	complete := end == st.checkpoint.Offset
+	// Validate the full chain again before publishing trust. A range already
+	// read by an earlier unit may have changed between bounded calls.
+	if complete {
+		if err = f.checkRangeSequence(ctx, st); err != nil {
+			return true, err
+		}
+	}
 	if err = finishSourceOperation(ctx, st, file, before); err != nil {
 		return true, err
 	}

@@ -524,6 +524,13 @@ func (f *sourceStore) readRangeFrom(ctx context.Context, st *sourceState, r stor
 // An incomplete migration, missing range or damaged count must never become a
 // successful empty session. Check only sparse metadata, without loading DTOs.
 func (f *sourceStore) validateRanges(ctx context.Context, st *sourceState) error {
+	if err := f.validateCheckpoint(ctx, st); err != nil {
+		return err
+	}
+	return f.checkRangeSequence(ctx, st)
+}
+
+func (f *sourceStore) validateCheckpoint(ctx context.Context, st *sourceState) error {
 	var complete bool
 	var checkpoint []byte
 	err := f.db.QueryRowContext(ctx, "SELECT complete,checkpoint FROM sources WHERE id=? AND generation=? AND active=1 AND missing=0", st.ID, st.Generation).Scan(&complete, &checkpoint)
@@ -543,7 +550,7 @@ func (f *sourceStore) validateRanges(ctx context.Context, st *sourceState) error
 	if c.Generation != st.Generation || c.Offset != st.checkpoint.Offset || c.EventCount != st.checkpoint.EventCount {
 		return ErrStale
 	}
-	return f.checkRangeSequence(ctx, st)
+	return nil
 }
 
 // buildRange compares the entire canonical DTO, not a subset of display fields.
