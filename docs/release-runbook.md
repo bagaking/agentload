@@ -52,9 +52,52 @@ When a Developer ID certificate is available:
 
 Distribution strategy and store constraints: `docs/apple-distribution-readiness.md`.
 
+## Trajectory storage upgrade and restart
+
+The source-backed layout keeps local session files as evidence and stores
+source identities, checkpoints, sparse ranges, search candidates and
+irreproducible exceptions. The hundreds-of-MiB target applies to the additional
+Trajectory index. Original sessions, metric history, usage and user annotations
+are retained and accounted for separately. See
+[Trajectory requirements](trajectory-requirements.md) for the storage contract.
+
+1. Quit the application normally before offline maintenance. One owner holds
+   the history path; another installation or development instance must not write
+   to it at the same time.
+2. Budget the original index, the sole resumable shadow, journals and system VM
+   together. Each write preserves at least 1 GiB of free disk space. An
+   interrupted migration retains its original and committed checkpoint.
+3. Run the built application's `traj compact` command. Repeating the command
+   resumes the same shadow. Legacy recovery that requires a complete original
+   digest accepts `--expected-input-sha256`; use the independently recorded
+   digest. CLI details are in the [API reference](api-reference.md).
+4. Require the final `ready` record after complete fact, identity and recovery
+   metadata verification. Only verified cutover retires the old index; never
+   delete it manually to make room or shorten the migration.
+5. Install the exact signed candidate used for verification. Check real cold
+   and warm CLI/RPC pages, matched raw evidence, explicit counts, archive
+   preparation completion and a later 300-second increment window. Record
+   final index allocation and maintenance peak separately under `.bagakit/`.
+
+On restart, archive discovery includes local sessions written while Agent Load
+was stopped. Background preparation shares the online decoder, normalization
+and generation rules; incomplete preparation remains visible in coverage.
+Discovery periodically checks for previously missed files and appended records.
+Historical throughput within the retention window is restored from native usage
+counts and record timestamps, without replaying it into current TPS. Missing
+CPU, memory or other unrecorded measurements remain missing. See
+[metric semantics](agent-load-metric-semantics.md).
+
+Native Popover first-paint timing that automation cannot observe is recorded as
+unverified. It does not require a human opening/closing gate, and installation
+or browser checks do not establish the native 150ms target.
+
 ## Baseline Performance Metrics (M01_S01)
 
 Measured on macOS Darwin 25.3.0 (Apple Silicon, arm64, 2026-09-13):
+
+These are historical component measurements, not acceptance evidence for the
+current Trajectory build or its complete native Popover first paint.
 
 | Metric | Measured Baseline | Release Gate Target | Measurement Method |
 |---|---|---|---|
@@ -62,4 +105,3 @@ Measured on macOS Darwin 25.3.0 (Apple Silicon, arm64, 2026-09-13):
 | **API Latency (`/api/snapshot`)** | p50: 2.53ms, p95: 97.9ms | p95 < 250ms | HTTP client benchmark across 20 sequential fetches |
 | **Popover Hot Opening** | < 16ms | < 50ms | Native NSPanel showURL with pre-warmed WKWebView |
 | **Binary Size** | 12 MB (DMG: 8.3 MB, Zip: 7.8 MB) | < 25 MB | `ls -lh "dist/Agent Load.app/Contents/MacOS/agentload"` |
-
