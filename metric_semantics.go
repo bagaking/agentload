@@ -377,6 +377,15 @@ func attentionStateForSession(role string, observation liveSessionObservation) (
 	if sessionNeedsReviewObservation(role, observation) {
 		return attentionStateNeedsReview, "main session has measured evidence but no recent movement"
 	}
+	// Stale lands in unknown by design (see docs/neutral-observation-principles.md:
+	// attention routing deliberately stops at the idle window). But it got there
+	// from a measured transcript age, so it must not borrow the reason belonging
+	// to sessions whose timing is genuinely absent -- that would report a
+	// successful measurement as missing evidence. Measured here at 81 of 92
+	// unknown sessions.
+	if observation.Freshness == freshnessStale {
+		return attentionStateUnknown, "transcript movement measured but older than the idle window"
+	}
 	return attentionStateUnknown, "no current attention state evidence"
 }
 

@@ -75,6 +75,12 @@ role, freshness, and transcript evidence. A visible process alone never emits
 `needs_review`, and `unknown` is rendered as a designed state rather than
 silently treated as idle.
 
+`unknown` is reached two ways, and the reason string must distinguish them: a
+stale session got there from a *measured* transcript age, while a session with
+missing timing got there from no evidence at all. Sharing one reason would
+report a successful measurement as absent evidence — the mirror of rendering an
+unknown as zero.
+
 Project rows are grouping containers, not role labels. A project can contain a
 mix of main-agent entries, subagent sessions, and unknown-role sessions. Product
 surfaces should show project activity counts together with this per-project role

@@ -1840,6 +1840,25 @@ func TestAttentionStateForSessionUsesOnlyObservedEvidence(t *testing.T) {
 	}
 }
 
+// TestStaleAttentionReasonDoesNotClaimMissingEvidence separates the two ways a
+// session reaches attention state "unknown". Stale gets there from a measured
+// transcript age; missing timing gets there from no evidence at all. Sharing one
+// reason string reports 81 of this machine's 92 unknown sessions -- every one of
+// them carrying a measured last_event_age -- as having no evidence, which is the
+// mirror of rendering unknown as zero: rendering a successful measurement as
+// unknown.
+func TestStaleAttentionReasonDoesNotClaimMissingEvidence(t *testing.T) {
+	_, staleReason := attentionStateForSession("main", liveSessionObservation{Freshness: freshnessStale})
+	_, absentReason := attentionStateForSession("main", liveSessionObservation{MissingTranscript: true})
+
+	if staleReason == absentReason {
+		t.Fatalf("stale and missing-timing sessions share one reason %q, so a measured age reads as absent evidence", staleReason)
+	}
+	if strings.Contains(staleReason, "no current attention state evidence") {
+		t.Fatalf("stale reason claims there is no evidence, but freshness was measured: %q", staleReason)
+	}
+}
+
 func TestProjectLiveSessionsComputesNeedsReview(t *testing.T) {
 	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
 	idleGap := 90 * time.Second
