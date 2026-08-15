@@ -96,7 +96,7 @@ func TestTrajectoryReadPathExplicitCount(t *testing.T) {
 		if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
 			t.Fatal(err)
 		}
-		if len(got.Sessions) != 1 || got.Sessions[0].MatchedCount != 1 {
+		if len(got.Sessions) != 1 || len(got.Sessions[0].MatchedIDs) != 1 || (counted && (got.Sessions[0].MatchedCount == nil || *got.Sessions[0].MatchedCount != 1)) || (!counted && got.Sessions[0].MatchedCount != nil) {
 			t.Fatal("CLI page lost exact hit")
 		}
 		if counted {

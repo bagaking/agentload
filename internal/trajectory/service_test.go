@@ -202,7 +202,7 @@ func TestTrajectorySearchShowsMatchedSkillInCommandContext(t *testing.T) {
 		t.Fatalf("search: %+v", q)
 	}
 	match := q.Sessions[0]
-	if match.MatchedCount != 1 || !strings.Contains(match.MatchedPreview, "bagakit-researcher/SKILL.md") || len(match.MatchedPreview) > 324 {
+	if match.MatchedCount != nil || len(match.MatchedIDs) != 1 || !strings.Contains(match.MatchedPreview, "bagakit-researcher/SKILL.md") || len(match.MatchedPreview) > 324 {
 		t.Fatalf("search hid the actual matched command: %+v", match)
 	}
 	read, err := s.Get(context.Background(), snapshot.TrajectoryGetParams{ID: match.MatchedIDs[0], Around: 0})

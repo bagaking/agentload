@@ -219,7 +219,8 @@ func (f *sourceStore) query(ctx context.Context, q snapshot.TrajectorySelector, 
 			if q.Collection == "sessions" {
 				// Discover page membership before doing the full counts. The
 				// range and final file checks still validate this witness.
-				summary.MatchedCount = 1
+				summary.MatchedIDs = append(summary.MatchedIDs, e.ID)
+				summary.MatchedPreview = matchPreview(e, q)
 				return io.EOF
 			} else {
 				if matched >= start && len(out.Events) < q.Limit {
@@ -242,7 +243,7 @@ func (f *sourceStore) query(ctx context.Context, q snapshot.TrajectorySelector, 
 		if err != nil && !errors.Is(err, io.EOF) {
 			return out, err
 		}
-		if q.Collection == "sessions" && summary.MatchedCount > 0 {
+		if q.Collection == "sessions" && len(summary.MatchedIDs) > 0 {
 			if matched >= start && len(pageSources) < q.Limit {
 				pageSessions = append(pageSessions, summary)
 				pageSources = append(pageSources, st)
@@ -257,8 +258,10 @@ func (f *sourceStore) query(ctx context.Context, q snapshot.TrajectorySelector, 
 		return out, err
 	}
 	if q.Collection == "sessions" {
-		if err = f.completeSessionPage(ctx, q, pageSources, readiness, pageSessions); err != nil {
-			return snapshot.TrajectoryQueryResult{}, err
+		if q.Count {
+			if err = f.completeSessionPage(ctx, q, pageSources, readiness, pageSessions); err != nil {
+				return snapshot.TrajectoryQueryResult{}, err
+			}
 		}
 		out.Sessions = pageSessions
 	}
@@ -283,25 +286,27 @@ func (f *sourceStore) completeSessionPage(ctx context.Context, q snapshot.Trajec
 				st := states[i]
 				p := readiness[st.ID]
 				summary := cachedSession(st)
+				count := 0
 				err := f.walkSourceCandidates(ctx, st, func(filter *sourceFilter) bool { return filter.maybe(q) }, &p, func(fact sourceFact) error {
 					if !matches(fact.event, q) {
 						return nil
 					}
-					summary.MatchedCount++
+					count++
 					if len(summary.MatchedIDs) < 50 {
 						summary.MatchedIDs = append(summary.MatchedIDs, fact.event.ID)
 					}
-					if summary.MatchedCount == 1 {
+					if count == 1 {
 						summary.MatchedPreview = matchPreview(fact.event, q)
 					}
 					return nil
 				})
-				if err == nil && summary.MatchedCount == 0 {
+				if err == nil && count == 0 {
 					err = ErrStale
 				}
 				errs[i] = err
 				if err == nil {
-					if summary.MatchedCount > len(summary.MatchedIDs) {
+					summary.MatchedCount = &count
+					if count > len(summary.MatchedIDs) {
 						gap(&summary.Coverage, "matched_reference_limit")
 					}
 					sessions[i] = summary

@@ -107,7 +107,7 @@ type TrajectorySession struct {
 	LastAction   string     `json:"last_action"`
 	LastEvent    *time.Time `json:"last_event,omitempty"`
 	EventCount   int        `json:"event_count"`
-	MatchedCount int        `json:"matched_count"`
+	MatchedCount *int       `json:"matched_count"` // nil means the exact count has not been computed
 	MatchedIDs   []string   `json:"matched_ids"`
 	// MatchedPreview is an excerpt from the first matched event, not the last
 	// action or an inferred account of the session.

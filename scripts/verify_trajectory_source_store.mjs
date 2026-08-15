@@ -31,12 +31,12 @@ const sameFile = (a, b) => String(a.dev) === String(b.dev) && String(a.ino) === 
 const canonicalHistory = () => join(homedir(), 'Library/Application Support/AgentLoad/history.jsonl');
 const sessionID = value => typeof value === 'string' && /^s\.[a-f0-9]{16}\.[a-f0-9]{16}$/.test(value);
 const eventID = value => typeof value === 'string' && /^e\.[a-f0-9]{16}\.[a-f0-9]{16}\.[0-9a-z]+\.\d+\.[a-f0-9]{16}$/.test(value);
-export const pageIdentity = result => {
+export const pageIdentity = (result, {count = false} = {}) => {
   requireProof(Array.isArray(result?.sessions) && result.sessions.length > 0 && result.sessions.length <= 20 &&
     new Set(result.sessions.map(s => s.id)).size === result.sessions.length, 'Invalid or duplicated session page.');
   for (const s of result.sessions) {
-    requireProof(sessionID(s.id) && positive(s.matched_count) && Array.isArray(s.matched_ids) &&
-      s.matched_ids.length > 0 && s.matched_ids.length <= s.matched_count &&
+    requireProof(sessionID(s.id) && (count ? positive(s.matched_count) : s.matched_count === null) && Array.isArray(s.matched_ids) &&
+      s.matched_ids.length > 0 && (s.matched_count === null || s.matched_ids.length <= s.matched_count) &&
       new Set(s.matched_ids).size === s.matched_ids.length && s.matched_ids.every(id => eventID(id) &&
         id.split('.').slice(1,3).join('.') === s.id.slice(2)), 'Malformed matched session/event identities.');
   }
@@ -381,11 +381,11 @@ export function verifySourceStore(root, p) {
         sameFile(q.target_file,maintenance.target_file) && timestamp(q.at)>=timestamp(maintenance.finished_at) &&
         requestMatches(q.selector,text,true),
         'Explicit count scope/lineage/request differs.');
-      const identity = pageIdentity(q.result);
+      const identity = pageIdentity(q.result, {count:true});
       requireProof(q.result.matched_total >= q.result.sessions.length, 'Exact total cannot be smaller than its page.');
       const warm = observations.find(x => x.text === text && x.state === 'warm' && x.transport === transport);
-      requireProof(JSON.stringify(q.result.sessions.map(s => [s.id, s.matched_count, s.matched_ids])) ===
-        JSON.stringify(warm.result.sessions.map(s => [s.id, s.matched_count, s.matched_ids])),
+      requireProof(JSON.stringify(q.result.sessions.map((s,i) => [s.id, s.matched_ids.slice(0,warm.result.sessions[i]?.matched_ids.length ?? 0)])) ===
+        JSON.stringify(warm.result.sessions.map(s => [s.id, s.matched_ids])),
         'Explicit count changed the default matched page.');
       return [q.result.matched_total, identity];
     });

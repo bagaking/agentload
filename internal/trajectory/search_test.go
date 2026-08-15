@@ -61,11 +61,11 @@ func TestTrajectorySearchDefaultPageAndExplicitCountAgree(t *testing.T) {
 				t.Fatal("unknown was fabricated or exact total lost", plain.MatchedTotal, counted.MatchedTotal)
 			}
 			ids := []string{}
-			if !reflect.DeepEqual(plain.Sessions, counted.Sessions) || !reflect.DeepEqual(plain.Events, counted.Events) {
+			if !sameSessionWitnesses(plain.Sessions, counted.Sessions) || !reflect.DeepEqual(plain.Events, counted.Events) {
 				t.Fatal("retrieval/count pages differ", collection, page)
 			}
 			for _, session := range plain.Sessions {
-				if session.MatchedCount != 2 || len(session.MatchedIDs) != 2 {
+				if session.MatchedCount != nil || len(session.MatchedIDs) != 1 {
 					t.Fatal("page lost exact references", session)
 				}
 				ids = append(ids, session.ID)
@@ -152,7 +152,7 @@ func TestTrajectorySearchPageClearsPriorLiteralProof(t *testing.T) {
 
 	plain := searchTestQuery(t, s, snapshot.TrajectorySelector{Text: "newneedle"})
 	counted := searchTestQuery(t, s, snapshot.TrajectorySelector{Text: "newneedle", Count: true})
-	if !reflect.DeepEqual(plain.Sessions, counted.Sessions) {
+	if !sameSessionWitnesses(plain.Sessions, counted.Sessions) {
 		t.Fatal("stale proof changed the public page")
 	}
 	watch, err := s.Watch(context.Background(), snapshot.TrajectoryWatchParams{Selector: snapshot.TrajectorySelector{Text: "newneedle"}, Cursor: counted.WatchCursor, TimeoutMS: 1})
@@ -312,13 +312,13 @@ func TestTrajectorySearchIncrementalGenerationWithdrawalAndRestart(t *testing.T)
 	}
 	s := NewPersistent(provider, index)
 	t.Cleanup(func() { _ = s.Close() })
-	first := searchTestQuery(t, s, snapshot.TrajectorySelector{Text: "needle"})
-	if len(first.Sessions) != 1 || first.Sessions[0].MatchedCount != 1 {
+	first := searchTestQuery(t, s, snapshot.TrajectorySelector{Count: true, Text: "needle"})
+	if len(first.Sessions) != 1 || exactMatchCount(first.Sessions[0].MatchedCount) != 1 {
 		t.Fatal(first)
 	}
 	oldID := first.Sessions[0].MatchedIDs[0]
 	oldRevision := s.search.revision
-	_ = searchTestPreparedQuery(t, s, snapshot.TrajectorySelector{Text: "needle"})
+	_ = searchTestPreparedQuery(t, s, snapshot.TrajectorySelector{Count: true, Text: "needle"})
 	if s.search.revision != oldRevision {
 		t.Fatal("unchanged sources rewrote derived index")
 	}
@@ -331,8 +331,8 @@ func TestTrajectorySearchIncrementalGenerationWithdrawalAndRestart(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	appended := searchTestQuery(t, s, snapshot.TrajectorySelector{Text: "needle"})
-	if appended.Sessions[0].MatchedCount != 2 || appended.Sessions[0].MatchedIDs[0] != oldID {
+	appended := searchTestQuery(t, s, snapshot.TrajectorySelector{Count: true, Text: "needle"})
+	if exactMatchCount(appended.Sessions[0].MatchedCount) != 2 || appended.Sessions[0].MatchedIDs[0] != oldID {
 		t.Fatal("append duplicated events or changed generation", appended)
 	}
 	if err = s.Close(); err != nil {
@@ -340,8 +340,8 @@ func TestTrajectorySearchIncrementalGenerationWithdrawalAndRestart(t *testing.T)
 	}
 	s = NewPersistent(provider, index)
 	t.Cleanup(func() { _ = s.Close() })
-	restarted := searchTestQuery(t, s, snapshot.TrajectorySelector{Text: "needle"})
-	if restarted.Sessions[0].MatchedCount != 2 || restarted.Sessions[0].MatchedIDs[0] != oldID {
+	restarted := searchTestQuery(t, s, snapshot.TrajectorySelector{Count: true, Text: "needle"})
+	if exactMatchCount(restarted.Sessions[0].MatchedCount) != 2 || restarted.Sessions[0].MatchedIDs[0] != oldID {
 		t.Fatal("restart duplicated or lost index", restarted)
 	}
 	replacement := filepath.Join(root, "replacement")
@@ -351,7 +351,7 @@ func TestTrajectorySearchIncrementalGenerationWithdrawalAndRestart(t *testing.T)
 	if err = os.Rename(replacement, path); err != nil {
 		t.Fatal(err)
 	}
-	stale := searchTestQuery(t, s, snapshot.TrajectorySelector{Text: "needle"})
+	stale := searchTestQuery(t, s, snapshot.TrajectorySelector{Count: true, Text: "needle"})
 	if len(stale.Sessions) != 0 {
 		t.Fatal("old generation remained searchable", stale)
 	}
@@ -359,12 +359,12 @@ func TestTrajectorySearchIncrementalGenerationWithdrawalAndRestart(t *testing.T)
 	if err = s.search.db.QueryRow("SELECT COUNT(*) FROM sources WHERE id=? AND generation=? AND active=1 AND missing=0", strings.Split(oldID, ".")[1], strings.Split(oldID, ".")[2]).Scan(&count); err != nil || count != 0 {
 		t.Fatal("old generation remained queryable", count, err)
 	}
-	latest := searchTestQuery(t, s, snapshot.TrajectorySelector{Text: "replacement"})
+	latest := searchTestQuery(t, s, snapshot.TrajectorySelector{Count: true, Text: "replacement"})
 	if len(latest.Sessions) != 1 || latest.Sessions[0].ID == first.Sessions[0].ID {
 		t.Fatal("replacement reused session generation", latest)
 	}
 	authorized = false
-	revoked := searchTestQuery(t, s, snapshot.TrajectorySelector{Text: "replacement"})
+	revoked := searchTestQuery(t, s, snapshot.TrajectorySelector{Count: true, Text: "replacement"})
 	if len(revoked.Sessions) != 0 {
 		t.Fatal("withdrawn source remained searchable")
 	}
@@ -376,10 +376,10 @@ func TestTrajectorySearchIncrementalGenerationWithdrawalAndRestart(t *testing.T)
 func TestTrajectorySearchLargeWithdrawalPreservesEvidenceAfterRestart(t *testing.T) {
 	s, _ := fixture(t, strings.Repeat(request("private needle"), 193))
 	provider := s.provider
-	initial := searchTestPreparedQuery(t, s, snapshot.TrajectorySelector{Text: "needle"})
+	initial := searchTestPreparedQuery(t, s, snapshot.TrajectorySelector{Count: true, Text: "needle"})
 	s.temporary = false // exercise an actual persisted store across restart
 	defer os.RemoveAll(filepath.Dir(s.path))
-	if len(initial.Sessions) != 1 || initial.Sessions[0].MatchedCount != 193 {
+	if len(initial.Sessions) != 1 || exactMatchCount(initial.Sessions[0].MatchedCount) != 193 {
 		t.Fatal("fixture not prepared", initial)
 	}
 	oldID := initial.Sessions[0].MatchedIDs[0]
@@ -430,8 +430,8 @@ func TestTrajectorySearchLargeWithdrawalPreservesEvidenceAfterRestart(t *testing
 	}
 	// Reauthorization establishes a current generation; quarantine is preserved.
 	s.provider = provider
-	restored := searchTestPreparedQuery(t, s, snapshot.TrajectorySelector{Text: "needle"})
-	if len(restored.Sessions) != 1 || restored.Sessions[0].MatchedCount != 193 || restored.Sessions[0].MatchedIDs[0] == oldID {
+	restored := searchTestPreparedQuery(t, s, snapshot.TrajectorySelector{Count: true, Text: "needle"})
+	if len(restored.Sessions) != 1 || exactMatchCount(restored.Sessions[0].MatchedCount) != 193 || restored.Sessions[0].MatchedIDs[0] == oldID {
 		t.Fatal("reauthorization reused quarantine or lost records", restored)
 	}
 }
@@ -455,7 +455,7 @@ func TestTrajectorySearchSessionPageReferencesStayBoundedAndExact(t *testing.T) 
 		t.Fatal("incorrect session total", q)
 	}
 	for _, session := range q.Sessions {
-		if session.MatchedCount != 73 && session.MatchedCount != 7 || len(session.MatchedIDs) != min(50, session.MatchedCount) {
+		if exactMatchCount(session.MatchedCount) != 73 && exactMatchCount(session.MatchedCount) != 7 || len(session.MatchedIDs) != min(50, exactMatchCount(session.MatchedCount)) {
 			t.Fatal("reference page lost exact count or per-session bound", session)
 		}
 		for _, id := range session.MatchedIDs {
@@ -469,12 +469,12 @@ func TestTrajectorySearchSessionPageReferencesStayBoundedAndExact(t *testing.T) 
 
 func TestTrajectorySearchExactCountsBoundedReferencesAndPagination(t *testing.T) {
 	s, _ := fixture(t, request("Unrelated title")+strings.Repeat(request(strings.Repeat("prefix ", 100)+"hit-needle"), 73))
-	sessions := searchTestPreparedQuery(t, s, snapshot.TrajectorySelector{Text: "hit-needle"})
+	sessions := searchTestPreparedQuery(t, s, snapshot.TrajectorySelector{Count: true, Text: "hit-needle"})
 	if len(sessions.Sessions) != 1 {
 		t.Fatal(sessions)
 	}
 	match := sessions.Sessions[0]
-	if match.MatchedCount != 73 || len(match.MatchedIDs) != 50 || !strings.Contains(match.MatchedPreview, "hit-needle") || match.Title != "Unrelated title" {
+	if exactMatchCount(match.MatchedCount) != 73 || len(match.MatchedIDs) != 50 || !strings.Contains(match.MatchedPreview, "hit-needle") || match.Title != "Unrelated title" {
 		t.Fatal("count/snippet/reference mismatch", match)
 	}
 	first := searchTestQuery(t, s, snapshot.TrajectorySelector{Collection: "events", Text: "hit-needle", Limit: 50})
@@ -570,8 +570,8 @@ func TestTrajectorySearchPendingCommittedPrefixAndAtomicResume(t *testing.T) {
 	gap(&cov, "search_index_pending")
 	gap(&cov, "index_pending")
 	cov.Omitted = st.checkpoint.EventCount - preparedCount
-	partial, err := s.querySearch(context.Background(), snapshot.TrajectorySelector{Text: "needle"}, []*sourceState{st}, cov)
-	if err != nil || len(partial.Sessions) != 1 || partial.Sessions[0].MatchedCount != preparedCount || partial.Coverage.Complete {
+	partial, err := s.querySearch(context.Background(), snapshot.TrajectorySelector{Count: true, Text: "needle"}, []*sourceState{st}, cov)
+	if err != nil || len(partial.Sessions) != 1 || exactMatchCount(partial.Sessions[0].MatchedCount) != preparedCount || partial.Coverage.Complete {
 		t.Fatal("pending falsely reported complete", partial, err)
 	}
 	partialEvents, err := s.querySearch(context.Background(), snapshot.TrajectorySelector{Collection: "events", Text: "needle", Limit: 50}, []*sourceState{st}, cov)
@@ -587,8 +587,8 @@ func TestTrajectorySearchPendingCommittedPrefixAndAtomicResume(t *testing.T) {
 			break
 		}
 	}
-	full, err := s.querySearch(context.Background(), snapshot.TrajectorySelector{Text: "needle"}, []*sourceState{st}, cov)
-	if err != nil || full.Sessions[0].MatchedCount != searchBatchEvents+19 || !full.Coverage.Complete {
+	full, err := s.querySearch(context.Background(), snapshot.TrajectorySelector{Count: true, Text: "needle"}, []*sourceState{st}, cov)
+	if err != nil || exactMatchCount(full.Sessions[0].MatchedCount) != searchBatchEvents+19 || !full.Coverage.Complete {
 		t.Fatal("backfill missed or duplicated events", full, err)
 	}
 	if _, err = s.querySearch(context.Background(), snapshot.TrajectorySelector{Collection: "events", Text: "needle", Cursor: partialEvents.Next}, []*sourceState{st}, cov); !errors.Is(err, ErrStale) {
@@ -702,7 +702,7 @@ func TestTrajectorySearchRejectsUnsynchronizedAuthorizationSnapshot(t *testing.T
 func TestTrajectorySearchLargeRecordedMatchMakesBoundedProgress(t *testing.T) {
 	s, _ := fixture(t, request(strings.Repeat("padding recorded text ", 25000)+"large-match-needle"))
 	got := searchTestPreparedQuery(t, s, snapshot.TrajectorySelector{Text: "large-match-needle"})
-	if len(got.Sessions) != 1 || got.Sessions[0].MatchedCount != 1 || !strings.Contains(got.Sessions[0].MatchedPreview, "large-match-needle") {
+	if len(got.Sessions) != 1 || got.Sessions[0].MatchedCount != nil || len(got.Sessions[0].MatchedIDs) != 1 || !strings.Contains(got.Sessions[0].MatchedPreview, "large-match-needle") {
 		t.Fatal("large recorded event stalled or hid its match", got)
 	}
 }
@@ -747,8 +747,8 @@ func TestTrajectorySearchCommonWordAcrossLongBodiesAndRestart(t *testing.T) {
 			expected = 1
 		}
 		for _, session := range q.Sessions {
-			if session.MatchedCount != expected || len(session.MatchedIDs) != min(50, expected) {
-				t.Fatalf("%q lost exact counts/references: %d / %d", text, session.MatchedCount, len(session.MatchedIDs))
+			if exactMatchCount(session.MatchedCount) != expected || len(session.MatchedIDs) != min(50, expected) {
+				t.Fatalf("%q lost exact counts/references: %d / %d", text, exactMatchCount(session.MatchedCount), len(session.MatchedIDs))
 			}
 		}
 		second := searchTestQuery(t, s, snapshot.TrajectorySelector{Count: true, Text: text, Limit: 16, Cursor: q.Next})

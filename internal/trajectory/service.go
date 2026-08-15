@@ -511,6 +511,7 @@ func (s *Service) Query(ctx context.Context, q snapshot.TrajectorySelector) (sna
 			continue
 		}
 		summary := snapshot.TrajectorySession{ID: sessionID(st), NativeID: st.NativeID, Agent: st.Agent, MatchedIDs: []string{}, Tools: []string{}}
+		matchedCount := 0
 
 		tools := map[string]bool{}
 		local, err := scan(ctx, st, func(e snapshot.TrajectoryEvent) bool {
@@ -538,8 +539,8 @@ func (s *Service) Query(ctx context.Context, q snapshot.TrajectorySelector) (sna
 				}
 			}
 			if matches(e, q) && (contextMembers == nil || contextMembers[e.ID]) {
-				summary.MatchedCount++
-				if summary.MatchedCount == 1 {
+				matchedCount++
+				if matchedCount == 1 {
 					summary.MatchedPreview = matchPreview(e, q)
 				}
 				if len(summary.MatchedIDs) < 50 {
@@ -574,7 +575,8 @@ func (s *Service) Query(ctx context.Context, q snapshot.TrajectorySelector) (sna
 			summary.NativeID = ""
 			gap(&summary.Coverage, "native_id_omitted_for_size")
 		}
-		if summary.MatchedCount > len(summary.MatchedIDs) {
+		summary.MatchedCount = &matchedCount
+		if matchedCount > len(summary.MatchedIDs) {
 			gap(&summary.Coverage, "matched_reference_limit")
 		}
 		if summary.Title == "" {

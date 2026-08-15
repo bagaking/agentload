@@ -85,7 +85,7 @@ func TestTrajectorySourceDirectLegacyAllCodecs(t *testing.T) {
 				t.Fatal("complete canonical DTOs changed")
 			}
 			q := searchTestQuery(t, s, snapshot.TrajectorySelector{Text: "bagakit-researcher", Count: true})
-			if len(q.Sessions) != 1 || q.Sessions[0].MatchedCount != 120 || q.MatchedTotal == nil || *q.MatchedTotal != 1 {
+			if len(q.Sessions) != 1 || exactMatchCount(q.Sessions[0].MatchedCount) != 120 || q.MatchedTotal == nil || *q.MatchedTotal != 1 {
 				t.Fatal("exact query changed", q)
 			}
 			if q.Sessions[0].MatchedIDs[0] != f.events[0].ID {
@@ -495,8 +495,8 @@ func TestTrajectorySourceDirectLegacyStaleSearchRecovery(t *testing.T) {
 				t.Fatal("checkpoint missing truth changed", e)
 			}
 			if !missing {
-				q := searchTestPreparedQuery(t, s, snapshot.TrajectorySelector{Text: "bagakit-researcher"})
-				if len(q.Sessions) != 1 || q.Sessions[0].MatchedCount != 120 || q.Sessions[0].MatchedIDs[0] != f.events[0].ID {
+				q := searchTestPreparedQuery(t, s, snapshot.TrajectorySelector{Count: true, Text: "bagakit-researcher"})
+				if len(q.Sessions) != 1 || exactMatchCount(q.Sessions[0].MatchedCount) != 120 || q.Sessions[0].MatchedIDs[0] != f.events[0].ID {
 					t.Fatal("stale repair changed facts", q)
 				}
 			}

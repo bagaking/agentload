@@ -125,7 +125,7 @@ func TestTrajectoryRecoveryStripsSkillCatalogPreservesEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	q := searchTestQuery(t, s, snapshot.TrajectorySelector{Count: true, Text: "bagakit-researcher"})
-	if len(q.Sessions) != 1 || q.Sessions[0].MatchedCount != 1 || !strings.Contains(q.Sessions[0].MatchedPreview, "cat /skills/") {
+	if len(q.Sessions) != 1 || exactMatchCount(q.Sessions[0].MatchedCount) != 1 || !strings.Contains(q.Sessions[0].MatchedPreview, "cat /skills/") {
 		t.Fatal("injected catalog replaced actual skill read", q)
 	}
 	q = searchTestQuery(t, s, snapshot.TrajectorySelector{Text: "Inspect project"})

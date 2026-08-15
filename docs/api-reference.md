@@ -334,8 +334,9 @@ results. Liveness is always unknown; question hints do not prove waiting.
 A query returns at most 50 items within 64 KiB (relations/actors use 32 KiB).
 Byte-limited pages advance `next` by the number actually returned. Pagination
 cursors bind the selector, count mode, and observed source revision; source/index changes
-require requery. Sessions report exact `matched_count`, while `matched_ids`
-contains at most 50 references. These counts are not interchangeable. Sessions
+require requery. Session `matched_count` is a nullable exact count: an integer
+means fully counted, and null means not yet counted. `matched_ids` contains
+verified references (at most 50); its length is not a complete count. Sessions
 also return a bounded `matched_preview` from the first matched event, tied to
 `matched_ids[0]`; a title or the last action does not stand in for matching text.
 Full-text pagination additionally binds the current search-projection revision.
@@ -345,12 +346,15 @@ another page exists.
 The agreed sessions/events query contract prioritizes an accurate result page
 by default, without requiring a whole-library count. Default sessions queries
 scan ordered candidates until enough verified matches plus lookahead are found,
-then fully verify matching events in returned sessions. Default events queries
-likewise verify only through the page and lookahead. Per-session `matched_count`
-and matching original-record identities remain exact. Default requests omit
+and return a verified reference and excerpt for each session. They leave
+`matched_count` null instead of scanning all events in each returned session.
+Default events queries likewise verify only through the page and lookahead.
+Unfiltered catalog pages may use known exact event counts. Matching original
+record identities remain exact. Default requests omit
 `matched_total`, including lists without a text selector: absence means unknown,
 not zero. Only explicit count performs complete per-source existence checks
-across the authorized, prepared scope to produce the exact total.
+across the authorized, prepared scope to produce the exact total, and counts
+all matching events in each returned session to supply its exact `matched_count`.
 For an exact total, explicitly set query selector `count: true` or use CLI
 `query sessions --count` / `query events --count`. `matched_total` then counts
 authorized, prepared matches before page limits (sessions or events, according

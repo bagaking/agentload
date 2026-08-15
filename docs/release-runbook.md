@@ -90,8 +90,9 @@ they do not decode every checkpoint again before a query can read its evidence.
 Background preparation reads readiness for its selected source. It does not
 reload the whole catalog's readiness for every individual source in the queue.
 Session search discovers ordered matches through the requested page and verified
-lookahead before counting matches in the selected sessions. Up to four source
-readers perform those exact counts concurrently; each retains the existing raw
+lookahead and returns verified references with unknown exact counts as null.
+Explicit count uses up to four source readers to count selected sessions
+concurrently; each retains the existing raw
 range, prepared frontier and final file checks. Readers join before publication,
 and a failed check or cancellation discards the page. Historical sources outside
 the page and lookahead are not read unless an explicit count requires them.

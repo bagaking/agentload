@@ -3,14 +3,66 @@ package trajectory
 import (
 	"agentload/internal/snapshot"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"reflect"
 	"sort"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestTrajectorySourceQueryDefaultDoesNotCountSessionTail(t *testing.T) {
+	d := &countingDecoder{}
+	s, st := replayFixture(t, "codex", d, strings.Repeat(request("research "+strings.Repeat("recorded evidence ", 80)), 1000))
+	f := newSourceStoreFixture(t)
+	importFixtureFacts(t, f, st, canonicalFixtureFacts(t, s, st))
+	d.calls.Store(0)
+	selector := snapshot.TrajectorySelector{Collection: "sessions", Text: "research", Limit: 1}
+	page, err := f.query(context.Background(), selector, []*sourceState{st}, coverage("test"))
+	if err != nil || len(page.Sessions) != 1 || page.Sessions[0].MatchedCount != nil || len(page.Sessions[0].MatchedIDs) != 1 {
+		t.Fatal("default did not return an exact witness with unknown count", page, err)
+	}
+	if calls := d.calls.Load(); calls <= 0 || calls >= 1000 {
+		t.Fatal("default decoded the entire matching session", calls)
+	}
+	wire, err := json.Marshal(page)
+	if err != nil || !strings.Contains(string(wire), `"matched_count":null`) || strings.Contains(string(wire), `"matched_total"`) {
+		t.Fatal("unknown count was fabricated or omitted", string(wire), err)
+	}
+	selector.Count = true
+	counted, err := f.query(context.Background(), selector, []*sourceState{st}, coverage("test"))
+	if err != nil || counted.MatchedTotal == nil || *counted.MatchedTotal != 1 || exactMatchCount(counted.Sessions[0].MatchedCount) != 1000 || len(counted.Sessions[0].MatchedIDs) != 50 || counted.Sessions[0].MatchedIDs[0] != page.Sessions[0].MatchedIDs[0] {
+		t.Fatal("explicit count lost exact counts or changed the default witness", counted, err)
+	}
+}
+
+func exactMatchCount(count *int) int {
+	if count == nil {
+		return -1 // Unknown cannot satisfy an exact count assertion, including 0.
+	}
+	return *count
+}
+
+func sameSessionWitnesses(plain, counted []snapshot.TrajectorySession) bool {
+	if len(plain) != len(counted) {
+		return false
+	}
+	for i, p := range plain {
+		c := counted[i]
+		if p.MatchedCount != nil || c.MatchedCount == nil || len(p.MatchedIDs) == 0 || len(c.MatchedIDs) < len(p.MatchedIDs) {
+			return false
+		}
+		c.MatchedCount = nil
+		c.MatchedIDs = c.MatchedIDs[:len(p.MatchedIDs)]
+		if !reflect.DeepEqual(p, c) {
+			return false
+		}
+	}
+	return true
+}
 
 type pageCountDecoder struct {
 	calls   atomic.Int64
@@ -50,7 +102,7 @@ func TestTrajectorySourceQueryPageCountsJoinBeforePublication(t *testing.T) {
 			}
 			done := make(chan result, 1)
 			go func() {
-				page, err := f.query(ctx, snapshot.TrajectorySelector{Collection: "sessions", Text: "research", Limit: 6}, states, coverage("test"))
+				page, err := f.query(ctx, snapshot.TrajectorySelector{Collection: "sessions", Text: "research", Limit: 6, Count: true}, states, coverage("test"))
 				done <- result{page, err}
 			}()
 			timer := time.NewTimer(3 * time.Second)
@@ -90,7 +142,7 @@ func TestTrajectorySourceQueryPageCountsJoinBeforePublication(t *testing.T) {
 					t.Fatal("concurrent counts failed", r.page, r.err)
 				}
 				for _, session := range r.page.Sessions {
-					if session.MatchedCount != 2 || len(session.MatchedIDs) != 2 {
+					if exactMatchCount(session.MatchedCount) != 2 || len(session.MatchedIDs) != 2 {
 						t.Fatal("count or canonical references changed", session)
 					}
 				}
@@ -130,15 +182,15 @@ func TestTrajectorySourceQueryExactPagesCountAndScope(t *testing.T) {
 		t.Fatal("default page/count contract changed", page)
 	}
 	first := page.Sessions[0]
-	if first.ID != sessionID(states[1]) || first.MatchedCount != 2 || len(first.MatchedIDs) != 2 {
-		t.Fatal("session exact hit identities/count changed", first)
+	if first.ID != sessionID(states[1]) || first.MatchedCount != nil || len(first.MatchedIDs) != 1 {
+		t.Fatal("default witness or unknown count changed", first)
 	}
 	q.Cursor = page.Next
 	second, err := f.query(context.Background(), q, states, coverage("current authorized sources"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(second.Sessions) != 1 || second.Sessions[0].ID != sessionID(states[2]) || second.Sessions[0].MatchedCount != 1 {
+	if len(second.Sessions) != 1 || second.Sessions[0].ID != sessionID(states[2]) || second.Sessions[0].MatchedCount != nil || len(second.Sessions[0].MatchedIDs) != 1 {
 		t.Fatal("second exact page changed", second)
 	}
 	q.Cursor = ""
@@ -146,6 +198,9 @@ func TestTrajectorySourceQueryExactPagesCountAndScope(t *testing.T) {
 	all, err := f.query(context.Background(), q, states, coverage("current authorized sources"))
 	if err != nil || all.MatchedTotal == nil || *all.MatchedTotal != 3 {
 		t.Fatal("explicit session count changed", all, err)
+	}
+	if exactMatchCount(all.Sessions[0].MatchedCount) != 2 || len(all.Sessions[0].MatchedIDs) != 2 || all.Sessions[0].MatchedIDs[0] != first.MatchedIDs[0] {
+		t.Fatal("explicit count lost exact references or changed the default witness", all)
 	}
 	q.Collection = "events"
 	all, err = f.query(context.Background(), q, states, coverage("current authorized sources"))
@@ -204,7 +259,7 @@ func TestTrajectorySourceQueryCanonicalAndSearchReadinessStaySeparate(t *testing
 	cov.Index = &snapshot.TrajectoryIndexProgress{KnownSources: 1, DecodedSources: 1, DecodedEvents: 3}
 	q := snapshot.TrajectorySelector{Collection: "sessions", Text: "research", Count: true}
 	got, err := f.query(context.Background(), q, []*sourceState{st}, cov)
-	if err != nil || got.MatchedTotal == nil || *got.MatchedTotal != 1 || len(got.Sessions) != 1 || got.Sessions[0].MatchedCount != 2 {
+	if err != nil || got.MatchedTotal == nil || *got.MatchedTotal != 1 || len(got.Sessions) != 1 || exactMatchCount(got.Sessions[0].MatchedCount) != 2 {
 		t.Fatal("canonical tail was exposed as searchable", got, err)
 	}
 	if got.Coverage.Complete || got.Coverage.Index.SearchableEvents != 2 || got.Coverage.Index.DecodedEvents != 3 {

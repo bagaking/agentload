@@ -41,8 +41,8 @@ func TestTrajectorySearchCommitBusyRecovery(t *testing.T) {
 	if err = readTx.Rollback(); err != nil {
 		t.Fatal(err)
 	}
-	after := searchTestPreparedQuery(t, s, snapshot.TrajectorySelector{Text: "needle"})
-	if len(after.Sessions) != 1 || after.Sessions[0].MatchedCount != 2 || after.Sessions[0].MatchedIDs[0] != oldID {
+	after := searchTestPreparedQuery(t, s, snapshot.TrajectorySelector{Count: true, Text: "needle"})
+	if len(after.Sessions) != 1 || exactMatchCount(after.Sessions[0].MatchedCount) != 2 || after.Sessions[0].MatchedIDs[0] != oldID {
 		t.Fatal("failed commit poisoned connection, lost identity or duplicated evidence", after)
 	}
 	if err = s.search.db.QueryRow("SELECT search_count FROM sources WHERE active=1 AND missing=0").Scan(&count); err != nil || count != 2 {

@@ -65,7 +65,7 @@ func TestTrajectoryQueryNativeMetadataBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Sessions[0].MatchedCount != 80 || len(r.Sessions[0].MatchedIDs) != 50 {
+	if exactMatchCount(r.Sessions[0].MatchedCount) != 80 || len(r.Sessions[0].MatchedIDs) != 50 {
 		t.Fatal("matching count confused with bounded references")
 	}
 }
