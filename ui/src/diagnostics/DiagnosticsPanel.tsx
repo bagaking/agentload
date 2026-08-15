@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { type Translate } from "../lib/format";
 import type { Snapshot } from "../types/snapshot";
-import { buildDiagnosticViewModel, diagnosticOmittedFieldLabel, type ChainNode, type DiagnosticTone, type EvolutionRow, type EvidenceMetric, type PriorityRow } from "./diagnosticModel";
+import { buildDiagnosticViewModel, diagnosticOmittedFieldLabel, type ChainNode, type DiagnosticTone, type EvolutionRow, type EvidenceMetric, type LossLedgerRow, type PriorityRow, type SituationMapCard } from "./diagnosticModel";
 
 type ExportState = "idle" | "working" | "done" | "failed";
 
@@ -66,31 +66,33 @@ export function DiagnosticsPanel({ t, snapshot }: { t: Translate; snapshot: Snap
         </span>
       </div>
 
-      <section className="diagnostic-evidence-strip" aria-label={t("diagnosticEvidenceHealth")}>
-        {viewModel.evidenceMetrics.map((metric) => <EvidenceMetricCell key={metric.key} metric={metric} />)}
+      <section className="diagnostic-situation-plane" aria-label={t("diagnosticSituationMap")}>
+        <div className="diagnostic-plane-head">
+          <span><Radar size={15} />{t("diagnosticSituationMap")}</span>
+          <em>{t("diagnosticSituationMapCopy")}</em>
+        </div>
+        <div className="diagnostic-situation-grid">
+          {viewModel.situationMap.map((card) => <SituationMapCardView key={card.key} card={card} />)}
+        </div>
       </section>
 
-      <section className="diagnostic-priority-plane" aria-label={t("diagnosticPriority")}>
+      <section className="diagnostic-ledger-plane" aria-label={t("diagnosticLossLedger")}>
         <div className="diagnostic-plane-head">
-          <span><Target size={15} />{t("diagnosticPriority")}</span>
-          <em>
-            {viewModel.anomalyCount} {t("anomalies")} · {viewModel.gapCount} {t("evidenceGaps")}
-            {viewModel.hiddenSignalCount > 0 ? ` · ${t("diagnosticSignalsHidden").replace("{count}", String(viewModel.hiddenSignalCount))}` : ""}
-          </em>
+          <span><Target size={15} />{t("diagnosticLossLedger")}</span>
+          <em>{t("diagnosticLossLedgerCopy")}</em>
         </div>
-        {viewModel.priorityRows.length ? (
-          <div className="diagnostic-priority-table">
-            <div className="diagnostic-priority-header" aria-hidden="true">
-              <span>{t("diagnosticIssue")}</span>
-              <span>{t("evidence")}</span>
-              <span>{t("source")}</span>
-              <span>{t("diagnosticNextCheck")}</span>
-            </div>
-            {viewModel.priorityRows.map((row) => <PrioritySignalRow key={row.key} row={row} />)}
+        <div className="diagnostic-ledger-table">
+          <div className="diagnostic-ledger-header" aria-hidden="true">
+            <span>{t("diagnosticLossCurrent")}</span>
+            <span>{t("diagnosticLossFamily")}</span>
+            <span>{t("diagnosticLossScope")}</span>
+            <span>{t("diagnosticLossFreshness")}</span>
+            <span>{t("diagnosticLossStatus")}</span>
+            <span>{t("diagnosticLossSource")}</span>
+            <span>{t("diagnosticLossNext")}</span>
           </div>
-        ) : (
-          <div className="diagnostic-empty"><ShieldCheck size={16} /><span>{t("diagnosticNoSignals")}</span></div>
-        )}
+          {viewModel.lossLedger.map((row) => <LossLedgerRowView key={row.key} row={row} />)}
+        </div>
       </section>
 
       <section className="diagnostic-evolution-plane" aria-label={t("diagnosticEvolution")}>
@@ -102,6 +104,19 @@ export function DiagnosticsPanel({ t, snapshot }: { t: Translate; snapshot: Snap
           {viewModel.evolutionRows.map((row) => <EvolutionInsightCard key={row.key} row={row} t={t} />)}
         </div>
       </section>
+
+      {viewModel.priorityRows.length ? (
+        <section className="diagnostic-priority-plane diagnostic-secondary-plane" aria-label={t("diagnosticPriority")}>
+          <div className="diagnostic-plane-head">
+            <span><ShieldCheck size={15} />{t("diagnosticPriority")}</span>
+            <em>{viewModel.anomalyCount} {t("anomalies")} · {viewModel.gapCount} {t("evidenceGaps")}{viewModel.hiddenSignalCount > 0 ? ` · ${t("diagnosticSignalsHidden").replace("{count}", String(viewModel.hiddenSignalCount))}` : ""}</em>
+          </div>
+          <div className="diagnostic-priority-table">
+            <div className="diagnostic-priority-header" aria-hidden="true"><span>{t("diagnosticIssue")}</span><span>{t("evidence")}</span><span>{t("source")}</span><span>{t("diagnosticNextCheck")}</span></div>
+            {viewModel.priorityRows.map((row) => <PrioritySignalRow key={row.key} row={row} />)}
+          </div>
+        </section>
+      ) : null}
 
       <section className="diagnostic-chain-plane" aria-label={t("diagnosticEvidenceChain")}>
         <div className="diagnostic-plane-head">
@@ -195,10 +210,12 @@ function EvolutionInsightCard({ row, t }: { row: EvolutionRow; t: Translate }) {
         <span>{row.status}</span>
       </div>
       <div className="diagnostic-evolution-stage">
+        <div className="diagnostic-evolution-field"><b>{t("diagnosticEvolutionBaselineField")}</b><span>{row.baseline}</span></div>
         <div className="diagnostic-evolution-field"><b>{t("diagnosticEvolutionHypothesis")}</b><span>{row.hypothesis}</span></div>
         <div className="diagnostic-evolution-field"><b>{t("diagnosticEvolutionEvidence")}</b><span>{row.evidence}</span></div>
         <div className="diagnostic-evolution-field"><b>{t("diagnosticEvolutionExperiment")}</b><span>{row.experiment}</span></div>
         <div className="diagnostic-evolution-field"><b>{t("diagnosticEvolutionVerification")}</b><span>{row.verification}</span></div>
+        <div className="diagnostic-evolution-field"><b>{t("diagnosticEvolutionStopCondition")}</b><span>{row.stopCondition}</span></div>
       </div>
       {/* The trace line answers "where does this number come from" with the
           priority rows built on the same metric. An insight whose rows are all
@@ -215,6 +232,30 @@ function EvolutionInsightCard({ row, t }: { row: EvolutionRow; t: Translate }) {
         </div>
       ) : null}
       <small>{t("metricSemantics")}: {row.metric}</small>
+    </article>
+  );
+}
+
+function SituationMapCardView({ card }: { card: SituationMapCard }) {
+  return (
+    <article className={`diagnostic-situation-card tone-${card.tone}`}>
+      <span>{card.label}</span>
+      <strong>{card.value}</strong>
+      <small>{card.detail} · {card.stateLabel}</small>
+    </article>
+  );
+}
+
+function LossLedgerRowView({ row }: { row: LossLedgerRow }) {
+  return (
+    <article className={`diagnostic-ledger-row tone-${row.tone}`}>
+      <span className="diagnostic-ledger-title"><b>{row.title}</b><small>{row.current}</small></span>
+      <span>{row.evidenceFamily}</span>
+      <span>{row.scope}</span>
+      <span>{row.freshness}</span>
+      <span><b className="diagnostic-state-badge">{row.stateLabel}</b></span>
+      <span className="diagnostic-ledger-source">{row.source}</span>
+      <span className="diagnostic-ledger-next">{row.nextStep}<ChevronRight size={12} /></span>
     </article>
   );
 }

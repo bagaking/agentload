@@ -154,6 +154,51 @@ func diagnosticSignalSources(t *testing.T) []string {
 	return sources
 }
 
+// TestEvolutionInsightsNameSignalsThatExist pins the provenance join.
+//
+// An evolution card ends with "Traced to: <signals>", which is a claim about
+// where its numbers came from. The join was metric_key equality, and a metric
+// key is a semantic family shared by several unrelated signals -- so the card
+// built from stale-session and recent-session counts traced itself to the
+// low-confidence and workitem-coverage rows, naming evidence it had never read.
+// A wrong provenance line is worse than none: it invites the reader to check a
+// number against a row that cannot confirm it.
+//
+// The fix was to have each insight name its own SignalKinds. This gate keeps
+// those names honest: a kind nobody emits produces no trace line at all, which
+// is the same silent nothing the metric_key join produced.
+func TestEvolutionInsightsNameSignalsThatExist(t *testing.T) {
+	emitted := map[string]bool{}
+	for _, kind := range diagnosticSignalKinds(t) {
+		emitted[kind] = true
+	}
+	// A snapshot that trips every insight branch at once, so all of them are
+	// built and checked rather than only the ones a zero value happens to fire.
+	snap := snapshot.Snapshot{
+		Summary: snapshot.SnapshotSummary{UnmappedProcesses: 3},
+		CoordinationRisk: snapshot.CoordinationRiskSnapshot{
+			StaleSessionCount:              2,
+			ChurnSessionCount:              1,
+			DuplicateOverlapSuspicionCount: 2,
+			ProjectSpreadCount:             4,
+			LowConfidenceSessionCount:      5,
+		},
+	}
+	insights := buildDiagnosticEvolutionInsights(snap)
+	if len(insights) < 3 {
+		t.Fatalf("expected the triggering snapshot to build every insight, got %d", len(insights))
+	}
+	for _, insight := range insights {
+		for _, kind := range insight.SignalKinds {
+			if !emitted[kind] {
+				t.Errorf("evolution insight %q names signal kind %q, which nothing emits.\n"+
+					"The card's \"traced to\" line would silently render empty -- a provenance\n"+
+					"claim that points at nothing.", insight.Key, kind)
+			}
+		}
+	}
+}
+
 // diagnosticSignalKinds reads the kinds straight out of the source rather than
 // from a hand-kept list here: a list would need editing by the same change that
 // adds a kind, which is exactly the step this test exists to not rely on.

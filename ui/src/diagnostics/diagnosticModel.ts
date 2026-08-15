@@ -6,6 +6,31 @@ import type { DiagnosticBaseline, DiagnosticCapability, DiagnosticEvolutionInsig
 const PRIORITY_ROW_LIMIT = 6;
 
 export type DiagnosticTone = "ok" | "watch" | "warn" | "empty" | "muted";
+export type DiagnosticState = "measured" | "partial" | "unavailable" | "out_of_scope";
+
+export type SituationMapCard = {
+  key: string;
+  label: string;
+  value: string;
+  detail: string;
+  state: DiagnosticState;
+  stateLabel: string;
+  tone: DiagnosticTone;
+};
+
+export type LossLedgerRow = {
+  key: string;
+  title: string;
+  current: string;
+  evidenceFamily: string;
+  scope: string;
+  freshness: string;
+  state: DiagnosticState;
+  stateLabel: string;
+  source: string;
+  nextStep: string;
+  tone: DiagnosticTone;
+};
 
 export type EvidenceMetric = {
   key: "session_evidence" | "pid_link" | "token_visible" | "low_confidence" | "walk_cost" | "walk_scope";
@@ -42,15 +67,17 @@ export type ChainNode = {
 export type EvolutionRow = {
   key: string;
   title: string;
+  baseline: string;
   hypothesis: string;
   evidence: string;
   experiment: string;
   verification: string;
+  stopCondition: string;
   metric: string;
   status: string;
   tone: DiagnosticTone;
-  // Which priority rows rest on the same metric as this insight, and how many
-  // of them the capped table is not showing. Without this the card's headline
+  // Which priority rows this insight was actually built from, and how many of
+  // them the capped table is not showing. Without this the card's headline
   // number appeared nowhere else on the page, so the reader had no way to get
   // from "111 stale sessions" to the evidence behind it.
   relatedSignals: string[];
@@ -61,6 +88,8 @@ export type DiagnosticViewModel = {
   generated: string;
   anomalyCount: number;
   gapCount: number;
+  situationMap: SituationMapCard[];
+  lossLedger: LossLedgerRow[];
   evidenceMetrics: EvidenceMetric[];
   priorityRows: PriorityRow[];
   // How many signals the priority table did not render. The header counts all
@@ -89,6 +118,8 @@ export function buildDiagnosticViewModel(t: Translate, snapshot: Snapshot): Diag
     generated: diagnostics?.generated_at ? formatDateTime(diagnostics.generated_at) : snapshot.generated_at ? formatDateTime(snapshot.generated_at) : t("unavailable"),
     anomalyCount: anomalies.length,
     gapCount: gaps.length,
+    situationMap: buildSituationMap(t, snapshot),
+    lossLedger: buildLossLedger(t, snapshot),
     evidenceMetrics: buildEvidenceMetrics(t, diagnostics?.baselines ?? [], snapshot.transcript_stats?.scan_cost),
     priorityRows: buildPriorityRows(t, shown),
     hiddenSignalCount: hidden.length,
@@ -101,22 +132,29 @@ export function buildDiagnosticViewModel(t: Translate, snapshot: Snapshot): Diag
 function buildEvolutionRows(t: Translate, insights: DiagnosticEvolutionInsight[], shown: DiagnosticSignal[], hidden: DiagnosticSignal[]): EvolutionRow[] {
   return insights.map((insight, index) => {
     const key = insight.key || `evolution-${index}`;
-    // metric_key is the join the backend already writes on both insights and
-    // signals; the panel just never rendered it, which is why an insight's
-    // number led nowhere.
-    const sameMetric = (signal: DiagnosticSignal) => Boolean(insight.metric_key) && signal.metric_key === insight.metric_key;
+    // signal_kinds names the signals the insight is actually built from. The
+    // join used to be metric_key equality, but a metric key is a semantic
+    // family shared by several unrelated signals, so the card built from stale
+    // and recent-session counts traced itself to the low-confidence and
+    // workitem-coverage rows -- a provenance line pointing at numbers it never
+    // read. An insight that names no source shows no trace line rather than a
+    // guessed one.
+    const kinds = new Set(insight.signal_kinds ?? []);
+    const builtFromSignal = (signal: DiagnosticSignal) => Boolean(signal.kind) && kinds.has(signal.kind as string);
     return {
       key,
       title: evolutionText(t, key, "Title", insight.title || humanizeKey(key)),
+      baseline: evolutionText(t, key, "Baseline", insight.baseline || t("unavailable")),
       hypothesis: evolutionText(t, key, "Hypothesis", insight.hypothesis || t("unavailable")),
       evidence: evolutionEvidenceText(t, key, insight),
       experiment: evolutionText(t, key, "Experiment", insight.experiment || t("unavailable")),
       verification: evolutionText(t, key, "Verification", insight.verification || t("unavailable")),
+      stopCondition: evolutionText(t, key, "StopCondition", insight.stop_condition || t("unavailable")),
       metric: metricKeyLabel(t, insight.metric_key, humanizeKey(insight.metric_key || "evidence")),
       status: evolutionStatusLabel(t, insight.status),
       tone: evolutionTone(insight.status),
-      relatedSignals: shown.filter(sameMetric).map((signal) => diagnosticSignalTitle(t, signal)),
-      relatedHiddenCount: hidden.filter(sameMetric).length,
+      relatedSignals: shown.filter(builtFromSignal).map((signal) => diagnosticSignalTitle(t, signal)),
+      relatedHiddenCount: hidden.filter(builtFromSignal).length,
     };
   });
 }
@@ -157,6 +195,147 @@ export function diagnosticOmittedFieldLabel(t: Translate, value: string): string
   const key = `diagnosticOmitted${normalized}`;
   const translated = t(key);
   return translated !== key ? translated : humanizeKey(value);
+}
+
+// buildSituationMap answers "what does this machine currently see" in one row
+// of cards. Each card reports a count and the state of the evidence behind it,
+// never a bare number: a zero the observer measured and a zero that means "we
+// could not look" are different facts and must not render alike.
+function buildSituationMap(t: Translate, snapshot: Snapshot): SituationMapCard[] {
+  const summary = snapshot.summary ?? {};
+  const current = snapshot.current ?? {};
+  const stats = snapshot.transcript_stats ?? {};
+  const processesMeasured = !snapshot.process_stats?.incomplete;
+  const sessionsMeasured = (stats.parsed_files ?? 0) > 0 || (current.session_concurrency ?? 0) > 0;
+
+  const card = (
+    key: string,
+    label: string,
+    value: string,
+    detail: string,
+    state: DiagnosticState,
+  ): SituationMapCard => ({
+    key,
+    label,
+    value,
+    detail,
+    state,
+    stateLabel: diagnosticStateLabel(t, state),
+    tone: toneFromState(state),
+  });
+
+  return [
+    card(
+      "visible_processes",
+      t("diagnosticSituationVisibleProcesses"),
+      processesMeasured ? String(current.pid_concurrency ?? 0) : t("diagnosticNoData"),
+      t("diagnosticSourceLiveProcesses"),
+      processesMeasured ? "measured" : "unavailable",
+    ),
+    card(
+      "known_sessions",
+      t("diagnosticSituationKnownSessions"),
+      sessionsMeasured ? String(current.session_concurrency ?? 0) : t("diagnosticNoData"),
+      t("diagnosticSourceLiveSessions"),
+      sessionsMeasured ? "measured" : "unavailable",
+    ),
+    card(
+      "recent_movement",
+      t("diagnosticSituationRecentMovement"),
+      sessionsMeasured ? String(current.active_burst_concurrency ?? 0) : t("diagnosticNoData"),
+      t("diagnosticSourceLiveSessions"),
+      sessionsMeasured ? "measured" : "unavailable",
+    ),
+    card(
+      "pid_mapping",
+      t("diagnosticSituationPidMapping"),
+      processesMeasured ? `${summary.mapped_processes ?? 0} / ${(summary.mapped_processes ?? 0) + (summary.unmapped_processes ?? 0)}` : t("diagnosticNoData"),
+      t("diagnosticSourceLiveProcesses"),
+      processesMeasured ? "measured" : "unavailable",
+    ),
+    card(
+      "token_coverage",
+      t("diagnosticSituationTokenCoverage"),
+      // Deferred files are outside this pass's scope rather than missing, so
+      // the state says out_of_scope instead of claiming an incomplete reading.
+      String(stats.parsed_files ?? 0),
+      t("diagnosticSourceTranscriptStats"),
+      (stats.deferred_files ?? 0) > 0 ? "partial" : sessionsMeasured ? "measured" : "unavailable",
+    ),
+  ];
+}
+
+// buildLossLedger names what this snapshot could NOT see, and for each gap says
+// which evidence family it belongs to, how wide the gap is, and what the next
+// step would be. It is the panel's honesty surface: a row here is a known
+// blind spot, not a failure.
+function buildLossLedger(t: Translate, snapshot: Snapshot): LossLedgerRow[] {
+  const summary = snapshot.summary ?? {};
+  const stats = snapshot.transcript_stats ?? {};
+  const cost = stats.scan_cost;
+  const rows: LossLedgerRow[] = [];
+
+  const push = (
+    key: string,
+    title: string,
+    current: string,
+    evidenceFamily: string,
+    scope: string,
+    state: DiagnosticState,
+    source: string,
+    nextStep: string,
+  ) => {
+    rows.push({
+      key,
+      title,
+      current,
+      evidenceFamily,
+      scope,
+      freshness: stats.cached ? t("diagnosticPending") : diagnosticStateLabel(t, "measured"),
+      state,
+      stateLabel: diagnosticStateLabel(t, state),
+      source,
+      nextStep,
+      tone: toneFromState(state),
+    });
+  };
+
+  const unmapped = summary.unmapped_processes ?? 0;
+  if (unmapped > 0) {
+    push("unmapped_pid", t("diagnosticLossUnmappedPidTitle"), String(unmapped), metricKeyLabel(t, "process_pressure", "process_pressure"),
+      t("diagnosticScopeVisiblePids"), "partial", t("diagnosticSourceLiveProcesses"), t("diagnosticNextStepInspect"));
+  }
+  const deferred = stats.deferred_files ?? 0;
+  if (deferred > 0) {
+    push("deferred", t("diagnosticLossDeferredTitle"), String(deferred), metricKeyLabel(t, "recent_movement", "recent_movement"),
+      t("diagnosticScopeForegroundFiles"), "out_of_scope", t("diagnosticSourceTranscriptStats"), t("diagnosticNextStepRefresh"));
+  }
+  if (cost && (cost.aged_out_files ?? 0) > 0) {
+    push("out_of_scope", t("diagnosticLossOutOfScopeTitle"), String(cost.aged_out_files), metricKeyLabel(t, "recent_movement", "recent_movement"),
+      t("diagnosticScopeHistoryHorizon"), "out_of_scope", t("diagnosticSourceTranscriptStats"), t("diagnosticNextStepHorizon"));
+  }
+  if (!cost?.walk_measured) {
+    push("walk", t("diagnosticLossWalkTitle"), t("diagnosticNoData"), metricKeyLabel(t, "recent_movement", "recent_movement"),
+      t("diagnosticScopeVisitedEntries"), "unavailable", t("diagnosticSourceTranscriptStats"), t("diagnosticNextStepRefresh"));
+  }
+  return rows;
+}
+
+function diagnosticStateLabel(t: Translate, state: DiagnosticState): string {
+  if (state === "measured") return t("diagnosticStatusMeasured");
+  if (state === "partial") return t("diagnosticStatusPartial");
+  if (state === "out_of_scope") return t("diagnosticStatusOutOfScope");
+  return t("diagnosticStatusUnavailable");
+}
+
+// out_of_scope is muted, not warned: a file outside the configured horizon is a
+// documented boundary, not a defect. Only a reading we expected and did not get
+// earns the warn tone.
+function toneFromState(state: DiagnosticState): DiagnosticTone {
+  if (state === "measured") return "ok";
+  if (state === "partial") return "watch";
+  if (state === "unavailable") return "warn";
+  return "muted";
 }
 
 function buildEvidenceMetrics(t: Translate, baselines: DiagnosticBaseline[], scanCost?: TranscriptScanCost): EvidenceMetric[] {
