@@ -117,6 +117,66 @@ func (d archiveCountingDecoder) Decode(b []byte, c trajectory.DecodeContext) ([]
 	}
 	return d.Decoder.Decode(b, c)
 }
+
+func TestTrajectoryArchiveCoalescesHintsWhileIdleAndStillReplays(t *testing.T) {
+	app, _, _ := trajectoryTestApp(t)
+	if err := app.trajectoryAccess.setEnabled(true); err != nil {
+		t.Fatal(err)
+	}
+	var found atomic.Bool
+	registry := app.observer.adapters
+	registry.mu.Lock()
+	i := registry.byID["codex"]
+	registry.adapters[i].Capabilities.Trajectory = archiveCountingDecoder{registry.adapters[i].Capabilities.Trajectory, &found}
+	registry.mu.Unlock()
+	var catalogs atomic.Int32
+	app.archiveSourcesFunc = func(ctx context.Context) trajectory.SourceSet { catalogs.Add(1); return app.archiveSources(ctx) }
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); app.recoverArchive(ctx, time.Hour) }()
+	defer func() { cancel(); <-done }()
+	deadline := time.Now().Add(2 * time.Second)
+	for catalogs.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if catalogs.Load() != 1 {
+		t.Fatal("initial catalog was not discovered")
+	}
+	// Metadata noise must not rescan the entire archive for every wake, even
+	// when the queue has already drained. Native replay remains enabled.
+	for n := 0; n < 40; n++ {
+		app.notifyArchive()
+		time.Sleep(5 * time.Millisecond)
+	}
+	if catalogs.Load() != 1 {
+		t.Fatalf("idle notifications rescanned catalog %d times", catalogs.Load())
+	}
+	set := app.archiveSources(context.Background())
+	path := set.Sources[0].Path
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.WriteString("{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"missed-audit coalesced evidence\"}]}}\n")
+	f.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.notifyArchive()
+	deadline = time.Now().Add(archiveCatalogInterval + 2*time.Second)
+	for !found.Load() && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !found.Load() || catalogs.Load() < 2 {
+		t.Fatal("coalesced wake lost appended evidence", catalogs.Load())
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("coalesced timer delayed shutdown")
+	}
+}
 func TestTrajectoryArchiveAuditFindsMissedSessionWithoutQueries(t *testing.T) {
 	app, _, _ := trajectoryTestApp(t)
 	if err := app.trajectoryAccess.setEnabled(true); err != nil {

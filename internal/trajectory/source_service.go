@@ -77,12 +77,6 @@ func (f *sourceStore) prune(ctx context.Context, allowed map[string]bool, checkp
 	})
 }
 
-func (f *sourceStore) maintenancePending(ctx context.Context) (bool, error) {
-	var pending bool
-	err := f.db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM sources WHERE active=1 AND missing=0 AND (complete=0 OR verified_mtime<>mtime))").Scan(&pending)
-	return pending, err
-}
-
 func (s *Service) openSearch() error { return s.openSearchContext(context.Background()) }
 func (s *Service) openSearchContext(ctx context.Context) error {
 	if err := s.openIndexContext(ctx); err != nil {
@@ -198,7 +192,11 @@ func (s *Service) syncSearchScope(ctx context.Context, states []*sourceState, co
 			}
 			batches++
 		} else if p.verifiedSize != st.Info.Size() || p.verifiedMtime != st.Info.ModTime().UnixNano() {
-			_, err = s.store.auditSource(budget, st)
+			var pending bool
+			// Like readinessFacts, finish one bounded physical range with the
+			// caller's cancellation. The soft budget prevents starting another
+			// range; it must not repeatedly discard the same completed unit.
+			pending, err = s.store.auditSource(ctx, st)
 			if errors.Is(err, errQuerySourceChanged) {
 				gap(cov, "source_changed_during_query:"+st.ID)
 				batches++
@@ -207,6 +205,10 @@ func (s *Service) syncSearchScope(ctx context.Context, states []*sourceState, co
 			}
 			if err != nil && !(errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil) {
 				return err
+			}
+			if !pending && err == nil {
+				p.verifiedSize, p.verifiedMtime = st.Info.Size(), st.Info.ModTime().UnixNano()
+				ready[st.ID] = p
 			}
 			batches++
 		}
@@ -217,6 +219,9 @@ func (s *Service) syncSearchScope(ctx context.Context, states []*sourceState, co
 	}
 	for _, st := range states {
 		p := ready[st.ID]
+		if p.generation == st.Generation && p.complete && (p.verifiedSize != st.Info.Size() || p.verifiedMtime != st.Info.ModTime().UnixNano()) {
+			gap(cov, "source_audit_pending")
+		}
 		if p.generation != st.Generation || !p.complete || p.count < st.checkpoint.EventCount {
 			gap(cov, "search_index_pending")
 			gap(cov, "index_pending")

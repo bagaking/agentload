@@ -552,6 +552,10 @@ physical source identities. Historical events stay on disk; request windows
 remain bounded. Each record is limited to 1 MiB/64 blocks and each source update
 to 32 MiB. Each request prepares canonical data for at most one second and
 search readiness in bounded batches; progress resumes at committed checkpoints.
+`source_audit_pending` reports unfinished verification of source bytes used by
+candidate filters. It leaves decoded and searchable fact counts unchanged.
+Background verification resumes per source; unreadable or unauthorized sources
+do not cause repeated whole-catalog scans.
 All configured archived sources are queryable, independent of the resource
 metrics lookback. Historical source states are not capped to a recent 512 files.
 

@@ -9,6 +9,7 @@ import (
 )
 
 const archiveAuditInterval = 15 * time.Minute
+const archiveCatalogInterval = 5 * time.Second
 
 func (a *trayApp) notifyArchive() {
 	if a.trajectory != nil {
@@ -43,6 +44,10 @@ func archiveSourceSignature(src trajectory.Source) string {
 // when caught up. New hints join a fair queue during a long initial backfill;
 // periodic audit repairs omissions even when no watcher hint was delivered.
 func (a *trayApp) recoverArchive(ctx context.Context, auditInterval time.Duration) {
+	discover := a.archiveSources
+	if a.archiveSourcesFunc != nil {
+		discover = a.archiveSourcesFunc
+	}
 	replay, err := openThroughputRecovery(a.cfg.HistoryFile, a.throughputHistory, a.observer.adapters)
 	if err != nil && a.logger != nil {
 		a.logger.Printf("throughput recovery unavailable: %v", err)
@@ -67,10 +72,36 @@ func (a *trayApp) recoverArchive(ctx context.Context, auditInterval time.Duratio
 	queued := map[string]bool{}
 	seen := map[string]string{}
 	dirty, force := true, true
-	hints := false
 	enabled := a.trajectoryAccess.isEnabled()
 	var catalog trajectory.SourceSet
 	cleanupPending := false
+	lastCatalogAt := time.Time{}
+	hintTimer := time.NewTimer(time.Hour)
+	hintTimer.Stop()
+	defer hintTimer.Stop()
+	var hintReady <-chan time.Time
+	noteHint := func() {
+		if hintReady == nil {
+			delay := time.Until(lastCatalogAt.Add(archiveCatalogInterval))
+			if delay < 0 {
+				delay = 0
+			}
+			hintTimer.Reset(delay)
+			hintReady = hintTimer.C
+		}
+	}
+	prepareCatalog := func() bool {
+		more, err := a.trajectory.PrepareCatalog(ctx, catalog, a.trajectoryAccess.isEnabled)
+		if err != nil {
+			if ctx.Err() == nil && a.logger != nil {
+				a.logger.Printf("archive catalog maintenance deferred: %v", err)
+			}
+			// A failed operation is not evidence of actionable progress. Retain
+			// checkpoints and wait for a new hint or the periodic audit.
+			return false
+		}
+		return more
+	}
 	for ctx.Err() == nil {
 		if historyfile.CheckStorageBudget(a.cfg.HistoryFile) != nil {
 			// Keep committed checkpoints; external disk cleanup needs no file hint.
@@ -82,8 +113,11 @@ func (a *trayApp) recoverArchive(ctx context.Context, auditInterval time.Duratio
 			}
 		}
 		if dirty {
-			set := a.archiveSources(ctx)
+			lastCatalogAt = time.Now()
+			set := discover(ctx)
 			catalog = set
+			hintReady = nil
+			hintTimer.Stop()
 			currentEnabled := a.trajectoryAccess.isEnabled()
 			if currentEnabled != enabled {
 				force = true
@@ -100,25 +134,32 @@ func (a *trayApp) recoverArchive(ctx context.Context, auditInterval time.Duratio
 			}
 			dirty, force = false, false
 			if enabled {
-				cleanupPending, _ = a.trajectory.PrepareCatalog(ctx, catalog, a.trajectoryAccess.isEnabled)
+				cleanupPending = prepareCatalog()
 			}
-		}
-		if len(queue) == 0 && hints {
-			dirty, hints = true, false
-			continue
 		}
 		if len(queue) == 0 {
 			if cleanupPending {
-				catalog = a.archiveSources(ctx)
-				cleanupPending, _ = a.trajectory.PrepareCatalog(ctx, catalog, a.trajectoryAccess.isEnabled)
-				// Yield on bounded cleanup and retry failures without a busy loop.
+				// Only structural migration retries immediately. Source audits stay
+				// in their own queue; retain this catalog until new evidence arrives.
+				cleanupPending = prepareCatalog()
+				// Yield between bounded structural migration batches.
 				timer := time.NewTimer(25 * time.Millisecond)
 				select {
 				case <-ctx.Done():
 					timer.Stop()
 					return
 				case <-timer.C:
+				case <-a.archiveWake:
+					noteHint()
+				case <-hintReady:
+					dirty, hintReady = true, nil
+				case <-audit.C:
+					a.observer.evidenceIndex.requestReconcile()
+					dirty, force = true, true
+				case <-publish.C:
+					publishUsage()
 				}
+				timer.Stop()
 				continue
 			}
 			publishUsage()
@@ -129,7 +170,11 @@ func (a *trayApp) recoverArchive(ctx context.Context, auditInterval time.Duratio
 				a.observer.evidenceIndex.requestReconcile()
 				dirty, force = true, true
 			case <-a.archiveWake:
-				dirty = true
+				noteHint()
+			case <-hintReady:
+				dirty, hintReady = true, nil
+			case <-publish.C:
+				publishUsage()
 			}
 			continue
 		}
@@ -159,7 +204,7 @@ func (a *trayApp) recoverArchive(ctx context.Context, auditInterval time.Duratio
 		}
 		select {
 		case <-a.archiveWake:
-			hints = true
+			noteHint()
 		default:
 		}
 		// Coalesce frequent writer hints: rebuilding the catalog for each line would
@@ -167,10 +212,8 @@ func (a *trayApp) recoverArchive(ctx context.Context, auditInterval time.Duratio
 		select {
 		case <-publish.C:
 			publishUsage()
-		case <-refresh.C:
-			if hints {
-				dirty, hints = true, false
-			}
+		case <-hintReady:
+			dirty, hintReady = true, nil
 		case <-audit.C:
 			a.observer.evidenceIndex.requestReconcile()
 			dirty, force = true, true

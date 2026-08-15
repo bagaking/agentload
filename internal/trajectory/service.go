@@ -324,17 +324,6 @@ func (s *Service) collectSetBudget(ctx context.Context, set SourceSet, prepareBu
 	// Attention, context, relations and Watch consume canonical coverage.
 	// Auxiliary full-text preparation is a separate readiness boundary.
 	s.observeLocked(states, cov, set.Revision)
-	if prepareBudget == 0 {
-		// Background catalog maintenance does not decode records; it owns one
-		// bounded cleanup/backfill batch after checking the current whole scope.
-		if err := s.syncSearchScope(ctx, states, &cov, true, 1); err != nil {
-			if errors.Is(err, errStorageMigration) {
-				gap(&cov, "index_storage_pending")
-			} else {
-				gap(&cov, "search_index_unavailable")
-			}
-		}
-	}
 	return states, cov
 }
 

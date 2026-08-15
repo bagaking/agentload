@@ -35,13 +35,13 @@ func (s *Service) PrepareCatalog(ctx context.Context, set SourceSet, enabled fun
 		}
 	}
 	_, cov := s.collectSetBudget(ctx, set, 0)
-	if slices.Contains(cov.Gaps, "search_index_unavailable") || slices.Contains(cov.Gaps, "index_prune_failed") {
+	if slices.Contains(cov.Gaps, "index_unavailable") || slices.Contains(cov.Gaps, "index_prune_failed") {
 		return true, errors.New("archive catalog maintenance incomplete")
 	}
-	if s.search == nil {
-		return slices.Contains(cov.Gaps, "index_storage_pending"), nil
-	}
-	return s.store.maintenancePending(ctx)
+	// Source readiness and raw audit frontiers belong to PrepareSource. A
+	// retained row outside this inventory, or an unreadable/partial source,
+	// cannot authorize an immediate rescan of the whole catalog.
+	return slices.Contains(cov.Gaps, "index_storage_pending") || slices.Contains(cov.Gaps, "index_metadata_pending"), nil
 }
 
 // PrepareSource is the same projection as Query's preparation, in a bounded
@@ -96,7 +96,10 @@ func (s *Service) PrepareSource(ctx context.Context, src Source, enabled func() 
 		return false, err
 	}
 	for _, g := range cov.Gaps {
-		if g == "search_index_pending" {
+		if g == "source_changed_during_query:"+st.ID {
+			return false, nil
+		}
+		if g == "search_index_pending" || g == "source_audit_pending" {
 			pending = true
 		}
 	}
