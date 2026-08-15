@@ -413,7 +413,7 @@ function PopoverSurface({
             >
               {popoverView === "diagnostics" ? (
                 <React.Suspense fallback={<PanelLoading t={t} icon={<Radar size={15} />} />}>
-                  <DiagnosticsPanel t={t} snapshot={snapshot} />
+                  <DiagnosticsPanel t={t} snapshot={snapshot} active={surfaceVisible} />
                 </React.Suspense>
               ) : null}
             </section>

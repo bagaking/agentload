@@ -153,6 +153,22 @@ High-priority findings are fixed before commit. Medium or low-priority findings
 may become follow-up tasks when they do not compromise data truth, privacy, or
 installability.
 
+## 自身监控与空间下钻
+
+用户要求“自己的每个功能分别占多少”，并且“这个监控模块本身也应该是
+监控项之一”。诊断首先提供 Agent Load 当前进程 CPU、RSS、运行数据已
+分配字节、所在卷可用空间。按功能展开到具体文件，显示逻辑长度和已分配
+字节，避免把用户原始 session 和开发构建材料混入产品运行占用。
+
+使用现有 macOS `libproc` 和文件元数据能力，不增加进程发现扫描或数据库
+副本。独立只读接口提供有时间戳的缓存采样，导出沿用同一对象。功能 CPU
+和 RSS 暂无独立观测依据，诚实保留未知；自身采样仅报告实际耗时且不落盘。
+空间扫描有数量、时间边界，缺口使总数未知，不静默输出完整总数。
+
+迁移完成并验证后应清理被替代的旧结构。开发侧过期安装包、可执行副本和
+编译缓存可独立清理，保留验证报告及全部源 session、历史、usage、用户
+标注和恢复状态；不能把开发材料清理收益说成运行库压缩收益。
+
 ## Agent evolution (RSI) surface
 
 Diagnostics is also an evidence-led Agent evolution loop. It turns observed

@@ -10,8 +10,9 @@ import (
 
 func buildDiagnosticsSnapshot(snap snapshot.Snapshot, now time.Time) snapshot.DiagnosticSnapshot {
 	out := snapshot.DiagnosticSnapshot{
-		GeneratedAt: now.Format(time.RFC3339Nano),
-		Export:      diagnosticExportSummary(),
+		SelfResources: snap.Diagnostics.SelfResources,
+		GeneratedAt:   now.Format(time.RFC3339Nano),
+		Export:        diagnosticExportSummary(),
 	}
 	out.Evolution = buildDiagnosticEvolutionInsights(snap)
 	out.EvidenceGaps = buildDiagnosticEvidenceGaps(snap)

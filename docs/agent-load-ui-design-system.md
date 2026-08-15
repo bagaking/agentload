@@ -9,6 +9,14 @@ sop:
 
 # Agent Load UI Design System
 
+## 诊断中的自身占用
+
+自身占用位于诊断第一屏：四个紧凑读数展示 CPU、RSS、运行数据、卷余量。
+按功能和具体文件的空间明细默认折叠，展开后按占用排序；同一位置显示
+采样时间、已分配和逻辑长度。零字节明确显示零，未知显示不可用。
+自身监控也是明细的一项，显示实际采样耗时和零新增持久化数据。共享进程
+的功能 CPU/RSS 无法独立测量时只作一次简短说明，不复制一屏未知值。
+
 Agent Load is an operator console, not a generic dashboard or landing page.
 The UI should feel like a local developer console for inspecting machine-local
 agent evidence.

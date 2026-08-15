@@ -1,3 +1,20 @@
+.diagnostic-self { padding: 16px 0; border-bottom: 1px solid var(--border); }
+.self-metrics { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; margin: 16px 0; }
+.self-metrics > div { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.self-metrics span, .self-metrics small, .self-note, .self-file-head { color: var(--fg-muted); font-size: 11px; }
+.self-metrics strong { color: var(--fg); font-size: 21px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.self-metrics small { font-size: 10px; line-height: 1.5; }
+.self-breakdown > summary, .self-component > summary { cursor: pointer; padding: 10px 0; font-size: 12px; color: var(--fg); }
+.self-breakdown > summary > span { float: right; color: var(--fg-muted); font-size: 10px; }
+.self-component { border-top: 1px solid var(--border); }
+.self-component > summary b { float: right; font-variant-numeric: tabular-nums; font-size: 12px; }
+.self-note { line-height: 1.6; margin: 8px 0; }
+.self-gap { color: var(--run); font-size: 11px; }
+.self-file { display: grid; grid-template-columns: minmax(0,1fr) 70px 70px; gap: 8px; padding: 6px 0; font-size: 10px; font-variant-numeric: tabular-nums; }
+.self-file > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.self-file > span:not(:first-child) { text-align: right; }
+@media(max-width:600px) { .self-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+
 body[data-view="popover"] .diagnostics-shell {
   --diag-line: color-mix(in srgb, var(--fg) 9%, transparent);
   --diag-line-strong: color-mix(in srgb, var(--fg) 16%, transparent);

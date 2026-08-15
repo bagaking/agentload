@@ -24,11 +24,12 @@ import {
 } from "lucide-react";
 import { type Translate } from "../lib/format";
 import type { Snapshot } from "../types/snapshot";
+import { SelfResources } from "./SelfResources";
 import { buildDiagnosticViewModel, diagnosticOmittedFieldLabel, type ChainNode, type DiagnosticTone, type EvolutionRow, type EvidenceMetric, type LossLedgerRow, type PriorityRow, type SituationMapCard } from "./diagnosticModel";
 
 type ExportState = "idle" | "working" | "done" | "failed";
 
-export function DiagnosticsPanel({ t, snapshot }: { t: Translate; snapshot: Snapshot }) {
+export function DiagnosticsPanel({ t, snapshot, active }: { t: Translate; snapshot: Snapshot; active: boolean }) {
   const [exportState, setExportState] = useState<ExportState>("idle");
   const viewModel = useMemo(() => buildDiagnosticViewModel(t, snapshot), [t, snapshot]);
 
@@ -65,6 +66,8 @@ export function DiagnosticsPanel({ t, snapshot }: { t: Translate; snapshot: Snap
           <b><Radar size={11} />{t("diagnosticNoForecastBadge")}</b>
         </span>
       </div>
+
+      <SelfResources t={t} active={active} />
 
       <section className="diagnostic-situation-plane" aria-label={t("diagnosticSituationMap")}>
         <div className="diagnostic-plane-head">

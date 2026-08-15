@@ -118,6 +118,7 @@ export type RuntimeTelemetryAdapterState = {
 };
 
 export type DiagnosticSnapshot = {
+  self_resources?: SelfResourceSnapshot;
   generated_at?: string;
   evolution?: DiagnosticEvolutionInsight[];
   anomaly_signals?: DiagnosticSignal[];
@@ -125,6 +126,30 @@ export type DiagnosticSnapshot = {
   baselines?: DiagnosticBaseline[];
   capabilities?: DiagnosticCapability[];
   export?: DiagnosticExportSummary;
+};
+
+export type SelfResourceSnapshot = {
+  pid: number;
+  sampled_at: string;
+  cpu_percent: number | null;
+  cpu_window_seconds: number;
+  rss_bytes: number | null;
+  storage: {
+    sampled_at: string;
+    complete: boolean;
+    allocated_bytes: number | null;
+    logical_bytes: number | null;
+    available_bytes: number | null;
+    gaps?: string[];
+    components: {
+      key: string;
+      complete: boolean;
+      allocated_bytes: number | null;
+      logical_bytes: number | null;
+      files: { name: string; allocated_bytes: number; logical_bytes: number }[];
+    }[];
+  };
+  monitor: { sample_ms: number; persistent_bytes: number };
 };
 
 export type DiagnosticEvolutionInsight = {

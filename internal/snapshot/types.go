@@ -204,6 +204,7 @@ type RuntimeTelemetryAdapterState struct {
 }
 
 type DiagnosticSnapshot struct {
+	SelfResources  *SelfResourceSnapshot          `json:"self_resources,omitempty"`
 	GeneratedAt    string                         `json:"generated_at,omitempty"`
 	Evolution      []DiagnosticEvolutionInsight   `json:"evolution,omitempty"`
 	AnomalySignals []DiagnosticSignalSnapshot     `json:"anomaly_signals,omitempty"`
@@ -211,6 +212,45 @@ type DiagnosticSnapshot struct {
 	Baselines      []DiagnosticBaselineSnapshot   `json:"baselines,omitempty"`
 	Capabilities   []DiagnosticCapabilitySnapshot `json:"capabilities,omitempty"`
 	Export         DiagnosticExportSummary        `json:"export"`
+}
+
+type SelfResourceSnapshot struct {
+	PID              int                 `json:"pid"`
+	SampledAt        string              `json:"sampled_at"`
+	CPUPercent       *float64            `json:"cpu_percent"`
+	CPUWindowSeconds float64             `json:"cpu_window_seconds"`
+	RSSBytes         *uint64             `json:"rss_bytes"`
+	Storage          SelfStorageSnapshot `json:"storage"`
+	Monitor          SelfMonitorSnapshot `json:"monitor"`
+}
+
+type SelfMonitorSnapshot struct {
+	SampleMS        float64 `json:"sample_ms"`
+	PersistentBytes int64   `json:"persistent_bytes"`
+}
+
+type SelfStorageSnapshot struct {
+	SampledAt      string                 `json:"sampled_at"`
+	Complete       bool                   `json:"complete"`
+	AllocatedBytes *int64                 `json:"allocated_bytes"`
+	LogicalBytes   *int64                 `json:"logical_bytes"`
+	AvailableBytes *uint64                `json:"available_bytes"`
+	Components     []SelfStorageComponent `json:"components"`
+	Gaps           []string               `json:"gaps,omitempty"`
+}
+
+type SelfStorageComponent struct {
+	Key            string            `json:"key"`
+	Complete       bool              `json:"complete"`
+	AllocatedBytes *int64            `json:"allocated_bytes"`
+	LogicalBytes   *int64            `json:"logical_bytes"`
+	Files          []SelfStorageFile `json:"files"`
+}
+
+type SelfStorageFile struct {
+	Name           string `json:"name"`
+	LogicalBytes   int64  `json:"logical_bytes"`
+	AllocatedBytes int64  `json:"allocated_bytes"`
 }
 
 // DiagnosticEvolutionInsight turns observed agent/session patterns into a

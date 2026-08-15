@@ -27,6 +27,7 @@ import (
 const trayShutdownTimeout = 5 * time.Second
 
 type trayApp struct {
+	selfResources    selfResourceSampler
 	cfg              Config
 	observer         *Observer
 	logger           *log.Logger

@@ -1,5 +1,25 @@
 # Agent Load API Reference
 
+## GET /api/self-resources
+
+Read-only local metadata for Agent Load itself. Supports GET/HEAD and the same
+loopback Host guard as other diagnostic endpoints. No transcript access grant
+is required; responses contain no source content or absolute paths.
+
+The response carries process `pid`, `sampled_at`, nullable `cpu_percent`,
+`cpu_window_seconds`, `rss_bytes`, and `storage` with its own `sampled_at`,
+`complete`, nullable `allocated_bytes`/`logical_bytes`/`available_bytes`,
+`components`, and gap codes. Each component contains relative file names and
+measured logical/allocated byte counts. CPU uses one-core = 100% and excludes
+child processes. Storage excludes original agent sessions and development
+artifacts. Failed or incomplete totals are null, never manufactured zero.
+
+`monitor.sample_ms` is measured wall-clock collection cost;
+`monitor.persistent_bytes` is zero because this sampler does not write files.
+Module CPU/RSS attribution is not provided. Process results are reused for two
+seconds, storage for sixty seconds. Diagnostic exports include the same object
+under `snapshot.diagnostics.self_resources`.
+
 > Status: living document, last verified 2026-10-01.
 
 This page documents every route registered in `server.go` (`trayApp.handler`).

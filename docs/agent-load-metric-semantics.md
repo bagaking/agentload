@@ -1,5 +1,28 @@
 # Agent Load Metric Semantics
 
+## Agent Load 自身资源
+
+诊断必须监控 Agent Load 自己，并支持按功能和文件下钻。自身读数独立于
+Agent 进程汇总和整机资源，不能加入 Agent 的 CPU、内存或吞吐总数。
+
+- CPU：当前 Go 进程累计 user + system CPU 时间在两个实际采样间的差值，
+  除以真实墙钟间隔；100% 表示一个核心，允许超过 100%。首次采样和读取
+  失败为未知，不能拿 `ps` 的平均值代替区间值。
+- 内存：操作系统当前进程 resident bytes（RSS），不是 Go heap、缓存预算
+  或整机内存；不包含独立 WebKit 子进程。功能共享进程内存、CPU，未单独
+  测量时必须留空，不按文件大小或执行耗时分摊。
+- 存储：只统计运行时拥有的本地文件，分别保留逻辑长度和 `st_blocks * 512`
+  已分配字节。主读数使用后者；APFS 共享块的独占物理空间未测量。不将源
+  session、应用安装包、开发构建缓存、研究材料或系统 swap 计入运行数据。
+- 功能下钻：轨迹目录、吞吐索引与吞吐历史、资源与生命周期历史、其他运行
+  文件；每个文件只归属一项。只读取文件元数据，不打开活跃数据库，不跟随
+  符号链接。扫描不完整时总数留空，并保留已测量的部分及缺口。
+- 自身监控模块：作为独立监控项，展示最近采样的实际墙钟耗时；自身采样
+  不写文件，新增持久化字节为零。此耗时不是 CPU 时间，不冒充模块 CPU
+  或 RSS。采样结果只保存在内存中。
+- 进程读数最多每两秒采集一次；存储最多每分钟扫描一次。诊断读取返回
+  缓存快照，携带各自采样时间；界面关闭即停止轮询，不增加后台全库分析。
+
 This page is the contract for Agent Load's metric matrix. Backend aggregation
 and frontend rendering should route through semantic helpers instead of mixing
 raw snapshot fields inline.

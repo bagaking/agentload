@@ -44,6 +44,7 @@ func (a *trayApp) handler() http.Handler {
 	mux.HandleFunc("/api/trajectory/access", a.handleTrajectoryAccess)
 	mux.HandleFunc("/api/capabilities", a.handleCapabilitiesAPI)
 	mux.HandleFunc("/api/system-resources", a.handleSystemResourcesAPI)
+	mux.HandleFunc("/api/self-resources", a.handleSelfResourcesAPI)
 	mux.HandleFunc("/api/live-token-rate", a.handleLiveTokenRateAPI)
 	mux.HandleFunc("/api/diagnostic-export", a.handleDiagnosticExportAPI)
 	mux.HandleFunc("/api/refresh", a.handleRefreshAPI)
@@ -199,6 +200,8 @@ func (a *trayApp) handleDiagnosticExportAPI(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	snap := a.snapshotForClient(r.Context())
+	self := a.selfResources.sample(a.cfg.HistoryFile)
+	snap.Diagnostics.SelfResources = &self
 	export := buildDiagnosticExport(snap, time.Now())
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
