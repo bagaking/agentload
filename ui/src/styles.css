@@ -52,6 +52,36 @@
   --console-text-soft: rgba(202, 213, 209, .70);
   --console-text-faint: rgba(202, 213, 209, .50);
   --console-track: rgba(233, 239, 235, .062);
+
+  /* Metric band tokens consumed by systemMetricStyle in SystemResourceDeck.tsx. */
+  --sysband-network-color: #2b8ad8;
+  --sysband-network-strong: #2d9a91;
+  --sysband-network-soft: rgba(45, 154, 145, .10);
+  --sysband-network-line: rgba(45, 154, 145, .20);
+  --sysband-agent-color: #5577d8;
+  --sysband-agent-strong: #4773d2;
+  --sysband-agent-soft: rgba(85, 119, 216, .10);
+  --sysband-agent-line: rgba(85, 119, 216, .20);
+  --sysband-cool-color: #4a83d9;
+  --sysband-cool-strong: #3a72c9;
+  --sysband-cool-soft: rgba(74, 131, 217, .10);
+  --sysband-cool-line: rgba(74, 131, 217, .20);
+  --sysband-critical-color: #c85f73;
+  --sysband-critical-strong: #b6435b;
+  --sysband-critical-soft: rgba(200, 95, 115, .105);
+  --sysband-critical-line: rgba(200, 95, 115, .22);
+  --sysband-high-color: #6f73df;
+  --sysband-high-strong: #535cc8;
+  --sysband-high-soft: rgba(111, 115, 223, .105);
+  --sysband-high-line: rgba(111, 115, 223, .22);
+  --sysband-elevated-color: #1f9f8a;
+  --sysband-elevated-strong: #147e72;
+  --sysband-elevated-soft: rgba(31, 159, 138, .10);
+  --sysband-elevated-line: rgba(31, 159, 138, .20);
+  --sysband-calm-color: #5577d8;
+  --sysband-calm-strong: #315ec7;
+  --sysband-calm-soft: rgba(85, 119, 216, .105);
+  --sysband-calm-line: rgba(85, 119, 216, .20);
 }
 
 :root[data-theme="light"] {
@@ -96,6 +126,36 @@
   
   
   
+
+  /* Metric band tokens, light theme. */
+  --sysband-network-color: #1f78c2;
+  --sysband-network-strong: #1f8a80;
+  --sysband-network-soft: rgba(31, 138, 128, .13);
+  --sysband-network-line: rgba(31, 138, 128, .26);
+  --sysband-agent-color: #4467cc;
+  --sysband-agent-strong: #3357bd;
+  --sysband-agent-soft: rgba(68, 103, 204, .12);
+  --sysband-agent-line: rgba(68, 103, 204, .25);
+  --sysband-cool-color: #3a72c9;
+  --sysband-cool-strong: #2c5fb4;
+  --sysband-cool-soft: rgba(58, 114, 201, .12);
+  --sysband-cool-line: rgba(58, 114, 201, .25);
+  --sysband-critical-color: #b64c62;
+  --sysband-critical-strong: #9d374e;
+  --sysband-critical-soft: rgba(182, 76, 98, .13);
+  --sysband-critical-line: rgba(182, 76, 98, .26);
+  --sysband-high-color: #5a5ecf;
+  --sysband-high-strong: #4348b4;
+  --sysband-high-soft: rgba(90, 94, 207, .13);
+  --sysband-high-line: rgba(90, 94, 207, .26);
+  --sysband-elevated-color: #148a76;
+  --sysband-elevated-strong: #0e6d5f;
+  --sysband-elevated-soft: rgba(20, 138, 118, .12);
+  --sysband-elevated-line: rgba(20, 138, 118, .25);
+  --sysband-calm-color: #4467cc;
+  --sysband-calm-strong: #2a55b8;
+  --sysband-calm-soft: rgba(68, 103, 204, .12);
+  --sysband-calm-line: rgba(68, 103, 204, .25);
 }
 
 * { box-sizing: border-box; }

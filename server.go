@@ -53,8 +53,51 @@ func (a *trayApp) handler() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
+		if rejectReboundHost(w, r) {
+			return
+		}
 		mux.ServeHTTP(w, r)
 	})
+}
+
+// loopbackHostHeader reports whether the request addressed this server by a
+// loopback literal rather than by an attacker-resolvable name.
+//
+// This is the DNS rebinding guard, and it has to be separate from the
+// same-origin check: an attacker who points evil.example at 127.0.0.1 gets a
+// browser that sends Origin and Host both reading "evil.example:8642", so the
+// two agree and sameOriginRequest passes. Comparing attacker-controlled input
+// against attacker-controlled input proves nothing. A literal address is the
+// one thing the attacker cannot put in Host, because the browser fills it from
+// the URL it navigated to. "localhost" is allowed alongside the literals
+// because RFC 6761 reserves it to loopback, so it cannot be rebound, and people
+// do type it.
+//
+// It guards every route rather than the state-changing POSTs alone. Rebinding
+// is an exfiltration technique first: /api/snapshot carries project paths and
+// session identity, so reading it is the payload, not a lesser case of it.
+func loopbackHostHeader(host string) bool {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		// HTTP/1.0 and some native clients send no Host. They are not browsers,
+		// so they are not the rebinding vector.
+		return true
+	}
+	name, _ := splitHostPortDefault(host)
+	name = strings.Trim(name, "[]")
+	if strings.EqualFold(name, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(name)
+	return ip != nil && ip.IsLoopback()
+}
+
+func rejectReboundHost(w http.ResponseWriter, r *http.Request) bool {
+	if loopbackHostHeader(r.Host) {
+		return false
+	}
+	http.Error(w, "request host must be a loopback address", http.StatusForbidden)
+	return true
 }
 
 func (a *trayApp) handleLiveTokenRateAPI(w http.ResponseWriter, r *http.Request) {

@@ -36,7 +36,7 @@ func TestHandleUIAssetServesViteAssets(t *testing.T) {
 	slices.Sort(matches)
 	foundBrandCopy := false
 	for index, match := range matches {
-		req := httptest.NewRequest(http.MethodGet, "/assets/"+filepath.Base(match), nil)
+		req := newLoopbackRequest(http.MethodGet, "/assets/"+filepath.Base(match), nil)
 		rec := httptest.NewRecorder()
 
 		handler.ServeHTTP(rec, req)
@@ -70,7 +70,7 @@ func TestHandleUIAssetRejectsInvalidAssetPaths(t *testing.T) {
 
 	for _, requestPath := range paths {
 		t.Run(requestPath, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, requestPath, nil)
+			req := newLoopbackRequest(http.MethodGet, requestPath, nil)
 			rec := httptest.NewRecorder()
 
 			handler.ServeHTTP(rec, req)
@@ -98,7 +98,7 @@ func TestHandleLiveTokenRateAPIReturnsPublishedSample(t *testing.T) {
 	app := &trayApp{liveTokenRate: sampler}
 	handler := app.handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/live-token-rate", nil)
+	req := newLoopbackRequest(http.MethodGet, "/api/live-token-rate", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -121,14 +121,14 @@ func TestHandleLiveTokenRateAPIReturnsPublishedSample(t *testing.T) {
 		t.Fatalf("project live token rate = %+v", sample.Projects)
 	}
 
-	head := httptest.NewRequest(http.MethodHead, "/api/live-token-rate", nil)
+	head := newLoopbackRequest(http.MethodHead, "/api/live-token-rate", nil)
 	headRec := httptest.NewRecorder()
 	handler.ServeHTTP(headRec, head)
 	if headRec.Code != http.StatusOK || headRec.Body.Len() != 0 {
 		t.Fatalf("HEAD response = status %d body %q", headRec.Code, headRec.Body.String())
 	}
 
-	post := httptest.NewRequest(http.MethodPost, "/api/live-token-rate", nil)
+	post := newLoopbackRequest(http.MethodPost, "/api/live-token-rate", nil)
 	postRec := httptest.NewRecorder()
 	handler.ServeHTTP(postRec, post)
 	if postRec.Code != http.StatusMethodNotAllowed {
@@ -138,7 +138,7 @@ func TestHandleLiveTokenRateAPIReturnsPublishedSample(t *testing.T) {
 
 func TestHandleLiveTokenRateAPIWithoutSamplerIsUnavailable(t *testing.T) {
 	app := &trayApp{}
-	req := httptest.NewRequest(http.MethodGet, "/api/live-token-rate", nil)
+	req := newLoopbackRequest(http.MethodGet, "/api/live-token-rate", nil)
 	rec := httptest.NewRecorder()
 	app.handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -160,7 +160,7 @@ func TestHandleRefreshAPIReturnsDedupedSlotID(t *testing.T) {
 	}
 	handler := app.handler()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/refresh", nil)
+	req := newLoopbackRequest(http.MethodPost, "/api/refresh", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusAccepted {
@@ -203,7 +203,7 @@ func TestHandleRefreshAPIUsesRequestedIntervalSlot(t *testing.T) {
 	}
 	handler := app.handler()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/refresh?interval_ms=30000", nil)
+	req := newLoopbackRequest(http.MethodPost, "/api/refresh?interval_ms=30000", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusAccepted {
@@ -246,7 +246,7 @@ func TestHandleRefreshAPINormalizesRequestedIntervalSlot(t *testing.T) {
 			}
 			handler := app.handler()
 
-			req := httptest.NewRequest(http.MethodPost, "/api/refresh"+tt.query, nil)
+			req := newLoopbackRequest(http.MethodPost, "/api/refresh"+tt.query, nil)
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
 			if rec.Code != http.StatusAccepted {
@@ -294,7 +294,7 @@ func TestHandleSnapshotAPIReturnsCompactJSONAndRefreshSlotHeader(t *testing.T) {
 	}
 	app.haveSnapshot = true
 	handler := app.handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/snapshot", nil)
+	req := newLoopbackRequest(http.MethodGet, "/api/snapshot", nil)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -328,7 +328,7 @@ func TestHandleSnapshotAPIHonorsRefreshSlotValidators(t *testing.T) {
 	})
 	handler := app.handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/snapshot", nil)
+	req := newLoopbackRequest(http.MethodGet, "/api/snapshot", nil)
 	req.Header.Set("If-None-Match", strconv.Quote("30s:2026-06-28T12:00:00Z"))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -342,7 +342,7 @@ func TestHandleSnapshotAPIHonorsRefreshSlotValidators(t *testing.T) {
 		t.Fatalf("expected refresh slot header on 304, got %q", got)
 	}
 
-	headReq := httptest.NewRequest(http.MethodHead, "/api/snapshot", nil)
+	headReq := newLoopbackRequest(http.MethodHead, "/api/snapshot", nil)
 	headRec := httptest.NewRecorder()
 	handler.ServeHTTP(headRec, headReq)
 	if headRec.Code != http.StatusOK {
@@ -391,7 +391,7 @@ func TestHandleSnapshotAPIHonorsETagLists(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/api/snapshot", nil)
+			req := newLoopbackRequest(http.MethodGet, "/api/snapshot", nil)
 			req.Header.Set("If-None-Match", tt.ifNoneMatch)
 			rec := httptest.NewRecorder()
 
@@ -418,7 +418,7 @@ func TestHandleSnapshotAPIFillsRefreshSlotForCachedSnapshot(t *testing.T) {
 	app.lastSnapshot = Snapshot{GeneratedAt: "2026-06-28T12:00:00Z"}
 	app.haveSnapshot = true
 	handler := app.handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/snapshot", nil)
+	req := newLoopbackRequest(http.MethodGet, "/api/snapshot", nil)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -449,7 +449,7 @@ func TestHandleSnapshotAPINotModifiedSkipsSanitizeAndCachesPayload(t *testing.T)
 	handler := app.handler()
 	base := snapshotSanitizePasses.Load()
 
-	condReq := httptest.NewRequest(http.MethodGet, "/api/snapshot", nil)
+	condReq := newLoopbackRequest(http.MethodGet, "/api/snapshot", nil)
 	condReq.Header.Set("If-None-Match", strconv.Quote("30s:2026-06-28T12:00:00Z"))
 	condRec := httptest.NewRecorder()
 	handler.ServeHTTP(condRec, condReq)
@@ -460,7 +460,7 @@ func TestHandleSnapshotAPINotModifiedSkipsSanitizeAndCachesPayload(t *testing.T)
 		t.Fatalf("expected 304 path to skip sanitize, got %d extra passes", got-base)
 	}
 
-	firstReq := httptest.NewRequest(http.MethodGet, "/api/snapshot", nil)
+	firstReq := newLoopbackRequest(http.MethodGet, "/api/snapshot", nil)
 	firstRec := httptest.NewRecorder()
 	handler.ServeHTTP(firstRec, firstReq)
 	if firstRec.Code != http.StatusOK {
@@ -470,7 +470,7 @@ func TestHandleSnapshotAPINotModifiedSkipsSanitizeAndCachesPayload(t *testing.T)
 		t.Fatalf("expected one sanitize pass for first GET, got %d", got-base)
 	}
 
-	secondReq := httptest.NewRequest(http.MethodGet, "/api/snapshot", nil)
+	secondReq := newLoopbackRequest(http.MethodGet, "/api/snapshot", nil)
 	secondRec := httptest.NewRecorder()
 	handler.ServeHTTP(secondRec, secondReq)
 	if secondRec.Code != http.StatusOK {
@@ -493,7 +493,7 @@ func TestHandleSnapshotAPIInvalidatesClientCacheOnSlotChange(t *testing.T) {
 	handler := app.handler()
 
 	firstRec := httptest.NewRecorder()
-	handler.ServeHTTP(firstRec, httptest.NewRequest(http.MethodGet, "/api/snapshot", nil))
+	handler.ServeHTTP(firstRec, newLoopbackRequest(http.MethodGet, "/api/snapshot", nil))
 	if firstRec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", firstRec.Code)
 	}
@@ -503,7 +503,7 @@ func TestHandleSnapshotAPIInvalidatesClientCacheOnSlotChange(t *testing.T) {
 		RefreshSlotID: "30s:2026-06-28T12:00:30Z",
 	})
 	secondRec := httptest.NewRecorder()
-	handler.ServeHTTP(secondRec, httptest.NewRequest(http.MethodGet, "/api/snapshot", nil))
+	handler.ServeHTTP(secondRec, newLoopbackRequest(http.MethodGet, "/api/snapshot", nil))
 	if secondRec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", secondRec.Code)
 	}
@@ -522,8 +522,8 @@ func TestHandleSnapshotAPIServesCachedGzipRepresentation(t *testing.T) {
 	handler := app.handler()
 
 	identityRec := httptest.NewRecorder()
-	handler.ServeHTTP(identityRec, httptest.NewRequest(http.MethodGet, "/api/snapshot", nil))
-	gzipReq := httptest.NewRequest(http.MethodGet, "/api/snapshot", nil)
+	handler.ServeHTTP(identityRec, newLoopbackRequest(http.MethodGet, "/api/snapshot", nil))
+	gzipReq := newLoopbackRequest(http.MethodGet, "/api/snapshot", nil)
 	gzipReq.Header.Set("Accept-Encoding", "gzip")
 	gzipRec := httptest.NewRecorder()
 	handler.ServeHTTP(gzipRec, gzipReq)
@@ -553,7 +553,7 @@ func TestHandleSnapshotAPIServesCachedGzipRepresentation(t *testing.T) {
 		t.Fatal("gzip representation decoded to different snapshot JSON")
 	}
 
-	secondReq := httptest.NewRequest(http.MethodGet, "/api/snapshot", nil)
+	secondReq := newLoopbackRequest(http.MethodGet, "/api/snapshot", nil)
 	secondReq.Header.Set("Accept-Encoding", "gzip")
 	secondRec := httptest.NewRecorder()
 	handler.ServeHTTP(secondRec, secondReq)
@@ -561,7 +561,7 @@ func TestHandleSnapshotAPIServesCachedGzipRepresentation(t *testing.T) {
 		t.Fatal("same refresh slot did not reuse stable gzip payload")
 	}
 
-	headReq := httptest.NewRequest(http.MethodHead, "/api/snapshot", nil)
+	headReq := newLoopbackRequest(http.MethodHead, "/api/snapshot", nil)
 	headReq.Header.Set("Accept-Encoding", "gzip")
 	headRec := httptest.NewRecorder()
 	handler.ServeHTTP(headRec, headReq)
@@ -605,7 +605,7 @@ func TestStateChangingPostsRejectCrossOriginRequests(t *testing.T) {
 				refreshCh: make(chan struct{}, 1),
 			}
 			handler := app.handler()
-			req := httptest.NewRequest(http.MethodPost, "/api/refresh", nil)
+			req := newLoopbackRequest(http.MethodPost, "/api/refresh", nil)
 			req.Host = "127.0.0.1:8123"
 			if tt.origin != "" {
 				req.Header.Set("Origin", tt.origin)
@@ -625,7 +625,7 @@ func TestStateChangingPostsRejectCrossOriginRequests(t *testing.T) {
 func TestHandleQuitAPIRejectsCrossOrigin(t *testing.T) {
 	app := &trayApp{}
 	handler := app.handler()
-	req := httptest.NewRequest(http.MethodPost, "/api/quit", nil)
+	req := newLoopbackRequest(http.MethodPost, "/api/quit", nil)
 	req.Host = "127.0.0.1:8123"
 	req.Header.Set("Origin", "http://evil.example")
 	rec := httptest.NewRecorder()
@@ -639,7 +639,7 @@ func TestHandleOpenHostAppAPIRejectsCrossOrigin(t *testing.T) {
 	app := &trayApp{}
 	handler := app.handler()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/open-host-app/42", nil)
+	req := newLoopbackRequest(http.MethodPost, "/api/open-host-app/42", nil)
 	req.Host = "127.0.0.1:8123"
 	req.Header.Set("Origin", "http://evil.example:8123")
 	rec := httptest.NewRecorder()
@@ -648,7 +648,7 @@ func TestHandleOpenHostAppAPIRejectsCrossOrigin(t *testing.T) {
 		t.Fatalf("expected status 403, got %d", rec.Code)
 	}
 
-	sameReq := httptest.NewRequest(http.MethodPost, "/api/open-host-app/42", nil)
+	sameReq := newLoopbackRequest(http.MethodPost, "/api/open-host-app/42", nil)
 	sameReq.Host = "127.0.0.1:8123"
 	sameReq.Header.Set("Origin", "http://127.0.0.1:8123")
 	sameRec := httptest.NewRecorder()
@@ -679,7 +679,7 @@ func TestHandleOpenHostAppAPIRedactsOpenFailure(t *testing.T) {
 		return []byte("open failed for " + bundlePath + " with private detail"), io.ErrUnexpectedEOF
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/open-host-app/7", nil)
+	req := newLoopbackRequest(http.MethodPost, "/api/open-host-app/7", nil)
 	rec := httptest.NewRecorder()
 	app.handler().ServeHTTP(rec, req)
 
@@ -721,7 +721,7 @@ func TestHandleSnapshotAPIRedactsConfigPaths(t *testing.T) {
 	}
 	app.haveSnapshot = true
 	handler := app.handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/snapshot", nil)
+	req := newLoopbackRequest(http.MethodGet, "/api/snapshot", nil)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -840,7 +840,7 @@ func TestHandleSnapshotAPIRedactsClientEvidencePaths(t *testing.T) {
 	}
 	app.haveSnapshot = true
 	handler := app.handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/snapshot", nil)
+	req := newLoopbackRequest(http.MethodGet, "/api/snapshot", nil)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -943,7 +943,7 @@ func TestHandleDiagnosticExportAPIRedactsLocalEvidence(t *testing.T) {
 	}
 	app.haveSnapshot = true
 	handler := app.handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/diagnostic-export", nil)
+	req := newLoopbackRequest(http.MethodGet, "/api/diagnostic-export", nil)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -1001,7 +1001,7 @@ func TestHandleProcessDiagnosticAPIRedactsLocalEvidence(t *testing.T) {
 	}
 	app.haveSnapshot = true
 	handler := app.handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/process-diagnostic/42", nil)
+	req := newLoopbackRequest(http.MethodGet, "/api/process-diagnostic/42", nil)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -1260,7 +1260,7 @@ func TestHandleSnapshotAPIRedactsFreshObserverConfigPaths(t *testing.T) {
 		history:  localHistoryState{path: historyFile},
 	}
 	handler := app.handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/snapshot", nil)
+	req := newLoopbackRequest(http.MethodGet, "/api/snapshot", nil)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -1361,7 +1361,7 @@ func TestHandleToolIconAPIMethodAndPathGuards(t *testing.T) {
 	handler := app.handler()
 
 	t.Run("rejects post", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/api/tool-icon/codex", nil)
+		req := newLoopbackRequest(http.MethodPost, "/api/tool-icon/codex", nil)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 		if rec.Code != http.StatusMethodNotAllowed {
@@ -1370,7 +1370,7 @@ func TestHandleToolIconAPIMethodAndPathGuards(t *testing.T) {
 	})
 
 	t.Run("rejects traversal", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/tool-icon/../codex", nil)
+		req := newLoopbackRequest(http.MethodGet, "/api/tool-icon/../codex", nil)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 		if rec.Code != http.StatusNotFound {
@@ -1379,7 +1379,7 @@ func TestHandleToolIconAPIMethodAndPathGuards(t *testing.T) {
 	})
 
 	t.Run("rejects unknown", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/tool-icon/not-a-tool", nil)
+		req := newLoopbackRequest(http.MethodGet, "/api/tool-icon/not-a-tool", nil)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 		if rec.Code != http.StatusNotFound {
@@ -1417,7 +1417,7 @@ func TestHandleToolIconAPIFallsBackToEmbeddedSVG(t *testing.T) {
 
 	app := &trayApp{}
 	handler := app.handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/tool-icon/trae", nil)
+	req := newLoopbackRequest(http.MethodGet, "/api/tool-icon/trae", nil)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -1445,7 +1445,7 @@ func TestHandleToolIconAPIPrefersEmbeddedCodexCLIIcon(t *testing.T) {
 
 	app := &trayApp{}
 	handler := app.handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/tool-icon/codex", nil)
+	req := newLoopbackRequest(http.MethodGet, "/api/tool-icon/codex", nil)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -1509,7 +1509,7 @@ func TestObservedHostAppFromRequestRequiresCachedSnapshotEvidence(t *testing.T) 
 		},
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/host-app-icon/42", nil)
+	req := newLoopbackRequest(http.MethodGet, "/api/host-app-icon/42", nil)
 	got, ok := app.observedHostAppFromRequest(req, "/api/host-app-icon/")
 	if !ok {
 		t.Fatalf("expected observed host app")
@@ -1518,7 +1518,7 @@ func TestObservedHostAppFromRequestRequiresCachedSnapshotEvidence(t *testing.T) 
 		t.Fatalf("unexpected host app: %#v", got)
 	}
 
-	missingReq := httptest.NewRequest(http.MethodGet, "/api/host-app-icon/43", nil)
+	missingReq := newLoopbackRequest(http.MethodGet, "/api/host-app-icon/43", nil)
 	if _, ok := app.observedHostAppFromRequest(missingReq, "/api/host-app-icon/"); ok {
 		t.Fatalf("expected unknown pid to be rejected")
 	}
@@ -1562,7 +1562,7 @@ func TestObservedHostAppFromRequestUsesInternalFreshSnapshot(t *testing.T) {
 		history:  localHistoryState{path: cfg.HistoryFile},
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/host-app-icon/42", nil)
+	req := newLoopbackRequest(http.MethodGet, "/api/host-app-icon/42", nil)
 	got, ok := app.observedHostAppFromRequest(req, "/api/host-app-icon/")
 	if !ok {
 		t.Fatalf("expected observed host app from fresh internal snapshot")
@@ -1586,14 +1586,14 @@ func TestHandleHostAppIconAPIGuardsMethodAndPath(t *testing.T) {
 	app := &trayApp{}
 	handler := app.handler()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/host-app-icon/42", nil)
+	req := newLoopbackRequest(http.MethodPost, "/api/host-app-icon/42", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("expected 405, got %d", rec.Code)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/host-app-icon/../42", nil)
+	req = newLoopbackRequest(http.MethodGet, "/api/host-app-icon/../42", nil)
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
@@ -1605,21 +1605,21 @@ func TestHandleOpenHostAppAPIGuardsMethodAndObservedEvidence(t *testing.T) {
 	app := &trayApp{}
 	handler := app.handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/open-host-app/42", nil)
+	req := newLoopbackRequest(http.MethodGet, "/api/open-host-app/42", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("expected 405, got %d", rec.Code)
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/open-host-app/42", nil)
+	req = newLoopbackRequest(http.MethodPost, "/api/open-host-app/42", nil)
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected unobserved pid to be rejected with 404, got %d", rec.Code)
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/open-host-app/../42", nil)
+	req = newLoopbackRequest(http.MethodPost, "/api/open-host-app/../42", nil)
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
@@ -1637,7 +1637,7 @@ func TestHandleQuitAPIHandsOffToSystrayQuit(t *testing.T) {
 	app := &trayApp{logger: log.New(io.Discard, "", 0), lifecycle: lifecycle}
 	handler := app.handler()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/quit", nil)
+	req := newLoopbackRequest(http.MethodPost, "/api/quit", nil)
 	req.Host = "127.0.0.1:8123"
 	req.Header.Set("Origin", "http://127.0.0.1:8123")
 	rec := httptest.NewRecorder()
@@ -1672,7 +1672,7 @@ func TestHandleQuitAPIHandsOffEvenWhenLifecycleRecordPanics(t *testing.T) {
 	app := &trayApp{logger: log.New(io.Discard, "", 0)}
 	handler := app.handler()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/quit", nil)
+	req := newLoopbackRequest(http.MethodPost, "/api/quit", nil)
 	req.Host = "127.0.0.1:8123"
 	req.Header.Set("Origin", "http://127.0.0.1:8123")
 	rec := httptest.NewRecorder()
@@ -1685,4 +1685,68 @@ func TestHandleQuitAPIHandsOffEvenWhenLifecycleRecordPanics(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("quit api never handed off to systrayQuit")
 	}
+}
+
+// TestHostHeaderMustBeLoopback locks the DNS rebinding guard.
+//
+// The same-origin check cannot cover this: under rebinding the browser puts the
+// attacker's name in BOTH Origin and Host, so they agree and the check passes.
+// The literal address is the thing the attacker cannot forge, because the
+// browser fills Host from the URL it navigated to.
+func TestHostHeaderMustBeLoopback(t *testing.T) {
+	tests := []struct {
+		name     string
+		host     string
+		wantCode int
+	}{
+		{name: "loopback literal allowed", host: "127.0.0.1:8123", wantCode: http.StatusOK},
+		{name: "ipv6 loopback allowed", host: "[::1]:8123", wantCode: http.StatusOK},
+		{name: "localhost allowed", host: "localhost:8123", wantCode: http.StatusOK},
+		{name: "absent host allowed for native clients", host: "", wantCode: http.StatusOK},
+		{name: "rebound name blocked", host: "evil.example:8123", wantCode: http.StatusForbidden},
+		{name: "public ip blocked", host: "203.0.113.5:8123", wantCode: http.StatusForbidden},
+		{name: "loopback-looking name blocked", host: "127.0.0.1.evil.example:8123", wantCode: http.StatusForbidden},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := &trayApp{}
+			req := newLoopbackRequest(http.MethodGet, "/api/live-token-rate", nil)
+			req.Host = tt.host
+			rec := httptest.NewRecorder()
+			app.handler().ServeHTTP(rec, req)
+			if rec.Code != tt.wantCode {
+				t.Fatalf("host %q: expected status %d, got %d with body %q", tt.host, tt.wantCode, rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+// TestRebindingGuardCoversReadsNotJustWrites pins the scope decision: the
+// snapshot carries project paths and session identity, so a rebound read is the
+// payload rather than a lesser case of a rebound write.
+func TestRebindingGuardCoversReadsNotJustWrites(t *testing.T) {
+	app := &trayApp{}
+	for _, path := range []string{"/", "/dashboard", "/api/snapshot", "/api/live-token-rate", "/api/diagnostic-export"} {
+		req := newLoopbackRequest(http.MethodGet, path, nil)
+		req.Host = "evil.example:8123"
+		// Rebinding makes Origin agree with Host, which is exactly why the
+		// same-origin check cannot catch it.
+		req.Header.Set("Origin", "http://evil.example:8123")
+		rec := httptest.NewRecorder()
+		app.handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("%s: expected a rebound read to be rejected, got %d", path, rec.Code)
+		}
+	}
+}
+
+// newLoopbackRequest builds a request the way the real server can actually see
+// one. httptest.NewRequest defaults Host to "example.com", which the DNS
+// rebinding guard rejects on purpose -- no browser talking to this loopback
+// listener ever sends that. Tests that exercise the guard itself overwrite Host
+// after calling this.
+func newLoopbackRequest(method, target string, body io.Reader) *http.Request {
+	req := httptest.NewRequest(method, target, body)
+	req.Host = "127.0.0.1:8123"
+	return req
 }
