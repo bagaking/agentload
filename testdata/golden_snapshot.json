@@ -1,0 +1,1461 @@
+{
+  "generated_at": "<instant>",
+  "config": {
+    "idle_gap_seconds": "<duration>",
+    "min_interval_seconds": "<duration>",
+    "lookback_hours": 1,
+    "transcript_cache_ttl_seconds": "<duration>",
+    "claude_roots": [
+      "/<tmp>/001/claude"
+    ],
+    "codex_roots": [
+      "/<tmp>/001/codex"
+    ],
+    "trae_roots": [
+      "/<tmp>/001/trae"
+    ],
+    "grok_roots": [
+      "/<tmp>/001/grok"
+    ],
+    "gemini_roots": [
+      "/<tmp>/001/gemini"
+    ],
+    "opencode_roots": [
+      "/<tmp>/001/opencode"
+    ],
+    "hermes_roots": [
+      "/<tmp>/001/hermes"
+    ],
+    "openclaw_roots": [
+      "/<tmp>/001/openclaw"
+    ],
+    "pi_roots": [
+      "/<tmp>/001/pi"
+    ],
+    "process_refresh_target_seconds": "<duration>",
+    "history_file": ""
+  },
+  "current": {
+    "pid_concurrency": 3,
+    "session_concurrency": 0,
+    "active_burst_concurrency": 0
+  },
+  "current_by_tool": {
+    "claude": {
+      "pid_concurrency": 1,
+      "session_concurrency": 0,
+      "active_burst_concurrency": 0
+    },
+    "codex": {
+      "pid_concurrency": 1,
+      "session_concurrency": 0,
+      "active_burst_concurrency": 0
+    },
+    "gemini": {
+      "pid_concurrency": 1,
+      "session_concurrency": 0,
+      "active_burst_concurrency": 0
+    },
+    "grok": {
+      "pid_concurrency": 0,
+      "session_concurrency": 0,
+      "active_burst_concurrency": 0
+    },
+    "hermes": {
+      "pid_concurrency": 0,
+      "session_concurrency": 0,
+      "active_burst_concurrency": 0
+    },
+    "openclaw": {
+      "pid_concurrency": 0,
+      "session_concurrency": 0,
+      "active_burst_concurrency": 0
+    },
+    "opencode": {
+      "pid_concurrency": 0,
+      "session_concurrency": 0,
+      "active_burst_concurrency": 0
+    },
+    "pi": {
+      "pid_concurrency": 0,
+      "session_concurrency": 0,
+      "active_burst_concurrency": 0
+    },
+    "trae": {
+      "pid_concurrency": 0,
+      "session_concurrency": 0,
+      "active_burst_concurrency": 0
+    }
+  },
+  "summary": {
+    "active_sessions": 0,
+    "idle_sessions": 0,
+    "main_agent_sessions": 0,
+    "subagent_sessions": 0,
+    "unknown_role_sessions": 0,
+    "mapped_processes": 0,
+    "unmapped_processes": 3,
+    "multi_mapped_processes": 0,
+    "project_count": 0,
+    "hot_project_count": 0,
+    "mapping_coverage_pct": 0
+  },
+  "coordination_risk": {
+    "posture": "observed",
+    "active_project_count": 0,
+    "recent_project_count": 0,
+    "top_project": "",
+    "top_project_attention_share_pct": 0,
+    "duplicate_overlap_suspicion_count": 0,
+    "duplicate_overlap_cluster_count": 0,
+    "candidate_workitem_count": 0,
+    "candidate_workitem_covered_session_count": 0,
+    "candidate_workitem_coverage_pct": 0,
+    "candidate_workitem_confidence_breakdown": [],
+    "stale_session_count": 0,
+    "orphan_process_count": 3,
+    "churn_session_count": 0,
+    "project_spread_count": 0,
+    "fragmentation_pct": 0,
+    "load_ratio_pct": 0,
+    "load_peak_value": 0,
+    "recent_window_minutes": 15,
+    "low_confidence_session_count": 0,
+    "signals": [
+      {
+        "kind": "unmatched_processes",
+        "severity": "observed",
+        "evidence": "3 visible live processes are not currently matched to local session evidence."
+      }
+    ]
+  },
+  "historic_peaks": {
+    "today": {
+      "session_concurrency": {
+        "value": 0
+      },
+      "active_burst_concurrency": {
+        "value": 0
+      }
+    },
+    "seven_day": {
+      "session_concurrency": {
+        "value": 0
+      },
+      "active_burst_concurrency": {
+        "value": 0
+      }
+    }
+  },
+  "trends": {
+    "windows": [
+      {
+        "range": "1D",
+        "from": "<instant>",
+        "to": "<instant>",
+        "granularity_seconds": "<duration>",
+        "history_complete": false,
+        "points": [
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          }
+        ]
+      },
+      {
+        "range": "3D",
+        "from": "<instant>",
+        "to": "<instant>",
+        "granularity_seconds": "<duration>",
+        "history_complete": false,
+        "points": [
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          }
+        ]
+      },
+      {
+        "range": "7D",
+        "from": "<instant>",
+        "to": "<instant>",
+        "granularity_seconds": "<duration>",
+        "history_complete": false,
+        "points": [
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          }
+        ]
+      },
+      {
+        "range": "15D",
+        "from": "<instant>",
+        "to": "<instant>",
+        "granularity_seconds": "<duration>",
+        "history_complete": false,
+        "points": [
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          }
+        ]
+      },
+      {
+        "range": "30D",
+        "from": "<instant>",
+        "to": "<instant>",
+        "granularity_seconds": "<duration>",
+        "history_complete": false,
+        "points": [
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          },
+          {
+            "at": "<instant>"
+          }
+        ]
+      }
+    ]
+  },
+  "realtime_trends": {
+    "windows": null
+  },
+  "throughput_trends": {
+    "windows": null
+  },
+  "project_heatmaps": {
+    "windows": null
+  },
+  "history": {
+    "store_path": "",
+    "loaded_sample_count": 0,
+    "retained_sample_count": 0,
+    "dropped_sample_count": 0,
+    "corrupt_line_count": 0
+  },
+  "metric_registry": [
+    {
+      "key": "recent_movement",
+      "family": "workload",
+      "label": "Recent movement",
+      "unit": "sessions",
+      "source": "local transcript or activity-log events",
+      "window": "config.idle_gap_seconds",
+      "missing_state": "unavailable when no local activity event is available",
+      "description": "Counts sessions with local event movement inside the active window; visible processes alone do not make this non-zero."
+    },
+    {
+      "key": "known_sessions",
+      "family": "workload",
+      "label": "Known sessions",
+      "unit": "sessions",
+      "source": "transcripts, command hints, or fallback session ids",
+      "missing_state": "zero only means no session evidence was observed",
+      "description": "Counts observed AI-agent sessions and role splits; process-only rows are not promoted into sessions."
+    },
+    {
+      "key": "process_pressure",
+      "family": "runtime",
+      "label": "Process pressure",
+      "unit": "pids",
+      "source": "visible local AI process rows",
+      "missing_state": "zero means no visible matching process at sample time",
+      "description": "Counts visible local PIDs separately from recent movement or known sessions."
+    },
+    {
+      "key": "process_resources",
+      "family": "runtime",
+      "label": "Process resources",
+      "unit": "cpu/memory/io",
+      "source": "per-PID local process counters",
+      "missing_state": "unavailable when the operating system counter cannot be read",
+      "description": "CPU, memory, and disk I/O are diagnostic process evidence and must not imply agent activity by themselves."
+    },
+    {
+      "key": "system_resources",
+      "family": "system",
+      "label": "System resources",
+      "unit": "cpu/memory/disk/network/thermal pressure",
+      "source": "whole-machine OS counters and public macOS thermal state when available",
+      "missing_state": "unavailable when system sampling is unsupported; thermal state is separately unavailable when the public API cannot provide it",
+      "description": "Whole-machine pressure is useful context, but it is not attributed to AI agents without process evidence. Thermal pressure is not a temperature or fan-speed reading."
+    },
+    {
+      "key": "role_matrix",
+      "family": "lineage",
+      "label": "Agent role matrix",
+      "unit": "sessions",
+      "source": "thread source, parent thread, lane paths, and independent-run evidence",
+      "missing_state": "unknown role when no reliable role evidence exists",
+      "description": "Main-agent and subagent counts are session-level facts and should not be guessed from process names alone."
+    },
+    {
+      "key": "tool_coverage",
+      "family": "coverage",
+      "label": "Tool coverage",
+      "unit": "sessions/pids",
+      "source": "per-tool aggregation of known sessions, recent movement, and process pressure",
+      "missing_state": "zero only means no session or process evidence was observed for that tool",
+      "description": "Per-tool rows keep known sessions, recent movement, and process pressure as separate rails; process pressure must not be treated as recent movement."
+    },
+    {
+      "key": "token_usage",
+      "family": "economics",
+      "label": "Token usage",
+      "unit": "tokens",
+      "source": "parsed local transcript usage fields",
+      "missing_state": "unavailable when usage fields are absent; never infer zero from process duration",
+      "description": "Token totals are measured only when the local trace contains usage fields."
+    },
+    {
+      "key": "output_token_throughput",
+      "family": "workload",
+      "label": "Output token throughput",
+      "unit": "output tokens/second",
+      "source": "positive output-token events and safe cumulative-output deltas from local transcripts",
+      "window": "trailing 300 seconds of wall time",
+      "missing_state": "unavailable, no_data, and stale remain distinct from a measured zero rate",
+      "description": "Divides output tokens attributed to the trailing wall-time window by 300 seconds; cumulative deltas spanning sparse observations are distributed uniformly across their observed interval. This is workload throughput, not model decode speed."
+    },
+    {
+      "key": "runtime_telemetry",
+      "family": "adapter",
+      "label": "Runtime telemetry",
+      "source": "optional future OpenTelemetry or JSONL runtime adapters",
+      "missing_state": "absent unless an adapter is configured",
+      "description": "Imported runtime telemetry can strengthen evidence but must not replace local process/session truth."
+    },
+    {
+      "key": "diagnostic_export",
+      "family": "diagnostics",
+      "label": "Diagnostic export",
+      "source": "sanitized local snapshot",
+      "missing_state": "available when the local server can produce a sanitized snapshot",
+      "description": "Exports a minimized evidence bundle that omits raw prompts, absolute paths, command arguments, and environment variables."
+    }
+  ],
+  "diagnostics": {
+    "generated_at": "<instant>",
+    "anomaly_signals": [
+      {
+        "kind": "unmatched_processes",
+        "severity": "info",
+        "title": "Unmatched process pressure",
+        "evidence": "3 visible live processes are not currently matched to local session evidence.",
+        "metric_key": "process_pressure",
+        "source": "coordination_risk"
+      }
+    ],
+    "evidence_gaps": [
+      {
+        "kind": "unmapped_processes",
+        "severity": "warn",
+        "title": "Visible processes without session mapping",
+        "detail": "These PIDs count as runtime pressure but not confirmed sessions.",
+        "evidence": "3 unmapped of 3 visible PIDs",
+        "metric_key": "process_pressure",
+        "source": "live_processes"
+      },
+      {
+        "kind": "deferred_transcript_scan",
+        "severity": "info",
+        "title": "Transcript scan deferred",
+        "detail": "Some historical files were deferred, so long-range history can lag behind current evidence.",
+        "evidence": "0 deferred files",
+        "metric_key": "recent_movement",
+        "source": "transcript_stats"
+      },
+      {
+        "kind": "system_resource_rates_pending",
+        "severity": "info",
+        "title": "System resource rates need another sample",
+        "detail": "CPU and network rates require two samples. The first sample is not a measured zero.",
+        "metric_key": "system_resources",
+        "source": "system_resources"
+      },
+      {
+        "kind": "system_resource_sampling_notes",
+        "severity": "info",
+        "title": "System resource sampling has caveats",
+        "detail": "Some whole-machine counters are unavailable or pending. Treat absent rates as unavailable, not zero.",
+        "evidence": "1 sampler notes",
+        "metric_key": "system_resources",
+        "source": "system_resources"
+      }
+    ],
+    "baselines": [
+      {
+        "key": "mapping_coverage",
+        "label": "PID match coverage",
+        "value": "0.00%",
+        "status": "warn",
+        "detail": "Share of visible AI PIDs mapped back to session evidence.",
+        "metric_key": "process_pressure"
+      },
+      {
+        "key": "active_session_ratio",
+        "label": "Recent movement share",
+        "value": "0 of 0",
+        "status": "empty",
+        "detail": "Recent local-log movement compared with known live sessions.",
+        "metric_key": "recent_movement"
+      },
+      {
+        "key": "low_confidence_sessions",
+        "label": "Low-confidence sessions",
+        "value": "0",
+        "status": "ok",
+        "detail": "Sessions with weak mapping or missing transcript timing.",
+        "metric_key": "known_sessions"
+      },
+      {
+        "key": "token_measured_sessions",
+        "label": "Measured token sessions",
+        "value": "0 of 0",
+        "status": "empty",
+        "detail": "Token usage is counted only when parsed usage fields exist and source/confidence marks it measured.",
+        "metric_key": "token_usage"
+      },
+      {
+        "key": "evidence_walk_cost",
+        "label": "Evidence walk cost",
+        "value": "0ms",
+        "status": "ok",
+        "detail": "Duration of the last full evidence walk. The index reconciles about once per process, so this is the last measured walk, and stays no data until one has run.",
+        "metric_key": "recent_movement"
+      }
+    ],
+    "capabilities": [
+      {
+        "key": "passive_process_observer",
+        "label": "Passive process observer",
+        "status": "available",
+        "detail": "Local visible AI process rows and resource counters."
+      },
+      {
+        "key": "transcript_parser",
+        "label": "Transcript parser",
+        "status": "empty",
+        "detail": "Local transcript/activity evidence for sessions, roles, timing, and token usage when present."
+      },
+      {
+        "key": "system_resources",
+        "label": "System resource sampler",
+        "status": "available",
+        "detail": "Whole-machine CPU, memory, disk, network, and public thermal-pressure state when available."
+      },
+      {
+        "key": "runtime_telemetry_adapter",
+        "label": "Runtime telemetry adapter",
+        "status": "not_configured",
+        "detail": "Optional local runtime telemetry adapter is not configured; local process and session evidence remain the source of truth."
+      },
+      {
+        "key": "diagnostic_export",
+        "label": "Safe diagnostic export",
+        "status": "available",
+        "detail": "Sanitized local evidence bundle available from /api/diagnostic-export."
+      }
+    ],
+    "export": {
+      "endpoint": "/api/diagnostic-export",
+      "redaction": "sanitized snapshot; local roots, history paths, transcript paths, bundle paths, and command values are omitted or reduced to identity labels",
+      "omitted_fields": [
+        "raw prompts",
+        "absolute local paths",
+        "full command arguments",
+        "environment variables",
+        "transcript file paths",
+        "app bundle paths"
+      ]
+    }
+  },
+  "runtime_telemetry": {
+    "configured": false,
+    "status": "not_configured",
+    "event_count": 0,
+    "adapters": [
+      {
+        "key": "otel_local",
+        "label": "OpenTelemetry local receiver",
+        "status": "not_configured",
+        "detail": "Reserved adapter seam for future local spans or metrics."
+      },
+      {
+        "key": "jsonl_local",
+        "label": "JSONL runtime events",
+        "status": "not_configured",
+        "detail": "Reserved adapter seam for local append-only runtime event files."
+      }
+    ],
+    "detail": "Optional local runtime telemetry adapter is not configured; local process and session evidence remain the source of truth."
+  },
+  "transcript_stats": {
+    "scanned_files": 0,
+    "parsed_files": 0,
+    "deferred_files": 0,
+    "historical_scan_deferred": true,
+    "foreground_scan_lookback_seconds": "<duration>",
+    "configured_history_lookback_seconds": "<duration>",
+    "cached": false,
+    "scan_cost": {
+      "walk_measured": true,
+      "walk_fresh": true,
+      "measured_at": "<instant>"
+    }
+  },
+  "project_focus": [],
+  "candidate_workitems": [],
+  "age_buckets": [
+    {
+      "label": "0-30s",
+      "count": 0
+    },
+    {
+      "label": "31-90s",
+      "count": 0
+    },
+    {
+      "label": "91-300s",
+      "count": 0
+    },
+    {
+      "label": "5m+",
+      "count": 0
+    },
+    {
+      "label": "No trace",
+      "count": 0
+    }
+  ],
+  "system_resources": {
+    "sampled_at": "<instant>",
+    "supported": true,
+    "thermal_state": "nominal",
+    "thermal_state_supported": true,
+    "cpu_percent": "<host>",
+    "load_average_1": "<host>",
+    "load_average_5": "<host>",
+    "load_average_15": "<host>",
+    "uptime_seconds": "<duration>",
+    "memory_total_bytes": "<host>",
+    "memory_used_bytes": "<host>",
+    "memory_free_bytes": "<host>",
+    "memory_used_pct": "<host>",
+    "disk_total_bytes": "<host>",
+    "disk_used_bytes": "<host>",
+    "disk_free_bytes": "<host>",
+    "disk_used_pct": "<host>",
+    "network_rx_bytes": "<host>",
+    "network_tx_bytes": "<host>",
+    "network_rx_packets": "<host>",
+    "network_tx_packets": "<host>",
+    "network_rx_errors": "<host>",
+    "network_tx_errors": "<host>",
+    "network_rx_drops": "<host>",
+    "network_rx_bytes_per_sec": "<host>",
+    "network_tx_bytes_per_sec": "<host>",
+    "network_rx_packets_per_sec": "<host>",
+    "network_tx_packets_per_sec": "<host>",
+    "network_error_packets_per_sec": "<host>",
+    "network_dropped_packets_per_sec": "<host>",
+    "network_packet_issue_pct": "<host>",
+    "network_interface_count": "<host>",
+    "sample_interval_seconds": "<duration>",
+    "notes": [
+      "System resource rates need two samples; the next poll will contain CPU and network deltas."
+    ]
+  },
+  "process_stats": {},
+  "live_processes": [
+    {
+      "pid": 4101,
+      "tool": "claude",
+      "display_name": "claude",
+      "command": "claude --resume abc123",
+      "mapped_sessions": 0,
+      "mapped_active_sessions": 0,
+      "main_sessions": 0,
+      "subagent_sessions": 0,
+      "unknown_role_sessions": 0,
+      "evidence_summary": "unmapped process"
+    },
+    {
+      "pid": 4102,
+      "tool": "codex",
+      "display_name": "codex",
+      "command": "codex exec",
+      "mapped_sessions": 0,
+      "mapped_active_sessions": 0,
+      "main_sessions": 0,
+      "subagent_sessions": 0,
+      "unknown_role_sessions": 0,
+      "evidence_summary": "unmapped process"
+    },
+    {
+      "pid": 4103,
+      "tool": "gemini",
+      "display_name": "gemini",
+      "command": "gemini --prompt review",
+      "mapped_sessions": 0,
+      "mapped_active_sessions": 0,
+      "main_sessions": 0,
+      "subagent_sessions": 0,
+      "unknown_role_sessions": 0,
+      "evidence_summary": "unmapped process"
+    }
+  ],
+  "live_sessions": [],
+  "runtime_process_summary": [
+    {
+      "key": "claude",
+      "tool": "claude",
+      "display_name": "claude",
+      "pid_count": 1,
+      "mapped_processes": 0,
+      "unmapped_processes": 1,
+      "direct_sessions": 0,
+      "subagent_sessions": 0,
+      "unknown_role_sessions": 0,
+      "active_sessions": 0
+    },
+    {
+      "key": "codex",
+      "tool": "codex",
+      "display_name": "codex",
+      "pid_count": 1,
+      "mapped_processes": 0,
+      "unmapped_processes": 1,
+      "direct_sessions": 0,
+      "subagent_sessions": 0,
+      "unknown_role_sessions": 0,
+      "active_sessions": 0
+    },
+    {
+      "key": "gemini",
+      "tool": "gemini",
+      "display_name": "gemini",
+      "pid_count": 1,
+      "mapped_processes": 0,
+      "unmapped_processes": 1,
+      "direct_sessions": 0,
+      "subagent_sessions": 0,
+      "unknown_role_sessions": 0,
+      "active_sessions": 0
+    }
+  ],
+  "notes": [
+    "3 live processes had no session mapping and only contribute to PID concurrency.",
+    "Full historical transcript parsing was deferred from the foreground snapshot; live process files and foreground-window transcripts are still included."
+  ]
+}
