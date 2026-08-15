@@ -4,6 +4,7 @@ import (
 	"agentload/internal/historyfile"
 	"agentload/internal/snapshot"
 	"bytes"
+	"container/list"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -17,14 +18,19 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 )
 
 // sourceStore owns canonical locators and exact source reconstruction.
 // Only sparse ranges and non-reproducible exceptions persist event content.
 type sourceStore struct {
-	db            *sql.DB
-	path          string
-	checkCapacity func(string, uint64) error
+	db              *sql.DB
+	path            string
+	checkCapacity   func(string, uint64) error
+	checkpointMu    sync.Mutex
+	checkpointCache map[string]*list.Element
+	checkpointLRU   list.List
+	checkpointBytes int
 }
 
 const sourceStoreVersion = 2
@@ -251,10 +257,7 @@ func (f *sourceStore) checkpoint(ctx context.Context, id string) (sourceCheckpoi
 	if err != nil {
 		return c, false, err
 	}
-	raw, err := decodeSourceValue(body, 2*maxRecordBytes)
-	if err == nil {
-		err = json.Unmarshal(raw, &c)
-	}
+	c, err = f.decodeCheckpoint(id, body, 2*maxRecordBytes)
 	if err == nil && c.Generation != generation {
 		err = ErrStale
 	}
@@ -532,12 +535,8 @@ func (f *sourceStore) validateRanges(ctx context.Context, st *sourceState) error
 	if !complete {
 		return errStorageMigration
 	}
-	raw, err := decodeSourceValue(checkpoint, 2*maxRecordBytes)
+	c, err := f.decodeCheckpoint(st.ID, checkpoint, 2*maxRecordBytes)
 	if err != nil {
-		return err
-	}
-	var c sourceCheckpoint
-	if err = json.Unmarshal(raw, &c); err != nil {
 		return err
 	}
 	if c.Generation != st.Generation || c.Offset != st.checkpoint.Offset || c.EventCount != st.checkpoint.EventCount {

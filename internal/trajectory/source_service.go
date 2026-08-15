@@ -24,12 +24,8 @@ func (f *sourceStore) checkpoints(ctx context.Context) (map[string]sourceCheckpo
 		if err = rows.Scan(&id, &generation, &body, &missing); err != nil {
 			return nil, err
 		}
-		raw, err := decodeSourceValue(body, maxRecordBytes)
+		c, err := f.decodeCheckpoint(id, body, maxRecordBytes)
 		if err != nil {
-			return nil, err
-		}
-		var c sourceCheckpoint
-		if err = json.Unmarshal(raw, &c); err != nil {
 			return nil, err
 		}
 		if generation != c.Generation {
