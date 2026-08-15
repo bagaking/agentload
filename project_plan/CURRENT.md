@@ -154,11 +154,21 @@ meta:
 - **这笔账的性质**：4 槽 → 7 族是需要先定义信号族与证据映射的**设计工作**，不是接线工作；在那之前生成 7 列表只会产出无依据的 cell，违反本 sprint 自己的 KR3。
 - **打包安装 `2026.09.20.174628`**（dmg 8.5M / zip 7.9M，ad-hoc 签名），已装 `/Applications` 并实机出数：`parsed_files=84`、`scan_cost{walk_measured=true elapsed_ms=512 visited=28223 pruned=942 aged=9202}`、诊断面 `evidence_out_of_horizon 9202 files` 与 `evidence_walk_cost 512ms ok`，空闲 CPU **0.0%**。本次改动是 code→doc 的构建期门，运行时行为按预期与上一版一致。
 
+**2026-09-20 完成**（`M01_S02` 部分落地：类型树成包 + KR2/KR3 门禁）：
+
+- **七包目标被实测驳回，已改写 sprint 而非绕开代码（D-025）**：`trayApp` 61 个方法分散在 `tray.go`(42) 与 `server.go`(19)，而 Go 要求一个类型的方法全在自己包内——**server 与 tray 不可能分包**；另有四个双向引用环。加上 `//go:embed ui/dist/*` 不能引用父目录、cgo 只编译导入包自身目录的 `.m` 文件，诚实的结构是 **4–5 包**。逐条理由见 `M01_S02` §「计划偏差」。
+- **最意外的一条**：`types.go` 原本**不在七包清单里**，却是唯一必须先拆的——它被所有包同时生产和消费，留在任何行为包里都会让其余三个互相 import。一个无内部依赖的叶子能一次性斩断全部环。判据 `go list -deps ./internal/snapshot` 只输出它自己。
+- **`internal/snapshot` 已落地**（`efbc0ce`，42 文件 / 59 类型名）：`TestSnapshotMatchesGolden` **未重新生成即通过**，直接证明 `/api/snapshot` 字节未变。另做**归一化 diff 审计**（抹掉限定符与已知重命名后逐行读完幸存的 74 行），抓到三类正则溢出：事件名 `"snapshot_recorded"`→`"snap_recorded"`（**会静默改变 lifecycle.jsonl 历史语义**）、用户可见提示语、以及一个方法名。
+- **KR2 守卫盯词汇而非算术（D-027）**：盯算术会标红仓库里每处字节换算与百分比格式化，噪声压倒信号、必被关掉。改盯 freshness 三个取值出现在语义层之外。**首次运行即抓到真问题**：`recentMovementStatus` 的 `"idle"` 属 baseline-status 族，与 freshness 族同词异义（全机 stale 时 baseline 报 idle，而无一会话是 freshnessIdle）。**命名而非豁免**——改叫 `baselineStatusIdle` 并刻意声明在 `freshnessIdle` 正下方。
+- **KR3 测量而非断言（D-028）**："compile-only stub" 本身是陷阱：解析不了任何东西的 stub 量出的行数不代表真实成本。改为端到端跑通的 stub，**实测 130 行 / 预算 200 行**；另加局部性测试（stub id 出现在任何其他文件即失败）——只量行数会漏掉"把成本挪到 `observer.go`"这种形态。
+- **变异验证**：`observer.go` 一处改回裸 `"stale"` → KR2 守卫变红并打出行号；改回 → 绿。
+- **明确未做**：`agents`/`core`/`app` 三包未拆；**CI 尚未建立**，四道门仍靠人手跑，KR2 说的"进 CI"只做到"进测试"。
+
 **当前活跃**：
 
 - **M01 地基**（本轮架构与熵审查修复已落地，发布门已复跑）。
-- **当前 sprint：`M01_S01.hardening_release_gate.md`**——落地在途 hardening、把脏工作树收敛为干净提交、四门验证、录基线指标、打 tag。
-- M01 后续排队：M01_S02（Go 拆包 + VendorAdapter）、M01_S03（main.tsx 拆分 + popover 快路径）。
+- **当前 sprint：`M01_S02.go_package_split_vendor_adapter.md`**——类型树与两道门已落地；余下 `agents`/`core`/`app` 三包。
+- M01 后续排队：M01_S01 收尾（基线 tag + 冻结声明，仓库目前零 tag）、M01_S03（main.tsx 拆分 + popover 快路径）。
 
 **交接**：2026-09-20 会话的收尾盘点见 [`HANDOFF_2026-09-20.md`](HANDOFF_2026-09-20.md)（未完成项按"接手方最可能先碰"排序 + 踩过的坑 + 安全红线）。接手方读完并更新本节后即可删除该文件。
 
@@ -181,7 +191,7 @@ meta:
 | `DOCREF_004.user_needs_and_pain_points.md` | 用户需求与痛点排序（jobs-to-be-done） |
 | `M01_S01.hardening_release_gate.md` | 加固发布门与打 tag 基线 |
 | `M01_S01.001.FIX.throughput_attribution_and_surface_unification.md` | 吞吐归属诚实性（partial coverage 语义）与 popover 面性统一 |
-| `M01_S02.go_package_split_vendor_adapter.md` | Go 拆包与 VendorAdapter 抽象 |
+| `M01_S02.go_package_split_vendor_adapter.md` | Go 拆包与 VendorAdapter 抽象（**七包目标已实测驳回，改 4–5 包；`internal/snapshot` 与 KR2/KR3 已落地**） |
 | `M01_S03.main_tsx_split_popover_fast_path.md` | main.tsx 模块拆分与 popover 快路径 |
 | `M02_S01.evidence_coverage_matrix.md` | Evidence Coverage Matrix（API/UI/docs 同源生成） |
 | `M02_S02.energy_budget_and_module_costs.md` | 自身成本预算：模块开关、成本公示、CI perf gate |
@@ -274,3 +284,9 @@ meta:
   2. **往既有 adapter 加第二个证据根时，`Evidence` 必须同步声明**。这正是本轮触发漂移的形状（Antigravity 进了 gemini 解析器却没进任何表）。`TestCapabilityMatrixDeclaresEveryEvidenceRootTheParserReads` 专盯这个。
   3. **新能力槽上线前先做两类变异**：删掉一条证据声明（应点红 doc 陈旧 + 证据根缺失两个测试）、给一个不具备该能力的 adapter 注入槽（应打印出错误行）。**没红过的门等于没有门。**
   4. **`unsupported` 是结论不是待办**。复核生成表时逐行确认每个 `unsupported` 都有实测理由（记在 `Note` 或 docs 散文里），不能让「还没做」和「实测没有」在表上长得一样。
+- **重构 / 拆包类改动追加（来源 `M01_S02` 部分落地）**：
+  1. **拆包前先量三件事，冲突就改计划不改代码**：(a) 每个大类型的方法分散在几个文件（Go 要求同类型方法同包）；(b) 候选包之间是否存在**双向**类型引用；(c) 有没有 embed / cgo / build tag 把文件钉死在特定目录。本轮三条全中，七包目标因此改为 4–5 包。
+  2. **大规模机械重写的验收是「归一化后还剩什么」，不是「测试全绿」**。单元测试断言每个函数被写来做什么，所以重构悄悄改掉一个 wire 字段时它们照样绿。必须：(a) golden snapshot **未重新生成即通过**；(b) 把声称的机械变换从 diff 两侧抹掉后**逐行读完幸存行**，行数应当少到能一眼数清。
+  3. **正则批量替换后，专门 grep 字符串字面量与注释**（`grep -oE '"[^"]*\b<新词>\b[^"]*"'`）。本轮正是这一步抓到事件名 `"snapshot_recorded"` 被改成 `"snap_recorded"`——**那会静默改变 lifecycle.jsonl 的历史数据语义**。
+  4. **新守卫必须先估「当前代码库会报多少条」**。个位数且条条值得读 → 可用；两位数或需要预置豁免名单 → 换角度。守卫的可用性由误报率决定，一个 90% 误报的门实际覆盖率是 0。
+  5. **预算类 KR（"X 低于 N"）必须有一个会变红的测量，且量在功能完整的样本上**。失败信息要指向「回 sprint 重新协商」，不是让下一个人就地抬高数字。
