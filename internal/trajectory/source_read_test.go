@@ -6,8 +6,47 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestTrajectoryPointReadUsesCommittedPrefixWhileTailAwaitsBackfill(t *testing.T) {
+	s, path, _, _, _ := indexFixture(t, request("saved first witness"))
+	page := queryOne(t, s)
+	id := page.Sessions[0].MatchedIDs[0]
+	source := s.provider(context.Background()).Sources[0]
+	before, _, err := s.store.checkpoint(context.Background(), sourceID(source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = file.WriteString(strings.Repeat(request("unprepared new tail"), 1000))
+	closeErr := file.Close()
+	if err != nil || closeErr != nil {
+		t.Fatal(err, closeErr)
+	}
+	s.store.checkCapacity = func(string, uint64) error {
+		return errors.New("point read attempted a backfill write")
+	}
+	got, err := s.Get(context.Background(), snapshot.TrajectoryGetParams{ID: id, View: "raw", Around: 0})
+	if err != nil || got.FocusID != id || len(got.Events) != 1 || got.RawChunk == nil {
+		t.Fatal("committed reference was blocked by its growing tail", got, err)
+	}
+	pending := false
+	for _, gap := range got.Coverage.Gaps {
+		pending = pending || gap == "index_pending"
+	}
+	if !pending {
+		t.Fatal("unprepared new tail was hidden", got.Coverage)
+	}
+	after, _, err := s.store.checkpoint(context.Background(), sourceID(source))
+	if err != nil || after.Offset != before.Offset || after.EventCount != before.EventCount || after.Generation != before.Generation {
+		t.Fatal("point read rewrote the recovery frontier", before, after, err)
+	}
+}
 
 func TestTrajectoryPointReadDoesNotPrepareUnrelatedHistory(t *testing.T) {
 	s, selectedPath, _, decoder, visible := indexFixture(t, request("selected match"))

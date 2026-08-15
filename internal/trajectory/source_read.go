@@ -33,7 +33,9 @@ func (s *Service) collectSource(ctx context.Context, id string) (*sourceState, s
 		return nil, cov, err
 	}
 	st, needsIndex := s.cachedSource(*selected)
-	if needsIndex {
+	// Existing references name committed evidence. A verified append retains
+	// that prefix; opening it must not first backfill an unrelated new tail.
+	if needsIndex && st == nil {
 		prepareCtx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
 		var err error
@@ -45,9 +47,9 @@ func (s *Service) collectSource(ctx context.Context, id string) (*sourceState, s
 			}
 			return nil, cov, err
 		}
-		if st.checkpoint.Offset < st.Info.Size() {
-			gap(&cov, "index_pending")
-		}
+	}
+	if st != nil && (needsIndex || st.checkpoint.Offset < st.Info.Size()) {
+		gap(&cov, "index_pending")
 	}
 	return st, cov, nil
 }
