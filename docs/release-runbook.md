@@ -74,6 +74,11 @@ are retained and accounted for separately. See
 4. Require the final `ready` record after complete fact, identity and recovery
    metadata verification. Only verified cutover retires the old index; never
    delete it manually to make room or shorten the migration.
+   When an external tool has removed source transcripts and the user explicitly
+   chooses cutover, retain their complete original facts as verified exceptions.
+   Keep the original protected inventory and a separate approved absence ledger;
+   report missing raw honestly. Every remaining protected prefix still requires
+   verification, and newly missing paths are not implicitly approved.
 5. Install the exact signed candidate used for verification. Check real cold
    and warm CLI/RPC pages, matched raw evidence, explicit counts, archive
    preparation completion and a later 300-second increment window. Record

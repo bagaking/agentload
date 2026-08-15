@@ -157,11 +157,19 @@ export function sealedReceipt(root, reference) {
   return bytes.toString('utf8');
 }
 
-export function verifyProtected(original, after) {
+export function verifyProtected(original, after, approvedAbsent = []) {
+  const absent = new Map(approvedAbsent.map(f => [f.path, f]));
   requireProof(Array.isArray(original) && Array.isArray(after) &&
+    absent.size === approvedAbsent.length &&
+    approvedAbsent.every(f => original.some(o => o.path === f.path && o.bytes === f.bytes && o.sha256 === f.sha256)) &&
     new Set(original.map(f=>f.path)).size === original.length && after.length === original.length &&
     new Set(after.map(f=>f.path)).size === after.length && original.every(f=>{
       const observed=after.find(x=>x.path===f.path);
+      if (absent.has(f.path)) {
+        return sha(f.sha256) && nonnegative(f.bytes) && observed?.bytes === f.bytes &&
+          observed.missing === true && observed.prefix_sha256 === null && observed.current_bytes === null &&
+          !existsSync(f.path);
+      }
       return typeof f.path==='string' && sha(f.sha256) && nonnegative(f.bytes) && observed &&
         observed.bytes===f.bytes && observed.prefix_sha256===f.sha256 && observed.missing===false &&
         nonnegative(observed.current_bytes) && observed.current_bytes>=f.bytes;
@@ -199,6 +207,31 @@ export function verifySourceStore(root, p) {
     build.command === './build_macos_app.sh' && receipt(build.output).includes('Agent Load.app'), 'Current binary lacks its actual build/input binding.');
   verifySigning(build,json(p.signing),p.binary_sha256,candidateInputDigest(root),receipt);
   const corpus = json(p.before), maintenance = json(p.maintenance);
+  const absence = p.external_source_absence ? json(p.external_source_absence) : null;
+  const absentSessions = absence?.sessions ?? [];
+  if (absence) {
+    const observed = json(absence.observed_absence), counts = json(absence.original_fact_counts);
+    requireProof(absence.decision === 'cutover_with_retained_facts_and_missing_raw' &&
+      absence.user_instruction === '切换吧' && absence.before_sha256 === corpus.protected_files.sha256 &&
+      absence.original_sha256 === corpus.file.sha256 && timestamp(absence.at) >= timestamp(corpus.at) &&
+      Number.isFinite(Date.parse(observed.at)) && Date.parse(observed.at) <= timestamp(absence.at) &&
+      Array.isArray(observed.missing) && new Set(observed.missing).size === observed.missing.length &&
+      observed.missing.length === absentSessions.length &&
+      counts.command === 'readonly-original-source-fact-counts' && counts.database_path === database &&
+      counts.original_sha256 === corpus.file.sha256 && sameFile(counts.original_file, corpus.file) &&
+      counts.original_file.bytes === corpus.bytes && counts.original_file.mtime_ns === String(corpus.file.mtime_ns) &&
+      counts.total_facts === corpus.events && Array.isArray(counts.sources) &&
+      counts.sources.length === corpus.sources.length &&
+      new Set(counts.sources.map(s => s.id)).size === counts.sources.length &&
+      counts.sources.reduce((n,s) => n + s.fact_count, 0) === corpus.events &&
+      Array.isArray(absentSessions) && absentSessions.length > 0 &&
+      new Set(absentSessions.map(s => s.id)).size === absentSessions.length &&
+      absentSessions.every(s => s.agent === 'claude' && nonnegative(s.fact_count) &&
+        observed.missing.includes(s.path) &&
+        corpus.sources.some(o => o.id === s.id && o.generation === s.generation && o.path === s.path && o.agent === s.agent) &&
+        counts.sources.some(o => o.id === s.id && o.generation === s.generation && o.fact_count === s.fact_count)),
+      'Missing raw exceptions lack a bound, explicit cutover decision.');
+  }
   requireProof(corpus.history_file === history && corpus.database_path === database && corpus.scope === 'whole_original_production_store' &&
     Array.isArray(corpus.sources) && corpus.sources.length > 0 &&
     corpus.sources.every(s => /^[a-f0-9]{16}$/.test(s.id)) &&
@@ -241,7 +274,7 @@ export function verifySourceStore(root, p) {
   const fileBefore = statSync(database);
   requireProof(sameFile(fileBefore,maintenance.target_file), 'Current file is not the verified migration target.');
   const db = new DatabaseSync(p.database_path, { readOnly: true });
-  let sourceCount;
+  let sourceCount, readableSourceCount;
   try {
     db.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=200; PRAGMA cache_size=-4096; BEGIN;');
     requireProof(db.prepare('PRAGMA user_version').get().user_version === 2,
@@ -261,9 +294,17 @@ export function verifySourceStore(root, p) {
       'Maintenance and committed migration state differ.');
     const ids = new Set(db.prepare('SELECT id FROM sources').all().map(s=>s.id));
     sourceCount = ids.size;
+    readableSourceCount = db.prepare('SELECT count(*) AS n FROM sources WHERE active=1 AND missing=0').get().n;
     requireProof(corpus.sources.every(s=>ids.has(s.id)) &&
       db.prepare('SELECT count(*) AS n FROM metadata').get().n >= corpus.metadata_rows,
       'Original source membership or opaque recovery metadata was lost.');
+    for (const source of absentSessions) {
+      const stored = db.prepare('SELECT rowid,generation,missing FROM sources WHERE id=? AND generation=?').get(source.id, source.generation);
+      requireProof(stored?.missing === 1 &&
+        db.prepare('SELECT count(*) AS n FROM exceptions WHERE source=?').get(stored.rowid).n === source.fact_count &&
+        db.prepare('SELECT count(*) AS n FROM ranges WHERE source=?').get(stored.rowid).n === 0,
+        'Missing raw source lost original facts or remains presented as reconstructible.');
+    }
     requireProof(sameFile(fileBefore,statSync(database)), 'Target pathname changed during read snapshot.');
     db.exec('COMMIT;');
   } finally { db.close(); }
@@ -283,7 +324,7 @@ export function verifySourceStore(root, p) {
     new Set(sourceCatalog.sources.map(s=>s.id)).size===sourceCatalog.sources.length,
     'Raw source catalog is unbound/incomplete.');
   for (const kind of ['sessions', 'history', 'usage', 'annotations']) {
-    verifyProtected(beforeFiles[kind],protectedFiles[kind]);
+    verifyProtected(beforeFiles[kind],protectedFiles[kind],kind === 'sessions' ? absentSessions : []);
   }
   requireProof(beforeFiles.sessions.length>0 && Array.isArray(corpus.raw_sources) && corpus.raw_sources.length>0 &&
     new Set(corpus.raw_sources.map(s=>s.path)).size===corpus.raw_sources.length &&
@@ -363,7 +404,7 @@ export function verifySourceStore(root, p) {
     'Growth summary differs from real same-lineage post-query checkpoint frames.');
   requireProof(growth.binary_sha256 === p.binary_sha256 && duration >= 300 &&
     growth.pending_sources_start === 0 && growth.pending_sources_end === 0 &&
-    growth.sources >= corpus.sources.length && growth.sources <= sourceCount && growth.sources===frames.at(-1).sources &&
+    growth.sources === readableSourceCount && growth.sources <= sourceCount && growth.sources===frames.at(-1).sources &&
     positive(growth.start_allocated_bytes) && positive(growth.end_allocated_bytes) &&
     nonnegative(growth.appended_events) && growth.catalog_rechecks===frames.length-1 &&
     (growth.appended_events!==0 || frames[0].checkpoint_sha256===frames.at(-1).checkpoint_sha256) &&
@@ -389,7 +430,7 @@ export function verifySourceStore(root, p) {
   }
   requireProof(sourceStorageInputDigest(root)===p.input_sha256 && fileDigest(installed)===p.binary_sha256 &&
     sameFile(fileBefore,statSync(database)), 'Candidate or target changed before final publication.');
-  console.log(`Verified installed source-backed store: ${(ready.bytes_before / 2 ** 30).toFixed(2)} GiB -> ${(currentBytes / 2 ** 20).toFixed(1)} MiB; ${sourceCount} sources, preserved files, exact CLI/RPC/raw and actual ${duration.toFixed(0)}s growth window.`);
+  console.log(`Verified installed source-backed store: ${(ready.bytes_before / 2 ** 30).toFixed(2)} GiB -> ${(currentBytes / 2 ** 20).toFixed(1)} MiB; ${sourceCount} retained sources, ${absentSessions.length} approved missing raw sessions with original facts retained, remaining protected prefixes preserved, exact CLI/RPC/raw and actual ${duration.toFixed(0)}s growth window.`);
 }
 
 if (process.argv[1] === new URL(import.meta.url).pathname) {
