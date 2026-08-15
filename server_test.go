@@ -78,9 +78,17 @@ func TestHandleCapabilitiesAPIUsesRegistryEvidence(t *testing.T) {
 	if len(payload.Families) != 7 || len(payload.Rows) == 0 {
 		t.Fatalf("capability payload = %+v", payload)
 	}
+	// Compare the names, not just the count. Two length-7 lists stay length-7
+	// through a rename, so counting alone lets the endpoint publish a family key
+	// the registry no longer emits.
 	for _, row := range payload.Rows {
 		if len(row.SignalFamilies) != 7 {
 			t.Fatalf("row %q has %d signal families", row.Agent, len(row.SignalFamilies))
+		}
+		for i, family := range row.SignalFamilies {
+			if payload.Families[i] != family.Key {
+				t.Fatalf("row %q family %d is %q but the endpoint advertises %q", row.Agent, i, family.Key, payload.Families[i])
+			}
 		}
 	}
 	head := newLoopbackRequest(http.MethodHead, "/api/capabilities", nil)

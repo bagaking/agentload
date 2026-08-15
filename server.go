@@ -81,13 +81,37 @@ func (a *trayApp) handleCapabilitiesAPI(w http.ResponseWriter, r *http.Request) 
 		w.WriteHeader(http.StatusOK)
 		return
 	}
+	// Families is read off the rows rather than spelled here. A second literal
+	// list would be a hand-maintained copy of capability_matrix.go's keys with
+	// nothing comparing the two, so renaming a family there would leave this
+	// endpoint publishing the old name -- the exact drift shape the generated
+	// matrix exists to prevent.
+	families := capabilityFamilyKeys(rows)
 	_ = json.NewEncoder(w).Encode(struct {
 		Families []string                       `json:"families"`
 		Rows     []snapshot.CapabilityMatrixRow `json:"rows"`
 	}{
-		Families: []string{"presence_resources", "sessions_roles", "recent_movement", "tokens_cost", "quota_windows", "workspace_context", "consented_telemetry"},
+		Families: families,
 		Rows:     rows,
 	})
+}
+
+// capabilityFamilyKeys lists each signal family once, in the order the registry
+// emits it. Every row carries the same families, so the first row with any
+// defines the order and the rest only contribute keys a shorter row might miss.
+func capabilityFamilyKeys(rows []snapshot.CapabilityMatrixRow) []string {
+	keys := make([]string, 0, 8)
+	seen := make(map[string]bool, 8)
+	for _, row := range rows {
+		for _, family := range row.SignalFamilies {
+			if family.Key == "" || seen[family.Key] {
+				continue
+			}
+			seen[family.Key] = true
+			keys = append(keys, family.Key)
+		}
+	}
+	return keys
 }
 
 // loopbackHostHeader reports whether the request addressed this server by a
