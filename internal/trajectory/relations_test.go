@@ -159,32 +159,42 @@ func TestTrajectoryRelationsOnlyRecordedLinksEstablishCausalityAndDelivery(t *te
 }
 
 func TestTrajectoryRelationsNativeTypeSourceGenerationAndAmbiguity(t *testing.T) {
+	query := func(s *Service) snapshot.TrajectoryRelationQueryResult {
+		// Exact identity statuses require prepared sources, rather than a cold
+		// foreground quantum that can honestly report incomplete coverage.
+		searchTestPreparedQuery(t, s, snapshot.TrajectorySelector{})
+		q, err := s.QueryRelations(context.Background(), snapshot.TrajectorySelector{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return q
+	}
 	wrongType := relationEvent("child", "", recordedParent("msg-parent"))
 	s, _ := relationService(t, relationRecord(wrongType)+relationRecord(relationEvent("parent", "")))
-	q, _ := s.QueryRelations(context.Background(), snapshot.TrajectorySelector{})
+	q := query(s)
 	if len(q.Relations) != 1 || q.Relations[0].Status != "missing" {
 		t.Fatal("message ID used as envelope UUID")
 	}
 	local := relationEvent("local-child", "", recordedParent("parent"))
 	cross, _ := relationService(t, relationRecord(local), relationRecord(relationEvent("parent", "")))
-	q, _ = cross.QueryRelations(context.Background(), snapshot.TrajectorySelector{})
+	q = query(cross)
 	if q.Relations[0].Status != "missing" {
 		t.Fatal("matching ID in unrecorded cross-source scope linked")
 	}
 	local.Evidence.Relations[0].Target.SessionNativeID = "native-source-1"
 	explicit, _ := relationService(t, relationRecord(local), relationRecord(relationEvent("parent", "")))
-	q, _ = explicit.QueryRelations(context.Background(), snapshot.TrajectorySelector{})
+	q = query(explicit)
 	if q.Relations[0].Status != "resolved" {
 		t.Fatalf("explicit native session scope ignored: %+v", q)
 	}
 	local.Evidence.Relations[0].Target.Generation = "unobserved-old-generation"
 	stale, _ := relationService(t, relationRecord(local), relationRecord(relationEvent("parent", "")))
-	q, _ = stale.QueryRelations(context.Background(), snapshot.TrajectorySelector{})
+	q = query(stale)
 	if q.Relations[0].Status != "missing" || len(q.Relations[0].TargetIDs) != 0 {
 		t.Fatal("stale native reference attached to current generation")
 	}
 	duplicate, _ := relationService(t, relationRecord(relationEvent("child", "", recordedParent("duplicate")))+relationRecord(relationEvent("duplicate", "first"))+relationRecord(relationEvent("duplicate", "second")))
-	q, _ = duplicate.QueryRelations(context.Background(), snapshot.TrajectorySelector{})
+	q = query(duplicate)
 	if q.Relations[0].Status != "ambiguous" || len(q.Relations[0].TargetIDs) != 0 || len(q.Relations[0].CandidateIDs) != 2 || q.Coverage.Complete {
 		t.Fatalf("duplicate native record picked arbitrarily: %+v", q)
 	}

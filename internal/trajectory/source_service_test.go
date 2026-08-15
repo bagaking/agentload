@@ -460,19 +460,35 @@ func TestTrajectorySourceMigrationStoredBatchCrashBeforeProgress(t *testing.T) {
 func TestTrajectorySourceMigrationLastRangeThenSourceRewrite(t *testing.T) {
 	fixture, st, facts, path := gappedSourceMigrationFixture(t)
 	m := NewPersistent(fixture.provider, path)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := m.migrateSourceStore(ctx); !errors.Is(err, errStorageMigration) {
+		t.Fatal("initial migration did not preserve the original", err)
+	}
 	lastRange := false
+	capacity := m.sourceMigration.shadow.checkCapacity
+	m.sourceMigration.shadow.checkCapacity = func(path string, additional uint64) error {
+		state, _, err := sourceMigrationState(context.Background(), m.sourceMigration.shadow)
+		if err != nil {
+			return err
+		}
+		if state.Phase == "sources" && state.Source == 7 && state.Anchor.Offset == st.checkpoint.Offset {
+			lastRange = true
+			cancel()
+			return ctx.Err()
+		}
+		return capacity(path, additional)
+	}
 	for n := 0; n < 100; n++ {
-		err := m.migrateSourceStore(context.Background())
+		err := m.migrateSourceStore(ctx)
+		if lastRange {
+			if !errors.Is(err, context.Canceled) {
+				t.Fatal("last-range cancellation lost its cause", err)
+			}
+			break
+		}
 		if !errors.Is(err, errStorageMigration) {
 			t.Fatal(err)
-		}
-		state, _, e := sourceMigrationState(context.Background(), m.sourceMigration.shadow)
-		if e != nil {
-			t.Fatal(e)
-		}
-		if state.Source == 7 && state.Anchor.Offset == st.checkpoint.Offset {
-			lastRange = true
-			break
 		}
 	}
 	if !lastRange {
