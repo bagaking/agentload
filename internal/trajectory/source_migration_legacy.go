@@ -136,11 +136,11 @@ func (s *Service) migrateDirectLegacy(ctx context.Context) error {
 			return err
 		}
 	case "sources":
-		deadline := time.Now().Add(25 * time.Millisecond)
+		quantum := 25 * time.Millisecond
 		if s.storageOffline {
-			deadline = time.Now().Add(time.Second)
+			quantum = time.Second
 		}
-		return s.migrateSourceFacts(ctx, run, state, deadline)
+		return s.migrateSourceFacts(ctx, run, state, quantum)
 	case "legacy-search":
 		done, err := verifyDirectSearch(ctx, s, run, &state)
 		if err != nil {

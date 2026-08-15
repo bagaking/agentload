@@ -7,8 +7,83 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"reflect"
 	"testing"
+
+	"agentload/internal/historyfile"
 )
+
+func TestTrajectorySourceMigrationCatalogCannotStarveBatch(t *testing.T) {
+	for _, boundary := range []string{"expired_quantum", "cancelled_catalog", "incomplete_catalog", "capacity"} {
+		t.Run(boundary, func(t *testing.T) {
+			fixture, _, _, path := gappedSourceMigrationFixture(t)
+			original, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			m := NewPersistent(fixture.provider, path)
+			defer m.Close()
+			var before sourceMigration
+			for n := 0; ; n++ {
+				if n > 100 {
+					t.Fatal("did not reach source copy")
+				}
+				if err = m.migrateSourceStore(context.Background()); !errors.Is(err, errStorageMigration) {
+					t.Fatal(err)
+				}
+				before, _, err = sourceMigrationState(context.Background(), m.sourceMigration.shadow)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if before.Phase == "sources" {
+					break
+				}
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			m.provider = func(ctx context.Context) SourceSet {
+				set := fixture.provider(ctx)
+				if boundary == "cancelled_catalog" {
+					cancel()
+				} else if boundary == "incomplete_catalog" {
+					set.CatalogComplete = false
+					set.Coverage.Complete = false
+				}
+				return set
+			}
+			if boundary == "capacity" {
+				m.sourceMigration.shadow.checkCapacity = func(string, uint64) error { return historyfile.ErrStorageBudget }
+			}
+			// A zero duration exhausts the first-step soft quantum exactly,
+			// without relying on machine speed or a timed sleep.
+			err = m.migrateSourceFacts(ctx, m.sourceMigration, before, 0)
+			want := errStorageMigration
+			if boundary == "cancelled_catalog" {
+				want = context.Canceled
+			} else if boundary == "capacity" {
+				want = historyfile.ErrStorageBudget
+			}
+			if !errors.Is(err, want) {
+				t.Fatal(err)
+			}
+			after, _, err := sourceMigrationState(context.Background(), m.sourceMigration.shadow)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if boundary == "expired_quantum" {
+				var ranges int
+				if err = m.sourceMigration.shadow.db.QueryRow("SELECT count(*) FROM ranges").Scan(&ranges); err != nil || ranges != 1 || after.Records <= 0 || after.Anchor.Offset <= 0 {
+					t.Fatal("catalog budget prevented exactly one verified range", ranges, after, err)
+				}
+			} else if !reflect.DeepEqual(before, after) {
+				t.Fatal("blocked batch advanced acknowledged progress", before, after)
+			}
+			if got, e := os.ReadFile(path); e != nil || !bytes.Equal(original, got) {
+				t.Fatal("canonical original changed", e)
+			}
+		})
+	}
+}
 
 func TestTrajectorySourceMigrationChangeAtWriteAndReadback(t *testing.T) {
 	for _, boundary := range []string{"write", "readback", "cancel", "corrupt"} {

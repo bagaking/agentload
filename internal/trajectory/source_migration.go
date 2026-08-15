@@ -561,9 +561,9 @@ func (s *Service) migrateSourceStore(ctx context.Context) error {
 			return s.installSourceMigration(ctx, state)
 		}
 	}
-	deadline := time.Now().Add(25 * time.Millisecond)
+	quantum := 25 * time.Millisecond
 	if s.storageOffline {
-		deadline = time.Now().Add(time.Second)
+		quantum = time.Second
 	}
 	if state.Phase == "control" {
 		if err = migrateSourceControl(ctx, run, &state); err != nil {
@@ -637,10 +637,10 @@ func (s *Service) migrateSourceStore(ctx context.Context) error {
 		}
 		return errStorageMigration
 	}
-	return s.migrateSourceFacts(ctx, run, state, deadline)
+	return s.migrateSourceFacts(ctx, run, state, quantum)
 }
 
-func (s *Service) migrateSourceFacts(ctx context.Context, run *sourceMigrationRun, state sourceMigration, deadline time.Time) error {
+func (s *Service) migrateSourceFacts(ctx context.Context, run *sourceMigrationRun, state sourceMigration, quantum time.Duration) error {
 	set := s.provider(ctx)
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -654,7 +654,11 @@ func (s *Service) migrateSourceFacts(ctx context.Context, run *sourceMigrationRu
 			allowed[sourceID(src)] = src
 		}
 	}
-	for time.Now().Before(deadline) {
+	// Discovery belongs to preparation, not the batch scheduling quantum. The
+	// caller's context remains authoritative throughout both. Permit one bounded
+	// verified batch even when the soft quantum expires before its first step.
+	deadline := time.Now().Add(quantum)
+	for first := true; first || time.Now().Before(deadline); first = false {
 		var row int64
 		var id, generation, agent string
 		var active, missing, count, block int
