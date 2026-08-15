@@ -56,6 +56,7 @@ body[data-view="popover"] .diagnostics-shell {
 }
 
 .diagnostic-evidence-strip,
+.diagnostic-evolution-plane,
 .diagnostic-priority-plane,
 .diagnostic-chain-plane,
 .diagnostic-export-plane {
@@ -67,6 +68,78 @@ body[data-view="popover"] .diagnostics-shell {
   background:
     linear-gradient(90deg, color-mix(in srgb, var(--accent) 5%, transparent), transparent 38%),
     color-mix(in srgb, var(--diag-plane) 94%, transparent);
+}
+
+.diagnostic-evolution-plane {
+  padding: 9px;
+}
+
+.diagnostic-evolution-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 6px;
+}
+
+.diagnostic-evolution-card {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 8px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--tone-color, var(--diag-muted)) 8%, transparent);
+}
+
+.diagnostic-evolution-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.diagnostic-evolution-head strong {
+  min-width: 0;
+  color: var(--fg);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.diagnostic-evolution-head span {
+  flex: none;
+  color: var(--tone-color, var(--diag-muted));
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.diagnostic-evolution-stage {
+  display: grid;
+  gap: 5px;
+}
+
+.diagnostic-evolution-field {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  gap: 6px;
+  color: var(--console-text-soft);
+  font-size: 8.7px;
+  line-height: 1.25;
+}
+
+.diagnostic-evolution-field b {
+  color: var(--tone-color, var(--diag-muted));
+  font-size: 8px;
+  text-transform: uppercase;
+}
+
+.diagnostic-evolution-field span {
+  min-width: 0;
+}
+
+.diagnostic-evolution-card small {
+  color: var(--console-text-soft);
+  font-family: var(--font-mono);
+  font-size: 8px;
 }
 
 .diagnostic-evidence-strip {

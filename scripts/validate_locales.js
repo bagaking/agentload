@@ -19,6 +19,11 @@ const dynamicKeyPatterns = [
   { prefix: "diagnosticSignal", suffix: "Detail" },
   { prefix: "diagnosticSource", suffix: "Label" },
   { prefix: "diagnosticOmitted", suffix: "" },
+  { prefix: "diagnosticEvolution", suffix: "Title" },
+  { prefix: "diagnosticEvolution", suffix: "Hypothesis" },
+  { prefix: "diagnosticEvolution", suffix: "Experiment" },
+  { prefix: "diagnosticEvolution", suffix: "Verification" },
+  { prefix: "diagnosticEvolution", suffix: "Evidence" },
 ];
 
 function fail(message) {

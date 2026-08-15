@@ -83,6 +83,16 @@ High-priority findings are fixed before commit. Medium or low-priority findings
 may become follow-up tasks when they do not compromise data truth, privacy, or
 installability.
 
+## Agent evolution (RSI) surface
+
+Diagnostics is also an evidence-led Agent evolution loop. It turns observed
+session, coordination, and attribution patterns into a reviewable hypothesis,
+one bounded experiment, and a next verification step. It does not score Agent
+quality from process pressure or token usage because Agent Load has no task
+outcome or code-review ground truth. Collector and attribution health stays a
+separate evidence plane, so missing evidence is never presented as a zero
+result.
+
 ## Commit Protocol
 
 Each commit should describe:

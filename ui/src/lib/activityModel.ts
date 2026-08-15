@@ -1,4 +1,4 @@
-import { formatAge, formatPct, formatTokenUsageSummary, shortID, tokenUsageHasValue, type Translate } from "./format";
+import { formatAge, formatPct, formatTokenCount, formatTokenUsageSummary, shortID, tokenUsageHasValue, type Translate } from "./format";
 import { normalizedRole, projectLiveTokenRateValue, projectRecentMovementCount, sessionHasRecentMovement, sessionNeedsHumanReview, type SessionRole } from "./metricSemantics";
 import type { ToolSessionGroup, SessionWorktreeGroup } from "../types/app";
 import type { LiveSession, LiveTokenRateSample, ProjectSnapshot, Snapshot } from "../types/snapshot";
@@ -68,10 +68,12 @@ export function projectEvidenceItems(t: Translate, project: ProjectSnapshot, com
   const tokenSourceItem = project.token_usage_source
     ? { label: t("tokenSource"), value: tokenUsageProvenanceLabel(t, project.token_usage_source, project.token_usage_confidence), tone: project.token_usage_confidence === "measured" ? "good" : "" }
     : null;
+  const modelItem = modelUsageLabel(t, project.model_usage);
   const items = [
     { label: t("attention"), value: formatPct(project.attention_share_pct), tone: (project.attention_share_pct ?? 0) > 50 ? "active" : "" },
     tokenItem,
     tokenSourceItem,
+    modelItem,
     { label: t("basis"), value: project.attention_basis || t("unavailable") },
     { label: t("confidence"), value: confidenceLabel(t, project.confidence), tone: project.confidence === "high" ? "good" : "" },
     { label: t("attribution"), value: confidenceLabel(t, project.project_attribution_confidence), tone: project.project_attribution_confidence === "high" ? "good" : "" },
@@ -288,11 +290,30 @@ export function sessionEvidenceItems(t: Translate, session: LiveSession, compact
     { label: session.parent_thread_id ? t("parentThread") : t("threadSource"), value: session.thread_source ? threadSourceLabel(t, session.thread_source) : relationship },
     { label: t("roleHint"), value: roleHintLabel(t, session.role_hint_source) || agentRoleLabel(t, session.agent_role) || session.agent_nickname || t("unavailable") },
     { label: t("freshness"), value: freshnessLabel(t, session.freshness || (sessionHasRecentMovement(session) ? "active" : "idle")), tone: sessionHasRecentMovement(session) ? "active" : "" },
+    modelUsageLabel(t, session.model_usage),
   ];
   if (!compact && typeof session.active_duration_seconds === "number") {
     items.push({ label: t("activeDuration"), value: formatAge(session.active_duration_seconds, t), tone: sessionHasRecentMovement(session) ? "active" : "" });
   }
-  return compact ? items.slice(0, 3) : items;
+  const visibleItems = items.filter(Boolean) as EvidenceItem[];
+  return compact ? visibleItems.slice(0, 3) : visibleItems;
+}
+
+function modelUsageLabel(t: Translate, usage?: LiveSession["model_usage"]): EvidenceItem | null {
+  if (!usage?.length) return null;
+  const rows = usage
+    .filter((row) => row.model && row.token_usage && tokenUsageHasValue(row.token_usage))
+    .sort((a, b) => modelTokenTotal(b.token_usage) - modelTokenTotal(a.token_usage))
+    .slice(0, 3)
+    .map((row) => `${row.model}: ${formatTokenCount(modelTokenTotal(row.token_usage))}`);
+  if (!rows.length) return null;
+  const hidden = usage.length > rows.length ? ` +${usage.length - rows.length}` : "";
+  return { label: t("models"), value: rows.join(" · ") + hidden, tone: "good" };
+}
+
+function modelTokenTotal(usage?: NonNullable<LiveSession["model_usage"]>[number]["token_usage"]): number {
+  if (!usage) return 0;
+  return usage.total_tokens ?? (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.reasoning_output_tokens ?? 0);
 }
 
 export function sessionIdentity(session: LiveSession): string {

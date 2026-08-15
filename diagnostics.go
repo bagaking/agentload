@@ -8,21 +8,87 @@ import (
 	"time"
 )
 
-// transcriptScanCostWarnMs is the walk duration worth reporting. A refresh is
-// user-visible latency, so the threshold sits near the point where a walk is a
-// noticeable part of one rather than at a cost that merely exists.
-const transcriptScanCostWarnMs = 750
-
 func buildDiagnosticsSnapshot(snap snapshot.Snapshot, now time.Time) snapshot.DiagnosticSnapshot {
 	out := snapshot.DiagnosticSnapshot{
 		GeneratedAt: now.Format(time.RFC3339Nano),
 		Export:      diagnosticExportSummary(),
 	}
+	out.Evolution = buildDiagnosticEvolutionInsights(snap)
 	out.AnomalySignals = buildDiagnosticAnomalySignals(snap)
 	out.EvidenceGaps = buildDiagnosticEvidenceGaps(snap)
 	out.Baselines = buildDiagnosticBaselines(snap)
 	out.Capabilities = buildDiagnosticCapabilities(snap)
 	return out
+}
+
+// buildDiagnosticEvolutionInsights is the RSI surface: it converts observed
+// session and coordination patterns into hypotheses and small experiments. It
+// never scores agent quality because this observer has no task outcome or code
+// review ground truth.
+func buildDiagnosticEvolutionInsights(snap snapshot.Snapshot) []snapshot.DiagnosticEvolutionInsight {
+	insights := make([]snapshot.DiagnosticEvolutionInsight, 0, 3)
+	risk := snap.CoordinationRisk
+	if risk.StaleSessionCount > 0 || risk.ChurnSessionCount > 0 {
+		insights = append(insights, snapshot.DiagnosticEvolutionInsight{
+			Key:            "session_hygiene",
+			Title:          "Review session hygiene",
+			Hypothesis:     "Long-lived or rapidly accumulating sessions may be carrying stale context into later work.",
+			Evidence:       fmt.Sprintf("%d stale sessions; %d sessions started in the recent window", risk.StaleSessionCount, risk.ChurnSessionCount),
+			EvidenceKey:    "session_hygiene",
+			EvidenceValues: map[string]int{"count_a": risk.StaleSessionCount, "count_b": risk.ChurnSessionCount},
+			Experiment:     "Review one stale session and one recent session; close or summarize the stale context before the next task.",
+			Verification:   "On the next refresh, confirm stale-session count and recent-session movement separately.",
+			MetricKey:      "known_sessions",
+			Confidence:     "observed",
+			Status:         "needs_review",
+		})
+	}
+	if risk.DuplicateOverlapSuspicionCount > 0 || risk.ProjectSpreadCount > 1 {
+		insights = append(insights, snapshot.DiagnosticEvolutionInsight{
+			Key:            "coordination_shape",
+			Title:          "Test coordination shape",
+			Hypothesis:     "Overlapping sessions or wide project spread may be adding coordination cost.",
+			Evidence:       fmt.Sprintf("%d overlap suspicions across %d projects", risk.DuplicateOverlapSuspicionCount, risk.ProjectSpreadCount),
+			EvidenceKey:    "coordination_shape",
+			EvidenceValues: map[string]int{"count_a": risk.DuplicateOverlapSuspicionCount, "count_b": risk.ProjectSpreadCount},
+			Experiment:     "Run the next comparable task with one explicit owner and one bounded subagent branch.",
+			Verification:   "Compare the next run's session count, overlap evidence, and review outcome; Agent Load does not infer outcome quality.",
+			MetricKey:      "role_matrix",
+			Confidence:     "observed",
+			Status:         "needs_review",
+		})
+	}
+	if risk.LowConfidenceSessionCount > 0 || snap.Summary.UnmappedProcesses > 0 {
+		insights = append(insights, snapshot.DiagnosticEvolutionInsight{
+			Key:            "evidence_boundary",
+			Title:          "Repair the evidence boundary first",
+			Hypothesis:     "Weak attribution can make an agent change look better or worse than the evidence supports.",
+			Evidence:       fmt.Sprintf("%d low-confidence sessions; %d unmapped processes", risk.LowConfidenceSessionCount, snap.Summary.UnmappedProcesses),
+			EvidenceKey:    "evidence_boundary",
+			EvidenceValues: map[string]int{"count_a": risk.LowConfidenceSessionCount, "count_b": snap.Summary.UnmappedProcesses},
+			Experiment:     "Use the session and process inspectors to resolve one unmapped or low-confidence item before changing prompts or delegation rules.",
+			Verification:   "Confirm the next snapshot has stronger mapping evidence; do not treat missing evidence as a zero outcome.",
+			MetricKey:      "process_pressure",
+			Confidence:     "observed",
+			Status:         "needs_review",
+		})
+	}
+	if len(insights) == 0 {
+		insights = append(insights, snapshot.DiagnosticEvolutionInsight{
+			Key:            "baseline_review",
+			Title:          "Capture a baseline before changing the agent",
+			Hypothesis:     "Current evidence does not identify a specific coordination or attribution problem.",
+			Evidence:       fmt.Sprintf("%d live sessions; %d projects; no current RSI trigger", snap.Current.SessionConcurrency, risk.ActiveProjectCount),
+			EvidenceKey:    "baseline_review",
+			EvidenceValues: map[string]int{"count_a": snap.Current.SessionConcurrency, "count_b": risk.ActiveProjectCount},
+			Experiment:     "Choose one repeatable task and record its session shape, token usage, and review result before changing the agent setup.",
+			Verification:   "Compare the next run with this baseline using the same task and review criteria.",
+			MetricKey:      "known_sessions",
+			Confidence:     "observed",
+			Status:         "baseline",
+		})
+	}
+	return insights
 }
 
 func diagnosticExportSummary() snapshot.DiagnosticExportSummary {
@@ -168,18 +234,9 @@ func buildDiagnosticEvidenceGaps(snap snapshot.Snapshot) []snapshot.DiagnosticSi
 		})
 	}
 	// A walk is measured once per reconcile and reported until the next one, so
-	// the signal must say the measurement is the last walk, not this pass.
-	if snap.TranscriptStats.ScanCost.WalkMeasured && snap.TranscriptStats.ScanCost.ElapsedMs >= transcriptScanCostWarnMs {
-		gaps = append(gaps, snapshot.DiagnosticSignalSnapshot{
-			Kind:      "transcript_scan_expensive",
-			Severity:  "info",
-			Title:     "Evidence walk is expensive",
-			Detail:    "The last full evidence walk took long enough to delay a refresh. Pruned directories show how much the walk already avoids.",
-			Evidence:  fmt.Sprintf("%dms last walk, %d entries visited, %d directories pruned", snap.TranscriptStats.ScanCost.ElapsedMs, snap.TranscriptStats.ScanCost.VisitedEntries, snap.TranscriptStats.ScanCost.PrunedDirectories),
-			MetricKey: "recent_movement",
-			Source:    "transcript_stats",
-		})
-	}
+	// its cost is a reading rather than an event. It rides the evidence_walk_cost
+	// baseline; there is no signal for it, because no documented refresh budget
+	// exists to say which duration is too long.
 	if len(snap.TranscriptStats.Errors) > 0 {
 		gaps = append(gaps, snapshot.DiagnosticSignalSnapshot{
 			Kind:      "transcript_parse_errors",
@@ -293,15 +350,14 @@ func scanCostValue(cost snapshot.TranscriptScanCost) string {
 	return fmt.Sprintf("%dms", cost.ElapsedMs)
 }
 
+// scanCostStatus reports whether the walk cost is known, not whether it is
+// acceptable. Judging it would need a documented refresh budget (M02_S02), and
+// picking a number here would be an undocumented user-visible threshold.
 func scanCostStatus(cost snapshot.TranscriptScanCost) string {
-	switch {
-	case !cost.WalkMeasured:
+	if !cost.WalkMeasured {
 		return "unavailable"
-	case cost.ElapsedMs >= transcriptScanCostWarnMs:
-		return "watch"
-	default:
-		return "ok"
 	}
+	return "ok"
 }
 
 func buildDiagnosticCapabilities(snap snapshot.Snapshot) []snapshot.DiagnosticCapabilitySnapshot {

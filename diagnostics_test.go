@@ -3,6 +3,7 @@ package main
 import (
 	"agentload/internal/snapshot"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -81,6 +82,48 @@ func TestBuildDiagnosticsSnapshotSeparatesAnomaliesAndEvidenceGaps(t *testing.T)
 	}
 }
 
+func TestDiagnosticEvolutionInsightsDescribeObservedPatterns(t *testing.T) {
+	snap := snapshot.Snapshot{
+		Current: snapshot.CurrentMetrics{SessionConcurrency: 3},
+		Summary: snapshot.SnapshotSummary{UnmappedProcesses: 1},
+		CoordinationRisk: snapshot.CoordinationRiskSnapshot{
+			ActiveProjectCount:             2,
+			StaleSessionCount:              1,
+			DuplicateOverlapSuspicionCount: 2,
+			ProjectSpreadCount:             2,
+			LowConfidenceSessionCount:      1,
+			ChurnSessionCount:              3,
+		},
+	}
+	insights := buildDiagnosticEvolutionInsights(snap)
+	if len(insights) != 3 {
+		t.Fatalf("expected three independent RSI review prompts, got %+v", insights)
+	}
+	for _, insight := range insights {
+		if insight.Hypothesis == "" || insight.Evidence == "" || insight.Experiment == "" || insight.Verification == "" {
+			t.Fatalf("evolution insight must be an evidence-to-experiment loop: %+v", insight)
+		}
+		if insight.Confidence != "observed" || insight.Status != "needs_review" {
+			t.Fatalf("evolution insight should remain an observed review prompt: %+v", insight)
+		}
+	}
+}
+
+func TestSessionModelUsageKeepsUnattributedResidualExplicit(t *testing.T) {
+	trace := snapshot.SessionTrace{
+		TokenUsage: snapshot.TokenUsage{InputTokens: 12, OutputTokens: 8, TotalTokens: 20},
+		ModelUsage: snapshot.ModelTokenUsage{"model-a": {InputTokens: 7, OutputTokens: 5, TotalTokens: 12}},
+	}
+	trace.EnsureModelUsage()
+	if got := trace.ModelUsage[snapshot.UnknownModel]; got.InputTokens != 5 || got.OutputTokens != 3 || got.TotalTokens != 8 {
+		t.Fatalf("expected uncovered measured tokens in unknown model bucket, got %+v", got)
+	}
+	rows := trace.ModelUsage.Rows()
+	if len(rows) != 2 || (rows[0].Model != snapshot.UnknownModel && rows[1].Model != snapshot.UnknownModel) {
+		t.Fatalf("expected stable model rows including unknown bucket, got %+v", rows)
+	}
+}
+
 func TestDiagnosticBaselinesKeepEmptyMappingAndMeasuredTokensHonest(t *testing.T) {
 	snap := snapshot.Snapshot{
 		Current: snapshot.CurrentMetrics{PIDConcurrency: 0, SessionConcurrency: 2},
@@ -104,8 +147,7 @@ func TestDiagnosticBaselinesKeepEmptyMappingAndMeasuredTokensHonest(t *testing.T
 func TestScanCostStaysUnavailableUntilAWalkHasRun(t *testing.T) {
 	// evidence_index.go zeroes its walk counters on a pass served from the
 	// index. Surfacing those unguarded would report "no walk has run" as a
-	// measured 0ms, so an unmeasured cost must have no number at all -- and
-	// must not be compared against the cost threshold.
+	// measured 0ms, so an unmeasured cost must have no number at all.
 	unmeasured := snapshot.Snapshot{TranscriptStats: snapshot.TranscriptStats{
 		ScanCost: snapshot.TranscriptScanCost{WalkMeasured: false, AgedOutFiles: 9060},
 	}}
@@ -113,9 +155,6 @@ func TestScanCostStaysUnavailableUntilAWalkHasRun(t *testing.T) {
 	cost := requireDiagnosticBaseline(t, diagnostics.Baselines, "evidence_walk_cost")
 	if cost.Value != liveTokenRateStateNoData || cost.Status != "unavailable" {
 		t.Fatalf("expected an unmeasured walk to report no data, got %+v", cost)
-	}
-	if hasDiagnosticSignal(diagnostics.EvidenceGaps, "transcript_scan_expensive") {
-		t.Fatalf("expected no cost signal without a measurement, got %+v", diagnostics.EvidenceGaps)
 	}
 	// AgedOutFiles describes the index contents rather than the walk, so it
 	// survives a non-reconciling pass and is still reportable.
@@ -130,11 +169,8 @@ func TestScanCostStaysUnavailableUntilAWalkHasRun(t *testing.T) {
 	}}
 	diagnostics = buildDiagnosticsSnapshot(warm, time.Now())
 	cost = requireDiagnosticBaseline(t, diagnostics.Baselines, "evidence_walk_cost")
-	if cost.Value != "1173ms" || cost.Status != "watch" {
+	if cost.Value != "1173ms" || cost.Status != "ok" {
 		t.Fatalf("expected a warm pass to keep the last measured walk, got %+v", cost)
-	}
-	if !hasDiagnosticSignal(diagnostics.EvidenceGaps, "transcript_scan_expensive") {
-		t.Fatalf("expected an expensive measured walk to raise a signal, got %+v", diagnostics.EvidenceGaps)
 	}
 
 	fast := snapshot.Snapshot{TranscriptStats: snapshot.TranscriptStats{
@@ -144,6 +180,30 @@ func TestScanCostStaysUnavailableUntilAWalkHasRun(t *testing.T) {
 	cost = requireDiagnosticBaseline(t, diagnostics.Baselines, "evidence_walk_cost")
 	if cost.Value != "9ms" || cost.Status != "ok" {
 		t.Fatalf("expected a cheap measured walk to report ok, got %+v", cost)
+	}
+}
+
+// TestWalkCostIsReportedWithoutJudgingIt pins the deletion of the 750ms
+// threshold. The walk cost is a reading, and nothing in the repo documents a
+// refresh budget that would say which duration is too long -- so no duration
+// may raise a signal or downgrade the baseline's status. Restoring a threshold
+// here would be an undocumented user-visible judgement, which the neutral
+// observation rules forbid.
+func TestWalkCostIsReportedWithoutJudgingIt(t *testing.T) {
+	for _, elapsed := range []int64{0, 9, 750, 1173, 60_000} {
+		snap := snapshot.Snapshot{TranscriptStats: snapshot.TranscriptStats{
+			ScanCost: snapshot.TranscriptScanCost{WalkMeasured: true, ElapsedMs: elapsed},
+		}}
+		diagnostics := buildDiagnosticsSnapshot(snap, time.Now())
+		cost := requireDiagnosticBaseline(t, diagnostics.Baselines, "evidence_walk_cost")
+		if cost.Status != "ok" {
+			t.Errorf("a %dms walk reported status %q; a measured cost is known, not good or bad", elapsed, cost.Status)
+		}
+		for _, signal := range diagnostics.EvidenceGaps {
+			if strings.Contains(signal.Kind, "scan_expensive") || strings.Contains(signal.Kind, "walk_cost") {
+				t.Errorf("a %dms walk raised %q; walk cost has no documented budget to breach", elapsed, signal.Kind)
+			}
+		}
 	}
 }
 

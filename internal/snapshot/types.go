@@ -12,6 +12,8 @@ package snapshot
 
 import (
 	"encoding/json"
+	"sort"
+	"strings"
 	"time"
 )
 
@@ -181,11 +183,29 @@ type RuntimeTelemetryAdapterState struct {
 
 type DiagnosticSnapshot struct {
 	GeneratedAt    string                         `json:"generated_at,omitempty"`
+	Evolution      []DiagnosticEvolutionInsight   `json:"evolution,omitempty"`
 	AnomalySignals []DiagnosticSignalSnapshot     `json:"anomaly_signals,omitempty"`
 	EvidenceGaps   []DiagnosticSignalSnapshot     `json:"evidence_gaps,omitempty"`
 	Baselines      []DiagnosticBaselineSnapshot   `json:"baselines,omitempty"`
 	Capabilities   []DiagnosticCapabilitySnapshot `json:"capabilities,omitempty"`
 	Export         DiagnosticExportSummary        `json:"export"`
+}
+
+// DiagnosticEvolutionInsight turns observed agent/session patterns into a
+// reviewable improvement loop. It is deliberately a hypothesis and next
+// experiment, never a quality score inferred from process pressure.
+type DiagnosticEvolutionInsight struct {
+	Key            string         `json:"key"`
+	Title          string         `json:"title"`
+	Hypothesis     string         `json:"hypothesis"`
+	Evidence       string         `json:"evidence"`
+	EvidenceKey    string         `json:"evidence_key,omitempty"`
+	EvidenceValues map[string]int `json:"evidence_values,omitempty"`
+	Experiment     string         `json:"experiment"`
+	Verification   string         `json:"verification"`
+	MetricKey      string         `json:"metric_key,omitempty"`
+	Confidence     string         `json:"confidence"`
+	Status         string         `json:"status"`
 }
 
 type DiagnosticSignalSnapshot struct {
@@ -581,6 +601,7 @@ type ProjectSnapshot struct {
 	TokenUsage                      *TokenUsage                      `json:"token_usage,omitempty"`
 	TokenUsageSource                string                           `json:"token_usage_source,omitempty"`
 	TokenUsageConfidence            string                           `json:"token_usage_confidence,omitempty"`
+	ModelUsage                      []ModelUsageSnapshot             `json:"model_usage,omitempty"`
 	Tools                           []ProjectToolSnapshot            `json:"tools,omitempty"`
 }
 
@@ -597,13 +618,14 @@ type ProjectWorktreeSnapshot struct {
 }
 
 type ProjectToolSnapshot struct {
-	Tool                 string      `json:"tool"`
-	SessionCount         int         `json:"session_count"`
-	ActiveBurstCount     int         `json:"active_burst_count"`
-	ProcessCount         int         `json:"process_count"`
-	TokenUsage           *TokenUsage `json:"token_usage,omitempty"`
-	TokenUsageSource     string      `json:"token_usage_source,omitempty"`
-	TokenUsageConfidence string      `json:"token_usage_confidence,omitempty"`
+	Tool                 string               `json:"tool"`
+	SessionCount         int                  `json:"session_count"`
+	ActiveBurstCount     int                  `json:"active_burst_count"`
+	ProcessCount         int                  `json:"process_count"`
+	TokenUsage           *TokenUsage          `json:"token_usage,omitempty"`
+	TokenUsageSource     string               `json:"token_usage_source,omitempty"`
+	TokenUsageConfidence string               `json:"token_usage_confidence,omitempty"`
+	ModelUsage           []ModelUsageSnapshot `json:"model_usage,omitempty"`
 }
 
 type AgeBucketSnapshot struct {
@@ -732,46 +754,47 @@ type HostAppProcessSummary struct {
 }
 
 type LiveSessionSnapshot struct {
-	Tool                         string      `json:"tool"`
-	SessionID                    string      `json:"session_id"`
-	SessionRole                  string      `json:"session_role"`
-	RoleConfidence               string      `json:"role_confidence"`
-	RoleReasons                  []string    `json:"role_reasons,omitempty"`
-	ThreadSource                 string      `json:"thread_source,omitempty"`
-	ParentThreadID               string      `json:"parent_thread_id,omitempty"`
-	AgentRole                    string      `json:"agent_role,omitempty"`
-	AgentNickname                string      `json:"agent_nickname,omitempty"`
-	RoleHintSource               string      `json:"role_hint_source,omitempty"`
-	IndependentlyRun             bool        `json:"independently_run,omitempty"`
-	Project                      string      `json:"project"`
-	Worktree                     string      `json:"worktree,omitempty"`
-	Branch                       string      `json:"branch,omitempty"`
-	Path                         string      `json:"path"`
-	ProcessCount                 int         `json:"process_count"`
-	SharedProcessCount           int         `json:"shared_process_count"`
-	ProcessCPUPercent            float64     `json:"process_cpu_percent,omitempty"`
-	ProcessMemoryBytes           int64       `json:"process_memory_bytes,omitempty"`
-	HostApps                     []HostApp   `json:"host_apps,omitempty"`
-	FirstEventAt                 string      `json:"first_event_at,omitempty"`
-	LastEventAt                  string      `json:"last_event_at,omitempty"`
-	LastEventAgeSeconds          int         `json:"last_event_age_seconds,omitempty"`
-	ObservedDurationSeconds      int         `json:"observed_duration_seconds,omitempty"`
-	ActiveDurationSeconds        int         `json:"active_duration_seconds,omitempty"`
-	IdleDurationSeconds          int         `json:"idle_duration_seconds,omitempty"`
-	TokenUsage                   *TokenUsage `json:"token_usage,omitempty"`
-	TokenUsageSource             string      `json:"token_usage_source,omitempty"`
-	TokenUsageConfidence         string      `json:"token_usage_confidence,omitempty"`
-	ActiveBurst                  bool        `json:"active_burst"`
-	Freshness                    string      `json:"freshness"`
-	NeedsReview                  bool        `json:"needs_review"`
-	MappingMethod                string      `json:"mapping_method"`
-	MissingTranscript            bool        `json:"missing_transcript"`
-	Confidence                   string      `json:"confidence"`
-	ConfidenceReasons            []string    `json:"confidence_reasons,omitempty"`
-	ProjectAttributionSource     string      `json:"project_attribution_source"`
-	ProjectAttributionConfidence string      `json:"project_attribution_confidence"`
-	ProjectAttributionReasons    []string    `json:"project_attribution_reasons,omitempty"`
-	Provenance                   []string    `json:"provenance"`
+	Tool                         string               `json:"tool"`
+	SessionID                    string               `json:"session_id"`
+	SessionRole                  string               `json:"session_role"`
+	RoleConfidence               string               `json:"role_confidence"`
+	RoleReasons                  []string             `json:"role_reasons,omitempty"`
+	ThreadSource                 string               `json:"thread_source,omitempty"`
+	ParentThreadID               string               `json:"parent_thread_id,omitempty"`
+	AgentRole                    string               `json:"agent_role,omitempty"`
+	AgentNickname                string               `json:"agent_nickname,omitempty"`
+	RoleHintSource               string               `json:"role_hint_source,omitempty"`
+	IndependentlyRun             bool                 `json:"independently_run,omitempty"`
+	Project                      string               `json:"project"`
+	Worktree                     string               `json:"worktree,omitempty"`
+	Branch                       string               `json:"branch,omitempty"`
+	Path                         string               `json:"path"`
+	ProcessCount                 int                  `json:"process_count"`
+	SharedProcessCount           int                  `json:"shared_process_count"`
+	ProcessCPUPercent            float64              `json:"process_cpu_percent,omitempty"`
+	ProcessMemoryBytes           int64                `json:"process_memory_bytes,omitempty"`
+	HostApps                     []HostApp            `json:"host_apps,omitempty"`
+	FirstEventAt                 string               `json:"first_event_at,omitempty"`
+	LastEventAt                  string               `json:"last_event_at,omitempty"`
+	LastEventAgeSeconds          int                  `json:"last_event_age_seconds,omitempty"`
+	ObservedDurationSeconds      int                  `json:"observed_duration_seconds,omitempty"`
+	ActiveDurationSeconds        int                  `json:"active_duration_seconds,omitempty"`
+	IdleDurationSeconds          int                  `json:"idle_duration_seconds,omitempty"`
+	TokenUsage                   *TokenUsage          `json:"token_usage,omitempty"`
+	TokenUsageSource             string               `json:"token_usage_source,omitempty"`
+	TokenUsageConfidence         string               `json:"token_usage_confidence,omitempty"`
+	ModelUsage                   []ModelUsageSnapshot `json:"model_usage,omitempty"`
+	ActiveBurst                  bool                 `json:"active_burst"`
+	Freshness                    string               `json:"freshness"`
+	NeedsReview                  bool                 `json:"needs_review"`
+	MappingMethod                string               `json:"mapping_method"`
+	MissingTranscript            bool                 `json:"missing_transcript"`
+	Confidence                   string               `json:"confidence"`
+	ConfidenceReasons            []string             `json:"confidence_reasons,omitempty"`
+	ProjectAttributionSource     string               `json:"project_attribution_source"`
+	ProjectAttributionConfidence string               `json:"project_attribution_confidence"`
+	ProjectAttributionReasons    []string             `json:"project_attribution_reasons,omitempty"`
+	Provenance                   []string             `json:"provenance"`
 }
 
 type CandidateWorkitemSnapshot struct {
@@ -817,6 +840,97 @@ type SessionTrace struct {
 	FirstEvent       time.Time
 	LastEvent        time.Time
 	TokenUsage       TokenUsage
+	ModelUsage       ModelTokenUsage
+}
+
+// ModelUsageSnapshot is a measured token partition for one concrete model.
+// The unknown bucket is used when token evidence exists but the transcript did
+// not expose a model identity; it is never inferred from process arguments.
+type ModelUsageSnapshot struct {
+	Model      string     `json:"model"`
+	TokenUsage TokenUsage `json:"token_usage"`
+	Source     string     `json:"source,omitempty"`
+	Confidence string     `json:"confidence,omitempty"`
+}
+
+type ModelTokenUsage map[string]TokenUsage
+
+const UnknownModel = "unknown"
+
+func (m ModelTokenUsage) Add(model string, usage TokenUsage) {
+	if usage.Empty() {
+		return
+	}
+	model = strings.TrimSpace(model)
+	if model == "" {
+		model = UnknownModel
+	}
+	m[model] = addTokenUsage(m[model], usage)
+}
+
+func (m ModelTokenUsage) Rows() []ModelUsageSnapshot {
+	if len(m) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	rows := make([]ModelUsageSnapshot, 0, len(keys))
+	for _, key := range keys {
+		usage := m[key]
+		if usage.Empty() {
+			continue
+		}
+		rows = append(rows, ModelUsageSnapshot{Model: key, TokenUsage: usage, Source: "transcript_model", Confidence: "measured"})
+	}
+	return rows
+}
+
+func addTokenUsage(a, b TokenUsage) TokenUsage {
+	a.Add(b)
+	return a
+}
+
+func (trace *SessionTrace) AddModelUsage(model string, usage TokenUsage) {
+	if trace == nil || usage.Empty() {
+		return
+	}
+	if trace.ModelUsage == nil {
+		trace.ModelUsage = ModelTokenUsage{}
+	}
+	trace.ModelUsage.Add(model, usage)
+}
+
+// EnsureModelUsage keeps the aggregate total and makes missing model identity
+// explicit instead of silently dropping a token remainder.
+func (trace *SessionTrace) EnsureModelUsage() {
+	if trace == nil || trace.TokenUsage.Empty() {
+		return
+	}
+	if trace.ModelUsage == nil {
+		trace.ModelUsage = ModelTokenUsage{}
+	}
+	var covered TokenUsage
+	for _, usage := range trace.ModelUsage {
+		covered.Add(usage)
+	}
+	residual := tokenUsageResidual(trace.TokenUsage, covered)
+	if !residual.Empty() {
+		trace.ModelUsage.Add(UnknownModel, residual)
+	}
+}
+
+func tokenUsageResidual(total, covered TokenUsage) TokenUsage {
+	return TokenUsage{
+		InputTokens:              maxInt(0, total.InputTokens-covered.InputTokens),
+		OutputTokens:             maxInt(0, total.OutputTokens-covered.OutputTokens),
+		CacheCreationInputTokens: maxInt(0, total.CacheCreationInputTokens-covered.CacheCreationInputTokens),
+		CacheReadInputTokens:     maxInt(0, total.CacheReadInputTokens-covered.CacheReadInputTokens),
+		ReasoningOutputTokens:    maxInt(0, total.ReasoningOutputTokens-covered.ReasoningOutputTokens),
+		TotalTokens:              maxInt(0, total.TotalTokens-covered.TotalTokens),
+	}
 }
 
 type TokenUsage struct {

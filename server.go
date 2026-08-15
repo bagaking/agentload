@@ -711,6 +711,10 @@ func sanitizeProjectFocusForClient(projects []snapshot.ProjectSnapshot) []snapsh
 		out[i].ConfidenceReasons = sanitizeTextListForClient(out[i].ConfidenceReasons)
 		out[i].ProjectAttributionReasons = sanitizeTextListForClient(out[i].ProjectAttributionReasons)
 		out[i].Tools = append([]snapshot.ProjectToolSnapshot(nil), out[i].Tools...)
+		out[i].ModelUsage = sanitizeModelUsageForClient(out[i].ModelUsage)
+		for j := range out[i].Tools {
+			out[i].Tools[j].ModelUsage = sanitizeModelUsageForClient(out[i].Tools[j].ModelUsage)
+		}
 	}
 	return out
 }
@@ -823,6 +827,7 @@ func sanitizeLiveSessionsForClient(sessions []snapshot.LiveSessionSnapshot) []sn
 		out[i].ConfidenceReasons = sanitizeTextListForClient(out[i].ConfidenceReasons)
 		out[i].ProjectAttributionReasons = sanitizeTextListForClient(out[i].ProjectAttributionReasons)
 		out[i].Provenance = append([]string(nil), out[i].Provenance...)
+		out[i].ModelUsage = sanitizeModelUsageForClient(out[i].ModelUsage)
 		if len(out[i].HostApps) > 0 {
 			hosts := append([]snapshot.HostApp(nil), out[i].HostApps...)
 			for j := range hosts {
@@ -831,6 +836,19 @@ func sanitizeLiveSessionsForClient(sessions []snapshot.LiveSessionSnapshot) []sn
 			}
 			out[i].HostApps = hosts
 		}
+	}
+	return out
+}
+
+func sanitizeModelUsageForClient(items []snapshot.ModelUsageSnapshot) []snapshot.ModelUsageSnapshot {
+	if len(items) == 0 {
+		return items
+	}
+	out := append([]snapshot.ModelUsageSnapshot(nil), items...)
+	for i := range out {
+		out[i].Model = sanitizeTokenForClient(out[i].Model)
+		out[i].Source = sanitizeTokenForClient(out[i].Source)
+		out[i].Confidence = sanitizeTokenForClient(out[i].Confidence)
 	}
 	return out
 }

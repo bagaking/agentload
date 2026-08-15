@@ -1,5 +1,5 @@
 import { formatDateTime, type Translate } from "../lib/format";
-import type { DiagnosticBaseline, DiagnosticCapability, DiagnosticSignal, RuntimeTelemetrySnapshot, Snapshot, TranscriptScanCost } from "../types/snapshot";
+import type { DiagnosticBaseline, DiagnosticCapability, DiagnosticEvolutionInsight, DiagnosticSignal, RuntimeTelemetrySnapshot, Snapshot, TranscriptScanCost } from "../types/snapshot";
 
 // How many signals the priority table renders. The header counts every signal,
 // so the view model also reports how many this cap hid.
@@ -39,6 +39,18 @@ export type ChainNode = {
   tone: DiagnosticTone;
 };
 
+export type EvolutionRow = {
+  key: string;
+  title: string;
+  hypothesis: string;
+  evidence: string;
+  experiment: string;
+  verification: string;
+  metric: string;
+  status: string;
+  tone: DiagnosticTone;
+};
+
 export type DiagnosticViewModel = {
   generated: string;
   anomalyCount: number;
@@ -49,6 +61,7 @@ export type DiagnosticViewModel = {
   // of them, so without this a capped table reads as "these are all the
   // findings" -- the sampling gap the panel exists to expose.
   hiddenSignalCount: number;
+  evolutionRows: EvolutionRow[];
   chainNodes: ChainNode[];
   omittedFields: string[];
 };
@@ -71,9 +84,49 @@ export function buildDiagnosticViewModel(t: Translate, snapshot: Snapshot): Diag
     evidenceMetrics: buildEvidenceMetrics(t, diagnostics?.baselines ?? [], snapshot.transcript_stats?.scan_cost),
     priorityRows: buildPriorityRows(t, signals),
     hiddenSignalCount: Math.max(0, signals.length - PRIORITY_ROW_LIMIT),
+    evolutionRows: buildEvolutionRows(t, diagnostics?.evolution ?? []),
     chainNodes: buildChainNodes(t, diagnostics?.capabilities ?? [], snapshot.runtime_telemetry),
     omittedFields: diagnostics?.export?.omitted_fields ?? [],
   };
+}
+
+function buildEvolutionRows(t: Translate, insights: DiagnosticEvolutionInsight[]): EvolutionRow[] {
+  return insights.map((insight, index) => {
+    const key = insight.key || `evolution-${index}`;
+    return {
+      key,
+      title: evolutionText(t, key, "Title", insight.title || humanizeKey(key)),
+      hypothesis: evolutionText(t, key, "Hypothesis", insight.hypothesis || t("unavailable")),
+      evidence: evolutionEvidenceText(t, key, insight),
+      experiment: evolutionText(t, key, "Experiment", insight.experiment || t("unavailable")),
+      verification: evolutionText(t, key, "Verification", insight.verification || t("unavailable")),
+      metric: metricKeyLabel(t, insight.metric_key, humanizeKey(insight.metric_key || "evidence")),
+      status: evolutionStatusLabel(t, insight.status),
+      tone: evolutionTone(insight.status),
+    };
+  });
+}
+
+function evolutionEvidenceText(t: Translate, key: string, insight: DiagnosticEvolutionInsight): string {
+  const evidenceKey = insight.evidence_key || key;
+  const translated = t(`diagnosticEvolution${normalizeI18nKey(evidenceKey)}Evidence`);
+  const template = translated.startsWith("diagnosticEvolution") ? insight.evidence || t("unavailable") : translated;
+  return template.replace(/\{([a-z0-9_]+)\}/gi, (_, name: string) => String(insight.evidence_values?.[name] ?? `{${name}}`));
+}
+
+function evolutionText(t: Translate, key: string, suffix: string, fallback: string): string {
+  const translated = t(`diagnosticEvolution${normalizeI18nKey(key)}${suffix}`);
+  return translated.startsWith("diagnosticEvolution") ? fallback : translated;
+}
+
+function evolutionStatusLabel(t: Translate, status?: string): string {
+  if (status === "needs_review") return t("diagnosticEvolutionReview");
+  if (status === "baseline") return t("diagnosticEvolutionBaseline");
+  return diagnosticStatusLabel(t, status);
+}
+
+function evolutionTone(status?: string): DiagnosticTone {
+  return status === "needs_review" ? "watch" : status === "baseline" ? "ok" : toneFromStatus(status);
 }
 
 // Severity is a stable sort key, so equal-severity signals keep the backend's

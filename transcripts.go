@@ -1565,10 +1565,42 @@ func processGrokTraceLine(trace *snapshot.SessionTrace, line []byte) {
 		return
 	}
 	captureTokenUsage(trace, line)
+	captureGrokModelUsage(trace, line)
 	if sid := jsonNestedStringField(line, "params", "sessionId"); sid != "" {
 		trace.SessionID = sid
 	}
 	trace.EventTimes = append(trace.EventTimes, ts)
+}
+
+// Grok repeats the turn counters under usage.modelUsage.<model>. The outer
+// usage object remains the source of the aggregate total; this breakdown is
+// retained for attribution but is never added to the aggregate a second time.
+func captureGrokModelUsage(trace *snapshot.SessionTrace, line []byte) {
+	if trace == nil || !bytes.Contains(line, []byte(`"modelUsage"`)) {
+		return
+	}
+	var envelope struct {
+		Params struct {
+			Update struct {
+				Usage struct {
+					ModelUsage map[string]json.RawMessage `json:"modelUsage"`
+				} `json:"usage"`
+			} `json:"update"`
+		} `json:"params"`
+	}
+	if err := json.Unmarshal(line, &envelope); err != nil {
+		return
+	}
+	for model, raw := range envelope.Params.Update.Usage.ModelUsage {
+		var decoded interface{}
+		if err := json.Unmarshal(raw, &decoded); err != nil {
+			continue
+		}
+		usage := tokenUsageFromJSONValue(decoded)
+		if !usage.Empty() {
+			trace.AddModelUsage(model, usage)
+		}
+	}
 }
 
 func captureTraceRoleMetadata(trace *snapshot.SessionTrace, line []byte) {
@@ -1942,7 +1974,11 @@ func isClaudeActiveType(kind string) bool {
 }
 
 func finalizeTrace(trace *snapshot.SessionTrace) {
-	if trace == nil || len(trace.EventTimes) == 0 {
+	if trace == nil {
+		return
+	}
+	trace.EnsureModelUsage()
+	if len(trace.EventTimes) == 0 {
 		return
 	}
 	sort.Slice(trace.EventTimes, func(i, j int) bool {
@@ -2334,6 +2370,12 @@ func cloneTranscriptData(in *snapshot.TranscriptData) *snapshot.TranscriptData {
 		}
 		cloned := *trace
 		cloned.EventTimes = append([]time.Time(nil), trace.EventTimes...)
+		if trace.ModelUsage != nil {
+			cloned.ModelUsage = make(snapshot.ModelTokenUsage, len(trace.ModelUsage))
+			for model, usage := range trace.ModelUsage {
+				cloned.ModelUsage[model] = usage
+			}
+		}
 		out.Traces[path] = &cloned
 	}
 	return out
@@ -2345,5 +2387,11 @@ func cloneSessionTrace(trace *snapshot.SessionTrace) *snapshot.SessionTrace {
 	}
 	cloned := *trace
 	cloned.EventTimes = append([]time.Time(nil), trace.EventTimes...)
+	if trace.ModelUsage != nil {
+		cloned.ModelUsage = make(snapshot.ModelTokenUsage, len(trace.ModelUsage))
+		for model, usage := range trace.ModelUsage {
+			cloned.ModelUsage[model] = usage
+		}
+	}
 	return &cloned
 }

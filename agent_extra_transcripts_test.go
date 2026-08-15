@@ -99,6 +99,9 @@ func TestHermesAndOpenCodeSQLiteParsers(t *testing.T) {
 	if hermesTrace.TokenUsage.OutputTokens != 15 {
 		t.Fatalf("unexpected hermes usage: %+v", hermesTrace.TokenUsage)
 	}
+	if got := hermesTrace.ModelUsage["model"].OutputTokens; got != 15 {
+		t.Fatalf("expected hermes model usage to retain model identity, got %d", got)
+	}
 
 	opencode := filepath.Join(dir, "opencode.db")
 	runSQLiteTestSQL(t, opencode, `CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT); CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, time_created INTEGER, data TEXT); INSERT INTO session VALUES ('ses_1','/tmp/code'); INSERT INTO session VALUES ('ses_2','/tmp/other'); INSERT INTO message VALUES ('msg_1','ses_1',1726740000,'{"role":"assistant","modelID":"m","time":{"created":1726740000},"path":{"cwd":"/tmp/code"},"tokens":{"input":12,"output":4}}'); INSERT INTO message VALUES ('msg_2','ses_2',1726740100,'{"role":"assistant","modelID":"m","time":{"created":1726740100},"path":{"cwd":"/tmp/other"},"tokens":{"input":6,"output":2}}');`)
@@ -109,6 +112,9 @@ func TestHermesAndOpenCodeSQLiteParsers(t *testing.T) {
 	opencodeTrace := traceBySessionID(t, opencodeTraces, "ses_1")
 	if opencodeTrace.Project != "code" || opencodeTrace.TokenUsage.OutputTokens != 4 {
 		t.Fatalf("unexpected opencode trace: %+v", opencodeTrace)
+	}
+	if got := opencodeTrace.ModelUsage["m"].OutputTokens; got != 4 {
+		t.Fatalf("expected opencode model usage, got %d", got)
 	}
 }
 

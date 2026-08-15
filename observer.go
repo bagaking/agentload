@@ -1164,6 +1164,9 @@ func projectLiveSessions(sessions []snapshot.LiveSession, idleGap time.Duration,
 			ProjectAttributionReasons:    projectAttribution.Reasons,
 			Provenance:                   observation.Provenance,
 		}
+		if session.Trace != nil {
+			item.ModelUsage = session.Trace.ModelUsage.Rows()
+		}
 		item.HostApps = sortedHostApps(session.HostApps)
 		if session.Trace != nil {
 			item.ThreadSource = strings.TrimSpace(session.Trace.ThreadSource)
@@ -1605,6 +1608,7 @@ func buildProjectFocus(sessions []snapshot.LiveSession, idleGap time.Duration, n
 		activeBurstCount int
 		processes        map[int]struct{}
 		tokenUsage       snapshot.TokenUsage
+		modelUsage       snapshot.ModelTokenUsage
 	}
 	type worktreeAggregate struct {
 		name             string
@@ -1629,6 +1633,7 @@ func buildProjectFocus(sessions []snapshot.LiveSession, idleGap time.Duration, n
 		lastEvent                          time.Time
 		tools                              map[string]*toolAggregate
 		tokenUsage                         snapshot.TokenUsage
+		modelUsage                         snapshot.ModelTokenUsage
 		confidenceCounts                   map[string]int
 		provenanceCounts                   map[string]int
 		projectAttributionConfidenceCounts map[string]int
@@ -1733,6 +1738,18 @@ func buildProjectFocus(sessions []snapshot.LiveSession, idleGap time.Duration, n
 		if session.Trace != nil && !session.Trace.TokenUsage.Empty() {
 			item.tokenUsage.Add(session.Trace.TokenUsage)
 			toolAgg.tokenUsage.Add(session.Trace.TokenUsage)
+			if len(session.Trace.ModelUsage) > 0 {
+				if item.modelUsage == nil {
+					item.modelUsage = snapshot.ModelTokenUsage{}
+				}
+				if toolAgg.modelUsage == nil {
+					toolAgg.modelUsage = snapshot.ModelTokenUsage{}
+				}
+				for model, usage := range session.Trace.ModelUsage {
+					item.modelUsage.Add(model, usage)
+					toolAgg.modelUsage.Add(model, usage)
+				}
+			}
 		}
 		if facts.RecentMovement {
 			item.activeBurstCount++
@@ -1838,6 +1855,7 @@ func buildProjectFocus(sessions []snapshot.LiveSession, idleGap time.Duration, n
 			project.TokenUsageSource = "transcript_usage"
 			project.TokenUsageConfidence = "measured"
 		}
+		project.ModelUsage = item.modelUsage.Rows()
 		for tool, toolAgg := range item.tools {
 			toolSnapshot := snapshot.ProjectToolSnapshot{
 				Tool:             tool,
@@ -1851,6 +1869,7 @@ func buildProjectFocus(sessions []snapshot.LiveSession, idleGap time.Duration, n
 				toolSnapshot.TokenUsageSource = "transcript_usage"
 				toolSnapshot.TokenUsageConfidence = "measured"
 			}
+			toolSnapshot.ModelUsage = toolAgg.modelUsage.Rows()
 			project.Tools = append(project.Tools, toolSnapshot)
 		}
 		sort.Slice(project.Tools, func(i, j int) bool {

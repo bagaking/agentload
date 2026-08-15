@@ -271,9 +271,14 @@ func parseHermesDatabaseSessions(ctx context.Context, path string) ([]*snapshot.
 	// resume can pin all tokens to the original session start and hide the day
 	// and model where the work actually happened.
 	if usageColumns, usageErr := sqliteTableColumns(ctx, path, "session_model_usage"); usageErr == nil && len(usageColumns) > 0 {
-		usageRows, queryErr := readSQLiteRows(ctx, path, `SELECT session_id, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens, first_seen, last_seen FROM session_model_usage`)
+		usageSelect := []string{"session_id", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens", "first_seen", "last_seen"}
+		if usageColumns["model"] {
+			usageSelect = append(usageSelect, "model")
+		}
+		usageRows, queryErr := readSQLiteRows(ctx, path, "SELECT "+strings.Join(usageSelect, ", ")+" FROM session_model_usage")
 		if queryErr == nil {
 			usageBySession := map[string]snapshot.TokenUsage{}
+			modelUsageBySession := map[string]snapshot.ModelTokenUsage{}
 			for _, row := range usageRows {
 				sid := row["session_id"]
 				if byID[sid] == nil {
@@ -286,6 +291,12 @@ func parseHermesDatabaseSessions(ctx context.Context, path string) ([]*snapshot.
 				u.CacheCreationInputTokens += extraIntFromString(row["cache_write_tokens"])
 				u.ReasoningOutputTokens += extraIntFromString(row["reasoning_tokens"])
 				usageBySession[sid] = u
+				if model := strings.TrimSpace(row["model"]); model != "" {
+					if modelUsageBySession[sid] == nil {
+						modelUsageBySession[sid] = snapshot.ModelTokenUsage{}
+					}
+					modelUsageBySession[sid].Add(model, u)
+				}
 				trace := byID[sid]
 				for _, key := range []string{"first_seen", "last_seen"} {
 					if at := extraTimeValue(row[key]); !at.IsZero() {
@@ -298,6 +309,9 @@ func parseHermesDatabaseSessions(ctx context.Context, path string) ([]*snapshot.
 				usage.OutputTokens -= usage.ReasoningOutputTokens
 				usage.TotalTokens = usage.DerivedTotal() + usage.ReasoningOutputTokens
 				byID[sid].TokenUsage = usage
+				if modelUsage := modelUsageBySession[sid]; len(modelUsage) > 0 {
+					byID[sid].ModelUsage = modelUsage
+				}
 			}
 		}
 	}
@@ -328,6 +342,7 @@ func hermesTraceFromRow(path string, row map[string]string) *snapshot.SessionTra
 	trace.TokenUsage.ReasoningOutputTokens = min(trace.TokenUsage.ReasoningOutputTokens, trace.TokenUsage.OutputTokens)
 	trace.TokenUsage.OutputTokens -= trace.TokenUsage.ReasoningOutputTokens
 	trace.TokenUsage.TotalTokens = trace.TokenUsage.DerivedTotal() + trace.TokenUsage.ReasoningOutputTokens
+	trace.AddModelUsage(row["model"], trace.TokenUsage)
 	finalizeTrace(trace)
 	return trace
 }
@@ -392,6 +407,7 @@ func parseOpenCodeDatabaseSessions(ctx context.Context, path string) ([]*snapsho
 		if m.Role == "assistant" {
 			u := messageUsage("opencode", m)
 			trace.TokenUsage.Add(u)
+			trace.AddModelUsage(m.ModelID, u)
 			if !u.Empty() {
 				messageHasUsage[row["id"]] = true
 				sessionHasUsage[sid] = true
@@ -425,6 +441,7 @@ func parseOpenCodeDatabaseSessions(ctx context.Context, path string) ([]*snapsho
 			}
 			u := messageUsage("opencode", part)
 			trace.TokenUsage.Add(u)
+			trace.AddModelUsage(part.ModelID, u)
 			if !u.Empty() {
 				sessionHasUsage[trace.SessionID] = true
 			}
@@ -565,6 +582,7 @@ type localUsage struct {
 type localMessage struct {
 	ID         string          `json:"id"`
 	SessionID  string          `json:"sessionId"`
+	ModelID    string          `json:"modelID"`
 	Type       string          `json:"type"`
 	Role       string          `json:"role"`
 	Timestamp  json.RawMessage `json:"timestamp"`

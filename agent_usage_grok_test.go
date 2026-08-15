@@ -73,4 +73,8 @@ func TestParseGrokTraceDoesNotDoubleCountModelUsageBreakdown(t *testing.T) {
 	if trace.TokenUsage.InputTokens != 200 {
 		t.Fatalf("expected 200 input tokens, got %d", trace.TokenUsage.InputTokens)
 	}
+	model := trace.ModelUsage["grok-4.6-build"]
+	if model.OutputTokens != 600 || model.InputTokens != 200 {
+		t.Fatalf("expected model breakdown to preserve the same measured total, got %+v", model)
+	}
 }

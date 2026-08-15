@@ -18,12 +18,13 @@ import {
   Radar,
   Search,
   ShieldCheck,
+  Sparkles,
   Target,
   Terminal,
 } from "lucide-react";
 import { type Translate } from "../lib/format";
 import type { Snapshot } from "../types/snapshot";
-import { buildDiagnosticViewModel, diagnosticOmittedFieldLabel, type ChainNode, type DiagnosticTone, type EvidenceMetric, type PriorityRow } from "./diagnosticModel";
+import { buildDiagnosticViewModel, diagnosticOmittedFieldLabel, type ChainNode, type DiagnosticTone, type EvolutionRow, type EvidenceMetric, type PriorityRow } from "./diagnosticModel";
 
 type ExportState = "idle" | "working" | "done" | "failed";
 
@@ -64,6 +65,16 @@ export function DiagnosticsPanel({ t, snapshot }: { t: Translate; snapshot: Snap
           <b><Radar size={11} />{t("diagnosticNoForecastBadge")}</b>
         </span>
       </div>
+
+      <section className="diagnostic-evolution-plane" aria-label={t("diagnosticEvolution")}>
+        <div className="diagnostic-plane-head">
+          <span><Sparkles size={15} />{t("diagnosticEvolution")}</span>
+          <em>{t("diagnosticEvolutionCopy")}</em>
+        </div>
+        <div className="diagnostic-evolution-list">
+          {viewModel.evolutionRows.map((row) => <EvolutionInsightCard key={row.key} row={row} t={t} />)}
+        </div>
+      </section>
 
       <section className="diagnostic-evidence-strip" aria-label={t("diagnosticEvidenceHealth")}>
         {viewModel.evidenceMetrics.map((metric) => <EvidenceMetricCell key={metric.key} metric={metric} />)}
@@ -123,6 +134,24 @@ export function DiagnosticsPanel({ t, snapshot }: { t: Translate; snapshot: Snap
         </button>
       </section>
     </section>
+  );
+}
+
+function EvolutionInsightCard({ row, t }: { row: EvolutionRow; t: Translate }) {
+  return (
+    <article className={`diagnostic-evolution-card tone-${row.tone}`}>
+      <div className="diagnostic-evolution-head">
+        <strong>{row.title}</strong>
+        <span>{row.status}</span>
+      </div>
+      <div className="diagnostic-evolution-stage">
+        <div className="diagnostic-evolution-field"><b>{t("diagnosticEvolutionHypothesis")}</b><span>{row.hypothesis}</span></div>
+        <div className="diagnostic-evolution-field"><b>{t("diagnosticEvolutionEvidence")}</b><span>{row.evidence}</span></div>
+        <div className="diagnostic-evolution-field"><b>{t("diagnosticEvolutionExperiment")}</b><span>{row.experiment}</span></div>
+        <div className="diagnostic-evolution-field"><b>{t("diagnosticEvolutionVerification")}</b><span>{row.verification}</span></div>
+      </div>
+      <small>{t("metricSemantics")}: {row.metric}</small>
+    </article>
   );
 }
 

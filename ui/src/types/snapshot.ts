@@ -101,11 +101,26 @@ export type RuntimeTelemetryAdapterState = {
 
 export type DiagnosticSnapshot = {
   generated_at?: string;
+  evolution?: DiagnosticEvolutionInsight[];
   anomaly_signals?: DiagnosticSignal[];
   evidence_gaps?: DiagnosticSignal[];
   baselines?: DiagnosticBaseline[];
   capabilities?: DiagnosticCapability[];
   export?: DiagnosticExportSummary;
+};
+
+export type DiagnosticEvolutionInsight = {
+  key?: string;
+  title?: string;
+  hypothesis?: string;
+  evidence?: string;
+  evidence_key?: string;
+  evidence_values?: Record<string, number>;
+  experiment?: string;
+  verification?: string;
+  metric_key?: string;
+  confidence?: string;
+  status?: string;
 };
 
 export type DiagnosticSignal = {
@@ -249,6 +264,7 @@ export type ProjectSnapshot = {
   token_usage?: TokenUsage;
   token_usage_source?: string;
   token_usage_confidence?: string;
+  model_usage?: ModelUsage[];
   tools?: ProjectTool[];
 };
 
@@ -307,6 +323,14 @@ export type ProjectTool = {
   token_usage?: TokenUsage;
   token_usage_source?: string;
   token_usage_confidence?: string;
+  model_usage?: ModelUsage[];
+};
+
+export type ModelUsage = {
+  model?: string;
+  token_usage?: TokenUsage;
+  source?: string;
+  confidence?: string;
 };
 
 export type HostApp = {
@@ -435,6 +459,7 @@ export type LiveSession = {
   token_usage?: TokenUsage;
   token_usage_source?: string;
   token_usage_confidence?: string;
+  model_usage?: ModelUsage[];
   path?: string;
   provenance?: string[];
 };
