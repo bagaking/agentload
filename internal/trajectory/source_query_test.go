@@ -46,6 +46,106 @@ func exactMatchCount(count *int) int {
 	return *count
 }
 
+type witnessDecoder struct {
+	calls   atomic.Int64
+	active  *atomic.Int64
+	entered chan<- struct{}
+	release <-chan struct{}
+}
+
+func (d *witnessDecoder) Decode(raw []byte, ctx DecodeContext) ([]snapshot.TrajectoryEvent, error) {
+	if d.calls.Add(1) == 1 && d.entered != nil {
+		d.active.Add(1)
+		defer d.active.Add(-1)
+		d.entered <- struct{}{}
+		<-d.release
+	}
+	return (CodexDecoder{}).Decode(raw, ctx)
+}
+
+func TestTrajectorySourceQueryWitnessesReadConcurrentlyAndJoinInOrder(t *testing.T) {
+	for _, mode := range []string{"success", "cancel", "replace"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newSourceStoreFixture(t)
+			var states []*sourceState
+			var decoders []*witnessDecoder
+			for i := 0; i < 8; i++ {
+				d := &witnessDecoder{}
+				s, st := replayFixture(t, "codex", d, request("research witness"))
+				importFixtureFacts(t, f, st, canonicalFixtureFacts(t, s, st))
+				states = append(states, st)
+				decoders = append(decoders, d)
+			}
+			sort.Slice(states, func(i, j int) bool { return states[i].Info.ModTime().After(states[j].Info.ModTime()) })
+			entered, release := make(chan struct{}, 8), make(chan struct{})
+			var active atomic.Int64
+			for _, d := range decoders {
+				d.calls.Store(0)
+				d.active, d.entered, d.release = &active, entered, release
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			type result struct {
+				page snapshot.TrajectoryQueryResult
+				err  error
+			}
+			done := make(chan result, 1)
+			go func() {
+				page, err := f.query(ctx, snapshot.TrajectorySelector{Collection: "sessions", Text: "research", Limit: 4}, states, coverage("test"))
+				done <- result{page, err}
+			}()
+			timer := time.NewTimer(3 * time.Second)
+			defer timer.Stop()
+			for i := 0; i < 4; i++ {
+				select {
+				case <-entered:
+				case <-timer.C:
+					close(release)
+					<-done
+					t.Fatal("witness reads were serialized")
+				}
+			}
+			if active.Load() != 4 {
+				close(release)
+				<-done
+				t.Fatal("witness concurrency exceeded its bound")
+			}
+			if mode == "cancel" {
+				cancel()
+			} else if mode == "replace" {
+				if err := os.WriteFile(states[0].Path, []byte(request("rewritten")), 0600); err != nil {
+					close(release)
+					<-done
+					t.Fatal(err)
+				}
+			}
+			close(release)
+			r := <-done
+			if active.Load() != 0 {
+				t.Fatal("request returned before its source readers joined")
+			}
+			if mode == "success" {
+				if r.err != nil || len(r.page.Sessions) != 4 || r.page.Next == "" {
+					t.Fatal("parallel witness page failed", r.page, r.err)
+				}
+				for i, session := range r.page.Sessions {
+					if session.ID != sessionID(states[i]) || session.MatchedCount != nil || len(session.MatchedIDs) != 1 {
+						t.Fatal("completion order changed page identity or count", session)
+					}
+				}
+			} else {
+				want := ErrStale
+				if mode == "cancel" {
+					want = context.Canceled
+				}
+				if !errors.Is(r.err, want) || len(r.page.Sessions) != 0 || r.page.Next != "" {
+					t.Fatal("failed witness leaked a partial page", r.page, r.err)
+				}
+			}
+		})
+	}
+}
+
 func sameSessionWitnesses(plain, counted []snapshot.TrajectorySession) bool {
 	if len(plain) != len(counted) {
 		return false

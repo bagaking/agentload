@@ -195,6 +195,40 @@ func (f *sourceStore) query(ctx context.Context, q snapshot.TrajectorySelector, 
 	matched := 0
 	var pageSources []*sourceState
 	pageSessions := []snapshot.TrajectorySession{}
+	if q.Collection == "sessions" {
+		err = f.visitSessionWitnesses(ctx, q, ordered, readiness, func(st *sourceState, summary snapshot.TrajectorySession) error {
+			mergeCoverage(&out.Coverage, st.checkpoint.Coverage)
+			p := readiness[st.ID]
+			if p.generation == st.Generation && p.complete && p.count != 0 && p.entityGaps > 0 && (q.Skill != "" || q.EntityKind != "" || q.EntityID != "" || q.Predicate != "") {
+				gap(&out.Coverage, "entity_coverage_incomplete")
+			}
+			if len(summary.MatchedIDs) > 0 {
+				if matched >= start && len(pageSources) < q.Limit {
+					pageSessions = append(pageSessions, summary)
+					pageSources = append(pageSources, st)
+				}
+				matched++
+			}
+			if !q.Count && matched > start+q.Limit {
+				return io.EOF
+			}
+			return nil
+		})
+		if err != nil {
+			return out, err
+		}
+		if err = ctx.Err(); err != nil {
+			return out, err
+		}
+		if q.Count {
+			if err = f.completeSessionPage(ctx, q, pageSources, readiness, pageSessions); err != nil {
+				return out, err
+			}
+			out.MatchedTotal = &matched
+		}
+		out.Sessions = pageSessions
+		return out, boundQueryPage(&out, prefix, start, matched)
+	}
 	for _, st := range ordered {
 		if err = ctx.Err(); err != nil {
 			return out, err
@@ -210,45 +244,29 @@ func (f *sourceStore) query(ctx context.Context, q snapshot.TrajectorySelector, 
 		if p.entityGaps > 0 && (q.Skill != "" || q.EntityKind != "" || q.EntityID != "" || q.Predicate != "") {
 			gap(&out.Coverage, "entity_coverage_incomplete")
 		}
-		summary := cachedSession(st)
 		err = f.walkSourceCandidates(ctx, st, func(filter *sourceFilter) bool { return filter.maybe(q) }, &p, func(fact sourceFact) error {
 			e := fact.event
 			if !matches(e, q) {
 				return nil
 			}
-			if q.Collection == "sessions" {
-				// Discover page membership before doing the full counts. The
-				// range and final file checks still validate this witness.
-				summary.MatchedIDs = append(summary.MatchedIDs, e.ID)
-				summary.MatchedPreview = matchPreview(e, q)
+			if matched >= start && len(out.Events) < q.Limit {
+				preview := matchPreview(e, q)
+				e = boundedEventPreview(e)
+				e.Text = preview
+				if e.Tool != nil && len(e.Tool.Arguments) > 512 {
+					e.Tool.Arguments = nil
+					e.Omissions = append(e.Omissions, "arguments_omitted")
+				}
+				out.Events = append(out.Events, e)
+			}
+			matched++
+			if !q.Count && matched > start+q.Limit {
 				return io.EOF
-			} else {
-				if matched >= start && len(out.Events) < q.Limit {
-					preview := matchPreview(e, q)
-					e = boundedEventPreview(e)
-					e.Text = preview
-					if e.Tool != nil && len(e.Tool.Arguments) > 512 {
-						e.Tool.Arguments = nil
-						e.Omissions = append(e.Omissions, "arguments_omitted")
-					}
-					out.Events = append(out.Events, e)
-				}
-				matched++
-				if !q.Count && matched > start+q.Limit {
-					return io.EOF
-				}
 			}
 			return nil
 		})
 		if err != nil && !errors.Is(err, io.EOF) {
 			return out, err
-		}
-		if q.Collection == "sessions" && len(summary.MatchedIDs) > 0 {
-			if matched >= start && len(pageSources) < q.Limit {
-				pageSessions = append(pageSessions, summary)
-				pageSources = append(pageSources, st)
-			}
-			matched++
 		}
 		if !q.Count && matched > start+q.Limit {
 			break
@@ -257,23 +275,85 @@ func (f *sourceStore) query(ctx context.Context, q snapshot.TrajectorySelector, 
 	if err = ctx.Err(); err != nil {
 		return out, err
 	}
-	if q.Collection == "sessions" {
-		if q.Count {
-			if err = f.completeSessionPage(ctx, q, pageSources, readiness, pageSessions); err != nil {
-				return snapshot.TrajectoryQueryResult{}, err
-			}
-		}
-		out.Sessions = pageSessions
-	}
 	if q.Count {
 		out.MatchedTotal = &matched
 	}
 	return out, boundQueryPage(&out, prefix, start, matched)
 }
 
-// Only selected page members are counted in parallel. Discovery remains ordered
-// and stops at the verified lookahead, so speculative historical reads cannot
-// introduce errors or extend the default query's evidence scope.
+// Keep four independent readers in flight, but consume witnesses in the exact
+// session order. An error beyond the verified lookahead is not this page's
+// evidence. Cancel and join all readers before returning, including on failure.
+func (f *sourceStore) visitSessionWitnesses(ctx context.Context, q snapshot.TrajectorySelector, states []*sourceState, readiness map[string]sourceReadiness, visit func(*sourceState, snapshot.TrajectorySession) error) error {
+	eligible := make([]*sourceState, 0, len(states))
+	for _, st := range states {
+		if (q.Agent == "" || q.Agent == st.Agent) && (q.SessionID == "" || q.SessionID == sessionID(st)) {
+			eligible = append(eligible, st)
+		}
+	}
+	type witness struct {
+		summary snapshot.TrajectorySession
+		err     error
+	}
+	readCtx, cancel := context.WithCancel(ctx)
+	var readers sync.WaitGroup
+	defer func() { cancel(); readers.Wait() }()
+	const workers = 4
+	pending := make([]chan witness, len(eligible))
+	launch := func(i int) {
+		if i >= len(eligible) {
+			return
+		}
+		pending[i] = make(chan witness, 1)
+		readers.Add(1)
+		go func() {
+			defer readers.Done()
+			st, p := eligible[i], readiness[eligible[i].ID]
+			result := witness{summary: cachedSession(st)}
+			if st.Generation != "" && p.generation == st.Generation && p.complete && p.count != 0 {
+				result.err = f.walkSourceCandidates(readCtx, st, func(filter *sourceFilter) bool { return filter.maybe(q) }, &p, func(fact sourceFact) error {
+					if !matches(fact.event, q) {
+						return nil
+					}
+					result.summary.MatchedIDs = []string{fact.event.ID}
+					result.summary.MatchedPreview = matchPreview(fact.event, q)
+					return io.EOF
+				})
+				if errors.Is(result.err, io.EOF) {
+					result.err = nil
+				}
+			}
+			pending[i] <- result
+		}()
+	}
+	for i := 0; i < min(workers, len(eligible)); i++ {
+		launch(i)
+	}
+	for i, st := range eligible {
+		var result witness
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case result = <-pending[i]:
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if result.err != nil {
+			return result.err
+		}
+		if err := visit(st, result.summary); err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		}
+		launch(i + workers)
+	}
+	return ctx.Err()
+}
+
+// Only selected page members need full counts when explicitly requested.
 func (f *sourceStore) completeSessionPage(ctx context.Context, q snapshot.TrajectorySelector, states []*sourceState, readiness map[string]sourceReadiness, sessions []snapshot.TrajectorySession) error {
 	errs := make([]error, len(states))
 	var readers sync.WaitGroup
