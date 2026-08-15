@@ -44,9 +44,11 @@ func (f *sourceStore) checkpoints(ctx context.Context) (map[string]sourceCheckpo
 }
 
 // Removal denies access without discarding the last identity/recovery evidence.
-func (f *sourceStore) prune(ctx context.Context, allowed map[string]bool) error {
-	checkpoints, err := f.checkpoints(ctx)
-	if err != nil {
+func (f *sourceStore) prune(ctx context.Context, allowed map[string]bool, checkpoints map[string]sourceCheckpoint) error {
+	if checkpoints == nil {
+		return ErrInvalid
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	var removed []string

@@ -84,6 +84,10 @@ are retained and accounted for separately. See
    preparation completion and a later 300-second increment window. Record
    final index allocation and maintenance peak separately under `.bagakit/`.
 
+Catalog collection uses one checkpoint snapshot per operation. Removal checks
+reuse that snapshot under the same operation lock and honor request cancellation;
+they do not decode every checkpoint again before a query can read its evidence.
+
 On restart, archive discovery includes local sessions written while Agent Load
 was stopped. Background preparation shares the online decoder, normalization
 and generation rules; incomplete preparation remains visible in coverage.

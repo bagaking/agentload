@@ -14,6 +14,34 @@ import (
 	"testing"
 )
 
+func TestTrajectoryCatalogPruneCancellationPreservesSource(t *testing.T) {
+	s, st := replayFixture(t, "codex", CodexDecoder{}, request("keep the recorded source"))
+	before, err := os.ReadFile(st.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	checked := false
+	s.store.checkCapacity = func(string, uint64) error {
+		checked = true
+		cancel()
+		return nil
+	}
+	_, _ = s.PrepareCatalog(ctx, SourceSet{CatalogComplete: true, Coverage: coverage("withdrawn root")}, func() bool { return true })
+	if !checked {
+		t.Fatal("fixture did not reach the removal transaction")
+	}
+	var missing bool
+	if err := s.store.db.QueryRow("SELECT missing FROM sources WHERE id=?", st.ID).Scan(&missing); err != nil || missing {
+		t.Fatal("cancelled catalog removal committed a source change", missing, err)
+	}
+	after, err := os.ReadFile(st.Path)
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatal("catalog removal changed the original session", err)
+	}
+}
+
 func TestTrajectorySourceAuditResumesAndDoesNotBlessRewrite(t *testing.T) {
 	s, st := replayFixture(t, "codex", CodexDecoder{}, request(strings.Repeat("prefix ", 24000))+request("ordinary middle")+request("final anchor"))
 	f := newSourceStoreFixture(t)

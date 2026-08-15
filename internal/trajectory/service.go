@@ -309,7 +309,7 @@ func (s *Service) collectSetBudget(ctx context.Context, set SourceSet, prepareBu
 	// deleted. It stays inaccessible in this response, but its physical identity
 	// must survive until a complete catalog confirms removal.
 	if set.CatalogComplete || set.Coverage.Complete {
-		if err := s.pruneSources(allowed); err != nil {
+		if err := s.pruneSources(ctx, allowed); err != nil {
 			gap(&cov, "index_prune_failed")
 		}
 	}

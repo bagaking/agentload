@@ -357,8 +357,10 @@ func scan(ctx context.Context, st *sourceState, visit func(snapshot.TrajectoryEv
 	}
 	return cov, nil
 }
-func (s *Service) pruneSources(allowed map[string]bool) error {
-	return s.store.prune(context.Background(), allowed)
+func (s *Service) pruneSources(ctx context.Context, allowed map[string]bool) error {
+	// Only allowed sources may be indexed after this operation's snapshot was
+	// read. Absent sources remain unchanged under opMu until pruning completes.
+	return s.store.prune(ctx, allowed, s.checkpointSnapshot)
 }
 func (s *Service) indexedWindow(ctx context.Context, st *sourceState, p snapshot.TrajectoryGetParams, offset int64, block int) ([]snapshot.TrajectoryEvent, string, string, error) {
 	return s.store.window(ctx, st, p, offset, block)
