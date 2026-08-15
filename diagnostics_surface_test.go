@@ -109,6 +109,74 @@ func TestEveryRiskSignalKindCarriesAMetricFamily(t *testing.T) {
 	}
 }
 
+// TestEveryRiskSignalKindHasAnExportTitle is the same gate for the other switch
+// keyed on the same kinds.
+//
+// Fixing diagnosticMetricForRisk's dead duplicate_overlap branch did not fix
+// diagnosticTitleForRisk, which switched on the same stale spelling -- one
+// rename, two switches, and only one of them was checked. The panel hides this
+// because it re-derives copy from i18n, but /api/diagnostic-export ships the
+// Go-side title verbatim and has no second source, so six kinds were shipping
+// their own identifier with the underscores taken out
+// ("duplicate overlap candidates").
+//
+// The lesson generalizes past these two functions: when a gate covers one
+// consumer of a vocabulary, ask what else switches on it.
+func TestEveryRiskSignalKindHasAnExportTitle(t *testing.T) {
+	for _, kind := range riskSignalKinds(t) {
+		title := diagnosticTitleForRisk(kind)
+		// The default arm only strips underscores, so a kind with no branch
+		// returns its own identifier with spaces in it.
+		if title == strings.ReplaceAll(kind, "_", " ") {
+			t.Errorf("risk kind %q has no export title; it ships as %q.\n"+
+				"The panel localizes its own copy, but /api/diagnostic-export carries this\n"+
+				"string to a reader with nothing else to fall back on.", kind, title)
+		}
+	}
+}
+
+// TestRiskSwitchesNameNoKindNobodyEmits catches the other half: a branch for a
+// kind that no longer exists. Such a branch is silent -- it simply never runs,
+// and the kind that replaced it falls to the default arm.
+func TestRiskSwitchesNameNoKindNobodyEmits(t *testing.T) {
+	emitted := map[string]bool{}
+	for _, kind := range riskSignalKinds(t) {
+		emitted[kind] = true
+	}
+	source := readUISource(t, "diagnostics.go")
+	for _, fn := range []string{"diagnosticTitleForRisk", "diagnosticMetricForRisk"} {
+		for _, kind := range switchCaseKinds(t, source, fn) {
+			if !emitted[kind] {
+				t.Errorf("%s has a case for %q, which observer.go never emits.\n"+
+					"The branch is dead and the kind that replaced it falls through to the default.",
+					fn, kind)
+			}
+		}
+	}
+}
+
+// switchCaseKinds pulls the case literals out of one function body, so the gate
+// reads the switch rather than a copy of it kept here.
+func switchCaseKinds(t *testing.T, source, fn string) []string {
+	t.Helper()
+	body := regexp.MustCompile(`(?s)func ` + fn + `\(kind string\) string \{.*?\n\}`).FindString(source)
+	if body == "" {
+		t.Fatalf("could not find %s in diagnostics.go -- the scan pattern has drifted", fn)
+	}
+	kinds := []string{}
+	// Only the case labels: a bare string scan also picks up every return value
+	// and the ReplaceAll arguments in the default arm.
+	for _, line := range regexp.MustCompile(`(?m)^\s*case\s+(.+):$`).FindAllStringSubmatch(body, -1) {
+		for _, match := range regexp.MustCompile(`"([a-z0-9_]+)"`).FindAllStringSubmatch(line[1], -1) {
+			kinds = append(kinds, match[1])
+		}
+	}
+	if len(kinds) < 4 {
+		t.Fatalf("found only %d case literals in %s -- the scan pattern has drifted", len(kinds), fn)
+	}
+	return kinds
+}
+
 // riskSignalKinds scans the kinds observer.go actually emits into
 // CoordinationRisk.Signals. It deliberately reads only observer.go: those are
 // the kinds that flow through diagnosticMetricForRisk.

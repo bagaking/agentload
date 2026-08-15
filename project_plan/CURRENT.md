@@ -192,11 +192,11 @@ meta:
 
 - **M01 地基已按实测边界收口**：`internal/snapshot`、registry/semantic guards、golden gate、可重复质量门脚本和 UI fast-path chunks 已落地；三包拆分没有被强行制造，原因与退出边界记录在 `M01_S02`。
 - **当前主线：`M03_S01` attention vertical slice**——后端已输出 `working` / `needs_review` / `unknown` 三态，popover 已有 needs-you evidence strip；下一步是用真实 watcher 事件验证延迟、误报和 CPU。
-- **2026-09-22 `M02_S05.008.FIX` 已收口**：D-029 缺陷族的三处存活实例已修。（a）`diagnosticMetricForRisk` 对着一个已改名的 kind 留了死分支，9 个 risk kind 中 7 个带空语义族到达前端；（b）`process_observer` 的 Source 标签三语全缺，中日页面显示英文；（c）**evolution 卡片的「证据来源」行用语义族相等做关联，实测指向了它从未读过的两条记录**——改为由生产端显式声明 `SignalKinds`。三道新门两道首跑即红，第三道已变异验证（注入历史上真实出现过的笔误即红）。四门全绿＋渲染层三语实测（真实后端函数 × 实机快照 × 真实组件，未走 `go:embed` 装载这一环，原因见 D-032 附带三）。遗留：能力矩阵的 `quota_windows` / `consented_telemetry` 两列对 9 个 adapter 恒定，待与用户确认是删列还是改呈现。
+- **2026-09-22 `M02_S05.008.FIX` 已收口**：D-029 缺陷族的三处存活实例已修。（a）`diagnosticMetricForRisk` 对着一个已改名的 kind 留了死分支，9 个 risk kind 中 7 个带空语义族到达前端；（b）`process_observer` 的 Source 标签三语全缺，中日页面显示英文；（c）**evolution 卡片的「证据来源」行用语义族相等做关联，实测指向了它从未读过的两条记录**——改为由生产端显式声明 `SignalKinds`。三道新门两道首跑即红，第三道已变异验证。**收口后的对抗审计又抳出两条，第一条是我自己刚写进去的**：（d）`recent_sessions` 被我错分到 `recent_movement`——前者看**首个**事件× 15m–1h 窗，后者看**最后**事件× 90s 窗，两个总体互斥，页面上把会话诞生数挂在了「最近动作」标签下；（e）同一次改名在 `diagnosticTitleForRisk` 里还有第二个死分支，导致 `/api/diagnostic-export` 的 6 个 title 退化成去下划线的裸标识符。两条均已修，并加第四、五道门（同时扫两个 switch，均已变异验证）。四门全绿＋渲染层三语实测（真实后端函数 × 实机快照 × 真实组件，未走 `go:embed` 装载这一环，原因见 D-032 附带三）。遗留：能力矩阵的 `quota_windows` / `consented_telemetry` 两列对 9 个 adapter 恒定，待与用户确认是删列还是改呈现。
 - **`M02_S05.007.FIX` 已收口**：五门全绿 + 装机渲染层实测（两种 scan_cost 状态 × 三语），最终装机 `2026.09.21.010319` 已核对 bundle hash 与 HEAD 一致。
 - M01 已完成本轮收口；`M01_S03` 的重型模块 lazy chunks 与 attention strip 已进入当前构建，原生首绘实测仍作为独立性能验证项保留。
 - **2026-09-22 本轮收口**：需求池 review 的 1/2/3 已落地。M01 的可重复质量门脚本为 `scripts/quality_gate.sh`；M03 attention slice 已进入 snapshot 与 popover；M02_S01 能力矩阵已覆盖 7 个 signal family、4 个状态，并由 snapshot、`/api/capabilities`、诊断面和生成文档共用 registry projection。冷启动证据扫描不再把不完整空快照伪装成“暂无采样”，前端会显示“正在采集本地采样”并自动重试。当前安装版本为 `2026.09.22.020409`；真实 watcher 延迟/误报/CPU 与 native popover 首绘仍是后续实测项。
-- **2026-09-22 诊断页调研完成**：结论不是继续堆指标，而是将页面改成“情况地图 → 损耗台账 → 优化实验”的证据阅读流。当前快照已能解释 23 个未归因 PID、9 个低信心会话、2425 个延期文件、88/99 token 覆盖和 4585ms 走查成本；这些值不能相加成一个浪费率。下一步按 `DIAGNOSTICS_RESEARCH_001.md` 先做 P0 只读损耗台账，再做证据血缘和时间线。
+- **2026-09-22 诊断页 P0/P1 已完成**：`DiagnosticsPanel` 现在按“情况地图 → 损耗台账 → 优化实验”阅读；台账固定展示未映射 PID、低置信会话、延期扫描文件、token 证据覆盖不足、最近一次证据走查成本、超出历史范围文件六行，每行带当前值、证据族、范围/分母、新鲜度、measured/partial/unavailable/out_of_scope 状态、来源和下一步。延期扫描与历史范围外保持独立，整机 CPU/内存仍只作系统上下文。现有 evolution insight 增加显式基线、假设、验证和停止条件，继续复用 snapshot、baseline、evidence gap 与 `metric_key`；P2 证据血缘时间线与 replay 暂不实现。
 
 **交接**：2026-09-20 会话的收尾盘点见 [`HANDOFF_2026-09-20.md`](HANDOFF_2026-09-20.md)（未完成项按"接手方最可能先碰"排序 + 踩过的坑 + 安全红线）。接手方读完并更新本节后即可删除该文件。
 
@@ -291,6 +291,7 @@ meta:
 | 2026-09-22 | 需求池 review 1/2/3：质量门脚本、needs-you 三态垂直切片、七族能力矩阵三端同源；冷启动空快照改为 pending + 自动重试 | `./scripts/quality_gate.sh` 全绿（Go vet/test、UI build、locale）；能力矩阵 API 测试、golden snapshot、attention 状态测试全绿；`./build_macos_app.sh` 产出并安装 `2026.09.22.020409`，`/api/capabilities` 实测 7 families × 10 rows，snapshot/UI 共用同一 registry projection；实际页面验证吞吐图、MAX/P95/AVG、项目分解均可见 | M01_S02 收口为实测边界，未强行制造 agents/core/app 三包；native 首绘、真实 watcher 延迟/误报/CPU、后续动作与通知仍待独立验收 |
 
 | 2026-09-22 | 复查另一会话的 `ba75214`，修掉它新引入的两处失真 + 删掉一处重复清单 | 四门全绿（`scripts/quality_gate.sh` 一把跑完）。**新门变异验证**：删掉 stale 分支 → `TestStaleAttentionReasonDoesNotClaimMissingEvidence` 如期报「stale 与 missing-timing 共用同一 reason」。**活体实测**（装机 `2026.09.22.032730`）：`attention_state` 分布 working 6 / needs_review 1 / unknown 92，其中 **81 条 unknown 的 freshness 是实测 stale 且都带实测 last_event_age** | **`ba75214` 完整保留了我上一轮的四处改动**（去重、metric_key trace、`observed` 状态、needs_review 只认 idle），并把 TS 侧 `sessionNeedsHumanReview` 一并对齐——两层一致。**但它新引入两处同族失真**：(a) 新建的 `attentionStateForSession` 让 stale 落进 `unknown` 并复用「no current attention state evidence」——**把已测到的东西报成没有证据**，正是 D-029 附带五的形状，实测覆盖 81/92；(b) needs_review 的三语 tooltip 仍写「idle **or stale**」，而代码已不再对 stale 触发——**文案描述了一个已被删除的行为**。(c) 另加的 `/api/capabilities` 把 7 个 family 名**第二次手写**在 `server.go`，与 `capability_matrix.go` 无任何比对；原测试只比长度 `7==7`，**实测改名后仍全绿**。修法是删清单而非加门：family 名从 rows 里派生，重复消失。|
+| 2026-09-22 | 诊断页 P0/P1：情况地图 + 损耗台账 + 优化实验队列 | UI build、三语 locale、Go tests、git diff check 通过；质量门与装机重启验证在本轮收口后记录 | 固定六行账本复用既有 metric semantics；不合并损耗率、不把缺失或整机压力归因到 Agent Load；P2 时间线/replay 留待后续 |
 
 **质检步骤库（随 sprint 验收累积）**：
 

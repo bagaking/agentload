@@ -544,16 +544,35 @@ func normalizeDiagnosticSeverity(value string) string {
 	}
 }
 
+// diagnosticTitleForRisk is the English title carried in /api/diagnostic-export
+// and /api/snapshot. The panel does not use it -- it re-derives copy from
+// diagnosticSignal<Kind>Title so it can localize -- but the export is read by
+// people and has no second source, so a kind missing here ships a title that is
+// just its identifier with the underscores taken out.
+//
+// TestEveryRiskSignalKindHasAnExportTitle fails on both halves of that: a kind
+// nobody emits (this switch read duplicate_overlap long after observer.go had
+// renamed it to duplicate_overlap_candidates) and a kind with no branch.
 func diagnosticTitleForRisk(kind string) string {
 	switch strings.TrimSpace(kind) {
 	case "unmatched_processes":
 		return "Unmatched process pressure"
 	case "low_confidence_mapping":
 		return "Low-confidence mapping"
-	case "duplicate_overlap":
+	case "duplicate_overlap_candidates":
 		return "Possible duplicate or overlap"
 	case "project_spread":
 		return "Wide project spread"
+	case "top_project_share":
+		return "Concentrated project share"
+	case "sessions_without_recent_event":
+		return "Sessions without a recent event"
+	case "recent_sessions":
+		return "Recently started sessions"
+	case "observed_peak_ratio":
+		return "Load against the observed peak"
+	case "candidate_workitem_coverage":
+		return "Candidate work-item coverage"
 	default:
 		return strings.ReplaceAll(strings.TrimSpace(kind), "_", " ")
 	}
@@ -575,12 +594,20 @@ func diagnosticMetricForRisk(kind string) string {
 	switch strings.TrimSpace(kind) {
 	case "unmatched_processes":
 		return "process_pressure"
-	case "low_confidence_mapping", "candidate_workitem_coverage":
+	// A session's birth time is a property of the session, not of how recently
+	// its log moved. recent_sessions counts sessions whose FIRST event landed
+	// inside recentSessionWindow (idleGap*10, clamped to 15m-1h); that is a
+	// churn reading over a known-session population, and it is disjoint from
+	// recent movement: a session started 40 minutes ago and idle since is churn
+	// with zero movement, and one started days ago that just wrote an event is
+	// movement with zero churn. Filing it under recent_movement put a
+	// session-birth count under the "Fresh movement" label.
+	case "low_confidence_mapping", "candidate_workitem_coverage", "recent_sessions":
 		return "known_sessions"
-	// Both read a transcript event age against a window: one counts sessions
-	// whose last event is older than the stale threshold, the other counts
-	// sessions whose first event landed inside the recent window.
-	case "sessions_without_recent_event", "recent_sessions":
+	// This one really is an event-age reading: it counts sessions whose LAST
+	// transcript event is older than the stale threshold, which is the same
+	// axis recent movement is measured on (its negation).
+	case "sessions_without_recent_event":
 		return "recent_movement"
 	// Spread, overlap, peak ratio and top-project share all describe how known
 	// sessions distribute across projects and lanes, which is the role matrix's
