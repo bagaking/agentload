@@ -38,7 +38,7 @@ meta:
 - **矩阵门禁**——vendor 与信号只按其证据诚实支持的档位出货；解析异常自动降档而非输出错数；矩阵单元格由 adapter 代码生成，永不手编。
 - **Sprint 纪律**——量化验收未过不得进入下一 sprint；回归或 >30% 偏差开 FIX/REFACTOR mini-sprint 并更新本文件，不许静默漂移。
 
-## 2. 执行状态（更新于 2026-09-20）
+## 2. 执行状态（更新于 2026-09-21）
 
 **今日已完成**：
 
@@ -164,10 +164,22 @@ meta:
 - **变异验证**：`observer.go` 一处改回裸 `"stale"` → KR2 守卫变红并打出行号；改回 → 绿。
 - **明确未做**：`agents`/`core`/`app` 三包未拆；**CI 尚未建立**，四道门仍靠人手跑，KR2 说的"进 CI"只做到"进测试"。
 
+**2026-09-21 完成**（mini-sprint `M02_S05.007.FIX`，用户「诊断页面有按之前说的进行调整吗?」+「最大并发推进下 1」）：
+
+- **上一轮的验收记录被自查推翻了一半（D-029）**：`M02_S05.006.RSI` 写的「诊断面 `evidence_walk_cost 319ms ok`」是真的，但我抓的是 `/api/snapshot` 与导出 JSON——**证明的是序列化层，声称的是渲染层**。前端 `buildEvidenceMetrics` 按字面量挑三条 baseline，后端产出五条，`evidence_walk_cost` 与 `low_confidence_sessions` 每次都算、都序列化、**然后被视图模型静默丢弃**。页面上从来没有过。
+- **补格子**：证据条 3 格 → 6 格。时长/计数格 `percent: null` 不画进度条——原 CSS `width: max(2%, var(--metric-pct))` 配上 `baselinePercent("512ms")` 返回 0，会在时长旁边画一条 2% 的细条。顺手修掉同一根因：未测量时三个既有格子也在 "n/a" 旁画条，`baselinePercent` 改返回 `number | null`。
+- **走查开销的诚实形状**：只有 `walk_measured===false` 才是空态；`walk_fresh===false` 出数并标「last measured {at}」（索引约每进程 reconcile 一次，**这是稳态常态而非异常**，同 D-023）。值直接用后端 baseline 字符串，不在前端重算。
+- **两道新门都变异验证过，且第二道首跑即抓真缺口**：`TestEveryDiagnosticBaselineReachesThePanel`（后端每个 baseline key 必须在 `diagnosticModel.ts` 出现）、`TestEveryDiagnosticSignalKindHasLocalizedCopy`（23 个 kind × 3 语言 × Title/Detail）。后者抓出 `process_observation_incomplete` 三语全缺——触发时会以裸标识符上页面。两道门**都不维护清单**（正则扫源码 + 按 locale 块扫）。
+- **顺手删掉一段算了没人读的前端代码**：`diagnosticBaselineRows` 合成的 `prediction_safe_status` 行从未被任何格子消费，连同独占的 3 × 3 语 i18n 词条一并删除。
+- **信号表截断不再无声**：抽出 `PRIORITY_ROW_LIMIT`，表头追加「{count} more not shown」；并改为按 severity 排序后截断（原来直接拼接，六条 info 级 anomaly 就能把全部 warn 级 gap 挤下表）。
+- **装机实测这次在渲染层做**（版本 `2026.09.21.005326`）：用 `renderToStaticMarkup` 把真实 `DiagnosticsPanel` 对着活体 `/api/snapshot` 渲染成 HTML，再数格子、抠 `--metric-pct`、查裸 key 泄漏，三语各一遍，两种 scan_cost 状态各一遍。冷启动（`walk_measured=false`）与走查完成（`elapsed_ms=399 visited=28783 pruned=948`，`walk_fresh` 缺省 → 「last measured 12:53:59 AM」）**都是真实现场而非构造夹具**；11–13 条信号对 6 行上限，`hiddenSignalCount` 披露路径也被走到。零裸 key 泄漏。
+- **渲染层实测又抓到两条同类虚构，都不是本轮新加的**：(a) `coverageDetail` 的 `pct <= 0` 把**已测到的 0%** 报成 "n/a"——这是 D-029 附带四的**镜像**（那条讲「用零表示算不出」，这条是「用算不出表示零」）；(b) `max(2%, var(--metric-pct))` 的下限让实测 0% 画出 2% 的条。**`percent: number | null` 解决了「没有分母」，但没解决「分母有、分子是零」，而 CSS 下限会把两种零重新合并。** 两条都已修。
+
 **当前活跃**：
 
 - **M01 地基**（本轮架构与熵审查修复已落地，发布门已复跑）。
 - **当前 sprint：`M01_S02.go_package_split_vendor_adapter.md`**——类型树与两道门已落地；余下 `agents`/`core`/`app` 三包。
+- **`M02_S05.007.FIX` 已收口**：五门全绿 + 装机渲染层实测（两种 scan_cost 状态 × 三语）。
 - M01 后续排队：M01_S01 收尾（基线 tag + 冻结声明，仓库目前零 tag）、M01_S03（main.tsx 拆分 + popover 快路径）。
 
 **交接**：2026-09-20 会话的收尾盘点见 [`HANDOFF_2026-09-20.md`](HANDOFF_2026-09-20.md)（未完成项按"接手方最可能先碰"排序 + 踩过的坑 + 安全红线）。接手方读完并更新本节后即可删除该文件。
@@ -204,6 +216,7 @@ meta:
 | `M02_S05.004.VENDOR.extra_transcript_adapters.md` | 补录计划外落地的 gemini/opencode/hermes/openclaw/pi adapter；**代码档位与本机语料分开记账** |
 | `M02_S05.005.PERF.history_archive_compression.md` | 历史压缩：2 天热明文 + 按月 gzip 冷归档（109.5MB→12.26MB，零行丢失）；lifecycle 保留缺口与三处持久性/权限欠账 |
 | `M02_S05.006.RSI.scan_cost_and_absorbed_items.md` | 扫描开销诊断面（把索引已测未用的走查数据接上）+ 三个吸收项：删 agent DB 缓存旁路、删 4 个 test-only wrapper、Antigravity 以 timeline 档接入 |
+| `M02_S05.007.FIX.diagnostics_surface_orphaned_evidence.md` | 诊断页把 `evidence_walk_cost` / `low_confidence_sessions` 算完即丢的修复，+ 两道「后端算了前端没渲染」的门禁 |
 | `M03_S01.attention_state_engine.md` | 证据化会话 attention states 引擎 |
 | `M03_S02.needs_you_triage_and_tray.md` | needs-you 分诊面、菜单栏 glyph、tray i18n |
 | `M03_S03.one_keystroke_actions.md` | 一次按键动作：跳转/检视/续跑/显式停止 |
@@ -253,6 +266,7 @@ meta:
 | 2026-09-20 | mini-sprint `M02_S05.005.PERF`：三个 JSONL 存储改为 2 天热明文 + 按月 gzip 冷归档（用户「我们是不是没有特地去对 history 做过压缩之类的操作？」） | `go vet ./...`、`go test ./...`（`ok agentload 7.846s`，新增 8 个测试）、`npm --prefix ui run build`、`node scripts/validate_locales.js`、`./build_macos_app.sh` 全绿。**真实数据迁移**（备份 `/tmp/agentload_backup_pre_install_20260920_103529`，73534 行 / 109.5MB）：109.5MB → **12.26MB（-88.8%）**，行数守恒经 Python 独立复算**逐条吻合**——history 热 514 + 归档 4199 = 4713，差 508 精确等于保留窗口过期数；throughput 差 741 同样精确吻合；lifecycle +2 为迁移期间新写入事件。归档 65425 行 `invalid_json=0`、落在热窗口内 **0** 行。**重启二次压实**：history/throughput 归档**字节完全相同**（幂等成立），lifecycle 增 6 行经核验是 09-18 10:35–10:40 恰好跨过 2 天边界的 heartbeat。9 个文件全部 `0644`（迁移前 `throughput.jsonl` 为 `0600`）。**语义完整性**：`trends.windows` 五区间全部正常，最长跨至 **2026-08-21**（整 30 天，只可能来自归档）；`/api/refresh` 后 `parsed_files=80`，空闲 CPU **0.3%** | 写路径一个字节未动（逐行 `Sync()` 的崩溃丢 1 行保证保持不变）。**否掉了三项指标全胜的 gzip 追加成员方案**——半成员污染其后所有成员（实测 100 行只读回 28），改整月原子重写（D-020 附带）。**测试抓出真 bug**：已归档行每次压实被再归档，分区无界增长且 **gzip 藏起字节从磁盘看不出来**；「预期会红的测试没红」是覆盖缺口的信号（D-021 附带）。**对抗评审「逐字节相同」依据被实测证伪**（实为严格子集），结论方向对但照错依据做会连 `snapshot_aborted` 的唯一证据一起删（D-021）。教训见 OPINIONS **D-020**（原子 ≠ 不丢）与 **D-021**（冗余判定必须自己比对字节） |
 | 2026-09-20 | mini-sprint `M02_S05.006.RSI`：删 agent DB 缓存旁路 + 删 4 个 test-only wrapper + Antigravity 接为 timeline 档 + 扫描开销诊断面（计划文件批次 2） | 五门全绿（`go vet ./...`、`go test ./...` `ok agentload 11.174s`、`npm --prefix ui run build`、`node scripts/validate_locales.js` 474 keys × 3 locales、`./scripts/package_macos_app.sh`）。**两处变异测试均如期变红**：去掉 `scanCostValue` 的 `!WalkMeasured` 守卫实测报出 `Value:0ms`；删掉 `index.lastWalk = index.lastStats` 冷 pass 即失去测量。**装机实测**（2026.09.20.153726）：冷启动 `walk_measured=true elapsed_ms=319 visited=28555 pruned=936 aged=9100`，随后三次 pass **`walk_fresh=False` 但 `walk_measured=True` 且数值稳定**；诊断面 `evidence_out_of_horizon \| 9100 files`、`evidence_walk_cost 319ms ok`。缓存旁路删除后 agent DB 解析 **410ms/次 → 首次 400ms 后 ~9ms（45×）**。Antigravity 102 文件 → 22087 事件 → **0 条 trace 声称 token**。空闲 CPU **0.0%** | **计划偏差一处（D-022）**：计划头条「强制重解析计数器」被同批次第 1 项消灭，再上会**结构性恒为零**，故放弃而非延后。**装机后才暴露的第二个陷阱（D-023）**：只报「本次 pass」的走查开销在稳态下每次都是 false（索引约每进程只 reconcile 一次），诚实但无用——改为保留 `lastWalk` + `MeasuredAt`，`WalkMeasured`/`WalkFresh` 分开表达。**一次误判**：冷启动 `parsed_files=0` 被我当成自己引入的 hang 并开始怀疑 Antigravity 谓词，实测否掉（gemini 根 72ms/23 文件，完整快照 34s 正常）——真因是**短超时反复轮询，每次轮询自带 context，超时即取消**。教训见 OPINIONS **D-022**（恒为零的指标不叫诚实）与 **D-023**（只报本次等于几乎不报）|
 | 2026-09-20 | `M02_S01` 部分落地：能力矩阵 code→doc 单端同源（触发事件是同日 `M02_S05.006.RSI` 造成的一次真实文档漂移） | 五门全绿（`go vet ./...`、`go test ./...` `ok agentload 8.767s`、`npm --prefix ui run build`、`node scripts/validate_locales.js`、`./scripts/package_macos_app.sh` 产出 `2026.09.20.174628`）。装机实测 `parsed_files=84`、`scan_cost elapsed_ms=512 visited=28223 pruned=942 aged=9202`、诊断面两条信号在位、空闲 CPU 0.0%。**变异测试两类均如期变红**：删掉 gemini 的 antigravity 证据声明 → `TestCapabilityMatrixDocMatchesTheRegistry` 与 `TestCapabilityMatrixDeclaresEveryEvidenceRootTheParserReads` 同时失败；给 hermes 注入它并不具备的 Usage 槽 → doc 判定陈旧并打印 `\| hermes \| … \| supported \|`。生成表比旧手写表**多出** `Evidence discovery` 列、每个 adapter 的磁盘路径形状、以及旧表里根本不存在的 **antigravity 根** | **漂移是实测到的而非假设的**：Antigravity 接入后手写表毫无反应，因为全仓库没有任何东西比对代码与文档。**nil 槽一律渲染 `unsupported`**，绝不软化也绝不从兄弟槽推断。`spliceCapabilityMatrix` 在标记缺失时**报错而非猜测**，避免把手写散文整体覆盖。**明确未做**：7 信号族无对应代码结构（只有 4 能力槽）、4 态 cell 未实现（槽本身二元，造 partial 即虚构）、`/api` 与 UI 面板未做——KR1 只满足 docs 一端，KR2/KR3 未触及 |
+| 2026-09-21 | mini-sprint `M02_S05.007.FIX`：诊断页接上算完即丢的两条 baseline + 两道渲染门（用户「诊断页面有按之前说的进行调整吗?」） | 四门全绿（`go vet ./...`、`go test ./...` `ok agentload 10.2s`、`npm --prefix ui run build`、`node scripts/validate_locales.js` 484 keys × 3 locales）。**视图模型直接执行验证**（sucrase 跑真实 `buildDiagnosticViewModel`，非读码推断）：measured-but-stale 下六格为 `2/5 pct=40` / `3/4 pct=75` / `1/5 pct=20` / `2 pct=null` / `319ms pct=null last measured …` / `12,480 pct=null`；never-walked 下走查两格为 `no data pct=null`，且三个既有格子的 pct 由 0 改为 null（不再画 2% 假条）。**两道新门均如期变红**：`byKey.get("evidence_walk_cost")` 改错名 → 点名该 baseline 未被渲染；删掉 en 的 `diagnosticSignalProcessObservationIncompleteTitle` → 点名缺失 key 与 locale | **上一轮验收被自查推翻（D-029）**：`M02_S05.006.RSI` 声称「诊断面 319ms ok」，实测那是 `/api/snapshot` 层，页面层从未渲染过——**验证层级必须与声称层级一致**。**门禁形状是「两个列表的比对」而非「更仔细地看」**，且两道门都不维护清单（正则扫 kind、按 `^  xx: {` 扫 locale）。locale 门**首跑即抓真缺口**：`process_observation_incomplete` 三语全缺。**附带修掉类型层的虚构**：`baselinePercent` 用返回 0 表示「算不出」，配 `max(2%, ...)` 会在 "n/a" 旁画条——改 `number \| null`。**装机实测改在渲染层做**（版本 `2026.09.21.005326`，`renderToStaticMarkup` × 活体 `/api/snapshot` × 三语 × 两种 scan_cost 状态）：冷启动六格含两条 `no data`，走查完成后 `399ms / last measured 12:53:59 AM / 28,783 entries visited · 948 directories pruned`，零裸 key 泄漏，`hiddenSignalCount` 披露路径被真实的 11–13 条信号走到。**这一步又抓到两条同类虚构**：`coverageDetail` 的 `pct <= 0` 把已测到的 0% 报成 "n/a"（D-029 附带四的镜像），以及 CSS 的 `max(2%, ...)` 下限让实测 0% 画出 2% 的条——`number \| null` 解决了「没有分母」，没解决「分母有、分子是零」 |
 
 **质检步骤库（随 sprint 验收累积）**：
 
@@ -290,3 +304,13 @@ meta:
   3. **正则批量替换后，专门 grep 字符串字面量与注释**（`grep -oE '"[^"]*\b<新词>\b[^"]*"'`）。本轮正是这一步抓到事件名 `"snapshot_recorded"` 被改成 `"snap_recorded"`——**那会静默改变 lifecycle.jsonl 的历史数据语义**。
   4. **新守卫必须先估「当前代码库会报多少条」**。个位数且条条值得读 → 可用；两位数或需要预置豁免名单 → 换角度。守卫的可用性由误报率决定，一个 90% 误报的门实际覆盖率是 0。
   5. **预算类 KR（"X 低于 N"）必须有一个会变红的测量，且量在功能完整的样本上**。失败信息要指向「回 sprint 重新协商」，不是让下一个人就地抬高数字。
+- **UI 表面类改动追加（来源 `M02_S05.007.FIX`）**：
+  1. **声称「页面上有」就必须在页面层观测，不能拿 API 层的证据顶上**（D-029）。一条数据要穿过 计算 → 序列化 → 视图模型 → 渲染 → 文案 五层，在第 N 层看到它只证明前 N 层通了。写验收时把「我观测的位置」与「我声称的位置」并排写出来，两者不同就补观测或降级声称。
+  2. **后端产出的结构化列表与前端的字面量选择器之间要有一道比对门**。`buildDiagnosticBaselines` 出 5 条、前端挑 3 条、漏掉的两条无声——因为全仓库没有任何东西在比对。`TestEveryDiagnosticBaselineReachesThePanel` / `TestEveryDiagnosticSignalKindHasLocalizedCopy` 是这个形状（Go 侧读 TS 源文本，因为选择器本身就是字符串字面量）。
+  3. **门不许维护清单**。signal kind 正则扫源码、locale 按 `^  xx: {` 分块扫、baseline 直接调构造函数——**需要和被测变更同步手改的清单，正是这道门要绕开的那个失败步骤。**
+  4. **无分母的量不许画进度条**。时长、裸计数没有百分比；`baselinePercent` 返回 0 会让 `width: max(2%, ...)` 在 "n/a" 旁边画一条细条。返回类型改 `number | null`，null 不渲染。**用零表示「算不出」是「绝不虚构」在类型层面的漏洞。**
+  5. **表格截断必须自曝**。表头报全量、表身只列前 N 条而不说少了几条，就是这个面板本身要暴露的采样缺口。同时截断前要按 severity 排序，否则拼接顺序决定谁被挤掉。
+  6. **列数写死的 grid 每加一格都会静默挤压既有格子**。`repeat(auto-fit, minmax(Npx, 1fr))` 才能让新格子自己折行而不是压扁旧的。
+  7. **UI 改动的实测手段：`renderToStaticMarkup` × 活体 `/api/snapshot` × 全部语言**。把真实组件渲染成 HTML，再从 HTML 里数元素、抠 CSS 变量、正则查裸 i18n key 泄漏。这比读代码推断强，也比只看单元测试强——**有整整一类缺陷（副标文案、条宽、折行）只存在于渲染层，API 层的值和状态全对也看不出来**。本轮就是这一步抓到了两条虚构。
+  8. **`x <= 0` 这种把「零」和「无」写进同一个条件的判断，要逐个复核**。已测到的 0% 被 `pct <= 0` 判成 "unavailable"，是「用算不出表示零」——与「用零表示算不出」同样失真，而且更难发现（页面上看起来只是谦虚）。
+  9. **在类型层分开的两种零，会被表现层的下限值重新合并**。`percent: number | null` 挡住了「没有分母」，`max(2%, ...)` 又把「分母有、分子是零」画成细条。改类型时要顺着看一遍消费它的 CSS/格式化。

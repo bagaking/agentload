@@ -71,7 +71,11 @@ body[data-view="popover"] .diagnostics-shell {
 
 .diagnostic-evidence-strip {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* Auto-fit rather than a fixed count: the strip now carries five cells, and
+     the 430px popover cannot give five of them a readable 20px mono number.
+     It wraps to 3+2 there and stays one row on the dashboard. Hardcoding the
+     count meant every new evidence cell silently squeezed the existing ones. */
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
   align-items: stretch;
   gap: 4px;
   min-height: 76px;
@@ -134,10 +138,23 @@ body[data-view="popover"] .diagnostics-shell {
 
 .diagnostic-evidence-cell i em {
   display: block;
-  width: max(2%, var(--metric-pct));
+  /* No floor. A measured 0% must read as empty; max(2%, ...) used to paint a
+     sliver that looks like a small positive share. */
+  width: var(--metric-pct);
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, color-mix(in srgb, var(--tone-color, var(--diag-muted)) 86%, transparent), color-mix(in srgb, var(--tone-color, var(--diag-muted)) 42%, transparent));
+}
+
+/* A duration or a count has no denominator. The track keeps its height so the
+   five cells stay on one baseline, but it is drawn as a dotted rule instead of
+   an empty bar -- an empty bar reads as 0%, which is a number nobody measured. */
+.diagnostic-evidence-cell i.is-empty {
+  background: none;
+  border-top: 1px dashed color-mix(in srgb, var(--tone-color, var(--diag-muted)) 30%, transparent);
+  border-radius: 0;
+  margin-top: 1px;
+  height: 3px;
 }
 
 .diagnostic-evidence-cell small {
@@ -598,7 +615,7 @@ body[data-view="popover"] .diagnostics-shell {
   }
 
   .diagnostic-evidence-strip {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
     min-height: 72px;
   }
 

@@ -1,14 +1,21 @@
 import { formatDateTime, type Translate } from "../lib/format";
-import type { DiagnosticBaseline, DiagnosticCapability, DiagnosticSignal, RuntimeTelemetrySnapshot, Snapshot } from "../types/snapshot";
+import type { DiagnosticBaseline, DiagnosticCapability, DiagnosticSignal, RuntimeTelemetrySnapshot, Snapshot, TranscriptScanCost } from "../types/snapshot";
+
+// How many signals the priority table renders. The header counts every signal,
+// so the view model also reports how many this cap hid.
+const PRIORITY_ROW_LIMIT = 6;
 
 export type DiagnosticTone = "ok" | "watch" | "warn" | "empty" | "muted";
 
 export type EvidenceMetric = {
-  key: "session_evidence" | "pid_link" | "token_visible";
+  key: "session_evidence" | "pid_link" | "token_visible" | "low_confidence" | "walk_cost" | "walk_scope";
   label: string;
   value: string;
   detail: string;
-  percent: number;
+  // A share renders a bar; a duration or a count has no denominator, so it
+  // passes null and the bar is omitted rather than drawn at a token width.
+  // Rendering "512ms" with a 2%-wide bar would invent a ratio nobody measured.
+  percent: number | null;
   tone: DiagnosticTone;
 };
 
@@ -38,6 +45,10 @@ export type DiagnosticViewModel = {
   gapCount: number;
   evidenceMetrics: EvidenceMetric[];
   priorityRows: PriorityRow[];
+  // How many signals the priority table did not render. The header counts all
+  // of them, so without this a capped table reads as "these are all the
+  // findings" -- the sampling gap the panel exists to expose.
+  hiddenSignalCount: number;
   chainNodes: ChainNode[];
   omittedFields: string[];
 };
@@ -46,17 +57,32 @@ export function buildDiagnosticViewModel(t: Translate, snapshot: Snapshot): Diag
   const diagnostics = snapshot.diagnostics;
   const anomalies = diagnostics?.anomaly_signals ?? [];
   const gaps = diagnostics?.evidence_gaps ?? [];
-  const signals = [...anomalies, ...gaps];
-  const baselineRows = diagnosticBaselineRows(t, diagnostics?.baselines ?? []);
+  // Warn before info, so a capped table drops the least severe rows rather
+  // than whichever list happened to be concatenated first. Anomalies used to
+  // come wholesale before gaps, which meant six info-level anomalies could
+  // push every warn-level evidence gap off the table.
+  const signals = [...anomalies, ...gaps].slice().sort(
+    (a, b) => signalSeverityRank(a.severity) - signalSeverityRank(b.severity),
+  );
   return {
     generated: diagnostics?.generated_at ? formatDateTime(diagnostics.generated_at) : snapshot.generated_at ? formatDateTime(snapshot.generated_at) : t("unavailable"),
     anomalyCount: anomalies.length,
     gapCount: gaps.length,
-    evidenceMetrics: buildEvidenceMetrics(t, baselineRows),
+    evidenceMetrics: buildEvidenceMetrics(t, diagnostics?.baselines ?? [], snapshot.transcript_stats?.scan_cost),
     priorityRows: buildPriorityRows(t, signals),
+    hiddenSignalCount: Math.max(0, signals.length - PRIORITY_ROW_LIMIT),
     chainNodes: buildChainNodes(t, diagnostics?.capabilities ?? [], snapshot.runtime_telemetry),
     omittedFields: diagnostics?.export?.omitted_fields ?? [],
   };
+}
+
+// Severity is a stable sort key, so equal-severity signals keep the backend's
+// own ordering (which diagnostics.go already sorts by kind and title).
+function signalSeverityRank(severity?: string): number {
+  const value = String(severity || "").trim().toLowerCase();
+  if (value === "warn" || value === "warning" || value === "critical" || value === "error") return 0;
+  if (value === "watch") return 1;
+  return 2;
 }
 
 export function diagnosticOmittedFieldLabel(t: Translate, value: string): string {
@@ -66,11 +92,13 @@ export function diagnosticOmittedFieldLabel(t: Translate, value: string): string
   return translated !== key ? translated : humanizeKey(value);
 }
 
-function buildEvidenceMetrics(t: Translate, baselines: DiagnosticBaseline[]): EvidenceMetric[] {
+function buildEvidenceMetrics(t: Translate, baselines: DiagnosticBaseline[], scanCost?: TranscriptScanCost): EvidenceMetric[] {
   const byKey = new Map(baselines.map((baseline) => [baseline.key, baseline]));
   const session = byKey.get("active_session_ratio");
   const mapping = byKey.get("mapping_coverage");
   const token = byKey.get("token_measured_sessions");
+  const lowConfidence = byKey.get("low_confidence_sessions");
+  const walk = byKey.get("evidence_walk_cost");
   return [
     {
       key: "session_evidence",
@@ -96,11 +124,94 @@ function buildEvidenceMetrics(t: Translate, baselines: DiagnosticBaseline[]): Ev
       percent: baselinePercent(token),
       tone: toneFromStatus(token?.status),
     },
+    {
+      key: "low_confidence",
+      label: t("diagnosticLowConfidenceSessions"),
+      value: diagnosticBaselineValue(t, lowConfidence),
+      detail: t("diagnosticLowConfidenceSessionsDetail"),
+      // A bare count of weak sessions has no denominator on this row -- the
+      // total lives in the session-evidence cell, and dividing here would
+      // silently invent a second definition of "all sessions".
+      percent: null,
+      tone: toneFromStatus(lowConfidence?.status),
+    },
+    walkCostMetric(t, walk, scanCost),
+    walkScopeMetric(t, scanCost),
   ];
 }
 
+// walkCostMetric renders the last evidence walk's duration.
+//
+// The index reconciles roughly once per process, so in steady state this
+// number was measured minutes ago and is still the best answer available --
+// a walk's cost does not change until the next walk. Blanking it because it
+// was not measured on this exact pass would make the cell permanently empty,
+// which is the same uselessness as a permanently-zero counter. So the value is
+// shown with a line saying WHEN it was measured, and only a walk that has
+// never run reads as no data.
+function walkCostMetric(t: Translate, baseline?: DiagnosticBaseline, scanCost?: TranscriptScanCost): EvidenceMetric {
+  const measured = scanCost?.walk_measured === true;
+  if (!measured) {
+    return {
+      key: "walk_cost",
+      label: t("diagnosticWalkCost"),
+      value: t("diagnosticNoData"),
+      detail: t("diagnosticWalkCostUnmeasured"),
+      percent: null,
+      tone: "muted",
+    };
+  }
+  const fresh = scanCost?.walk_fresh === true;
+  const at = scanCost?.measured_at ? formatDateTime(scanCost.measured_at) : "";
+  return {
+    key: "walk_cost",
+    label: t("diagnosticWalkCost"),
+    // The backend already formats this and already guards the unmeasured case
+    // (diagnostics.go scanCostValue); re-deriving it here would be a second
+    // opinion on the same fact.
+    value: diagnosticBaselineValue(t, baseline),
+    detail: fresh || !at
+      ? t("diagnosticWalkCostFresh")
+      : t("diagnosticWalkCostStale").replace("{at}", at),
+    percent: null,
+    tone: toneFromStatus(baseline?.status),
+  };
+}
+
+// walkScopeMetric reports how much ground the walk covered. Visited and pruned
+// come from the same measurement as the duration, so they share its guard: no
+// walk means no scope, not a scope of zero.
+function walkScopeMetric(t: Translate, scanCost?: TranscriptScanCost): EvidenceMetric {
+  if (scanCost?.walk_measured !== true) {
+    return {
+      key: "walk_scope",
+      label: t("diagnosticWalkScope"),
+      value: t("diagnosticNoData"),
+      detail: t("diagnosticWalkScopeUnmeasured"),
+      percent: null,
+      tone: "muted",
+    };
+  }
+  const visited = scanCost.visited_entries ?? 0;
+  const pruned = scanCost.pruned_directories ?? 0;
+  return {
+    key: "walk_scope",
+    label: t("diagnosticWalkScope"),
+    value: formatCount(visited),
+    detail: t("diagnosticWalkScopeDetail")
+      .replace("{visited}", formatCount(visited))
+      .replace("{pruned}", formatCount(pruned)),
+    percent: null,
+    tone: "ok",
+  };
+}
+
+function formatCount(value: number): string {
+  return Number.isFinite(value) ? value.toLocaleString() : "0";
+}
+
 function buildPriorityRows(t: Translate, signals: DiagnosticSignal[]): PriorityRow[] {
-  return signals.slice(0, 6).map((signal, index) => {
+  return signals.slice(0, PRIORITY_ROW_LIMIT).map((signal, index) => {
     const metric = signal.metric_key || signal.source || signal.kind || "diagnostic";
     return {
       key: `${signal.kind || metric}-${index}`,
@@ -140,23 +251,13 @@ function chainNode(t: Translate, capability: Pick<DiagnosticCapability, "key" | 
   };
 }
 
-function diagnosticBaselineRows(t: Translate, baselines: DiagnosticBaseline[]): DiagnosticBaseline[] {
-  return [
-    ...baselines,
-    {
-      key: "prediction_safe_status",
-      label: t("predictionSafeStatus"),
-      value: t("predictionUnavailable"),
-      status: "unavailable",
-      detail: t("predictionUnavailableDetail"),
-      metric_key: "diagnostic_export",
-    },
-  ];
-}
-
 function diagnosticBaselineValue(t: Translate, baseline?: DiagnosticBaseline): string {
   const value = String(baseline?.value || "").trim();
   if (!value) return t("unavailable");
+  // The backend spells "we never measured this" as the metric-semantics token
+  // no_data. Falling through would print that identifier raw in all three
+  // locales, which reads like a bug rather than like an honest blank.
+  if (value === "no_data") return t("diagnosticNoData");
   if (value === "no visible PIDs") return t("noVisiblePids");
   const ratio = value.match(/^([0-9]+)\s+of\s+([0-9]+)$/i);
   if (ratio) return `${ratio[1]} / ${ratio[2]}`;
@@ -165,17 +266,24 @@ function diagnosticBaselineValue(t: Translate, baseline?: DiagnosticBaseline): s
 
 function coverageDetail(t: Translate, baseline: DiagnosticBaseline | undefined, key: string): string {
   const pct = baselinePercent(baseline);
-  if (!Number.isFinite(pct) || pct <= 0) return t("unavailable");
+  // Only an unparseable value is unavailable. A measured 0% is a measurement,
+  // and reporting it as "n/a" hides a real reading behind an honest-unknown
+  // word -- the mirror image of reporting an unknown as zero.
+  if (pct === null) return t("unavailable");
   return `${pct.toFixed(pct >= 10 ? 1 : 2)}% ${t(key)}`;
 }
 
-function baselinePercent(baseline?: DiagnosticBaseline): number {
+// null, not 0, when the value carries no share. A baseline that is missing or
+// reads "no_data" has no ratio at all, and returning 0 let the CSS floor
+// (max(2%, ...)) paint a thin bar next to "n/a" -- a measurement rendered for
+// a measurement that does not exist.
+function baselinePercent(baseline?: DiagnosticBaseline): number | null {
   const value = String(baseline?.value || "").trim();
   const percent = value.match(/([0-9]+(?:\.[0-9]+)?)%/);
   if (percent) return clampPercent(Number(percent[1]));
   const ratio = value.match(/([0-9]+)\s+of\s+([0-9]+)/i);
   if (ratio) return clampPercent((Number(ratio[1]) / Math.max(1, Number(ratio[2]))) * 100);
-  return 0;
+  return null;
 }
 
 function signalEvidenceValue(t: Translate, signal: DiagnosticSignal): string {

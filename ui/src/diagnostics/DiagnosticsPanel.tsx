@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   Box,
   ChevronRight,
+  Clock,
   Code2,
   Cpu,
   Database,
@@ -11,9 +12,11 @@ import {
   EyeOff,
   FileText,
   Folder,
+  HelpCircle,
   Link2,
   MessageSquare,
   Radar,
+  Search,
   ShieldCheck,
   Target,
   Terminal,
@@ -69,7 +72,10 @@ export function DiagnosticsPanel({ t, snapshot }: { t: Translate; snapshot: Snap
       <section className="diagnostic-priority-plane" aria-label={t("diagnosticPriority")}>
         <div className="diagnostic-plane-head">
           <span><Target size={15} />{t("diagnosticPriority")}</span>
-          <em>{viewModel.anomalyCount} {t("anomalies")} · {viewModel.gapCount} {t("evidenceGaps")}</em>
+          <em>
+            {viewModel.anomalyCount} {t("anomalies")} · {viewModel.gapCount} {t("evidenceGaps")}
+            {viewModel.hiddenSignalCount > 0 ? ` · ${t("diagnosticSignalsHidden").replace("{count}", String(viewModel.hiddenSignalCount))}` : ""}
+          </em>
         </div>
         {viewModel.priorityRows.length ? (
           <div className="diagnostic-priority-table">
@@ -121,11 +127,18 @@ export function DiagnosticsPanel({ t, snapshot }: { t: Translate; snapshot: Snap
 }
 
 function EvidenceMetricCell({ metric }: { metric: EvidenceMetric }) {
+  // A null percent means the value has no denominator (a duration, a count).
+  // Drawing the bar anyway would show a ratio nobody measured, so the bar is
+  // omitted entirely rather than pinned at the CSS minimum width.
+  const hasShare = metric.percent !== null;
   return (
-    <article className={`diagnostic-evidence-cell tone-${metric.tone}`} style={{ "--metric-pct": `${metric.percent}%` } as React.CSSProperties}>
+    <article
+      className={`diagnostic-evidence-cell tone-${metric.tone}${hasShare ? "" : " is-unscaled"}`}
+      style={hasShare ? ({ "--metric-pct": `${metric.percent}%` } as React.CSSProperties) : undefined}
+    >
       <span className="diagnostic-evidence-label">{evidenceMetricIcon(metric.key)}<b>{metric.label}</b></span>
       <strong>{metric.value}</strong>
-      <i aria-hidden="true"><em /></i>
+      {hasShare ? <i aria-hidden="true"><em /></i> : <i aria-hidden="true" className="is-empty" />}
       <small>{metric.detail}</small>
     </article>
   );
@@ -199,6 +212,9 @@ function StatusLegend({ t }: { t: Translate }) {
 function evidenceMetricIcon(key: EvidenceMetric["key"]) {
   if (key === "session_evidence") return <Database size={14} />;
   if (key === "pid_link") return <Link2 size={14} />;
+  if (key === "low_confidence") return <HelpCircle size={14} />;
+  if (key === "walk_cost") return <Clock size={14} />;
+  if (key === "walk_scope") return <Search size={14} />;
   return <EyeOff size={14} />;
 }
 
