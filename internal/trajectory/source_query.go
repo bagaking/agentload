@@ -26,7 +26,17 @@ type sourceReadiness struct {
 // Only the caller's current provider-authorized states are eligible. Database
 // rows never grant access to a path or extend that current authorization set.
 func (f *sourceStore) readiness(ctx context.Context) (map[string]sourceReadiness, error) {
-	rows, err := f.db.QueryContext(ctx, "SELECT id,generation,complete,search_count,search_offset,search_block,search_entity_gaps,verified_size,verified_mtime FROM sources WHERE active=1 AND missing=0")
+	return f.readinessScope(ctx, "")
+}
+
+func (f *sourceStore) readinessScope(ctx context.Context, id string) (map[string]sourceReadiness, error) {
+	query := "SELECT id,generation,complete,search_count,search_offset,search_block,search_entity_gaps,verified_size,verified_mtime FROM sources WHERE active=1 AND missing=0"
+	var args []any
+	if id != "" {
+		query += " AND id=?"
+		args = append(args, id)
+	}
+	rows, err := f.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

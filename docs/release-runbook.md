@@ -87,6 +87,8 @@ are retained and accounted for separately. See
 Catalog collection uses one checkpoint snapshot per operation. Removal checks
 reuse that snapshot under the same operation lock and honor request cancellation;
 they do not decode every checkpoint again before a query can read its evidence.
+Background preparation reads readiness for its selected source. It does not
+reload the whole catalog's readiness for every individual source in the queue.
 
 On restart, archive discovery includes local sessions written while Agent Load
 was stopped. Background preparation shares the online decoder, normalization

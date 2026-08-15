@@ -26,6 +26,29 @@ func readinessFixture(t *testing.T) (*Service, *sourceState, sourceReadiness, []
 	return s, st, ready[st.ID], facts
 }
 
+func TestTrajectoryReadinessPreparationDoesNotReadUnrelatedSources(t *testing.T) {
+	s, st, _, facts := readinessFixture(t)
+	// A malformed readiness field in another source must remain an error for
+	// whole-catalog reads, while preparation of this valid source is independent.
+	_, err := s.store.db.Exec("INSERT INTO sources(id,generation,agent,mtime,checkpoint,complete,search_count) SELECT 'unrelated','other',agent,mtime,checkpoint,1,'invalid-count' FROM sources WHERE id=?", st.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.store.readiness(context.Background()); err == nil {
+		t.Fatal("whole-catalog readiness accepted malformed metadata")
+	}
+	if _, err := s.PrepareSource(context.Background(), st.Source, func() bool { return true }); err != nil {
+		t.Fatal("single-source preparation consumed unrelated metadata", err)
+	}
+	ready, err := s.store.readinessScope(context.Background(), st.ID)
+	if err != nil || len(ready) != 1 || ready[st.ID].count != len(facts) {
+		t.Fatal("selected source did not commit its exact readiness", ready, err)
+	}
+	if _, err := s.store.readiness(context.Background()); err == nil {
+		t.Fatal("scoped preparation hid or repaired unrelated corruption")
+	}
+}
+
 type readinessSlowDecoder struct {
 	calls int
 	delay bool

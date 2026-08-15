@@ -149,9 +149,23 @@ func (s *Service) syncSearchScope(ctx context.Context, states []*sourceState, co
 	if err := s.openSearchContext(ctx); err != nil {
 		return err
 	}
-	ready, err := s.store.readiness(ctx)
-	if err != nil {
-		return err
+	ready := map[string]sourceReadiness{}
+	if fullScope {
+		var err error
+		ready, err = s.store.readiness(ctx)
+		if err != nil {
+			return err
+		}
+	} else {
+		for _, st := range states {
+			scoped, err := s.store.readinessScope(ctx, st.ID)
+			if err != nil {
+				return err
+			}
+			for id, p := range scoped {
+				ready[id] = p
+			}
+		}
 	}
 	ordered := append([]*sourceState(nil), states...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].ID < ordered[j].ID })
@@ -162,6 +176,7 @@ func (s *Service) syncSearchScope(ctx context.Context, states []*sourceState, co
 	budget, cancel := context.WithTimeout(ctx, 25*time.Millisecond)
 	defer cancel()
 	batches := 0
+	var err error
 	for n := range ordered {
 		st := ordered[(start+n)%len(ordered)]
 		p := ready[st.ID]
