@@ -375,7 +375,7 @@ func recentMovementStatus(active, total int) string {
 		return "empty"
 	}
 	if active == 0 {
-		return "idle"
+		return baselineStatusIdle
 	}
 	return "ok"
 }

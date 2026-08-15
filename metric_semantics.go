@@ -26,6 +26,68 @@ const (
 	liveTokenRateUnassignedProject = "unassigned"
 )
 
+// Freshness is the recent-movement vocabulary. It lives here because the
+// semantic matrix says recent movement is decided by transcript event age and
+// nothing else, and because a string literal spelled inline in an aggregation
+// is exactly how that rule gets quietly restated somewhere it does not hold.
+//
+// TestMetricVocabularyStaysInTheSemanticLayer fails if these spellings appear
+// outside this file.
+const (
+	freshnessActive  = "active"
+	freshnessIdle    = "idle"
+	freshnessStale   = "stale"
+	freshnessUnknown = "unknown"
+)
+
+// freshnessFromEventAge is the only place an age becomes a freshness bucket.
+// Callers pass the already-clamped age; a session with no transcript timing
+// never reaches here, because absent timing is unknown rather than stale.
+func freshnessFromEventAge(age, idleGap time.Duration) string {
+	switch {
+	case age <= idleGap:
+		return freshnessActive
+	case age <= staleSessionThreshold(idleGap):
+		return freshnessIdle
+	default:
+		return freshnessStale
+	}
+}
+
+// freshnessRank orders buckets most-recent-first for display. "unknown" sorts
+// last: it is an absence of evidence, not a degree of staleness.
+func freshnessRank(freshness string) int {
+	switch freshness {
+	case freshnessActive:
+		return 0
+	case freshnessIdle:
+		return 1
+	case freshnessStale:
+		return 2
+	default:
+		return 3
+	}
+}
+
+// freshnessCountsAsPresent reports the buckets that mean "this session still
+// has live evidence behind it". Stale is deliberately excluded: an overlap
+// cluster built from stale rows describes history, not a present collision.
+func freshnessCountsAsPresent(freshness string) bool {
+	return freshness == freshnessActive || freshness == freshnessIdle
+}
+
+// baselineStatusIdle is the diagnostics baseline-status family's word for "no
+// recent movement right now". It is spelled the same as freshnessIdle and
+// means something different, which is the whole reason it is named here.
+//
+// Freshness describes one session's transcript age. A baseline status
+// describes a whole metric row. A machine whose every session is stale reports
+// baseline status idle -- zero recent movement -- while not one session is
+// freshnessIdle. Reading either number as the other is wrong, and the two are
+// one keystroke apart, so they sit next to each other where the difference is
+// visible instead of in two files that never get read together.
+const baselineStatusIdle = "idle"
+
 type liveTokenRateEvent struct {
 	Start   time.Time
 	End     time.Time
@@ -283,7 +345,7 @@ func sessionNeedsReviewObservation(role string, observation liveSessionObservati
 	if normalizedRole(role) != "main" || observation.ActiveBurst {
 		return false
 	}
-	return observation.Freshness == "idle" || observation.Freshness == "stale"
+	return observation.Freshness == freshnessIdle || observation.Freshness == freshnessStale
 }
 
 func metricFactsForLiveSession(session snapshot.LiveSession, observation liveSessionObservation) SessionMetricFacts {

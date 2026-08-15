@@ -1342,7 +1342,7 @@ func observeLiveSession(session snapshot.LiveSession, idleGap time.Duration, now
 		effectiveIdleGap = 90 * time.Second
 	}
 	observation := liveSessionObservation{
-		Freshness:         "unknown",
+		Freshness:         freshnessUnknown,
 		MappingMethod:     sessionMappingMethod(session.Mapping),
 		MissingTranscript: !sessionHasTranscriptTiming(session),
 		Confidence:        "low",
@@ -1362,16 +1362,9 @@ func observeLiveSession(session snapshot.LiveSession, idleGap time.Duration, now
 		}
 		observation.LastEventAt = session.Trace.LastEvent.Format(time.RFC3339)
 		observation.LastEventAgeSeconds = int(age.Seconds())
-		switch {
-		case age <= effectiveIdleGap:
-			observation.Freshness = "active"
-			observation.ActiveBurst = true
-		case age <= staleSessionThreshold(effectiveIdleGap):
-			observation.Freshness = "idle"
-		default:
-			observation.Freshness = "stale"
-			observation.Stale = true
-		}
+		observation.Freshness = freshnessFromEventAge(age, effectiveIdleGap)
+		observation.ActiveBurst = observation.Freshness == freshnessActive
+		observation.Stale = observation.Freshness == freshnessStale
 	}
 	if session.Trace != nil && !session.Trace.FirstEvent.IsZero() {
 		windowStart := now.Add(-recentSessionWindow(effectiveIdleGap))
@@ -1455,19 +1448,6 @@ func sessionSortAge(item snapshot.LiveSessionSnapshot) int {
 		return int(^uint(0) >> 1)
 	}
 	return item.LastEventAgeSeconds
-}
-
-func freshnessRank(freshness string) int {
-	switch freshness {
-	case "active":
-		return 0
-	case "idle":
-		return 1
-	case "stale":
-		return 2
-	default:
-		return 3
-	}
 }
 
 func sessionHasTranscriptTiming(session snapshot.LiveSession) bool {
@@ -1956,7 +1936,7 @@ func buildCandidateWorkitems(sessions []snapshot.LiveSessionSnapshot, sessionPro
 		}
 		freshnessBucket := strings.TrimSpace(session.Freshness)
 		if freshnessBucket == "" {
-			freshnessBucket = "unknown"
+			freshnessBucket = freshnessUnknown
 		}
 		key := fmt.Sprintf("project=%s|tool=%s|freshness=%s", projectName, session.Tool, freshnessBucket)
 		item := groups[key]
@@ -2102,7 +2082,7 @@ func buildCoordinationRisk(processes []snapshot.LiveProcessSnapshot, sessions []
 	lowConfidenceMappingCount := 0
 	missingTranscriptCount := 0
 	for _, session := range sessions {
-		if session.Freshness == "stale" {
+		if session.Freshness == freshnessStale {
 			risk.StaleSessionCount++
 		}
 		lowConfidence := session.Confidence == "low"
@@ -2264,7 +2244,7 @@ func summarizeDuplicateOverlapSuspicion(sessions []snapshot.LiveSessionSnapshot)
 		if !hasAssignedProject(project) || tool == "" {
 			continue
 		}
-		if session.Freshness != "active" && session.Freshness != "idle" {
+		if !freshnessCountsAsPresent(session.Freshness) {
 			continue
 		}
 		key := clusterKey{
