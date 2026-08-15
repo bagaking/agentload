@@ -44,6 +44,7 @@ type trayApp struct {
 	archiveDone      chan struct{}
 	// Tests can count catalog discovery without replacing the replay pipeline.
 	archiveSourcesFunc func(context.Context) trajectory.SourceSet
+	archiveCatalogFunc func(context.Context, trajectory.SourceSet, func() bool) (bool, error)
 
 	stopCh    chan struct{}
 	refreshCh chan struct{}

@@ -130,7 +130,12 @@ func TestTrajectoryArchiveCoalescesHintsWhileIdleAndStillReplays(t *testing.T) {
 	registry.adapters[i].Capabilities.Trajectory = archiveCountingDecoder{registry.adapters[i].Capabilities.Trajectory, &found}
 	registry.mu.Unlock()
 	var catalogs atomic.Int32
+	var maintenance atomic.Int32
 	app.archiveSourcesFunc = func(ctx context.Context) trajectory.SourceSet { catalogs.Add(1); return app.archiveSources(ctx) }
+	app.archiveCatalogFunc = func(ctx context.Context, set trajectory.SourceSet, enabled func() bool) (bool, error) {
+		maintenance.Add(1)
+		return app.trajectory.PrepareCatalog(ctx, set, enabled)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { defer close(done); app.recoverArchive(ctx, time.Hour) }()
@@ -169,6 +174,24 @@ func TestTrajectoryArchiveCoalescesHintsWhileIdleAndStillReplays(t *testing.T) {
 	}
 	if !found.Load() || catalogs.Load() < 2 {
 		t.Fatal("coalesced wake lost appended evidence", catalogs.Load())
+	}
+	if maintenance.Load() != 1 {
+		t.Fatalf("ordinary append reloaded all checkpoints %d times", maintenance.Load())
+	}
+	// A new member still requires real catalog maintenance, even though ordinary
+	// writes to existing members only advance their own source checkpoints.
+	newPath := filepath.Join(filepath.Dir(path), "rollout-added.jsonl")
+	if err := os.WriteFile(newPath, []byte("{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"new catalog member\"}]}}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	app.observer.evidenceIndex.requestReconcile()
+	app.notifyArchive()
+	deadline = time.Now().Add(archiveCatalogInterval + 2*time.Second)
+	for maintenance.Load() < 2 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if maintenance.Load() != 2 {
+		t.Fatal("new member did not maintain authorized catalog", maintenance.Load())
 	}
 	cancel()
 	select {

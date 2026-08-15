@@ -48,6 +48,10 @@ func (a *trayApp) recoverArchive(ctx context.Context, auditInterval time.Duratio
 	if a.archiveSourcesFunc != nil {
 		discover = a.archiveSourcesFunc
 	}
+	maintain := a.trajectory.PrepareCatalog
+	if a.archiveCatalogFunc != nil {
+		maintain = a.archiveCatalogFunc
+	}
 	replay, err := openThroughputRecovery(a.cfg.HistoryFile, a.throughputHistory, a.observer.adapters)
 	if err != nil && a.logger != nil {
 		a.logger.Printf("throughput recovery unavailable: %v", err)
@@ -91,7 +95,7 @@ func (a *trayApp) recoverArchive(ctx context.Context, auditInterval time.Duratio
 		}
 	}
 	prepareCatalog := func() bool {
-		more, err := a.trajectory.PrepareCatalog(ctx, catalog, a.trajectoryAccess.isEnabled)
+		more, err := maintain(ctx, catalog, a.trajectoryAccess.isEnabled)
 		if err != nil {
 			if ctx.Err() == nil && a.logger != nil {
 				a.logger.Printf("archive catalog maintenance deferred: %v", err)
@@ -115,6 +119,7 @@ func (a *trayApp) recoverArchive(ctx context.Context, auditInterval time.Duratio
 		if dirty {
 			lastCatalogAt = time.Now()
 			set := discover(ctx)
+			membershipChanged := set.CatalogComplete != catalog.CatalogComplete || set.Coverage.Complete != catalog.Coverage.Complete
 			catalog = set
 			hintReady = nil
 			hintTimer.Stop()
@@ -123,19 +128,25 @@ func (a *trayApp) recoverArchive(ctx context.Context, auditInterval time.Duratio
 				force = true
 				enabled = currentEnabled
 			}
+			nextSeen := make(map[string]string, len(set.Sources))
 			for _, src := range set.Sources {
 				key := src.Agent + "\x00" + src.Path
 				signature := archiveSourceSignature(src)
+				if _, known := seen[key]; !known {
+					membershipChanged = true
+				}
 				if !queued[key] && (force || seen[key] != signature) {
 					queue = append(queue, src)
 					queued[key] = true
 				}
-				seen[key] = signature
+				nextSeen[key] = signature
 			}
-			dirty, force = false, false
-			if enabled {
+			membershipChanged = membershipChanged || len(nextSeen) != len(seen)
+			seen = nextSeen
+			if enabled && (force || membershipChanged) {
 				cleanupPending = prepareCatalog()
 			}
+			dirty, force = false, false
 		}
 		if len(queue) == 0 {
 			if cleanupPending {
