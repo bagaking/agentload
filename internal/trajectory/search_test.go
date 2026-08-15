@@ -312,7 +312,7 @@ func TestTrajectorySearchIncrementalGenerationWithdrawalAndRestart(t *testing.T)
 	}
 	s := NewPersistent(provider, index)
 	t.Cleanup(func() { _ = s.Close() })
-	first := searchTestQuery(t, s, snapshot.TrajectorySelector{Count: true, Text: "needle"})
+	first := searchTestPreparedQuery(t, s, snapshot.TrajectorySelector{Count: true, Text: "needle"})
 	if len(first.Sessions) != 1 || exactMatchCount(first.Sessions[0].MatchedCount) != 1 {
 		t.Fatal(first)
 	}

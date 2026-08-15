@@ -277,9 +277,9 @@ func TestTrajectoryEntitySearchPaginationBoundsAndSourceLifecycle(t *testing.T) 
 func TestTrajectoryEntitySearchCoverageStaysSeparateFromNativeEvidence(t *testing.T) {
 	s, _ := entityTestService(t, entityReadRecord("read-a", "relative/SKILL.md"))
 	ctx := context.Background()
-	native, err := s.Query(ctx, snapshot.TrajectorySelector{Collection: "events", Tool: "read_file"})
-	if err != nil || len(native.Events) != 1 || !native.Coverage.Complete {
-		t.Fatalf("unknown entity scope erased complete native action evidence: %+v %v", native, err)
+	native := searchTestPreparedQuery(t, s, snapshot.TrajectorySelector{Collection: "events", Tool: "read_file"})
+	if len(native.Events) != 1 || !native.Coverage.Complete {
+		t.Fatalf("unknown entity scope erased complete native action evidence: %+v", native)
 	}
 	entities, err := s.QueryEntities(ctx, snapshot.TrajectorySelector{EntityKind: "path", Predicate: "requested_read"})
 	if err != nil || len(entities.Entities) != 1 || entities.Coverage.Complete || !entityTestGap(entities.Coverage.Gaps, "entity_relative_path_scope_unavailable") {
