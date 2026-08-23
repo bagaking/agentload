@@ -82,6 +82,17 @@ func newTraeTranscriptParser() agentTranscriptParser {
 	}
 }
 
+func newAntigravityTranscriptParser() agentTranscriptParser {
+	return builtinTranscriptParser{
+		parse: func(file TranscriptFile) (*SessionTrace, error) {
+			return parseAntigravityTrace(file)
+		},
+		parseTail: parseAntigravityTraceTail,
+		append:    parseAntigravityTraceAppend,
+		canAppend: func(TranscriptFile) bool { return true },
+	}
+}
+
 func isCodexLaneTranscript(path string) bool {
 	return strings.Contains(filepath.Clean(path), string(filepath.Separator)+".codexl"+string(filepath.Separator))
 }

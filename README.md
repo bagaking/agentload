@@ -22,10 +22,13 @@ Environment variables:
 - `AGENTLOAD_CLAUDE_DIRS`: path-list of Claude config roots.
 - `AGENTLOAD_CODEX_DIRS`: path-list of Codex config roots.
 - `AGENTLOAD_TRAE_DIRS`: path-list of Trae config roots.
+- `AGENTLOAD_ANTIGRAVITY_DIRS`: path-list of Antigravity CLI/IDE app-data roots.
 
 When the `AGENTLOAD_*_DIRS` variables are unset, the tool-native fallbacks
 `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, and `TRAE_CLI_HOME` are honored before the
-default home-directory roots.
+default home-directory roots. Antigravity defaults to
+`~/.gemini/antigravity-cli` and `~/.gemini/antigravity` when those directories
+exist.
 
 CLI flags (defaults come from the environment and built-in config):
 

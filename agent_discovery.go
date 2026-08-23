@@ -142,6 +142,86 @@ func (traeTranscriptDiscovery) Classify(agentID string, roots []string, path str
 	return TranscriptFile{}, false
 }
 
+type antigravityTranscriptDiscovery struct{}
+
+func (antigravityTranscriptDiscovery) Discover(ctx context.Context, agentID string, roots []string, cutoff time.Time) transcriptDiscoveryResult {
+	result := transcriptDiscoveryResult{}
+	for _, root := range roots {
+		brain := filepath.Join(root, "brain")
+		discovered := walkEvidenceTree(ctx, brain, agentID, cutoff,
+			antigravityBrainDirectoryPolicy, antigravityTranscriptFilePolicy)
+		for index := range discovered.Files {
+			discovered.Files[index].File.SessionIDHint = antigravityTranscriptSessionID(discovered.Files[index].File.Path)
+		}
+		result.merge(discovered)
+	}
+	return result
+}
+
+func (antigravityTranscriptDiscovery) Classify(agentID string, roots []string, path string) (TranscriptFile, bool) {
+	for _, root := range roots {
+		base := filepath.Join(root, "brain")
+		relative, ok := relativeEvidencePath(base, path)
+		if !ok || !isAntigravityTranscriptRelative(relative) {
+			continue
+		}
+		clean := filepath.Clean(filepath.Join(base, relative))
+		return TranscriptFile{
+			Tool:          agentID,
+			Path:          clean,
+			SessionIDHint: antigravityTranscriptSessionID(clean),
+		}, true
+	}
+	return TranscriptFile{}, false
+}
+
+func antigravityBrainDirectoryPolicy(relative string, _ fs.DirEntry) directoryDecision {
+	parts := strings.Split(relative, string(filepath.Separator))
+	if len(parts) == 0 {
+		return pruneDirectory
+	}
+	if !isAntigravityConversationID(parts[0]) {
+		return directoryDecision{Gap: "expected conversation UUID"}
+	}
+	switch len(parts) {
+	case 1:
+		return descendDirectory
+	case 2:
+		switch strings.ToLower(parts[1]) {
+		case ".system_generated":
+			return descendDirectory
+		case "scratch":
+			return pruneDirectory
+		default:
+			return directoryDecision{Gap: "unsupported directory in conversation root"}
+		}
+	case 3:
+		if strings.EqualFold(parts[1], ".system_generated") {
+			switch strings.ToLower(parts[2]) {
+			case "logs":
+				return descendDirectory
+			case "steps":
+				return pruneDirectory
+			}
+		}
+		return directoryDecision{Gap: "unsupported directory below conversation"}
+	default:
+		return directoryDecision{Gap: "unsupported directory below logs"}
+	}
+}
+
+func antigravityTranscriptFilePolicy(path string, entry fs.DirEntry) bool {
+	if entry != nil && !strings.EqualFold(entry.Name(), "transcript.jsonl") {
+		return false
+	}
+	parts := strings.Split(filepath.ToSlash(filepath.Clean(path)), "/")
+	if len(parts) < 4 {
+		return false
+	}
+	relative := filepath.Join(parts[len(parts)-4], parts[len(parts)-3], parts[len(parts)-2], parts[len(parts)-1])
+	return isAntigravityTranscriptRelative(relative)
+}
+
 func (r *transcriptDiscoveryResult) merge(other transcriptDiscoveryResult) {
 	r.Files = append(r.Files, other.Files...)
 	r.Errors = append(r.Errors, other.Errors...)

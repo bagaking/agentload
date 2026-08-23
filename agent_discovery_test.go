@@ -144,6 +144,68 @@ func TestDatedDiscoveryFailsClosedOnUnknownLayout(t *testing.T) {
 	}
 }
 
+func TestAntigravityDiscoveryKeepsCanonicalTranscriptAndPrunesNonEvidence(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "antigravity-cli")
+	conversation := "116191af-e6ea-4ba5-aa23-62f995bd068a"
+	want := filepath.Join(root, "brain", conversation, ".system_generated", "logs", "transcript.jsonl")
+	ignored := []string{
+		filepath.Join(root, "history.jsonl"),
+		filepath.Join(root, "conversations", conversation+".pb"),
+		filepath.Join(root, "brain", conversation, ".system_generated", "logs", "transcript_full.jsonl"),
+		filepath.Join(root, "brain", conversation, "scratch", "helper.jsonl"),
+		filepath.Join(root, "brain", conversation, ".system_generated", "steps", "6", "content.md"),
+	}
+	now := time.Now()
+	writeDiscoveryFixture(t, want, now)
+	for _, path := range ignored {
+		writeDiscoveryFixture(t, path, now)
+	}
+
+	registry := defaultCodingAgentRegistry(Config{AntigravityRoots: []string{root}})
+	result := registry.discoverTranscripts(context.Background(), time.Time{})
+	paths := discoveredPaths(result.Files)
+	if !paths[want] {
+		t.Fatalf("expected canonical transcript, got %#v", paths)
+	}
+	if len(paths) != 1 {
+		t.Fatalf("non-evidence Antigravity paths leaked into candidates: %#v", paths)
+	}
+	if result.Files[0].File.SessionIDHint != conversation {
+		t.Fatalf("expected brain UUID session hint, got %#v", result.Files[0].File)
+	}
+	if result.PrunedDirectories < 2 {
+		t.Fatalf("expected scratch and steps to be pruned, got %+v", result)
+	}
+
+	if file, ok := registry.transcriptFileForEvidencePath(want); !ok || file.SessionIDHint != conversation {
+		t.Fatalf("Classify missed canonical transcript: ok=%v file=%#v", ok, file)
+	}
+	if _, ok := registry.transcriptFileForEvidencePath(ignored[2]); ok {
+		t.Fatal("Classify accepted transcript_full.jsonl")
+	}
+}
+
+func TestAntigravityDiscoveryFailsClosedOnUnknownLayout(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "antigravity-cli")
+	unknownPath := filepath.Join(root, "brain", "legacy", ".system_generated", "logs", "transcript.jsonl")
+	writeDiscoveryFixture(t, unknownPath, time.Now())
+
+	registry := defaultCodingAgentRegistry(Config{AntigravityRoots: []string{root}})
+	result := registry.discoverTranscripts(context.Background(), time.Time{})
+	if len(result.Files) != 0 {
+		t.Fatalf("unknown layout must not fall back to recursive discovery: %#v", result.Files)
+	}
+	foundGap := false
+	for _, message := range result.Errors {
+		if strings.Contains(message, "evidence layout gap") && strings.Contains(message, "legacy") {
+			foundGap = true
+		}
+	}
+	if !foundGap {
+		t.Fatalf("expected explicit layout gap, got %#v", result.Errors)
+	}
+}
+
 func BenchmarkTraeDiscoveryPrunesArtifacts(b *testing.B) {
 	traeRoot := filepath.Join(b.TempDir(), ".trae", "cli")
 	day := filepath.Join(traeRoot, "sessions", "2026", "08", "10")

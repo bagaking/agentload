@@ -222,6 +222,42 @@ func TestParseTraeTraceCapturesSessionRoleAndProject(t *testing.T) {
 	}
 }
 
+func TestParseAntigravityTraceUsesBrainUUIDAndCreatedAtWithoutUsage(t *testing.T) {
+	conversation := "116191af-e6ea-4ba5-aa23-62f995bd068a"
+	path := filepath.Join(t.TempDir(), "antigravity-cli", "brain", conversation, ".system_generated", "logs", "transcript.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir transcript dir: %v", err)
+	}
+	body := strings.Join([]string{
+		`{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","content":"What is Google Cloud Run?"}`,
+		`{"step_index":2,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-05-24T12:14:37Z","usage":{"output_tokens":44}}`,
+		`{"step_index":6,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","created_at":"2026-05-24T12:27:18Z"}`,
+	}, "\n") + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+
+	trace, err := parseAntigravityTrace(TranscriptFile{Tool: "antigravity", Path: path})
+	if err != nil {
+		t.Fatalf("parseAntigravityTrace: %v", err)
+	}
+	if trace == nil {
+		t.Fatal("expected trace")
+	}
+	if trace.SessionID != conversation {
+		t.Fatalf("expected brain UUID session id, got %q", trace.SessionID)
+	}
+	if trace.Project != "" || trace.AgentRole != "" {
+		t.Fatalf("parser fabricated project or role: %#v", trace)
+	}
+	if trace.TokenUsage != (TokenUsage{}) {
+		t.Fatalf("antigravity parser must leave token usage unset, got %+v", trace.TokenUsage)
+	}
+	if len(trace.EventTimes) != 2 || trace.FirstEvent.UTC().Format(time.RFC3339) != "2026-05-24T12:14:37Z" || trace.LastEvent.UTC().Format(time.RFC3339) != "2026-05-24T12:27:18Z" {
+		t.Fatalf("unexpected event times: first=%v last=%v times=%v", trace.FirstEvent, trace.LastEvent, trace.EventTimes)
+	}
+}
+
 func TestParseCodexTraceCapturesUserThreadSource(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "session.jsonl")

@@ -44,6 +44,7 @@ type SnapshotConfig struct {
 	ClaudeRoots          []string `json:"claude_roots"`
 	CodexRoots           []string `json:"codex_roots"`
 	TraeRoots            []string `json:"trae_roots"`
+	AntigravityRoots     []string `json:"antigravity_roots"`
 	ProcessRefreshTarget int      `json:"process_refresh_target_seconds"`
 	HistoryFile          string   `json:"history_file"`
 }

@@ -5,7 +5,7 @@ Status: approved implementation direction.
 ## User Requirement
 
 Define one IOC mechanism for coding agents such as Codex, Claude, Gemini,
-Trae/TraeX, OpenCode, Cursor, Hermes, OpenClaw, and Pi. When a coding-agent
+Trae/TraeX, OpenCode, Cursor, Hermes, OpenClaw, Pi, and Antigravity. When a coding-agent
 adapter is injected, that adapter determines which local evidence roots and
 files are eligible and which directories must be filtered. Optimize the code
 structure while controlling system entropy.
@@ -35,6 +35,7 @@ structure while controlling system entropy.
 | Claude | verified | verified | verified | full existing parity |
 | Codex / CodexL | verified | verified | verified | full existing parity |
 | Trae / TraeX | verified | verified | verified | full existing parity |
+| Antigravity | verified | verified session/time only | unsupported | process + discovery + conservative transcript; no usage |
 | Gemini | verified | unsupported | unsupported | process-only |
 | OpenCode | verified | unsupported | unsupported | process-only |
 | Cursor | generic host-app evidence only | unsupported | unsupported | identity-only adapter; do not classify the app host as an agent |
@@ -65,6 +66,19 @@ tests.
   Their registry entries therefore carry no process, discovery, transcript, or
   usage capability. In particular, the generic executable name `pi` must not be
   matched without stronger provenance.
+- Antigravity process identity is backed by the public CLI/IDE installer
+  contract: exact executables `agy`, `antigravity` (`Antigravity.app`), and
+  `antigravity-cli`. `language_server`, helper binaries, Sparkle updaters, and
+  incidental `--override_ide_name antigravity` arguments do not confer identity.
+  The adapter is registered before Gemini so a later overlapping matcher cannot
+  steal the name; sharing `~/.gemini/` does not make the process Gemini.
+- Antigravity transcript discovery is limited to the documented
+  `<app_data_dir>/brain/<conversationId>/.system_generated/logs/transcript.jsonl`
+  layout (`~/.gemini/antigravity-cli` for CLI, `~/.gemini/antigravity` for the
+  IDE). `transcript_full.jsonl`, `scratch/`, `.system_generated/steps/`,
+  protobuf under `conversations/`, and `history.jsonl` are not session evidence.
+  The parser may set the brain UUID and `created_at` event times; token usage
+  stays unset because there is no verified usage envelope.
 
 ## Discovery Contract
 
@@ -77,6 +91,10 @@ tests.
   cutoff before visiting files.
 - Trae adapters own the dated `sessions` layout and must prune `*.artifacts`
   subtrees before traversal.
+- Antigravity adapters own `brain/<uuid>/.system_generated/logs/transcript.jsonl`.
+  Conversation directories that are not UUIDs, and known non-evidence branches
+  (`scratch`, `steps`), are pruned or reported as an evidence-layout gap.
+  `transcript_full.jsonl` is never classified as a session file.
 - Directory traversal uses standard-library structured APIs and returns exact
   file metadata and surfaced errors. External `fd`, `find`, or shell pipelines
   are performance probes, not production dependencies.

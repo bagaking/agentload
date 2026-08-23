@@ -938,6 +938,74 @@ func parseTraeTraceAppend(file TranscriptFile, base *SessionTrace, offset int64)
 	return nonEmptyTrace(trace), nil
 }
 
+func parseAntigravityTrace(file TranscriptFile) (*SessionTrace, error) {
+	trace := newAntigravityTrace(file)
+	if err := forEachJSONLLine(file.Path, func(line []byte) bool {
+		processAntigravityTraceLine(trace, line)
+		return true
+	}); err != nil {
+		return nil, err
+	}
+	finalizeTrace(trace)
+	return nonEmptyTrace(trace), nil
+}
+
+func parseAntigravityTraceTail(file TranscriptFile) (*SessionTrace, error) {
+	trace := newAntigravityTrace(file)
+	if err := forEachRecentJSONLTailLine(file.Path, func(line []byte) bool {
+		processAntigravityTraceLine(trace, line)
+		return true
+	}); err != nil {
+		return nil, err
+	}
+	finalizeTrace(trace)
+	return nonEmptyTrace(trace), nil
+}
+
+func parseAntigravityTraceAppend(file TranscriptFile, base *SessionTrace, offset int64) (*SessionTrace, error) {
+	if err := validateTranscriptAppend(base, offset); err != nil {
+		return nil, err
+	}
+	trace := cloneSessionTrace(base)
+	trace.Tool = "antigravity"
+	trace.Path = file.Path
+	if sessionID := antigravitySessionIDForFile(file); sessionID != "" {
+		trace.SessionID = sessionID
+	}
+	if err := forEachJSONLLineFromOffset(file.Path, offset, func(line []byte) bool {
+		processAntigravityTraceLine(trace, line)
+		return true
+	}); err != nil {
+		return nil, err
+	}
+	finalizeTrace(trace)
+	return nonEmptyTrace(trace), nil
+}
+
+func newAntigravityTrace(file TranscriptFile) *SessionTrace {
+	return &SessionTrace{
+		Tool:             "antigravity",
+		Path:             file.Path,
+		SessionID:        antigravitySessionIDForFile(file),
+		IndependentlyRun: true,
+	}
+}
+
+func antigravitySessionIDForFile(file TranscriptFile) string {
+	if hint := strings.TrimSpace(file.SessionIDHint); hint != "" && isAntigravityConversationID(hint) {
+		return hint
+	}
+	return antigravityTranscriptSessionID(file.Path)
+}
+
+func processAntigravityTraceLine(trace *SessionTrace, line []byte) {
+	ts := parseTimestampString(jsonStringField(line, "created_at"))
+	if ts.IsZero() {
+		return
+	}
+	trace.EventTimes = append(trace.EventTimes, ts)
+}
+
 func parseClaudeTrace(path string) (*SessionTrace, error) {
 	trace := &SessionTrace{
 		Tool:             "claude",

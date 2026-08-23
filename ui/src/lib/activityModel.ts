@@ -283,6 +283,7 @@ export function toolDisplayName(toolName?: string): string {
   if (key === "trae" || key === "traex") return "Trae";
   if (key === "opencode" || key === "opencode-ai") return "OpenCode";
   if (key === "gemini" || key === "gemini-cli") return "Gemini";
+  if (key === "antigravity" || key === "agy" || key === "antigravity-cli") return "Antigravity";
   return raw;
 }
 
@@ -293,6 +294,7 @@ export function toolIconName(toolName?: string): string {
   if (key === "trae" || key === "traex") return "trae";
   if (key === "opencode" || key === "opencode-ai") return "opencode";
   if (key === "gemini" || key === "gemini-cli") return "gemini";
+  if (key === "antigravity" || key === "agy" || key === "antigravity-cli") return "antigravity";
   return "";
 }
 

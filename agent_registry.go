@@ -101,6 +101,15 @@ func defaultCodingAgentRegistry(cfg Config) *codingAgentRegistry {
 			},
 		},
 		codingAgentAdapter{
+			ID:    "antigravity",
+			Roots: cfg.AntigravityRoots,
+			Capabilities: agentCapabilities{
+				Process:    newAntigravityProcessIdentity(),
+				Discovery:  antigravityTranscriptDiscovery{},
+				Transcript: newAntigravityTranscriptParser(),
+			},
+		},
+		codingAgentAdapter{
 			ID: "gemini",
 			Capabilities: agentCapabilities{
 				Process: newGeminiProcessIdentity(),
