@@ -60,6 +60,9 @@ func TestCodingAgentUsageDecodersExtractVerifiedOutputShapes(t *testing.T) {
 	if _, ok := registry.usageDecoder("gemini"); ok {
 		t.Fatal("process-only Gemini exposed output usage")
 	}
+	if _, ok := registry.usageDecoder("antigravity"); ok {
+		t.Fatal("antigravity fabricated output usage")
+	}
 }
 
 func newTestLiveTokenRateSampler(cfg Config) *liveTokenRateSampler {

@@ -20,6 +20,7 @@ type Config struct {
 	ClaudeRoots        []string
 	CodexRoots         []string
 	TraeRoots          []string
+	AntigravityRoots   []string
 }
 
 var selectableRefreshIntervals = []time.Duration{
@@ -42,6 +43,7 @@ func defaultConfig() Config {
 		ClaudeRoots:        defaultClaudeRoots(),
 		CodexRoots:         defaultCodexRoots(),
 		TraeRoots:          defaultTraeRoots(),
+		AntigravityRoots:   defaultAntigravityRoots(),
 	}
 }
 
@@ -76,6 +78,7 @@ func (c Config) snapshotConfig() SnapshotConfig {
 		ClaudeRoots:          append([]string(nil), c.ClaudeRoots...),
 		CodexRoots:           append([]string(nil), c.CodexRoots...),
 		TraeRoots:            append([]string(nil), c.TraeRoots...),
+		AntigravityRoots:     append([]string(nil), c.AntigravityRoots...),
 		ProcessRefreshTarget: int(c.RefreshInterval / time.Second),
 		HistoryFile:          c.HistoryFile,
 	}
@@ -109,6 +112,14 @@ func defaultTraeRoots() []string {
 		),
 		defaultHomePath(filepath.Join(".trae", "cli")),
 	)
+}
+
+func defaultAntigravityRoots() []string {
+	defaults := append(
+		defaultHomePath(filepath.Join(".gemini", "antigravity-cli")),
+		defaultHomePath(filepath.Join(".gemini", "antigravity"))...,
+	)
+	return parseRoots(os.Getenv("AGENTLOAD_ANTIGRAVITY_DIRS"), defaults)
 }
 
 func defaultHistoryFile() string {

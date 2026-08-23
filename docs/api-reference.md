@@ -185,7 +185,7 @@ exists yet. `Cache-Control: no-store`.
 ### `GET /api/tool-icon/{tool}`
 
 Serves a tool icon. The name is normalized (`normalizeToolIconName`) to one of
-`codex`, `trae`, `karp`, `claude`, `opencode`, `gemini`; unknown names are
+`codex`, `trae`, `karp`, `claude`, `opencode`, `gemini`, `antigravity`; unknown names are
 `404`. Resolution order:
 
 1. Embedded SVGs from `ui/tool-icons/` (`resolveEmbeddedToolIconFile`).
@@ -212,7 +212,7 @@ sips cache. `404` when the PID is not observed or no usable icon exists.
 process (`/api/snapshot`, `/api/diagnostic-export`,
 `/api/process-diagnostic/{pid}`). What it redacts:
 
-- **Dropped outright**: `config.claude_roots` / `codex_roots` / `trae_roots`
+- **Dropped outright**: `config.claude_roots` / `codex_roots` / `trae_roots` / `antigravity_roots`
   (emptied), `config.history_file`, `history.store_path`, live session `path`,
   live process `session_paths`, every `host_app.bundle_path`.
 - **Command lines** (`sanitizeCommandForClient`): executable reduced to its

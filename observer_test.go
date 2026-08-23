@@ -44,6 +44,7 @@ func TestObserverSnapshotConfigUsesRefreshIntervalAndDiscoveredRoots(t *testing.
 	cfgClaudeRoot := filepath.Join("fixtures", "config", ".claude")
 	cfgCodexRoot := filepath.Join("fixtures", "config", ".codex")
 	cfgTraeRoot := filepath.Join("fixtures", "config", ".trae", "cli")
+	cfgAntigravityRoot := filepath.Join("fixtures", "config", ".gemini", "antigravity-cli")
 	observer := newObserver(Config{
 		IdleGap:            90 * time.Second,
 		MinInterval:        15 * time.Second,
@@ -54,15 +55,18 @@ func TestObserverSnapshotConfigUsesRefreshIntervalAndDiscoveredRoots(t *testing.
 		ClaudeRoots:        []string{cfgClaudeRoot},
 		CodexRoots:         []string{cfgCodexRoot},
 		TraeRoots:          []string{cfgTraeRoot},
+		AntigravityRoots:   []string{cfgAntigravityRoot},
 	})
 
 	claudeRoots := []string{filepath.Join("fixtures", "live", ".claude")}
 	codexRoots := []string{filepath.Join("fixtures", "live", ".codex")}
 	traeRoots := []string{filepath.Join("fixtures", "live", ".trae", "cli")}
+	antigravityRoots := []string{filepath.Join("fixtures", "live", ".gemini", "antigravity-cli")}
 	got := observer.snapshotConfig(map[string][]string{
-		"claude": claudeRoots,
-		"codex":  codexRoots,
-		"trae":   traeRoots,
+		"claude":      claudeRoots,
+		"codex":       codexRoots,
+		"trae":        traeRoots,
+		"antigravity": antigravityRoots,
 	})
 
 	if got.ProcessRefreshTarget != 12 {
@@ -80,10 +84,14 @@ func TestObserverSnapshotConfigUsesRefreshIntervalAndDiscoveredRoots(t *testing.
 	if !slices.Equal(got.TraeRoots, traeRoots) {
 		t.Fatalf("expected discovered trae roots %v, got %v", traeRoots, got.TraeRoots)
 	}
+	if !slices.Equal(got.AntigravityRoots, antigravityRoots) {
+		t.Fatalf("expected discovered antigravity roots %v, got %v", antigravityRoots, got.AntigravityRoots)
+	}
 
 	claudeRoots[0] = filepath.Join("fixtures", "mutated", ".claude")
 	codexRoots[0] = filepath.Join("fixtures", "mutated", ".codex")
 	traeRoots[0] = filepath.Join("fixtures", "mutated", ".trae", "cli")
+	antigravityRoots[0] = filepath.Join("fixtures", "mutated", ".gemini", "antigravity-cli")
 	if got.ClaudeRoots[0] != filepath.Join("fixtures", "live", ".claude") {
 		t.Fatalf("expected snapshot claude roots to be copied, got %v", got.ClaudeRoots)
 	}
@@ -92,6 +100,9 @@ func TestObserverSnapshotConfigUsesRefreshIntervalAndDiscoveredRoots(t *testing.
 	}
 	if got.TraeRoots[0] != filepath.Join("fixtures", "live", ".trae", "cli") {
 		t.Fatalf("expected snapshot trae roots to be copied, got %v", got.TraeRoots)
+	}
+	if got.AntigravityRoots[0] != filepath.Join("fixtures", "live", ".gemini", "antigravity-cli") {
+		t.Fatalf("expected snapshot antigravity roots to be copied, got %v", got.AntigravityRoots)
 	}
 }
 

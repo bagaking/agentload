@@ -134,6 +134,7 @@ func (o *Observer) snapshotConfig(roots map[string][]string) SnapshotConfig {
 	snapshotConfig.ClaudeRoots = append([]string(nil), roots["claude"]...)
 	snapshotConfig.CodexRoots = append([]string(nil), roots["codex"]...)
 	snapshotConfig.TraeRoots = append([]string(nil), roots["trae"]...)
+	snapshotConfig.AntigravityRoots = append([]string(nil), roots["antigravity"]...)
 	return snapshotConfig
 }
 
