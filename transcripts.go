@@ -1240,6 +1240,82 @@ func parseTraeTraceAppend(file snapshot.TranscriptFile, base *snapshot.SessionTr
 	return nonEmptyTrace(trace), nil
 }
 
+func parseAntigravityTrace(file snapshot.TranscriptFile) (*snapshot.SessionTrace, error) {
+	trace := newAntigravityTrace(file)
+	if err := forEachJSONLLine(file.Path, func(line []byte) bool {
+		processAntigravityTraceLine(trace, line)
+		return true
+	}); err != nil {
+		return nil, err
+	}
+	finalizeTrace(trace)
+	return nonEmptyTrace(trace), nil
+}
+
+func parseAntigravityTraceTail(file snapshot.TranscriptFile) (*snapshot.SessionTrace, error) {
+	trace := newAntigravityTrace(file)
+	if err := forEachRecentJSONLTailLine(file.Path, func(line []byte) bool {
+		processAntigravityTraceLine(trace, line)
+		return true
+	}); err != nil {
+		return nil, err
+	}
+	finalizeTrace(trace)
+	return nonEmptyTrace(trace), nil
+}
+
+func parseAntigravityTraceAppend(file snapshot.TranscriptFile, base *snapshot.SessionTrace, offset int64) (*snapshot.SessionTrace, error) {
+	if err := validateTranscriptAppend(base, offset); err != nil {
+		return nil, err
+	}
+	trace := cloneSessionTrace(base)
+	trace.Tool = "antigravity"
+	trace.Path = file.Path
+	if sessionID := antigravitySessionIDForFile(file); sessionID != "" {
+		trace.SessionID = sessionID
+	}
+	if err := forEachJSONLLineFromOffset(file.Path, offset, func(line []byte) bool {
+		processAntigravityTraceLine(trace, line)
+		return true
+	}); err != nil {
+		return nil, err
+	}
+	finalizeTrace(trace)
+	return nonEmptyTrace(trace), nil
+}
+
+func newAntigravityTrace(file snapshot.TranscriptFile) *snapshot.SessionTrace {
+	return &snapshot.SessionTrace{
+		Tool:             "antigravity",
+		Path:             file.Path,
+		SessionID:        antigravitySessionIDForFile(file),
+		IndependentlyRun: true,
+	}
+}
+
+func antigravitySessionIDForFile(file snapshot.TranscriptFile) string {
+	if hint := strings.TrimSpace(file.SessionIDHint); hint != "" && isAntigravityConversationID(hint) {
+		return hint
+	}
+	return antigravityTranscriptSessionID(file.Path)
+}
+
+// Only the two conversational turn types are timeline evidence. Tool calls,
+// checkpoints, and system notes also carry created_at, and counting them
+// inflates the session span. The records have no token field.
+func processAntigravityTraceLine(trace *snapshot.SessionTrace, line []byte) {
+	switch jsonStringField(line, "type") {
+	case "USER_INPUT", "PLANNER_RESPONSE":
+	default:
+		return
+	}
+	ts := parseTimestampString(jsonStringField(line, "created_at"))
+	if ts.IsZero() {
+		return
+	}
+	trace.EventTimes = append(trace.EventTimes, ts)
+}
+
 func parseClaudeTrace(path string) (*snapshot.SessionTrace, error) {
 	trace := &snapshot.SessionTrace{
 		Tool:             "claude",

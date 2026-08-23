@@ -73,6 +73,9 @@ func TestCodingAgentUsageDecodersExtractVerifiedOutputShapes(t *testing.T) {
 	} else if observation, ok := decoder.DecodeUsage([]byte(`{"id":"gemini-1","timestamp":"2026-08-02T12:00:00Z","role":"assistant","usage":{"output":4}}`)); !ok || observation.OutputTokens != 4 {
 		t.Fatalf("Gemini output usage was not decoded: %+v ok=%t", observation, ok)
 	}
+	if _, ok := registry.usageDecoder("antigravity"); ok {
+		t.Fatal("antigravity fabricated output usage")
+	}
 }
 
 func newTestLiveTokenRateSampler(cfg Config) *liveTokenRateSampler {

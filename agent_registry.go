@@ -87,6 +87,7 @@ func (r *codingAgentRegistry) snapshotConfig(base snapshot.SnapshotConfig, obser
 	base.CodexRoots = append([]string(nil), roots["codex"]...)
 	base.TraeRoots = append([]string(nil), roots["trae"]...)
 	base.GrokRoots = append([]string(nil), roots["grok"]...)
+	base.AntigravityRoots = append([]string(nil), roots["antigravity"]...)
 	base.GeminiRoots = append([]string(nil), roots["gemini"]...)
 	base.OpenCodeRoots = append([]string(nil), roots["opencode"]...)
 	base.HermesRoots = append([]string(nil), roots["hermes"]...)
@@ -164,13 +165,22 @@ func defaultCodingAgentRegistry(cfg Config) *codingAgentRegistry {
 			},
 		},
 		codingAgentAdapter{
-			ID:    "gemini",
-			Roots: cfg.GeminiRoots,
+			ID:    "antigravity",
+			Roots: cfg.AntigravityRoots,
 			Evidence: []string{
-				"tmp/**/chats/session-*.json(l)",
-				"antigravity-cli/brain/<session>/.system_generated/logs/transcript.jsonl",
+				"brain/<uuid>/.system_generated/logs/transcript.jsonl",
 			},
-			Note: "the antigravity root carries created_at but no token field of any kind, so it contributes session spans only",
+			Note: "USER_INPUT and PLANNER_RESPONSE created_at only; no token field, so session spans only",
+			Capabilities: agentCapabilities{
+				Process:    newAntigravityProcessIdentity(),
+				Discovery:  antigravityTranscriptDiscovery{},
+				Transcript: newAntigravityTranscriptParser(),
+			},
+		},
+		codingAgentAdapter{
+			ID:       "gemini",
+			Roots:    cfg.GeminiRoots,
+			Evidence: []string{"tmp/**/chats/session-*.json(l)"},
 			Capabilities: agentCapabilities{
 				Process:    newGeminiProcessIdentity(),
 				Discovery:  extraTranscriptDiscovery{kind: "gemini"},

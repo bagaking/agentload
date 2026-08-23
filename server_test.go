@@ -753,6 +753,7 @@ func TestHandleSnapshotAPIRedactsConfigPaths(t *testing.T) {
 			ClaudeRoots:          []string{filepath.Join("private", "roots", ".claude")},
 			CodexRoots:           []string{filepath.Join("private", "roots", ".codex")},
 			TraeRoots:            []string{filepath.Join("private", "roots", ".trae", "cli")},
+			AntigravityRoots:     []string{filepath.Join("private", "roots", ".gemini", "antigravity-cli")},
 			HistoryFile:          filepath.Join("private", "state", "history.jsonl"),
 			ProcessRefreshTarget: 300,
 		},
@@ -775,7 +776,7 @@ func TestHandleSnapshotAPIRedactsConfigPaths(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode snapshot response: %v", err)
 	}
-	if len(got.Config.ClaudeRoots) != 0 || len(got.Config.CodexRoots) != 0 || len(got.Config.TraeRoots) != 0 {
+	if len(got.Config.ClaudeRoots) != 0 || len(got.Config.CodexRoots) != 0 || len(got.Config.TraeRoots) != 0 || len(got.Config.AntigravityRoots) != 0 {
 		t.Fatalf("expected client config roots to be redacted, got %+v", got.Config)
 	}
 	if got.Config.HistoryFile != "" || got.History.StorePath != "" {
@@ -1314,7 +1315,7 @@ func TestHandleSnapshotAPIRedactsFreshObserverConfigPaths(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode snapshot response: %v", err)
 	}
-	if len(got.Config.ClaudeRoots) != 0 || len(got.Config.CodexRoots) != 0 || len(got.Config.TraeRoots) != 0 {
+	if len(got.Config.ClaudeRoots) != 0 || len(got.Config.CodexRoots) != 0 || len(got.Config.TraeRoots) != 0 || len(got.Config.AntigravityRoots) != 0 {
 		t.Fatalf("expected fresh client config roots to be redacted, got %+v", got.Config)
 	}
 	if got.Config.HistoryFile != "" || got.History.StorePath != "" {
@@ -1368,6 +1369,9 @@ func TestNormalizeToolIconNameAllowlist(t *testing.T) {
 		"opencode-ai":        "opencode",
 		"gemini-cli":         "gemini",
 		"@google/gemini-cli": "gemini",
+		"agy":                "antigravity",
+		"Antigravity.app":    "antigravity",
+		"antigravity-cli":    "antigravity",
 		"../../etc/passwd":   "",
 		"unknown":            "",
 	}

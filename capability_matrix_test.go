@@ -106,7 +106,7 @@ func TestCapabilityMatrixDeclaresEveryEvidenceRootTheParserReads(t *testing.T) {
 	for _, row := range rows {
 		byAgent[row.Agent] = row
 	}
-	for _, agent := range []string{"claude", "codex", "trae", "grok", "gemini", "opencode", "hermes", "openclaw", "pi"} {
+	for _, agent := range []string{"claude", "codex", "trae", "grok", "antigravity", "gemini", "opencode", "hermes", "openclaw", "pi"} {
 		row, ok := byAgent[agent]
 		if !ok {
 			t.Fatalf("missing matrix row for %s", agent)
@@ -116,16 +116,20 @@ func TestCapabilityMatrixDeclaresEveryEvidenceRootTheParserReads(t *testing.T) {
 		}
 	}
 	gemini := byAgent["gemini"]
-	if len(gemini.Evidence) != 2 {
-		t.Fatalf("gemini reads two evidence roots (tmp chats and antigravity), declared %+v", gemini.Evidence)
+	if len(gemini.Evidence) != 1 || strings.Contains(strings.Join(gemini.Evidence, " "), "antigravity") {
+		t.Fatalf("gemini owns tmp chats only; antigravity transcripts are a separate adapter, declared %+v", gemini.Evidence)
+	}
+	antigravity := byAgent["antigravity"]
+	if antigravity.Usage != capabilityStateUnsupported {
+		t.Fatalf("antigravity must not claim output usage, got %s", antigravity.Usage)
 	}
 	found := false
-	for _, item := range gemini.Evidence {
-		if strings.Contains(item, "antigravity") {
+	for _, item := range antigravity.Evidence {
+		if strings.Contains(item, "transcript.jsonl") {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("the antigravity root must reach the published matrix, got %+v", gemini.Evidence)
+		t.Fatalf("the antigravity transcript layout must reach the published matrix, got %+v", antigravity.Evidence)
 	}
 }

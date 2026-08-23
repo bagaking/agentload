@@ -17,6 +17,9 @@
     "grok_roots": [
       "/<tmp>/001/grok"
     ],
+    "antigravity_roots": [
+      "/<tmp>/001/antigravity"
+    ],
     "gemini_roots": [
       "/<tmp>/001/gemini"
     ],
@@ -41,6 +44,11 @@
     "active_burst_concurrency": 0
   },
   "current_by_tool": {
+    "antigravity": {
+      "pid_concurrency": 0,
+      "session_concurrency": 0,
+      "active_burst_concurrency": 0
+    },
     "claude": {
       "pid_concurrency": 1,
       "session_concurrency": 0,
@@ -1146,6 +1154,70 @@
   ],
   "capability_matrix": [
     {
+      "agent": "antigravity",
+      "process_identity": "supported",
+      "evidence_discovery": "supported",
+      "transcript_evidence": "supported",
+      "output_usage": "unsupported",
+      "evidence": [
+        "brain/\u003cuuid\u003e/.system_generated/logs/transcript.jsonl"
+      ],
+      "note": "USER_INPUT and PLANNER_RESPONSE created_at only; no token field, so session spans only",
+      "signal_families": [
+        {
+          "key": "presence_resources",
+          "state": "observed",
+          "evidence": [
+            "process identity"
+          ]
+        },
+        {
+          "key": "sessions_roles",
+          "state": "observed",
+          "evidence": [
+            "evidence discovery",
+            "transcript evidence"
+          ]
+        },
+        {
+          "key": "recent_movement",
+          "state": "observed",
+          "evidence": [
+            "transcript event timestamps"
+          ]
+        },
+        {
+          "key": "tokens_cost",
+          "state": "unavailable",
+          "evidence": [
+            "output usage decoder"
+          ]
+        },
+        {
+          "key": "quota_windows",
+          "state": "unavailable",
+          "evidence": [
+            "no local quota ledger registered"
+          ]
+        },
+        {
+          "key": "workspace_context",
+          "state": "observed",
+          "evidence": [
+            "transcript/project evidence"
+          ]
+        },
+        {
+          "key": "consented_telemetry",
+          "state": "not_configured",
+          "evidence": [
+            "runtime telemetry is opt-in"
+          ]
+        }
+      ],
+      "trajectory": "unsupported"
+    },
+    {
       "agent": "claude",
       "process_identity": "supported",
       "evidence_discovery": "supported",
@@ -1339,10 +1411,8 @@
       "transcript_evidence": "supported",
       "output_usage": "supported",
       "evidence": [
-        "tmp/**/chats/session-*.json(l)",
-        "antigravity-cli/brain/\u003csession\u003e/.system_generated/logs/transcript.jsonl"
+        "tmp/**/chats/session-*.json(l)"
       ],
-      "note": "the antigravity root carries created_at but no token field of any kind, so it contributes session spans only",
       "signal_families": [
         {
           "key": "presence_resources",

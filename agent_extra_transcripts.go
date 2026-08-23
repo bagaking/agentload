@@ -27,9 +27,6 @@ func extraEvidenceRelative(kind, rel string) bool {
 	base := p[len(p)-1]
 	switch kind {
 	case "gemini":
-		if isAntigravityTranscriptRelative(p, base) {
-			return true
-		}
 		return len(p) == 4 && p[0] == "tmp" && p[2] == "chats" && strings.HasPrefix(base, "session-") && (strings.HasSuffix(base, ".json") || strings.HasSuffix(base, ".jsonl"))
 	case "opencode":
 		if len(p) == 1 && strings.HasPrefix(base, "opencode") && strings.HasSuffix(base, ".db") {
@@ -46,46 +43,10 @@ func extraEvidenceRelative(kind, rel string) bool {
 	return false
 }
 
-// Antigravity is a second gemini evidence root, laid out as
-// antigravity-cli/brain/<session>/.system_generated/logs/transcript.jsonl.
-//
-// It is admitted at timeline evidence only. Every record carries created_at,
-// so session spans are real, but the whole corpus has no token or usage field
-// of any kind (measured: 44783 records, 0 such keys), so this root must never
-// contribute to token metrics.
-//
-// transcript_full.jsonl sits beside it and is byte-identical, so the name is
-// matched exactly rather than by prefix -- admitting both would count every
-// session twice.
-func isAntigravityTranscriptRelative(p []string, base string) bool {
-	return len(p) == 6 && p[0] == "antigravity-cli" && p[1] == "brain" &&
-		p[3] == ".system_generated" && p[4] == "logs" && base == "transcript.jsonl"
-}
-
-func isAntigravityDirectory(p []string) bool {
-	if p[0] != "antigravity-cli" {
-		return false
-	}
-	switch len(p) {
-	case 1:
-		return true
-	case 2, 3:
-		return p[1] == "brain"
-	case 4:
-		return p[1] == "brain" && p[3] == ".system_generated"
-	case 5:
-		return p[1] == "brain" && p[3] == ".system_generated" && p[4] == "logs"
-	}
-	return false
-}
-
 func extraEvidenceDirectory(kind, rel string) bool {
 	p := strings.Split(filepath.ToSlash(rel), "/")
 	switch kind {
 	case "gemini":
-		if isAntigravityDirectory(p) {
-			return true
-		}
 		return len(p) <= 3 && p[0] == "tmp" && (len(p) < 3 || p[2] == "chats")
 	case "openclaw":
 		return len(p) <= 3 && p[0] == "agents" && (len(p) < 3 || p[2] == "sessions")

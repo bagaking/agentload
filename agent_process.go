@@ -338,6 +338,48 @@ func newGrokProcessIdentity() agentProcessIdentity {
 	}
 }
 
+func newAntigravityProcessIdentity() agentProcessIdentity {
+	return builtinProcessIdentity{
+		agentID: "antigravity",
+		match: func(command processCommand) bool {
+			if strings.Contains(command.Lower, "antigravity helper") {
+				return false
+			}
+			return isAntigravityExecutable(command.ExecutableBase)
+		},
+		display: func(command processCommand) string {
+			if command.ExecutableBase == "agy" {
+				return "agy"
+			}
+			return "antigravity"
+		},
+		transcriptPath:     isAntigravityTranscriptPath,
+		rootFromTranscript: antigravityRootFromPath,
+		sessionIDHint:      antigravityTranscriptSessionID,
+		transcriptForSessionID: func(roots []string, sessionID string) (snapshot.TranscriptFile, bool) {
+			if !isAntigravityConversationID(sessionID) {
+				return snapshot.TranscriptFile{}, false
+			}
+			var newest string
+			var newestAt time.Time
+			for _, root := range roots {
+				path := filepath.Join(root, "brain", sessionID, ".system_generated", "logs", "transcript.jsonl")
+				info, err := os.Stat(path)
+				if err != nil || info.IsDir() {
+					continue
+				}
+				if newest == "" || info.ModTime().After(newestAt) {
+					newest, newestAt = path, info.ModTime()
+				}
+			}
+			if newest == "" {
+				return snapshot.TranscriptFile{}, false
+			}
+			return snapshot.TranscriptFile{Tool: "antigravity", Path: filepath.Clean(newest), SessionIDHint: sessionID}, true
+		},
+	}
+}
+
 func newGeminiProcessIdentity() agentProcessIdentity {
 	return builtinProcessIdentity{
 		agentID: "gemini",
@@ -451,6 +493,73 @@ func isHermesExecutable(executableBase string) bool {
 	default:
 		return false
 	}
+}
+
+func isAntigravityExecutable(executableBase string) bool {
+	switch normalizedExecutableBase(executableBase) {
+	case "agy", "antigravity", "antigravity-cli":
+		return true
+	default:
+		return false
+	}
+}
+
+func isAntigravityConversationID(value string) bool {
+	if len(value) != 36 {
+		return false
+	}
+	for i := 0; i < 36; i++ {
+		switch i {
+		case 8, 13, 18, 23:
+			if value[i] != '-' {
+				return false
+			}
+		default:
+			c := value[i]
+			if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func isAntigravityTranscriptRelative(relative string) bool {
+	parts := strings.Split(filepath.Clean(relative), string(filepath.Separator))
+	return len(parts) == 4 &&
+		isAntigravityConversationID(parts[0]) &&
+		strings.EqualFold(parts[1], ".system_generated") &&
+		strings.EqualFold(parts[2], "logs") &&
+		strings.EqualFold(parts[3], "transcript.jsonl")
+}
+
+func antigravityAppDataBrainRelative(path string) (string, bool) {
+	if relative, ok := relativeAfterMarker(path, []string{"antigravity-cli", "brain"}); ok {
+		return relative, true
+	}
+	return relativeAfterMarker(path, []string{"antigravity", "brain"})
+}
+
+func isAntigravityTranscriptPath(path string) bool {
+	relative, ok := antigravityAppDataBrainRelative(path)
+	return ok && isAntigravityTranscriptRelative(relative)
+}
+
+func antigravityTranscriptSessionID(path string) string {
+	parts := strings.Split(filepath.Clean(path), string(filepath.Separator))
+	for index, part := range parts {
+		if strings.EqualFold(part, ".system_generated") && index > 0 && isAntigravityConversationID(parts[index-1]) {
+			return parts[index-1]
+		}
+	}
+	return ""
+}
+
+func antigravityRootFromPath(path string) string {
+	if root := configRootFromPath(path, "antigravity-cli"); root != "" {
+		return root
+	}
+	return configRootFromPath(path, "antigravity")
 }
 
 func isPythonExecutable(executableBase string) bool {

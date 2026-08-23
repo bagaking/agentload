@@ -68,18 +68,19 @@ func hermeticGoldenObserver(t *testing.T) *Observer {
 	t.Helper()
 	root := t.TempDir()
 	cfg := Config{
-		IdleGap:       90 * time.Second,
-		MinInterval:   15 * time.Second,
-		Lookback:      time.Hour,
-		ClaudeRoots:   []string{filepath.Join(root, "claude")},
-		CodexRoots:    []string{filepath.Join(root, "codex")},
-		TraeRoots:     []string{filepath.Join(root, "trae")},
-		GrokRoots:     []string{filepath.Join(root, "grok")},
-		GeminiRoots:   []string{filepath.Join(root, "gemini")},
-		OpenCodeRoots: []string{filepath.Join(root, "opencode")},
-		HermesRoots:   []string{filepath.Join(root, "hermes")},
-		OpenClawRoots: []string{filepath.Join(root, "openclaw")},
-		PiRoots:       []string{filepath.Join(root, "pi")},
+		IdleGap:          90 * time.Second,
+		MinInterval:      15 * time.Second,
+		Lookback:         time.Hour,
+		ClaudeRoots:      []string{filepath.Join(root, "claude")},
+		CodexRoots:       []string{filepath.Join(root, "codex")},
+		TraeRoots:        []string{filepath.Join(root, "trae")},
+		GrokRoots:        []string{filepath.Join(root, "grok")},
+		AntigravityRoots: []string{filepath.Join(root, "antigravity")},
+		GeminiRoots:      []string{filepath.Join(root, "gemini")},
+		OpenCodeRoots:    []string{filepath.Join(root, "opencode")},
+		HermesRoots:      []string{filepath.Join(root, "hermes")},
+		OpenClawRoots:    []string{filepath.Join(root, "openclaw")},
+		PiRoots:          []string{filepath.Join(root, "pi")},
 	}
 	original := discoverLiveProcessesFunc
 	discoverLiveProcessesFunc = func(context.Context, *codingAgentRegistry) ([]snapshot.LiveProcess, []string) {
