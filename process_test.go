@@ -133,6 +133,15 @@ func TestDetectedTool(t *testing.T) {
 		{command: `/usr/local/bin/node /opt/homebrew/lib/node_modules/@google/gemini-cli/dist/index.js --prompt hello`, want: "gemini"},
 		{command: `/usr/local/bin/node /opt/homebrew/lib/node_modules/opencode-ai/bin/opencode.js run`, want: "opencode"},
 		{command: `/usr/local/bin/node local-runner.js --model gemini --agent opencode`, want: ""},
+		{command: `/usr/local/bin/node local-runner.js --agent antigravity`, want: ""},
+		{command: `/home/user/.local/bin/agy --resume 116191af-e6ea-4ba5-aa23-62f995bd068a`, want: "antigravity"},
+		{command: `/usr/local/bin/antigravity-cli`, want: "antigravity"},
+		{command: `/Applications/Antigravity.app/Contents/MacOS/Antigravity`, want: "antigravity"},
+		{command: `/Applications/Antigravity.app/Contents/Frameworks/Antigravity Helper`, want: ""},
+		{command: `/Applications/Antigravity.app/Contents/Frameworks/Antigravity Helper (GPU)`, want: ""},
+		{command: `/usr/local/bin/agy-proxy`, want: ""},
+		{command: `/Applications/Antigravity.app/Contents/Resources/bin/language_server --standalone --override_ide_name antigravity`, want: ""},
+		{command: `/Applications/Antigravity.app/Contents/MacOS/Updater.app --sparkle`, want: ""},
 		{command: `/usr/local/bin/hermes chat`, want: "hermes"},
 		{command: `/usr/local/bin/hermes-agent --model test`, want: "hermes"},
 		{command: `/usr/local/bin/hermes-acp`, want: "hermes"},
@@ -197,6 +206,8 @@ func TestRegistryReturnsAdapterOwnedProcessDisplayIdentity(t *testing.T) {
 		{command: `/usr/local/bin/trae_cli resume abc`, tool: "trae", display: "trae_cli"},
 		{command: `/usr/local/bin/node /opt/homebrew/lib/node_modules/opencode-ai/bin/opencode.js`, tool: "opencode", display: "opencode"},
 		{command: `/opt/hermes/venv/bin/python -m hermes_cli.main gateway run --replace`, tool: "hermes", display: "hermes"},
+		{command: `/home/user/.local/bin/agy --resume 116191af-e6ea-4ba5-aa23-62f995bd068a`, tool: "antigravity", display: "agy"},
+		{command: `/Applications/Antigravity.app/Contents/MacOS/Antigravity`, tool: "antigravity", display: "antigravity"},
 	}
 	for _, tc := range cases {
 		tool, display := registry.detectProcess(tc.command)
@@ -216,6 +227,16 @@ func TestLimitedAdaptersExposeOnlyVerifiedCapabilities(t *testing.T) {
 		if !registry.hasDiscovery(agentID) || !registry.hasTranscript(agentID) {
 			t.Fatalf("adapter %s must expose discovery and transcript parsing", agentID)
 		}
+	}
+	index, registered := registry.byID["antigravity"]
+	if !registered || registry.adapters[index].Capabilities.Process == nil {
+		t.Fatal("antigravity is not registered with process identity")
+	}
+	if !registry.hasDiscovery("antigravity") || !registry.hasTranscript("antigravity") {
+		t.Fatal("antigravity must expose discovery and transcript parsing")
+	}
+	if _, ok := registry.usageDecoder("antigravity"); ok {
+		t.Fatal("antigravity fabricated output usage")
 	}
 	for _, agentID := range []string{"cursor"} {
 		index, registered := registry.byID[agentID]
@@ -326,6 +347,9 @@ func TestTranscriptFileFromPath(t *testing.T) {
 		{path: filepath.Join("fixtures", "alice", ".codex", ".codexl", "asagent", "lane-1", "events.jsonl"), wantTool: "codex", wantHint: "lane-1", wantOK: true},
 		{path: filepath.Join("fixtures", "alice", ".claude", "projects", "project-a", "trace.jsonl"), wantTool: "claude", wantHint: "trace", wantOK: true},
 		{path: filepath.Join("fixtures", "alice", ".trae", "cli", "sessions", "2026", "06", "28", "trace.jsonl"), wantTool: "trae", wantHint: "trace", wantOK: true},
+		{path: filepath.Join("fixtures", "alice", ".gemini", "antigravity-cli", "brain", "116191af-e6ea-4ba5-aa23-62f995bd068a", ".system_generated", "logs", "transcript.jsonl"), wantTool: "antigravity", wantHint: "116191af-e6ea-4ba5-aa23-62f995bd068a", wantOK: true},
+		{path: filepath.Join("fixtures", "alice", ".gemini", "antigravity", "brain", "3b4a1d20-3968-4ed2-90b3-00eea3060b02", ".system_generated", "logs", "transcript.jsonl"), wantTool: "antigravity", wantHint: "3b4a1d20-3968-4ed2-90b3-00eea3060b02", wantOK: true},
+		{path: filepath.Join("fixtures", "alice", ".gemini", "antigravity-cli", "brain", "116191af-e6ea-4ba5-aa23-62f995bd068a", ".system_generated", "logs", "transcript_full.jsonl"), wantTool: "", wantOK: false},
 		{path: filepath.Join("fixtures", "alice", ".codex", "sessions", "abc.jsonl"), wantTool: "", wantOK: false},
 		{path: filepath.Join("fixtures", "alice", ".trae", "cli", "sessions", "2026", "06", "28", "trace.artifacts", "usage.jsonl"), wantTool: "", wantOK: false},
 	}

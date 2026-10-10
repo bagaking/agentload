@@ -613,6 +613,7 @@ func sanitizeSnapshotForClient(snap snapshot.Snapshot) snapshot.Snapshot {
 	snap.Config.CodexRoots = []string{}
 	snap.Config.TraeRoots = []string{}
 	snap.Config.GrokRoots = []string{}
+	snap.Config.AntigravityRoots = []string{}
 	snap.Config.GeminiRoots = nil
 	snap.Config.OpenCodeRoots = nil
 	snap.Config.HermesRoots = nil
@@ -1273,6 +1274,8 @@ func normalizeToolIconName(raw string) string {
 		return "grok"
 	case "gemini", "gemini-cli", "@google/gemini-cli":
 		return "gemini"
+	case "antigravity", "agy", "antigravity-cli":
+		return "antigravity"
 	default:
 		return ""
 	}
@@ -1290,15 +1293,20 @@ var toolIconFiles = map[string][]string{
 		"/Applications/Claude.app/Contents/Resources/icon.icns",
 		"/Applications/Claude.app/Contents/Resources/AppIcon.icns",
 	},
+	"antigravity": {
+		"/Applications/Antigravity.app/Contents/Resources/AppIcon.icns",
+		"/Applications/Antigravity.app/Contents/Resources/icon.icns",
+	},
 }
 
 var embeddedToolIconFiles = map[string][]string{
-	"codex":    {"ui/tool-icons/codex.svg"},
-	"trae":     {"ui/tool-icons/trae.svg"},
-	"claude":   {"ui/tool-icons/claude.svg"},
-	"opencode": {"ui/tool-icons/opencode.svg"},
-	"gemini":   {"ui/tool-icons/gemini.svg"},
-	"grok":     {"ui/tool-icons/grok.svg"},
+	"codex":       {"ui/tool-icons/codex.svg"},
+	"trae":        {"ui/tool-icons/trae.svg"},
+	"claude":      {"ui/tool-icons/claude.svg"},
+	"opencode":    {"ui/tool-icons/opencode.svg"},
+	"gemini":      {"ui/tool-icons/gemini.svg"},
+	"grok":        {"ui/tool-icons/grok.svg"},
+	"antigravity": {"ui/tool-icons/antigravity.svg"},
 }
 
 func resolveToolIconFile(tool string) (string, string, bool) {

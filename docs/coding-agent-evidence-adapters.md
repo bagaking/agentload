@@ -5,7 +5,7 @@ Status: approved implementation direction.
 ## User Requirement
 
 Define one IOC mechanism for coding agents such as Codex, Claude, Gemini,
-Trae/TraeX, OpenCode, Cursor, Hermes, OpenClaw, and Pi. When a coding-agent
+Trae/TraeX, OpenCode, Cursor, Hermes, OpenClaw, Pi, and Antigravity. When a coding-agent
 adapter is injected, that adapter determines which local evidence roots and
 files are eligible and which directories must be filtered. Optimize the code
 structure while controlling system entropy.
@@ -48,10 +48,11 @@ slot. A nil slot renders `unsupported` — never an inferred parity.
 
 | Agent | Process identity | Evidence discovery | Transcript evidence | Output usage | Trajectory | Evidence read |
 | --- | --- | --- | --- | --- | --- | --- |
+| antigravity | supported | supported | supported | unsupported | unsupported | `brain/<uuid>/.system_generated/logs/transcript.jsonl` |
 | claude | supported | supported | supported | supported | supported | `projects/**/*.jsonl` |
 | codex | supported | supported | supported | supported | supported | `sessions/YYYY/MM/DD/rollout-*.jsonl` |
 | cursor | unsupported | unsupported | unsupported | unsupported | unsupported | none |
-| gemini | supported | supported | supported | supported | unsupported | `tmp/**/chats/session-*.json(l)`<br>`antigravity-cli/brain/<session>/.system_generated/logs/transcript.jsonl` |
+| gemini | supported | supported | supported | supported | unsupported | `tmp/**/chats/session-*.json(l)` |
 | grok | supported | supported | supported | supported | supported | `sessions/<cwd>/<session>/updates.jsonl` |
 | hermes | supported | supported | supported | unsupported | unsupported | `state.db (read-only)` |
 | openclaw | supported | supported | supported | supported | unsupported | `agents/*/sessions/*.jsonl` |
@@ -59,8 +60,8 @@ slot. A nil slot renders `unsupported` — never an inferred parity.
 | pi | supported | supported | supported | supported | unsupported | `agent/sessions/**.jsonl`<br>`agent/session-artifacts/**.jsonl` |
 | trae | supported | supported | supported | supported | supported | `sessions/**/*.jsonl` |
 
+- **antigravity**: USER_INPUT and PLANNER_RESPONSE created_at only; no token field, so session spans only
 - **cursor**: host-app ancestry only: CLI transcripts carry no timestamp or token field, and IDE per-message counters are all zero
-- **gemini**: the antigravity root carries created_at but no token field of any kind, so it contributes session spans only
 - **grok**: usage is per-turn, not cumulative, and is repeated under usage.modelUsage.<model>
 - **hermes**: usage is database-backed and not decoded
 - **opencode**: usage is database-backed and not decoded
@@ -69,6 +70,13 @@ slot. A nil slot renders `unsupported` — never an inferred parity.
 
 | Agent | Signal family | State | Evidence |
 | --- | --- | --- | --- |
+| antigravity | `presence_resources` | observed | process identity |
+| antigravity | `sessions_roles` | observed | evidence discovery<br>transcript evidence |
+| antigravity | `recent_movement` | observed | transcript event timestamps |
+| antigravity | `tokens_cost` | unavailable | output usage decoder |
+| antigravity | `quota_windows` | unavailable | no local quota ledger registered |
+| antigravity | `workspace_context` | observed | transcript/project evidence |
+| antigravity | `consented_telemetry` | not_configured | runtime telemetry is opt-in |
 | claude | `presence_resources` | observed | process identity |
 | claude | `sessions_roles` | observed | evidence discovery<br>transcript evidence |
 | claude | `recent_movement` | observed | transcript event timestamps |
@@ -189,6 +197,20 @@ tests.
   `~/.pi/agent/session-artifacts` JSONL. The generic `pi` executable is now an
   explicit adapter identity because its session layout is verified by parser
   fixtures; it is not inferred from unrelated command arguments.
+- Antigravity process identity is backed by the public CLI/IDE installer
+  contract: exact executables `agy`, `antigravity` (`Antigravity.app`), and
+  `antigravity-cli`. `language_server`, helper binaries, Sparkle updaters, and
+  incidental `--override_ide_name antigravity` arguments do not confer identity.
+  The adapter is registered before Gemini so a later overlapping matcher cannot
+  steal the name; sharing `~/.gemini/` does not make the process Gemini.
+- Antigravity transcript discovery is limited to the documented
+  `<app_data_dir>/brain/<conversationId>/.system_generated/logs/transcript.jsonl`
+  layout (`~/.gemini/antigravity-cli` for CLI, `~/.gemini/antigravity` for the
+  IDE). `transcript_full.jsonl`, `scratch/`, `.system_generated/steps/`,
+  protobuf under `conversations/`, and `history.jsonl` are not session evidence.
+  The parser records the brain UUID and `created_at` on `USER_INPUT` and
+  `PLANNER_RESPONSE` only. Other record types are not turns. Token usage stays
+  unset because there is no verified usage envelope.
 
 ## Discovery Contract
 
@@ -203,7 +225,12 @@ tests.
   subtrees before traversal.
 - Gemini, OpenCode, Hermes, OpenClaw, and Pi own their configured local roots;
   database-backed sources are opened read-only and JSONL sources reuse the
-  Observer's file cache and cutoff coverage.
+  Observer's file cache and cutoff coverage. Gemini does not own Antigravity
+  brain transcripts.
+- Antigravity adapters own `brain/<uuid>/.system_generated/logs/transcript.jsonl`.
+  Conversation directories that are not UUIDs, and known non-evidence branches
+  (`scratch`, `steps`), are pruned or reported as an evidence-layout gap.
+  `transcript_full.jsonl` is never classified as a session file.
 - Directory traversal uses standard-library structured APIs and returns exact
   file metadata and surfaced errors. External `fd`, `find`, or shell pipelines
   are performance probes, not production dependencies.

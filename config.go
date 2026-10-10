@@ -22,6 +22,7 @@ type Config struct {
 	CodexRoots         []string
 	TraeRoots          []string
 	GrokRoots          []string
+	AntigravityRoots   []string
 	GeminiRoots        []string
 	OpenCodeRoots      []string
 	HermesRoots        []string
@@ -50,6 +51,7 @@ func defaultConfig() Config {
 		CodexRoots:         defaultCodexRoots(),
 		TraeRoots:          defaultTraeRoots(),
 		GrokRoots:          defaultGrokRoots(),
+		AntigravityRoots:   defaultAntigravityRoots(),
 		GeminiRoots:        defaultGeminiRoots(),
 		OpenCodeRoots:      defaultOpenCodeRoots(),
 		HermesRoots:        defaultHermesRoots(),
@@ -90,6 +92,7 @@ func (c Config) snapshotConfig() snapshot.SnapshotConfig {
 		CodexRoots:           append([]string(nil), c.CodexRoots...),
 		TraeRoots:            append([]string(nil), c.TraeRoots...),
 		GrokRoots:            append([]string(nil), c.GrokRoots...),
+		AntigravityRoots:     append([]string(nil), c.AntigravityRoots...),
 		GeminiRoots:          append([]string(nil), c.GeminiRoots...),
 		OpenCodeRoots:        append([]string(nil), c.OpenCodeRoots...),
 		HermesRoots:          append([]string(nil), c.HermesRoots...),
@@ -138,6 +141,14 @@ func defaultGrokRoots() []string {
 		),
 		defaultHomePath(".grok"),
 	)
+}
+
+func defaultAntigravityRoots() []string {
+	defaults := append(
+		defaultHomePath(filepath.Join(".gemini", "antigravity-cli")),
+		defaultHomePath(filepath.Join(".gemini", "antigravity"))...,
+	)
+	return parseRoots(os.Getenv("AGENTLOAD_ANTIGRAVITY_DIRS"), defaults)
 }
 
 func defaultGeminiRoots() []string {

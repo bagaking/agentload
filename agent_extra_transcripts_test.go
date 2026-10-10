@@ -273,12 +273,14 @@ func TestAgentDatabaseCachesUntilTheWALMoves(t *testing.T) {
 	}
 }
 
-// Antigravity is a second gemini evidence root. Its records carry created_at
-// but the corpus has no token field of any kind (measured on 44783 real
-// records), so it must contribute session spans and never a token number.
+// Antigravity transcripts carry created_at but the corpus has no token field
+// (measured on 44783 real records). They belong to the antigravity adapter,
+// not gemini. Only USER_INPUT and PLANNER_RESPONSE are turns; RUN_COMMAND must
+// not inflate the span, and transcript_full.jsonl is not a second session.
 func TestAntigravityTranscriptsAreTimelineEvidenceOnly(t *testing.T) {
-	root := t.TempDir()
-	dir := filepath.Join(root, "antigravity-cli", "brain", "s1", ".system_generated", "logs")
+	conversation := "116191af-e6ea-4ba5-aa23-62f995bd068a"
+	root := filepath.Join(t.TempDir(), "antigravity-cli")
+	dir := filepath.Join(root, "brain", conversation, ".system_generated", "logs")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -289,23 +291,23 @@ func TestAntigravityTranscriptsAreTimelineEvidenceOnly(t *testing.T) {
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	// Byte-identical sibling: admitting it too would count every session twice.
 	if err := os.WriteFile(filepath.Join(dir, "transcript_full.jsonl"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	found := extraTranscriptDiscovery{kind: "gemini"}.Discover(
-		context.Background(), "gemini", []string{root}, time.Time{})
+	found := antigravityTranscriptDiscovery{}.Discover(
+		context.Background(), "antigravity", []string{root}, time.Time{})
 	if len(found.Files) != 1 || found.Files[0].File.Path != path {
 		t.Fatalf("discovery = %+v, want transcript.jsonl only", found.Files)
 	}
 
-	trace, err := parseOneExtraSession(t, "gemini", path)
+	trace, err := parseAntigravityTrace(snapshot.TranscriptFile{Tool: "antigravity", Path: path, SessionIDHint: conversation})
 	if err != nil || trace == nil {
 		t.Fatalf("parse antigravity transcript: trace=%+v err=%v", trace, err)
 	}
-	// The two conversational turns are timeline evidence; RUN_COMMAND is not a
-	// turn and must not inflate the span.
+	if trace.Tool != "antigravity" || trace.SessionID != conversation {
+		t.Fatalf("expected antigravity brain UUID, got tool=%q session=%q", trace.Tool, trace.SessionID)
+	}
 	if len(trace.EventTimes) != 2 {
 		t.Fatalf("expected the two conversational turns, got %d events", len(trace.EventTimes))
 	}
